@@ -1,4 +1,4 @@
-﻿name: CI - Tests and Code Quality
+﻿xc  name: CI - Tests and Code Quality
 
 on:
   push:

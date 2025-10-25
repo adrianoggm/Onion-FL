@@ -29,6 +29,8 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+import argparse
+import os
 
 # -----------------------------------------------------------------------------
 import paho.mqtt.client as mqtt
@@ -50,6 +52,17 @@ K = 3
 # -----------------------------------------------------------------------------
 # Cada región mantiene su propio buffer de actualizaciones
 buffers = defaultdict(list)
+
+# Environment overrides (optional)
+try:
+    UPDATE_TOPIC = os.getenv("MQTT_TOPIC_UPDATES", UPDATE_TOPIC)
+    PARTIAL_TOPIC = os.getenv("MQTT_TOPIC_PARTIAL", PARTIAL_TOPIC)
+    GLOBAL_TOPIC = os.getenv("MQTT_TOPIC_GLOBAL", GLOBAL_TOPIC)
+    MQTT_BROKER = os.getenv("MQTT_BROKER", MQTT_BROKER)
+    MQTT_PORT = int(os.getenv("MQTT_PORT", str(MQTT_PORT)))
+    K = int(os.getenv("FOG_K", str(K)))
+except Exception:
+    pass
 
 
 # -----------------------------------------------------------------------------
@@ -154,6 +167,50 @@ def main():
     4. Computa agregados parciales y los publica en 'fl/partial'
     5. Los agregados parciales son consumidos por el servidor central
     """
+    # CLI/env configuration
+    global K, MQTT_BROKER, MQTT_PORT, UPDATE_TOPIC, PARTIAL_TOPIC, GLOBAL_TOPIC
+    parser = argparse.ArgumentParser(description="Fog broker (regional aggregator)")
+    parser.add_argument(
+        "--k",
+        type=int,
+        default=int(os.getenv("FOG_K", K)),
+        help="Updates per region before computing partial aggregate",
+    )
+    parser.add_argument(
+        "--mqtt-broker",
+        default=os.getenv("MQTT_BROKER", MQTT_BROKER),
+        help="MQTT broker host",
+    )
+    parser.add_argument(
+        "--mqtt-port",
+        type=int,
+        default=int(os.getenv("MQTT_PORT", MQTT_PORT)),
+        help="MQTT broker port",
+    )
+    parser.add_argument(
+        "--topic-updates",
+        default=os.getenv("MQTT_TOPIC_UPDATES", UPDATE_TOPIC),
+        help="Topic for client updates -> broker",
+    )
+    parser.add_argument(
+        "--topic-partial",
+        default=os.getenv("MQTT_TOPIC_PARTIAL", PARTIAL_TOPIC),
+        help="Topic for broker partials -> fog bridge",
+    )
+    parser.add_argument(
+        "--topic-global",
+        default=os.getenv("MQTT_TOPIC_GLOBAL", GLOBAL_TOPIC),
+        help="Topic for global model publish",
+    )
+    args = parser.parse_args()
+
+    K = max(1, int(args.k))
+    MQTT_BROKER = args.mqtt_broker
+    MQTT_PORT = int(args.mqtt_port)
+    UPDATE_TOPIC = args.topic_updates
+    PARTIAL_TOPIC = args.topic_partial
+    GLOBAL_TOPIC = args.topic_global
+
     # Configurar cliente MQTT con callback API v2
     mqttc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     mqttc.on_connect = lambda c, u, f, rc, p=None: c.subscribe(UPDATE_TOPIC)

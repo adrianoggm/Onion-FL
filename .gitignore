@@ -139,3 +139,5 @@ multi_dataset_demo_report.json
 WESAD_BASELINE_RESULTS.md
 SWELL_BASELINE_RESULTS.md
 multimodal_baseline_results.json
+
+federated_runs/*

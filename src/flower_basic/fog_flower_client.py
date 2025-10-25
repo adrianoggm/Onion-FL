@@ -18,6 +18,7 @@ FLUJO:
 """
 
 import json
+import os
 import time
 from typing import List
 
@@ -30,9 +31,9 @@ from .model import ECGModel, get_parameters, set_parameters
 # -----------------------------------------------------------------------------
 # CONFIGURACIÓN MQTT
 # -----------------------------------------------------------------------------
-MQTT_BROKER = "localhost"
-MQTT_PORT = 1883
-PARTIAL_TOPIC = "fl/partial"  # Topic donde broker_fog publica agregados parciales
+MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+PARTIAL_TOPIC = os.getenv("MQTT_TOPIC_PARTIAL", "fl/partial")  # Topic donde broker_fog publica agregados parciales
 
 
 # -----------------------------------------------------------------------------
@@ -49,20 +50,27 @@ class FogClient(fl.client.NumPyClient):
     4. Permite integración fog computing + Flower framework
     """
 
-    def __init__(self, server_address: str):
+    def __init__(
+        self,
+        server_address: str,
+        mqtt_broker: str = MQTT_BROKER,
+        mqtt_port: int = MQTT_PORT,
+        partial_topic: str = PARTIAL_TOPIC,
+    ):
         self.server_address = server_address
         self.model = ECGModel()
         self.param_names = list(self.model.state_dict().keys())
         self.partial_weights = None
+        self.partial_topic = partial_topic
 
         # Configurar suscriptor MQTT para recibir agregados parciales
         self.mqtt = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.mqtt.on_connect = self._on_connect
         self.mqtt.on_message = self._on_partial
-        self.mqtt.connect(MQTT_BROKER, MQTT_PORT)
+        self.mqtt.connect(mqtt_broker, mqtt_port)
         self.mqtt.loop_start()
         print(
-            f"[FOG_CLIENT] Conectado a MQTT broker, escuchando agregados parciales en {PARTIAL_TOPIC}"
+            f"[FOG_CLIENT] Conectado a MQTT broker, escuchando agregados parciales en {self.partial_topic}"
         )
 
     def _on_partial(self, client, userdata, msg):
@@ -83,8 +91,8 @@ class FogClient(fl.client.NumPyClient):
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         """Callback MQTT para conexión exitosa."""
         if rc == 0:
-            client.subscribe(PARTIAL_TOPIC)
-            print(f"[FOG_CLIENT] Suscrito al topic: {PARTIAL_TOPIC}")
+            client.subscribe(self.partial_topic)
+            print(f"[FOG_CLIENT] Suscrito al topic: {self.partial_topic}")
         else:
             print(f"[FOG_CLIENT] Error de conexión MQTT: {rc}")
 
@@ -154,10 +162,24 @@ def main():
 
     Este es el puente entre la capa fog (MQTT) y la capa central (Flower).
     """
+    import argparse
+    ap = argparse.ArgumentParser(description="Fog bridge client (generic)")
+    ap.add_argument("--server", default="localhost:8080")
+    ap.add_argument("--mqtt-broker", default=MQTT_BROKER)
+    ap.add_argument("--mqtt-port", type=int, default=MQTT_PORT)
+    ap.add_argument("--topic-partial", default=PARTIAL_TOPIC)
+    args = ap.parse_args()
+
     print("[FOG_CLIENT] Iniciando cliente puente fog-central...")
-    print("[FOG_CLIENT] Conectando al servidor Flower en localhost:8080")
+    print(f"[FOG_CLIENT] Conectando al servidor Flower en {args.server}")
     fl.client.start_numpy_client(
-        server_address="localhost:8080", client=FogClient("localhost:8080")
+        server_address=args.server,
+        client=FogClient(
+            args.server,
+            mqtt_broker=args.mqtt_broker,
+            mqtt_port=args.mqtt_port,
+            partial_topic=args.topic_partial,
+        ),
     )
 
 

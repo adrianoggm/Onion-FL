@@ -41,6 +41,42 @@ The combined evaluation uses subject-disjoint train/validation/test splits; the 
 
 Cross-validation artifacts: subject_cv_results/subject_cv_summary.csv and subject_cv_results/subject_cv_summary.json.
 
+### SWELL Federated Run (Oct 2025)
+
+- **Preparation**  
+  - `scripts/prepare_swell_federated.py --config configs/swell_federated.example.yaml`  
+  - Subject ID normalisation (`P01` → `1`) and automatic separator/decimal detection.  
+  - `federation.ensure_min_train_per_node = true` to guarantee at least one train subject per fog node.  
+  - Output artefacts: `federated_runs/swell/example_manual/{fog_*}/(train|val|test).npz`, `manifest.json`, `scaler_global.json`.
+
+- **Federated execution**  
+  - MQTT + fog broker + fog bridge + Flower server + SWELL clients.  
+  - Last run (3 rounds, 2 clients per region, K=2):
+    ```powershell
+    python scripts/run_swell_federated_demo.py `
+      --manifest federated_runs\swell\example_manual\manifest.json `
+      --rounds 3 `
+      --clients-per-node 2 `
+      --k-per-region 2 `
+      --mqtt-broker localhost `
+      --mqtt-port 1883 `
+      --topic-updates fl/updates `
+      --topic-partial fl/partial `
+      --topic-global fl/global_model
+    ```
+  - Each client evaluates `val.npz` every round; metrics logged to `federated_runs/swell/example_manual/fog_*/val_metrics.jsonl`.
+
+- **Aggregated results**  
+  - Consolidated summary: `federated_runs/swell/example_manual/metrics_summary.json` (per node, latest metrics).  
+  - Example validation trends:  
+    - `fog_0`: val_loss ≈ 13.1 → 10.2 → 12.6 ; val_acc ≈ 0.48–0.51  
+    - `fog_1`: val_loss ≈ 12.4 → 7.6 → 18.4 ; val_acc ≈ 0.55  
+    - `fog_2`: val_loss ≈ 12.1 → 12.4 → 15.1 ; val_acc ≈ 0.45–0.56
+
+- **Next steps**  
+  - Print the summary inside the runner and compare with a centralised baseline using the same MLP/splits.  
+  - Migrate to `flower-superlink` / `flower-supernode` to silence Flower deprecation warnings when upgrading.
+
 **Modern Python Federated Learning Framework** following current PEP standards with comprehensive type hints, automated testing, and production-ready architecture.
 
 This repository implements a **federated learning with fog computing** prototype using [Flower](https://flower.ai) and MQTT. It demonstrates a hierarchical aggregation architecture using advanced ML models trained on **WESAD** (physiological stress detection) and **SWELL** (multimodal stress detection) datasets.

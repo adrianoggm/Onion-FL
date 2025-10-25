@@ -20,6 +20,7 @@ FLUJO:
 """
 
 import json
+import os
 import time
 
 import paho.mqtt.client as mqtt
@@ -31,10 +32,10 @@ from .model import ECGModel
 # -----------------------------------------------------------------------------
 # CONFIGURACIÃN MQTT
 # -----------------------------------------------------------------------------
-MQTT_BROKER = "localhost"
-MQTT_PORT = 1883
-TOPIC_UPDATES = "fl/updates"  # Topic para publicar actualizaciones locales
-TOPIC_GLOBAL_MODEL = "fl/global_model"  # Topic para recibir modelos globales
+MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+TOPIC_UPDATES = os.getenv("MQTT_TOPIC_UPDATES", "fl/updates")  # Topic para publicar actualizaciones locales
+TOPIC_GLOBAL_MODEL = os.getenv("MQTT_TOPIC_GLOBAL", "fl/global_model")  # Topic para recibir modelos globales
 
 
 # -----------------------------------------------------------------------------
@@ -156,6 +157,8 @@ class FLClientMQTT:
             ),
             "loss": avg_loss,
         }
+        # Region override via env (MQTT_REGION) if provided
+        payload["region"] = os.getenv("MQTT_REGION", payload["region"])  
 
         self.mqtt.publish(TOPIC_UPDATES, json.dumps(payload))
         print(f"[CLIENT] ActualizaciÃ³n local publicada en {TOPIC_UPDATES}")
