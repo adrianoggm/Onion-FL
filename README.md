@@ -25,6 +25,8 @@
 | SWELL (computer interaction) | Random Forest | 0.992 | 0.991 | 20 | 5 |
 | Combined (multimodal) | Logistic Regression | 0.908 | 0.906 | 24 train / 6 val | 10 |
 | Combined (multimodal) | Random Forest | 0.975 | 0.975 | 24 train / 6 val | 10 |
+| SWEET (sample subjects) | Logistic Regression | 0.447 | 0.415 | 6 train / 2 val | 2 |
+| SWEET (sample subjects) | Random Forest | 0.566 | 0.479 | 6 train / 2 val | 2 |
 
 The combined evaluation uses subject-disjoint train/validation/test splits; the train column shows subjects in the training fold (validation adds 6 more). Detailed metrics live in `multi_dataset_demo_report.json` and `multimodal_baseline_results.json`.
 
@@ -38,6 +40,8 @@ The combined evaluation uses subject-disjoint train/validation/test splits; the 
 | SWELL (computer interaction) | Random Forest | 0.989 +/- 0.006 | 0.987 +/- 0.008 |
 | Combined (multimodal) | Logistic Regression | 0.931 +/- 0.026 | 0.928 +/- 0.029 |
 | Combined (multimodal) | Random Forest | 0.945 +/- 0.033 | 0.941 +/- 0.037 |
+| SWEET (sample subjects) | Logistic Regression | 0.596 +/- 0.132 | 0.542 +/- 0.088 |
+| SWEET (sample subjects) | Random Forest | 0.512 +/- 0.107 | 0.438 +/- 0.083 |
 
 Cross-validation artifacts: subject_cv_results/subject_cv_summary.csv and subject_cv_results/subject_cv_summary.json.
 
@@ -232,6 +236,18 @@ Heart Rate Variability (RMSSD): autonomic nervous system indicator
 Skin Conductance Level (SCL): electrodermal activity
 Additional: 8 unnamed physiological measures
 ```
+
+### SWEET Sample Subjects - Rapid Baseline
+
+- **Subjects**: 10 respondents with minute-level physiological aggregates plus self-reported stress (`MAXIMUM_STRESS`).
+- **Script**: `python scripts/evaluate_sweet_sample_baseline.py --output-dir baseline_results/sweet_samples`.
+- **Split Policy**: 60% train, 20% validation, 20% test at subject granularity (strictly disjoint) as mandated in `Context.md`.
+- **Labels**: Binary by default (`stress >= 2` -> elevated). Switch to ordinal with `--label-strategy ordinal` to keep levels 1-5.
+- **Threshold**: Level 1 se mapea a `0` (bajo); niveles >=2 quedan como `1`. Ajusta con `--sweet-threshold` si necesitas otro corte.
+- **Scope**: Operates on the curated subset located at `data/SWEET/sample_subjects`; ideal for smoke tests before full SWEET ingestion.
+- **Cross-Validation**: `python scripts/run_subject_cv.py --datasets sweet_samples --output-dir subject_cv_results/sweet_samples_cv` (append `--sweet-label-strategy ordinal` for multi-level labels).
+
+
 
 #### 💽 Data Integration Challenges
 ```

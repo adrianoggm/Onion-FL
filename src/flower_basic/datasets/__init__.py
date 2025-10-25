@@ -26,6 +26,7 @@ from .swell import (
     load_swell_all_samples,
 )
 from .swell_federated import plan_and_materialize_swell_federated
+from .sweet_samples import load_sweet_sample_dataset, load_sweet_sample_full
 from .wesad import load_wesad_dataset, partition_wesad_by_subjects
 
 __all__ = [
@@ -41,4 +42,7 @@ __all__ = [
     "load_swell_all_samples",
     "plan_and_materialize_swell_federated",
     "get_swell_info",
+    # SWEET sample subjects
+    "load_sweet_sample_dataset",
+    "load_sweet_sample_full",
 ]

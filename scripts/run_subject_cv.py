@@ -1,5 +1,5 @@
 ﻿#!/usr/bin/env python3
-"""Run subject-aware 5-fold cross-validation for WESAD, SWELL, and combined datasets."""
+"""Run subject-aware cross-validation for WESAD, SWELL, combined, and SWEET datasets."""
 
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ if str(SRC_PATH) not in sys.path:
 
 from flower_basic.datasets.multimodal import load_real_multimodal_dataset
 from flower_basic.datasets.swell import load_swell_dataset
+from flower_basic.datasets.sweet_samples import load_sweet_sample_full
 from flower_basic.datasets.wesad import WESAD_SUBJECTS, load_wesad_dataset
 
 
@@ -174,23 +175,58 @@ def _load_combined_full() -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     return X.astype(np.float32, copy=False), y.astype(np.int64, copy=False), groups
 
 
-def run_subject_cv(output_dir: Path) -> None:
-    """Execute CV for all datasets and persist per-fold and summary metrics."""
+def _load_sweet_samples_full(
+    label_strategy: str = "binary",
+    threshold: float = 2.0,
+    min_samples: int = 5,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Load SWEET sample-subject dataset and return arrays with subject IDs."""
+    X, y, groups, _ = load_sweet_sample_full(
+        label_strategy=label_strategy,
+        elevated_threshold=threshold,
+        min_samples_per_subject=min_samples,
+    )
+    return X, y, groups
+
+
+def run_subject_cv(
+    output_dir: Path,
+    datasets: Iterable[str] | None = None,
+    n_folds: int = 5,
+    sweet_label_strategy: str = "binary",
+    sweet_threshold: float = 2.0,
+    sweet_min_samples: int = 5,
+) -> None:
+    """Execute CV for selected datasets and persist per-fold and summary metrics."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
     dataset_loaders = {
         "wesad": _load_wesad_full,
         "swell": _load_swell_full,
         "combined": _load_combined_full,
+        "sweet_samples": lambda ls=sweet_label_strategy, th=sweet_threshold, ms=sweet_min_samples: _load_sweet_samples_full(  # noqa: E501
+            label_strategy=ls, threshold=th, min_samples=ms
+        ),
     }
+
+    selected = list(datasets) if datasets is not None else list(dataset_loaders.keys())
 
     fold_frames = []
     summary_frames = []
 
-    for dataset_name, loader in dataset_loaders.items():
+    for dataset_name in selected:
+        if dataset_name not in dataset_loaders:
+            raise ValueError(
+                f"Dataset '{dataset_name}' is not supported. "
+                f"Available options: {sorted(dataset_loaders.keys())}"
+            )
+
+        loader = dataset_loaders[dataset_name]
         print(f"Running subject-based cross-validation for {dataset_name}...")
         X, y, groups = loader()
-        fold_df, summary_df = _run_group_cv(dataset_name, X, y, groups)
+        fold_df, summary_df = _run_group_cv(
+            dataset_name, X, y, groups, n_splits=n_folds
+        )
         fold_frames.append(fold_df)
         summary_frames.append(summary_df)
 
@@ -226,7 +262,10 @@ def run_subject_cv(output_dir: Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run subject-aware 5-fold cross-validation for WESAD, SWELL, and combined datasets."
+        description=(
+            "Run subject-aware GroupKFold cross-validation for WESAD, SWELL, "
+            "combined multimodal, and SWEET sample-subject datasets."
+        )
     )
     parser.add_argument(
         "--output-dir",
@@ -234,12 +273,49 @@ def parse_args() -> argparse.Namespace:
         default=Path("subject_cv_results"),
         help="Directory where CSV/JSON metrics will be written.",
     )
+    parser.add_argument(
+        "--datasets",
+        nargs="+",
+        choices=["wesad", "swell", "combined", "sweet_samples"],
+        help="Subset of datasets to evaluate (default: all).",
+    )
+    parser.add_argument(
+        "--folds",
+        type=int,
+        default=5,
+        help="Maximum number of cross-validation folds (capped by subject count).",
+    )
+    parser.add_argument(
+        "--sweet-label-strategy",
+        choices=["binary", "ordinal"],
+        default="binary",
+        help="Label strategy for SWEET sample subjects (default: binary).",
+    )
+    parser.add_argument(
+        "--sweet-threshold",
+        type=float,
+        default=2.0,
+        help="Stress threshold used when SWEET labels are binarized.",
+    )
+    parser.add_argument(
+        "--sweet-min-samples",
+        type=int,
+        default=5,
+        help="Minimum aligned samples required to include a SWEET subject.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    run_subject_cv(args.output_dir)
+    run_subject_cv(
+        output_dir=args.output_dir,
+        datasets=args.datasets,
+        n_folds=args.folds,
+        sweet_label_strategy=args.sweet_label_strategy,
+        sweet_threshold=args.sweet_threshold,
+        sweet_min_samples=args.sweet_min_samples,
+    )
 
 
 if __name__ == "__main__":
