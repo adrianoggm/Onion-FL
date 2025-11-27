@@ -66,23 +66,25 @@ class TestWESADDataset:
 
             yield data_dir
 
-    def test_load_wesad_dataset_validation(self) -> None:
+    def test_load_wesad_dataset_validation(self, tmp_path: Path) -> None:
         """Test parameter validation for WESAD loader."""
+        data_dir = tmp_path / "WESAD"
+        data_dir.mkdir()
         # Test invalid sensor location
         with pytest.raises(ValueError, match="sensor_location must be"):
-            load_wesad_dataset(sensor_location="invalid")
+            load_wesad_dataset(sensor_location="invalid", data_dir=data_dir)
 
         # Test invalid signals
         with pytest.raises(ValueError, match="Invalid signals"):
-            load_wesad_dataset(signals=["INVALID_SIGNAL"])
+            load_wesad_dataset(signals=["INVALID_SIGNAL"], data_dir=data_dir)
 
         # Test invalid conditions
         with pytest.raises(ValueError, match="Invalid conditions"):
-            load_wesad_dataset(conditions=["invalid_condition"])
+            load_wesad_dataset(conditions=["invalid_condition"], data_dir=data_dir)
 
         # Test invalid test_size
         with pytest.raises(ValueError, match="test_size must be between"):
-            load_wesad_dataset(test_size=0.0)
+            load_wesad_dataset(test_size=0.0, data_dir=data_dir)
 
     def test_missing_data_directory_raises_error(self) -> None:
         """Test that missing data directory raises appropriate error."""
@@ -254,7 +256,7 @@ class TestSWELLDataset:
                 all_labels = np.concatenate([y_train, y_test])
                 assert len(np.unique(all_labels)) <= 2
 
-    def test_swell_dataset_error_handling(self):
+    def test_swell_dataset_error_handling(self, tmp_path: Path):
         """Test SWELL dataset error handling for various failure modes."""
 
         # Test missing directory
@@ -262,8 +264,10 @@ class TestSWELLDataset:
             load_swell_dataset(data_dir="nonexistent/path")
 
         # Test invalid modalities
+        data_dir = tmp_path / "SWELL"
+        data_dir.mkdir()
         with pytest.raises(ValueError, match="Invalid modalities"):
-            load_swell_dataset(modalities=["invalid_modality"])
+            load_swell_dataset(modalities=["invalid_modality"], data_dir=data_dir)
 
         # Test invalid subjects
         with pytest.raises(ValueError, match="Subject IDs must be between 1 and 25"):

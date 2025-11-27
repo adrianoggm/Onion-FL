@@ -7,6 +7,10 @@ import math
 import numpy as np
 import pytest
 
+from pathlib import Path
+
+import pytest
+
 from flower_basic.datasets.multimodal import load_real_multimodal_dataset
 from flower_basic.datasets.samples import (
     load_swell_sample_features,
@@ -15,6 +19,8 @@ from flower_basic.datasets.samples import (
 
 
 def test_wesad_sample_windows_produces_real_features() -> None:
+    if not Path("data/samples/wesad_real_sample.pkl").exists():
+        pytest.skip("wesad_real_sample.pkl not available")
     X, y = load_wesad_sample_windows()
     assert X.size > 0
     assert y.size == X.shape[0]
@@ -24,6 +30,8 @@ def test_wesad_sample_windows_produces_real_features() -> None:
 
 
 def test_swell_sample_features_produces_real_features() -> None:
+    if not Path("data/samples/swell_real_sample.pkl").exists():
+        pytest.skip("swell_real_sample.pkl not available")
     X, y = load_swell_sample_features()
     assert X.size > 0
     assert y.size == X.shape[0]
@@ -35,6 +43,11 @@ def test_swell_sample_features_produces_real_features() -> None:
 def test_multimodal_combination_uses_real_samples(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    if not (
+        Path("data/samples/wesad_real_sample.pkl").exists()
+        and Path("data/samples/swell_real_sample.pkl").exists()
+    ):
+        pytest.skip("Sample pickle files not available")
     X_wesad, y_wesad = load_wesad_sample_windows(window_size=200, step=200)
     X_swell, y_swell = load_swell_sample_features()
 
