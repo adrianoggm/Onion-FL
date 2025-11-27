@@ -27,6 +27,7 @@ try:
     from .clients.baseclient import BaseMQTTComponent
 except Exception:  # pragma: no cover
     import sys
+
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from flower_basic.datasets.swell_federated import load_node_split
     from flower_basic.swell_model import SwellMLP
@@ -60,14 +61,18 @@ class SwellFLClientMQTT(BaseMQTTComponent):
         # Load splits
         X_train, y_train, _ = load_node_split(self.node_dir / "train.npz")
         if X_train.size == 0:
-            raise RuntimeError("Train split is empty for this node. Check subject assignments.")
+            raise RuntimeError(
+                "Train split is empty for this node. Check subject assignments."
+            )
 
         input_dim = X_train.shape[1]
         self.model = SwellMLP(input_dim=input_dim)
 
         # DataLoaders
         self.train_loader = DataLoader(
-            TensorDataset(torch.from_numpy(X_train).float(), torch.from_numpy(y_train).long()),
+            TensorDataset(
+                torch.from_numpy(X_train).float(), torch.from_numpy(y_train).long()
+            ),
             batch_size=batch_size,
             shuffle=True,
         )
@@ -82,7 +87,10 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                 X_val, y_val, _ = load_node_split(val_path)
                 if X_val.size > 0:
                     self.val_loader = DataLoader(
-                        TensorDataset(torch.from_numpy(X_val).float(), torch.from_numpy(y_val).long()),
+                        TensorDataset(
+                            torch.from_numpy(X_val).float(),
+                            torch.from_numpy(y_val).long(),
+                        ),
                         batch_size=256,
                         shuffle=False,
                     )
@@ -91,7 +99,12 @@ class SwellFLClientMQTT(BaseMQTTComponent):
         # Metrics output path
         self.metrics_path = self.node_dir / "val_metrics.jsonl"
 
-        super().__init__(tag=self.tag, mqtt_broker=mqtt_broker, mqtt_port=mqtt_port, subscriptions=[self.topic_global])
+        super().__init__(
+            tag=self.tag,
+            mqtt_broker=mqtt_broker,
+            mqtt_port=mqtt_port,
+            subscriptions=[self.topic_global],
+        )
         self._got_global = False
         # Protect model updates from MQTT callback during training
         self._lock = threading.Lock()
@@ -104,11 +117,17 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                 weights = payload.get("global_weights")
                 if weights:
                     # Buffer the global state to apply between rounds (avoid in-place during training)
-                    state = {k: torch.tensor(v) for k, v in weights.items() if k in self.model.state_dict()}
+                    state = {
+                        k: torch.tensor(v)
+                        for k, v in weights.items()
+                        if k in self.model.state_dict()
+                    }
                     with self._lock:
                         self._pending_global_state = state
                     self._got_global = True
-                    print(f"{self.tag} Global model available (round={payload.get('round','?')})")
+                    print(
+                        f"{self.tag} Global model available (round={payload.get('round','?')})"
+                    )
             except Exception as e:
                 print(f"{self.tag} Error processing global model: {e}")
 
@@ -192,6 +211,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                 rec = {"round": r, "region": self.region, "train_loss": float(avg_loss)}
                 rec.update({k: float(v) for k, v in val_metrics.items()})
                 import json as _json
+
                 with open(self.metrics_path, "a", encoding="utf-8") as f:
                     f.write(_json.dumps(rec) + "\n")
             except Exception:
@@ -213,8 +233,14 @@ class SwellFLClientMQTT(BaseMQTTComponent):
 
 def main():
     ap = argparse.ArgumentParser(description="SWELL MQTT federated local client")
-    ap.add_argument("--node_dir", required=True, help="Path to node directory with splits (train/val/test npz)")
-    ap.add_argument("--region", required=True, help="Region name to tag updates (e.g., fog_0)")
+    ap.add_argument(
+        "--node_dir",
+        required=True,
+        help="Path to node directory with splits (train/val/test npz)",
+    )
+    ap.add_argument(
+        "--region", required=True, help="Region name to tag updates (e.g., fog_0)"
+    )
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--batch_size", type=int, default=64)

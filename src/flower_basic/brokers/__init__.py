@@ -1,4 +1,4 @@
-"\"\"\"Broker entrypoints for fog aggregation.\"\"\""
+'"""Broker entrypoints for fog aggregation."""'
 
 from .fog import main as run_fog_broker
 

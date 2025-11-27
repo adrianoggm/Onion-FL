@@ -1,20 +1,8 @@
 """
-fog_flower_client.py - Cliente Puente entre MQTT y Flower
+Fog bridge client (generic).
 
-Este módulo implementa un cliente Flower que actúa como puente entre:
-1. El broker fog (broker_fog.py) que envía agregados parciales por MQTT
-2. El servidor central Flower (server.py) que coordina el aprendizaje federado
-
-ARQUITECTURA:
-- Recibe agregados parciales de broker_fog.py vía MQTT topic 'fl/partial'
-- Los reenvía al servidor central usando el protocolo gRPC de Flower
-- Permite que el fog computing se integre con el framework Flower
-
-FLUJO:
-1. Broker fog acumula K actualizaciones locales → agregado parcial
-2. Este cliente recibe el agregado parcial vía MQTT
-3. Lo convierte a formato Flower y lo envía al servidor central
-4. El servidor central agrega múltiples regiones → modelo global
+Receives partial aggregates over MQTT (from broker_fog) and forwards them to
+the central Flower server as a NumPyClient. Enables fog → cloud bridging.
 """
 
 import json
@@ -29,11 +17,13 @@ import paho.mqtt.client as mqtt
 from .model import ECGModel, get_parameters, set_parameters
 
 # -----------------------------------------------------------------------------
-# CONFIGURACIÓN MQTT
+# MQTT CONFIG
 # -----------------------------------------------------------------------------
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
-PARTIAL_TOPIC = os.getenv("MQTT_TOPIC_PARTIAL", "fl/partial")  # Topic donde broker_fog publica agregados parciales
+PARTIAL_TOPIC = os.getenv(
+    "MQTT_TOPIC_PARTIAL", "fl/partial"
+)  # Topic where broker_fog publishes partials
 
 
 # -----------------------------------------------------------------------------
@@ -41,13 +31,7 @@ PARTIAL_TOPIC = os.getenv("MQTT_TOPIC_PARTIAL", "fl/partial")  # Topic donde bro
 # -----------------------------------------------------------------------------
 class FogClient(fl.client.NumPyClient):
     """
-    Cliente Flower que actúa como puente entre el broker fog MQTT y el servidor central.
-
-    Funciones principales:
-    1. Se conecta al servidor Flower central vía gRPC
-    2. Recibe agregados parciales del broker fog vía MQTT
-    3. Los reenvía al servidor central en formato Flower
-    4. Permite integración fog computing + Flower framework
+    Flower NumPyClient acting as a bridge between MQTT fog broker and central server.
     """
 
     def __init__(
@@ -63,54 +47,43 @@ class FogClient(fl.client.NumPyClient):
         self.partial_weights = None
         self.partial_topic = partial_topic
 
-        # Configurar suscriptor MQTT para recibir agregados parciales
         self.mqtt = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.mqtt.on_connect = self._on_connect
         self.mqtt.on_message = self._on_partial
         self.mqtt.connect(mqtt_broker, mqtt_port)
         self.mqtt.loop_start()
         print(
-            f"[FOG_CLIENT] Conectado a MQTT broker, escuchando agregados parciales en {self.partial_topic}"
+            f"[FOG_CLIENT] Connected to MQTT broker, listening for partials on {self.partial_topic}"
         )
 
     def _on_partial(self, client, userdata, msg):
         """
-        Callback MQTT que procesa agregados parciales del broker fog.
-
-        Recibe el mensaje JSON con los pesos agregados de K clientes de una región
-        y los almacena para enviar al servidor central en la próxima ronda.
+        Process partial aggregates published by the fog broker.
         """
         try:
             data = json.loads(msg.payload.decode())
             self.partial_weights = data.get("partial_weights")
             region = data.get("region", "unknown")
-            print(f"[FOG_CLIENT] Agregado parcial recibido para region={region}")
+            print(f"[FOG_CLIENT] Partial aggregate received for region={region}")
         except Exception as e:
-            print(f"[FOG_CLIENT] Error procesando agregado parcial: {e}")
+            print(f"[FOG_CLIENT] Error processing partial aggregate: {e}")
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):
-        """Callback MQTT para conexión exitosa."""
+        """MQTT connect callback."""
         if rc == 0:
             client.subscribe(self.partial_topic)
             print(f"[FOG_CLIENT] Suscrito al topic: {self.partial_topic}")
         else:
-            print(f"[FOG_CLIENT] Error de conexión MQTT: {rc}")
+            print(f"[FOG_CLIENT] MQTT connection error: {rc}")
 
     # Interfaz Flower NumPyClient
     def get_parameters(self, config):
-        """Devuelve parámetros actuales del modelo."""
+        """Return current model parameters."""
         return get_parameters(self.model)
 
     def fit(self, parameters: List[np.ndarray], config):
         """
-        Método principal de entrenamiento para Flower.
-
-        En lugar de entrenar localmente, este cliente:
-        1. Recibe parámetros globales del servidor central
-        2. Espera agregado parcial del broker fog vía MQTT
-        3. Devuelve el agregado parcial como "entrenamiento local"
-
-        Esto permite que el servidor central vea los agregados fog como clientes regulares.
+        Training entrypoint for Flower: waits for MQTT partial and returns it.
         """
         # Cargar nuevos parámetros globales del servidor central
         set_parameters(self.model, parameters)
@@ -134,11 +107,10 @@ class FogClient(fl.client.NumPyClient):
         ]
         self.partial_weights = None
 
-        # Devolver agregado parcial como si fuera entrenamiento local
-        # num_samples representa la suma de muestras de los K clientes agregados
-        num_samples = 1000  # Aproximadamente K=3 clientes con ~333 muestras cada uno
+        # Return partial aggregate as if it were local training
+        num_samples = 1000  # approximate: aggregated clients
         print(
-            f"[FOG_CLIENT] Enviando agregado parcial al servidor central ({num_samples} muestras)"
+            f"[FOG_CLIENT] Sending partial aggregate to central server ({num_samples} samples)"
         )
         return partial_list, num_samples, {}
 
@@ -163,6 +135,7 @@ def main():
     Este es el puente entre la capa fog (MQTT) y la capa central (Flower).
     """
     import argparse
+
     ap = argparse.ArgumentParser(description="Fog bridge client (generic)")
     ap.add_argument("--server", default="localhost:8080")
     ap.add_argument("--mqtt-broker", default=MQTT_BROKER)

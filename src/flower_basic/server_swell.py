@@ -23,6 +23,7 @@ try:
     from .swell_model import SwellMLP
 except Exception:  # pragma: no cover
     import sys
+
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from flower_basic.datasets.swell_federated import load_node_split
     from flower_basic.swell_model import SwellMLP
@@ -66,7 +67,9 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
                 parameters_obj = new_parameters[0]
 
             if hasattr(parameters_obj, "tensors"):
-                param_arrays = [fl.common.bytes_to_ndarray(t) for t in parameters_obj.tensors]
+                param_arrays = [
+                    fl.common.bytes_to_ndarray(t) for t in parameters_obj.tensors
+                ]
             else:
                 param_arrays = fl.common.parameters_to_ndarrays(parameters_obj)
 
@@ -89,9 +92,9 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
                     torch_state = {k: torch.tensor(v) for k, v in state_dict.items()}
                     self.global_model.load_state_dict(torch_state, strict=False)
                     loss, acc = _evaluate_global(self.global_model, self.eval_data)
-                    print(f"{TAG} Eval global -> loss: {loss:.4f} | acc: {acc:.4f}")
+                    print(f"{TAG} Global eval -> loss: {loss:.4f} | acc: {acc:.4f}")
                 except Exception as eval_exc:  # pragma: no cover - defensive
-                    print(f"{TAG} Eval failed: {eval_exc}")
+                    print(f"{TAG} Global eval failed: {eval_exc}")
         except Exception as e:
             print(f"{TAG} MQTT publish failed: {e}")
         return new_parameters
@@ -117,7 +120,9 @@ def _load_eval_data(manifest_path: Path) -> Optional[Tuple[np.ndarray, np.ndarra
     return np.concatenate(Xs, axis=0), np.concatenate(ys, axis=0)
 
 
-def _evaluate_global(model: SwellMLP, data: Tuple[np.ndarray, np.ndarray]) -> Tuple[float, float]:
+def _evaluate_global(
+    model: SwellMLP, data: Tuple[np.ndarray, np.ndarray]
+) -> Tuple[float, float]:
     """Compute loss/accuracy on provided data tuple."""
     X, y = data
     device = torch.device("cpu")
@@ -147,16 +152,32 @@ def _evaluate_global(model: SwellMLP, data: Tuple[np.ndarray, np.ndarray]) -> Tu
 def main():
     global MQTT_BROKER, MODEL_TOPIC
     ap = argparse.ArgumentParser(description="SWELL central Flower server")
-    ap.add_argument("--input_dim", type=int, required=True, help="Feature dimension (from manifest)")
+    ap.add_argument(
+        "--input_dim", type=int, required=True, help="Feature dimension (from manifest)"
+    )
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--server_addr", default="0.0.0.0:8080")
     ap.add_argument("--mqtt-broker", default=MQTT_BROKER)
-    ap.add_argument("--mqtt-port", type=int, default=int(os.getenv("MQTT_PORT", "1883")))
-    ap.add_argument("--topic-global", default=MODEL_TOPIC)
-    ap.add_argument("--manifest", type=str, help="Path to manifest.json to enable central evaluation")
-    ap.add_argument("--min-fit-clients", type=int, default=1, help="Min fog bridges required per round")
     ap.add_argument(
-        "--min-available-clients", type=int, default=None, help="Min fog bridges that must be connected"
+        "--mqtt-port", type=int, default=int(os.getenv("MQTT_PORT", "1883"))
+    )
+    ap.add_argument("--topic-global", default=MODEL_TOPIC)
+    ap.add_argument(
+        "--manifest",
+        type=str,
+        help="Path to manifest.json to enable central evaluation",
+    )
+    ap.add_argument(
+        "--min-fit-clients",
+        type=int,
+        default=1,
+        help="Min fog bridges required per round",
+    )
+    ap.add_argument(
+        "--min-available-clients",
+        type=int,
+        default=None,
+        help="Min fog bridges that must be connected",
     )
     args = ap.parse_args()
 
@@ -176,7 +197,11 @@ def main():
         print(f"{TAG} MQTT connection failed: {e}")
         mqtt_client = None
 
-    min_available = args.min_available_clients if args.min_available_clients is not None else args.min_fit_clients
+    min_available = (
+        args.min_available_clients
+        if args.min_available_clients is not None
+        else args.min_fit_clients
+    )
     strategy = MQTTFedAvgSwell(
         model=model,
         mqtt_client=mqtt_client,

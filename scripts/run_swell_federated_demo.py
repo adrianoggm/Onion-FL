@@ -58,15 +58,39 @@ def start_proc(cmd: List[str], cwd: str | None = None) -> subprocess.Popen:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Run SWELL federated demo")
-    ap.add_argument("--manifest", required=True, help="Path to manifest.json produced by prepare_swell_federated.py")
-    ap.add_argument("--rounds", type=int, default=3, help="Federated rounds on the server")
-    ap.add_argument("--clients-per-node", type=int, default=1, help="Number of local clients per fog node")
-    ap.add_argument("--k-per-region", type=int, default=1, help="Broker aggregation K (informational; set same K in broker_fog.py)")
+    ap.add_argument(
+        "--manifest",
+        required=True,
+        help="Path to manifest.json produced by prepare_swell_federated.py",
+    )
+    ap.add_argument(
+        "--rounds", type=int, default=3, help="Federated rounds on the server"
+    )
+    ap.add_argument(
+        "--clients-per-node",
+        type=int,
+        default=1,
+        help="Number of local clients per fog node",
+    )
+    ap.add_argument(
+        "--k-per-region",
+        type=int,
+        default=1,
+        help="Broker aggregation K (informational; set same K in broker_fog.py)",
+    )
     ap.add_argument("--mqtt-broker", default=os.getenv("MQTT_BROKER", "localhost"))
-    ap.add_argument("--mqtt-port", type=int, default=int(os.getenv("MQTT_PORT", "1883")))
-    ap.add_argument("--topic-updates", default=os.getenv("MQTT_TOPIC_UPDATES", "fl/updates"))
-    ap.add_argument("--topic-partial", default=os.getenv("MQTT_TOPIC_PARTIAL", "fl/partial"))
-    ap.add_argument("--topic-global", default=os.getenv("MQTT_TOPIC_GLOBAL", "fl/global_model"))
+    ap.add_argument(
+        "--mqtt-port", type=int, default=int(os.getenv("MQTT_PORT", "1883"))
+    )
+    ap.add_argument(
+        "--topic-updates", default=os.getenv("MQTT_TOPIC_UPDATES", "fl/updates")
+    )
+    ap.add_argument(
+        "--topic-partial", default=os.getenv("MQTT_TOPIC_PARTIAL", "fl/partial")
+    )
+    ap.add_argument(
+        "--topic-global", default=os.getenv("MQTT_TOPIC_GLOBAL", "fl/global_model")
+    )
     args = ap.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
@@ -74,7 +98,9 @@ def main() -> None:
 
     input_dim = manifest.get("meta", {}).get("n_features")
     if input_dim is None:
-        raise RuntimeError("manifest.meta.n_features not found; cannot infer input dimension")
+        raise RuntimeError(
+            "manifest.meta.n_features not found; cannot infer input dimension"
+        )
 
     # Compute node directories
     manifest_dir = Path(args.manifest).parent
@@ -153,10 +179,14 @@ def main() -> None:
                 arr = np.load(train_npz, allow_pickle=True)
                 X = arr.get("X")
                 if X is None or X.size == 0:
-                    print(f"[WARN] Empty train split for {node_name}, skipping client start")
+                    print(
+                        f"[WARN] Empty train split for {node_name}, skipping client start"
+                    )
                     continue
             except Exception as e:
-                print(f"[WARN] Could not inspect train.npz for {node_name}: {e}; skipping")
+                print(
+                    f"[WARN] Could not inspect train.npz for {node_name}: {e}; skipping"
+                )
                 continue
 
             for i in range(args.clients_per_node):
@@ -181,7 +211,9 @@ def main() -> None:
                 procs.append(start_proc(client_cmd))
 
         print("\n[RUNNING] SWELL federated demo is running. Press Ctrl+C to stop.")
-        print(f"[INFO] clients-per-node={args.clients_per_node}, remember to align K in broker_fog.py (current: {args.k_per_region} expected)")
+        print(
+            f"[INFO] clients-per-node={args.clients_per_node}, remember to align K in broker_fog.py (current: {args.k_per_region} expected)"
+        )
         # Wait for all processes; if any exits early, continue until Ctrl+C
         while True:
             time.sleep(0.5)

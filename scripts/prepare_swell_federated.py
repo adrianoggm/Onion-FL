@@ -12,8 +12,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
-
 import sys
 from pathlib import Path
 
@@ -27,8 +25,12 @@ from flower_basic.datasets.swell_federated import plan_and_materialize_swell_fed
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Prepare SWELL federated datasets from config")
-    parser.add_argument("--config", required=True, help="Path to JSON or YAML config file")
+    parser = argparse.ArgumentParser(
+        description="Prepare SWELL federated datasets from config"
+    )
+    parser.add_argument(
+        "--config", required=True, help="Path to JSON or YAML config file"
+    )
     args = parser.parse_args()
 
     result = plan_and_materialize_swell_federated(args.config)

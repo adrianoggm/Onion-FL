@@ -92,18 +92,38 @@ def _launch(commands, delay: float = 1.0) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Lanza la arquitectura fog-cloud desde un config JSON/YAML")
-    parser.add_argument("--config", required=True, help="Ruta al archivo JSON/YAML con federated_architecture")
-    parser.add_argument("--manifest", help="Manifest SWELL para rellenar data_dir por nodo (opcional)")
-    parser.add_argument("--plan-only", action="store_true", help="Solo mostrar plan, no lanzar procesos (por defecto)")
-    parser.add_argument("--launch", action="store_true", help="Lanzar procesos siguiendo el plan")
-    parser.add_argument("--dispatch-config", action="store_true", help="Publicar plan por MQTT en fl/ctrl/plan/<fog_id>")
+    parser = argparse.ArgumentParser(
+        description="Lanza la arquitectura fog-cloud desde un config JSON/YAML"
+    )
+    parser.add_argument(
+        "--config",
+        required=True,
+        help="Ruta al archivo JSON/YAML con federated_architecture",
+    )
+    parser.add_argument(
+        "--manifest", help="Manifest SWELL para rellenar data_dir por nodo (opcional)"
+    )
+    parser.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="Solo mostrar plan, no lanzar procesos (por defecto)",
+    )
+    parser.add_argument(
+        "--launch", action="store_true", help="Lanzar procesos siguiendo el plan"
+    )
+    parser.add_argument(
+        "--dispatch-config",
+        action="store_true",
+        help="Publicar plan por MQTT en fl/ctrl/plan/<fog_id>",
+    )
     parser.add_argument(
         "--prepare-splits",
         action="store_true",
         help="Materializa splits SWELL automáticamente desde el YAML si no hay manifest",
     )
-    parser.add_argument("--delay", type=float, default=1.0, help="Delay entre lanzamientos (segundos)")
+    parser.add_argument(
+        "--delay", type=float, default=1.0, help="Delay entre lanzamientos (segundos)"
+    )
     args = parser.parse_args()
 
     arch = load_architecture_config(args.config)
@@ -125,7 +145,9 @@ def main() -> None:
             )
             if needs_materialization:
                 manifest_path = materialize_swell_partitions(arch, repo_root=REPO_ROOT)
-                print(f"[INFO] Particiones SWELL preparadas automáticamente: {manifest_path}")
+                print(
+                    f"[INFO] Particiones SWELL preparadas automáticamente: {manifest_path}"
+                )
 
     if args.dispatch_config:
         try:
@@ -141,7 +163,9 @@ def main() -> None:
         if mqttc is not None:
             mqttc.loop_stop()
 
-    commands = build_runtime_plan(arch, repo_root=REPO_ROOT, manifest_path=manifest_path)
+    commands = build_runtime_plan(
+        arch, repo_root=REPO_ROOT, manifest_path=manifest_path
+    )
     _print_plan(commands)
 
     should_launch = args.launch

@@ -175,7 +175,9 @@ def load_architecture_config(config_path: str | os.PathLike) -> FederatedArchite
     dataset = None
     if dataset_raw:
         dataset = DatasetConfig(
-            name=str(dataset_raw.get("name", dataset_raw.get("dataset", "swell"))).lower(),
+            name=str(
+                dataset_raw.get("name", dataset_raw.get("dataset", "swell"))
+            ).lower(),
             data_dir=str(dataset_raw.get("data_dir", "data/SWELL")),
             modalities=dataset_raw.get("modalities"),
             subjects=dataset_raw.get("subjects"),
@@ -189,7 +191,9 @@ def load_architecture_config(config_path: str | os.PathLike) -> FederatedArchite
             mode=str(dataset_raw.get("mode", "auto")),
             manual_assignments=dataset_raw.get("manual_assignments"),
             per_node_percentages=dataset_raw.get("per_node_percentages"),
-            ensure_min_train_per_node=bool(dataset_raw.get("ensure_min_train_per_node", True)),
+            ensure_min_train_per_node=bool(
+                dataset_raw.get("ensure_min_train_per_node", True)
+            ),
         )
 
     fog_nodes: List[FogNodeSpec] = []
@@ -217,7 +221,11 @@ def load_architecture_config(config_path: str | os.PathLike) -> FederatedArchite
 
     workflow = _normalize_workflow(root.get("workflow"))
     arch = FederatedArchitecture(
-        orchestrator=orchestrator, fog_nodes=fog_nodes, model=model, dataset=dataset, workflow=workflow
+        orchestrator=orchestrator,
+        fog_nodes=fog_nodes,
+        model=model,
+        dataset=dataset,
+        workflow=workflow,
     )
     _validate_architecture(arch)
     return arch
@@ -233,9 +241,13 @@ def _validate_architecture(arch: FederatedArchitecture) -> None:
             if not client.dataset:
                 raise ValueError(f"Cliente sin dataset en nodo {fog.id}")
     if arch.dataset is not None:
-        total = arch.dataset.split_train + arch.dataset.split_val + arch.dataset.split_test
+        total = (
+            arch.dataset.split_train + arch.dataset.split_val + arch.dataset.split_test
+        )
         if abs(total - 1.0) > 1e-6:
-            raise ValueError("Las proporciones de split (train/val/test) deben sumar 1.0")
+            raise ValueError(
+                "Las proporciones de split (train/val/test) deben sumar 1.0"
+            )
 
 
 def infer_primary_workflow(arch: FederatedArchitecture) -> str:
@@ -254,7 +266,9 @@ def _default_repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _infer_input_dim_from_clients(arch: FederatedArchitecture, repo_root: Path) -> Optional[int]:
+def _infer_input_dim_from_clients(
+    arch: FederatedArchitecture, repo_root: Path
+) -> Optional[int]:
     """Try to infer input_dim from the first available client split (train.npz)."""
     for fog in arch.fog_nodes:
         for client in fog.clients:
@@ -277,13 +291,17 @@ def _infer_input_dim_from_clients(arch: FederatedArchitecture, repo_root: Path) 
     return None
 
 
-def materialize_swell_partitions(arch: FederatedArchitecture, repo_root: Path | None = None) -> Path:
+def materialize_swell_partitions(
+    arch: FederatedArchitecture, repo_root: Path | None = None
+) -> Path:
     """Materialize SWELL federated splits based on the architecture config.
 
     Returns the path to the generated manifest.json and mutates `arch` to fill client.data_dir.
     """
     if arch.dataset is None:
-        raise ValueError("La configuración debe incluir sección 'dataset' para preparar particiones SWELL")
+        raise ValueError(
+            "La configuración debe incluir sección 'dataset' para preparar particiones SWELL"
+        )
 
     from .datasets.swell_federated import plan_and_materialize_swell_federated
 
@@ -347,7 +365,9 @@ def materialize_swell_partitions(arch: FederatedArchitecture, repo_root: Path | 
 
 
 def build_runtime_plan(
-    arch: FederatedArchitecture, repo_root: Path | None = None, manifest_path: Optional[Path | str] = None
+    arch: FederatedArchitecture,
+    repo_root: Path | None = None,
+    manifest_path: Optional[Path | str] = None,
 ) -> List[RuntimeCommand]:
     """Translate architecture into runnable commands (without starting them)."""
     root = repo_root or _default_repo_root()
@@ -371,7 +391,9 @@ def build_runtime_plan(
         if arch.model.input_dim is None and inferred is not None:
             arch.model.input_dim = inferred
         if arch.model.input_dim is None:
-            raise ValueError("model.input_dim es obligatorio para ejecutar el flujo SWELL")
+            raise ValueError(
+                "model.input_dim es obligatorio para ejecutar el flujo SWELL"
+            )
 
     # Validar que todos los clientes usen el mismo workflow primario (una sola jerarquía por run)
     for fog in arch.fog_nodes:
@@ -438,7 +460,9 @@ def build_runtime_plan(
             "--topic-global",
             topics.global_model,
         ]
-    commands.append(RuntimeCommand(role="server", cmd=server_cmd, cwd=str(root), env=_merge_env()))
+    commands.append(
+        RuntimeCommand(role="server", cmd=server_cmd, cwd=str(root), env=_merge_env())
+    )
 
     # Fog bridge client(s)
     if primary == "swell":
@@ -459,7 +483,12 @@ def build_runtime_plan(
                 topics.partial,
             ]
             commands.append(
-                RuntimeCommand(role=f"fog_bridge_{fog.id}", cmd=bridge_cmd, cwd=str(root), env=_merge_env())
+                RuntimeCommand(
+                    role=f"fog_bridge_{fog.id}",
+                    cmd=bridge_cmd,
+                    cwd=str(root),
+                    env=_merge_env(),
+                )
             )
     else:
         bridge_script = root / "src" / "flower_basic" / "fog_flower_client.py"
@@ -475,7 +504,11 @@ def build_runtime_plan(
             "--topic-partial",
             topics.partial,
         ]
-        commands.append(RuntimeCommand(role="fog_bridge", cmd=bridge_cmd, cwd=str(root), env=_merge_env()))
+        commands.append(
+            RuntimeCommand(
+                role="fog_bridge", cmd=bridge_cmd, cwd=str(root), env=_merge_env()
+            )
+        )
 
     # Fog broker
     broker_cmd = [
@@ -495,7 +528,11 @@ def build_runtime_plan(
     ]
     if broker_k_arg is not None:
         broker_cmd.extend(["--k", str(int(broker_k_arg))])
-    commands.append(RuntimeCommand(role="broker", cmd=broker_cmd, env=_merge_env(broker_env), cwd=str(root)))
+    commands.append(
+        RuntimeCommand(
+            role="broker", cmd=broker_cmd, env=_merge_env(broker_env), cwd=str(root)
+        )
+    )
 
     # Clients per fog node
     for fog in arch.fog_nodes:
@@ -511,7 +548,9 @@ def build_runtime_plan(
             }
             if workflow == "swell":
                 if client.data_dir is None:
-                    raise ValueError(f"Cliente {client.id} requiere data_dir para SWELL")
+                    raise ValueError(
+                        f"Cliente {client.id} requiere data_dir para SWELL"
+                    )
                 cmd = [
                     python_exec,
                     "-m",
@@ -532,7 +571,12 @@ def build_runtime_plan(
                     topics.global_model,
                 ]
                 commands.append(
-                    RuntimeCommand(role=f"client_{client.id}", cmd=cmd, env=_merge_env(env_client), cwd=str(root))
+                    RuntimeCommand(
+                        role=f"client_{client.id}",
+                        cmd=cmd,
+                        env=_merge_env(env_client),
+                        cwd=str(root),
+                    )
                 )
             elif workflow == "wesad":
                 client_script = root / "src" / "flower_basic" / "client.py"
@@ -545,7 +589,12 @@ def build_runtime_plan(
                     fog.id,
                 ]
                 commands.append(
-                    RuntimeCommand(role=f"client_{client.id}", cmd=cmd, env=_merge_env(env_client), cwd=str(root))
+                    RuntimeCommand(
+                        role=f"client_{client.id}",
+                        cmd=cmd,
+                        env=_merge_env(env_client),
+                        cwd=str(root),
+                    )
                 )
             else:
                 raise ValueError(f"Workflow no soportado aún: {workflow}")

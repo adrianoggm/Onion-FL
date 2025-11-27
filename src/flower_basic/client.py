@@ -1,22 +1,8 @@
 """
-client.py - Cliente Local de Aprendizaje Federado
+Local federated client over MQTT (WESAD/ECG example).
 
-Este mÃ³dulo implementa clientes locales que:
-1. Entrenan modelos CNN en datos WESAD locales
-2. Publican actualizaciones de modelo vÃ­a MQTT al broker fog
-3. Reciben modelos globales del servidor central vÃ­a MQTT
-
-ARQUITECTURA:
-- Cada cliente entrena en su particiÃ³n local de datos WESAD
-- EnvÃ­a actualizaciones al broker fog vÃ­a topic 'fl/updates'
-- El broker fog agrega K clientes por regiÃ³n antes de enviar al servidor central
-- Recibe modelos globales actualizados vÃ­a topic 'fl/global_model'
-
-FLUJO:
-1. Cliente entrena modelo local por 1 Ã©poca
-2. Publica pesos actualizados al broker fog vÃ­a MQTT
-3. Espera nuevo modelo global del servidor central
-4. Actualiza modelo local y repite
+Trains a CNN locally, publishes updates to the fog broker, and receives global
+models over MQTT.
 """
 
 import argparse
@@ -31,33 +17,29 @@ from .datasets import load_wesad_dataset
 from .model import ECGModel
 
 # -----------------------------------------------------------------------------
-# CONFIGURACIÃN MQTT
+# MQTT CONFIG
 # -----------------------------------------------------------------------------
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
-TOPIC_UPDATES = os.getenv("MQTT_TOPIC_UPDATES", "fl/updates")  # Topic para publicar actualizaciones locales
-TOPIC_GLOBAL_MODEL = os.getenv("MQTT_TOPIC_GLOBAL", "fl/global_model")  # Topic para recibir modelos globales
+TOPIC_UPDATES = os.getenv(
+    "MQTT_TOPIC_UPDATES", "fl/updates"
+)  # Topic to publish local updates
+TOPIC_GLOBAL_MODEL = os.getenv(
+    "MQTT_TOPIC_GLOBAL", "fl/global_model"
+)  # Topic to receive global models
 
 
 # -----------------------------------------------------------------------------
-# CLIENTE LOCAL MQTT
+# LOCAL MQTT CLIENT
 # -----------------------------------------------------------------------------
 class FLClientMQTT:
-    """
-    Cliente de aprendizaje federado que usa MQTT para comunicaciÃ³n.
-
-    Funciones principales:
-    1. Entrenamiento local en datos WESAD particionados
-    2. PublicaciÃ³n de actualizaciones al broker fog
-    3. RecepciÃ³n de modelos globales del servidor central
-    4. SincronizaciÃ³n con la arquitectura fog computing
-    """
+    """Federated MQTT client for local WESAD data."""
 
     def __init__(self):
-        # Inicializar modelo CNN para ECG
+        # Initialize ECG CNN model
         self.model = ECGModel()
 
-        # Cargar y preparar datos locales ECG5000
+        # Load and prepare local data
         X_train, X_test, y_train, y_test = load_wesad_dataset()
         self.train_loader = torch.utils.data.DataLoader(
             torch.utils.data.TensorDataset(
@@ -68,63 +50,46 @@ class FLClientMQTT:
             shuffle=True,
         )
 
-        # Configurar cliente MQTT para comunicaciÃ³n con broker fog
+        # Configure MQTT client
         self.mqtt = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.mqtt.on_connect = self._on_connect
         self.mqtt.on_message = self._on_message
         self.mqtt.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
-        print(f"[CLIENT] Conectado a broker MQTT en {MQTT_BROKER}:{MQTT_PORT}")
+        print(f"[CLIENT] Connected to MQTT broker at {MQTT_BROKER}:{MQTT_PORT}")
 
-        # Iniciar loop MQTT en hilo separado
+        # Start MQTT loop in a separate thread
         self.mqtt.loop_start()
 
-        # Flag para detectar cuando llega un nuevo modelo global
+        # Flag to detect arrival of global model
         self._got_global = False
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):
-        """Callback MQTT al conectarse: suscribirse a modelos globales."""
-        print(
-            f"[CLIENT] MQTT conectado (rc={rc}), suscribiÃ©ndose a {TOPIC_GLOBAL_MODEL}"
-        )
+        """MQTT connect callback: subscribe to global models."""
+        print(f"[CLIENT] MQTT connected (rc={rc}), subscribing to {TOPIC_GLOBAL_MODEL}")
         client.subscribe(TOPIC_GLOBAL_MODEL)
 
     def _on_message(self, client, userdata, msg):
-        """
-        Callback MQTT para procesar modelos globales del servidor central.
-
-        Recibe el modelo global actualizado y lo carga en el modelo local
-        para la prÃ³xima ronda de entrenamiento.
-        """
+        """Handle global model messages from central server."""
         if msg.topic == TOPIC_GLOBAL_MODEL:
             try:
                 payload = json.loads(msg.payload.decode())
-                # payload contiene: {"round": X, "global_weights": {param_name:
-                # [values]}}
                 if "global_weights" in payload:
                     weights_dict = payload["global_weights"]
                     state_dict = {k: torch.tensor(v) for k, v in weights_dict.items()}
                     self.model.load_state_dict(state_dict, strict=True)
                     round_num = payload.get("round", "?")
-                    print(f"[CLIENT] Modelo global cargado de ronda {round_num}")
+                    print(f"[CLIENT] Global model loaded from round {round_num}")
                     self._got_global = True
                 else:
-                    print("[CLIENT] Formato de payload invÃ¡lido recibido")
+                    print("[CLIENT] Invalid payload format received")
             except Exception as e:
-                print(f"[CLIENT] Error procesando mensaje MQTT: {e}")
+                print(f"[CLIENT] Error processing MQTT message: {e}")
 
     def train_one_round(self):
-        """
-        Ejecuta una ronda de entrenamiento local y publica la actualizaciÃ³n.
-
-        Pasos:
-        1. Entrena el modelo local por 1 Ã©poca en datos WESAD
-        2. Serializa los pesos actualizados
-        3. Publica la actualizaciÃ³n al broker fog vÃ­a MQTT
-        4. Espera el prÃ³ximo modelo global del servidor central
-        """
-        # Entrenamiento local por 1 Ã©poca
+        """Run one local training round and publish update."""
+        # One epoch local training
         optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3)
-        criterion = torch.nn.BCEWithLogitsLoss()  # Para clasificaciÃ³n binaria ECG
+        criterion = torch.nn.BCEWithLogitsLoss()  # Binary classification
         self.model.train()
 
         total_loss = 0.0
@@ -132,10 +97,10 @@ class FLClientMQTT:
 
         for X, y in self.train_loader:
             optimizer.zero_grad()
-            # AÃ+/-adir dimensiÃ³n de canal para CNN: (batch, 1, sequence_length)
+            # Add channel dim for CNN: (batch, 1, sequence_length)
             X = X.unsqueeze(1)
-            logits = self.model(X).squeeze()  # Eliminar dimensiones extra
-            loss = criterion(logits, y.float())  # Convertir a float para BCE
+            logits = self.model(X).squeeze()  # Remove extra dims
+            loss = criterion(logits, y.float())
             loss.backward()
             optimizer.step()
 
@@ -143,13 +108,13 @@ class FLClientMQTT:
             num_batches += 1
 
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
-        print(f"[CLIENT] Entrenamiento completado. Loss promedio: {avg_loss:.4f}")
+        print(f"[CLIENT] Training done. Avg loss: {avg_loss:.4f}")
 
-        # Serializar pesos actuales y publicar con metadata
+        # Serialize current weights and publish with metadata
         state = self.model.state_dict()
         payload = {
-            "client_id": f"client_{id(self) % 1000}",  # ID simple del cliente
-            "region": "region_0",  # RegiÃ³n por defecto (puede parametrizarse)
+            "client_id": f"client_{id(self) % 1000}",  # simple client id
+            "region": "region_0",  # default region (overridable)
             "weights": {k: v.cpu().numpy().tolist() for k, v in state.items()},
             "num_samples": (
                 len(self.train_loader.dataset)
@@ -159,62 +124,58 @@ class FLClientMQTT:
             "loss": avg_loss,
         }
         # Region override via env (MQTT_REGION) if provided
-        payload["region"] = os.getenv("MQTT_REGION", payload["region"])  
+        payload["region"] = os.getenv("MQTT_REGION", payload["region"])
 
         self.mqtt.publish(TOPIC_UPDATES, json.dumps(payload))
-        print(f"[CLIENT] ActualizaciÃ³n local publicada en {TOPIC_UPDATES}")
+        print(f"[CLIENT] Local update published to {TOPIC_UPDATES}")
 
-        # Esperar hasta que el broker fog publique un nuevo modelo global
-        print("[CLIENT] Esperando nuevo modelo global...")
+        # Wait for new global model
+        print("[CLIENT] Waiting for new global model...")
         while not self._got_global:
             time.sleep(1)
         self._got_global = False
-        print("[CLIENT] Nuevo modelo global recibido, listo para prÃ³xima ronda")
+        print("[CLIENT] New global model received, ready for next round")
 
     def run(self, rounds: int = 5, delay: float = 5.0):
-        """
-        Bucle principal del cliente: entrenarâpublicarâsincronizarârepetir.
-
-        Args:
-            rounds: NÃºmero de rondas de entrenamiento federado
-            delay: Delay entre rondas (segundos)
-        """
-        print(f"[CLIENT] Iniciando {rounds} rondas de aprendizaje federado")
+        """Main loop: train → publish → sync → repeat."""
+        print(f"[CLIENT] Starting {rounds} federated rounds")
         for rnd in range(1, rounds + 1):
-            print(f"\n=== Ronda {rnd}/{rounds} ===")
+            print(f"\n=== Round {rnd}/{rounds} ===")
             self.train_one_round()
-            if rnd < rounds:  # No hacer delay en la Ãºltima ronda
+            if rnd < rounds:  # No delay after last round
                 time.sleep(delay)
 
-        # Limpieza de conexiones
-        print("[CLIENT] Entrenamiento federado completado, cerrando conexiones")
+        # Cleanup connections
+        print("[CLIENT] Federated training completed, closing connections")
         self.mqtt.loop_stop()
         self.mqtt.disconnect()
 
 
 # -----------------------------------------------------------------------------
-# FUNCIÃN PRINCIPAL: Ejecutar cliente local
+# MAIN: run local client
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
-    """
-    Punto de entrada principal para ejecutar un cliente local.
-
-    Configura y ejecuta un cliente que:
-    - Entrena en datos WESAD locales
-    - Participa en aprendizaje federado vÃ­a MQTT
-    - Se comunica con la arquitectura fog computing
-    """
-    parser = argparse.ArgumentParser(description="Cliente MQTT para flujo WESAD/ECG")
-    parser.add_argument("--rounds", type=int, default=int(os.getenv("CLIENT_ROUNDS", "3")), help="Rondas federadas")
-    parser.add_argument("--delay", type=float, default=float(os.getenv("CLIENT_DELAY", "2.0")), help="Delay entre rondas (s)")
-    parser.add_argument("--region", help="Override para MQTT_REGION (id de nodo fog)")
+    parser = argparse.ArgumentParser(description="MQTT client for WESAD/ECG flow")
+    parser.add_argument(
+        "--rounds",
+        type=int,
+        default=int(os.getenv("CLIENT_ROUNDS", "3")),
+        help="Federated rounds",
+    )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=float(os.getenv("CLIENT_DELAY", "2.0")),
+        help="Delay between rounds (s)",
+    )
+    parser.add_argument("--region", help="Override MQTT_REGION (fog node id)")
     args = parser.parse_args()
 
     if args.region:
         os.environ["MQTT_REGION"] = args.region
 
-    print("=== CLIENTE LOCAL DE APRENDIZAJE FEDERADO ===")
-    print("Iniciando cliente MQTT para fog computing...")
+    print("=== LOCAL FEDERATED CLIENT ===")
+    print("Starting MQTT client for fog computing...")
 
     client = FLClientMQTT()
     client.run(rounds=args.rounds, delay=args.delay)

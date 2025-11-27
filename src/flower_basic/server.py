@@ -1,28 +1,9 @@
 #!/usr/bin/env python3
 """
-server.py - Servidor Central de Aprendizaje Federado con Fog Computing
+Central FL server with fog computing (Flower gRPC + MQTT).
 
-Este servidor actúa como el nodo central en la arquitectura de aprendizaje federado
-con fog computing. Recibe agregados parciales de los nodos fog via Flower gRPC y
-realiza la agregación global usando el algoritmo FedAvg.
-
-ARQUITECTURA:
-- Servidor Flower que maneja comunicación gRPC con nodos fog
-- Cliente MQTT que publica modelos globales a todos los clientes
-- Estrategia FedAvg personalizada que integra MQTT con Flower
-
-FLUJO:
-1. Nodos fog se conectan via Flower gRPC como clientes
-2. Cada nodo fog envía agregado parcial de su región (K clientes)
-3. Servidor agrega todos los parciales usando FedAvg
-4. Publica modelo global actualizado via MQTT topic 'fl/global_model'
-5. Proceso se repite para múltiples rondas de entrenamiento
-
-CONFIGURACIÓN:
-- Puerto Flower: localhost:8080 (gRPC)
-- Broker MQTT: localhost:1883
-- Rondas: 3 por defecto
-- Clientes mínimos: 1 (un nodo fog por región)
+Receives partial aggregates from fog nodes via Flower gRPC and performs
+global aggregation (FedAvg). Publishes the global model via MQTT.
 """
 
 import json
@@ -36,11 +17,11 @@ from .model import ECGModel
 from .utils import state_dict_to_numpy
 
 # -----------------------------------------------------------------------------
-# CONFIGURACIÓN MQTT
+# MQTT CONFIGURATION
 # -----------------------------------------------------------------------------
-UPDATE_TOPIC = "fl/partial"  # Nodos fog publican agregados parciales aquí
-MODEL_TOPIC = "fl/global_model"  # Publicamos el modelo global aquí
-MQTT_BROKER = "localhost"  # Broker MQTT local
+UPDATE_TOPIC = "fl/partial"  # Fog nodes publish partial aggregates here
+MODEL_TOPIC = "fl/global_model"  # Publish global model here
+MQTT_BROKER = "localhost"  # Local MQTT broker
 
 # Environment overrides (optional)
 try:
@@ -52,27 +33,15 @@ except Exception:
 
 
 # -----------------------------------------------------------------------------
-# ESTRATEGIA FEDAVG PERSONALIZADA CON INTEGRACIÓN MQTT
+# FEDAVG STRATEGY WITH MQTT INTEGRATION
 # -----------------------------------------------------------------------------
 class MQTTFedAvg(fl.server.strategy.FedAvg):
     """
-    Estrategia FedAvg personalizada que integra MQTT para fog computing.
-
-    Extiende FedAvg estándar para:
-    - Publicar modelos globales via MQTT después de cada agregación
-    - Manejar comunicación con múltiples regiones fog
-    - Proporcionar logging detallado del proceso de agregación
+    FedAvg strategy that also publishes global models via MQTT.
     """
 
     def __init__(self, model: ECGModel, mqtt_client: Optional[mqtt.Client], **kwargs):
-        """
-        Inicializa estrategia FedAvg con cliente MQTT.
-
-        Args:
-            model: Modelo ECG CNN para referencia de parámetros
-            mqtt_client: Cliente MQTT configurado para publicación
-            **kwargs: Parámetros estándar de FedAvg
-        """
+        """Initialize FedAvg with MQTT client."""
         super().__init__(**kwargs)
         self.global_model = model
         self.mqtt = mqtt_client
@@ -84,25 +53,15 @@ class MQTTFedAvg(fl.server.strategy.FedAvg):
         results: List[Tuple[Any, fl.common.FitRes]],
         failures,
     ) -> Optional[fl.common.Parameters]:
-        """
-        Agrega parámetros de nodos fog y publica modelo global.
-
-        Args:
-            server_round: Número de ronda actual
-            results: Lista de resultados de nodos fog
-            failures: Lista de fallos (no usada)
-
-        Returns:
-            Parámetros agregados o None si falla
-        """
+        """Aggregate fog updates and publish the global model."""
         print(f"\n[SERVER] === RONDA {server_round} DE AGREGACIÓN ===")
-        print(f"[SERVER] Recibidas {len(results)} actualizaciones parciales")
+        print(f"[SERVER] Received {len(results)} partial updates")
 
         # Ejecutar agregación FedAvg estándar
         new_parameters = super().aggregate_fit(server_round, results, failures)
 
         if new_parameters is None:
-            print("[SERVER] ERROR: Agregación falló, parámetros None")
+            print("[SERVER] ERROR: aggregation failed, parameters None")
             return None
 
         try:
@@ -170,21 +129,25 @@ class MQTTFedAvg(fl.server.strategy.FedAvg):
 # -----------------------------------------------------------------------------
 # FUNCIÓN PRINCIPAL
 # -----------------------------------------------------------------------------
-def main():
+def main(argv=None):
     """
     Función principal que configura e inicia el servidor central.
     """
     import argparse
+
+    global MQTT_BROKER, MODEL_TOPIC
     ap = argparse.ArgumentParser(description="Central FL server with MQTT publishing")
     ap.add_argument("--server_addr", default="0.0.0.0:8080")
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--mqtt-broker", default=MQTT_BROKER)
-    ap.add_argument("--mqtt-port", type=int, default=int(os.getenv("MQTT_PORT", "1883")))
+    ap.add_argument(
+        "--mqtt-port", type=int, default=int(os.getenv("MQTT_PORT", "1883"))
+    )
     ap.add_argument("--topic-global", default=MODEL_TOPIC)
-    args = ap.parse_args()
+    args, _ = ap.parse_known_args(argv)
 
-    print(f"[SERVER] Servidor central iniciado en {args.server_addr}")
-    print("[SERVER] Agregando actualizaciones parciales de nodos fog")
+    print(f"[SERVER] Central server started at {args.server_addr}")
+    print("[SERVER] Aggregating partial updates from fog nodes")
 
     # Inicializar modelo ECG
     model = ECGModel()
@@ -192,14 +155,13 @@ def main():
     # Configurar cliente MQTT
     mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     try:
-        global MQTT_BROKER, MODEL_TOPIC
         MQTT_BROKER = args.mqtt_broker
         MODEL_TOPIC = args.topic_global
         mqtt_client.connect(MQTT_BROKER, args.mqtt_port)
         mqtt_client.loop_start()
-        print(f"[SERVER] Conectado a MQTT broker en {MQTT_BROKER}")
+        print(f"[SERVER] Connected to MQTT broker at {MQTT_BROKER}")
     except Exception as e:
-        print(f"[SERVER] MQTT conexión falló: {e}, continuando sin MQTT")
+        print(f"[SERVER] MQTT connection failed: {e}, continuing without MQTT")
         mqtt_client = None
 
     # Crear estrategia FedAvg personalizada
@@ -213,7 +175,7 @@ def main():
         min_available_clients=1,
     )
 
-    print("[SERVER] Esperando clientes fog...")
+    print("[SERVER] Waiting for fog clients...")
 
     # Iniciar servidor Flower
     fl.server.start_server(

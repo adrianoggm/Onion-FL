@@ -21,7 +21,11 @@ def _make_config(workflow: str = "swell") -> dict:
             "mqtt": {
                 "broker": "localhost",
                 "port": 1883,
-                "topics": {"updates": "fl/updates", "partial": "fl/partial", "global_model": "fl/global_model"},
+                "topics": {
+                    "updates": "fl/updates",
+                    "partial": "fl/partial",
+                    "global_model": "fl/global_model",
+                },
             },
         },
         "model": {"type": "swell_mlp", "input_dim": 178},
@@ -30,14 +34,24 @@ def _make_config(workflow: str = "swell") -> dict:
                 "id": "fog_0",
                 "k": 2,
                 "clients": [
-                    {"id": "c1", "dataset": workflow, "rounds": 2, "data_dir": "data/fog_0"},
+                    {
+                        "id": "c1",
+                        "dataset": workflow,
+                        "rounds": 2,
+                        "data_dir": "data/fog_0",
+                    },
                 ],
             },
             {
                 "id": "fog_1",
                 "k": 3,
                 "clients": [
-                    {"id": "c2", "dataset": workflow, "rounds": 2, "data_dir": "data/fog_1"},
+                    {
+                        "id": "c2",
+                        "dataset": workflow,
+                        "rounds": 2,
+                        "data_dir": "data/fog_1",
+                    },
                 ],
             },
         ],

@@ -27,7 +27,9 @@ class BaseMQTTComponent:
         self.mqtt.loop_start()
 
     # Overridable hooks -------------------------------------------------
-    def on_message(self, client, userdata, msg) -> None:  # pragma: no cover - to be overridden
+    def on_message(
+        self, client, userdata, msg
+    ) -> None:  # pragma: no cover - to be overridden
         """Handle MQTT message (override in subclasses)."""
         return None
 
@@ -35,7 +37,9 @@ class BaseMQTTComponent:
     def _on_connect_wrapper(self, client, userdata, flags, rc, properties=None):
         for topic in self._subscriptions:
             client.subscribe(topic)
-        print(f"{self.tag} MQTT connected (rc={rc}). Subscribed to {self._subscriptions}")
+        print(
+            f"{self.tag} MQTT connected (rc={rc}). Subscribed to {self._subscriptions}"
+        )
 
     def _on_message_wrapper(self, client, userdata, msg):
         try:

@@ -49,4 +49,3 @@ def set_parameters(model: nn.Module, parameters) -> None:
         else:
             state_dict[key] = torch.tensor(param)
     model.load_state_dict(state_dict)
-

@@ -73,7 +73,9 @@ def _read_config(config_path: str | os.PathLike) -> FederatedConfig:
         per_node_percentages=federation.get("per_node_percentages"),
         output_dir=federation.get("output_dir", "federated_runs/swell"),
         run_name=federation.get("run_name"),
-        ensure_min_train_per_node=bool(federation.get("ensure_min_train_per_node", True)),
+        ensure_min_train_per_node=bool(
+            federation.get("ensure_min_train_per_node", True)
+        ),
     )
 
     total = cfg.split_train + cfg.split_val + cfg.split_test
@@ -111,7 +113,10 @@ def _split_subjects(
 
 
 def _auto_assign_nodes(
-    all_subjects: List[str], num_nodes: int, percentages: Optional[List[float]], seed: int
+    all_subjects: List[str],
+    num_nodes: int,
+    percentages: Optional[List[float]],
+    seed: int,
 ) -> Dict[str, List[str]]:
     if num_nodes < 1:
         raise ValueError("num_fog_nodes must be >= 1")
@@ -159,7 +164,10 @@ def plan_and_materialize_swell_federated(config_path: str) -> Dict:
     cfg = _read_config(config_path)
 
     X_all, y_all, subjects_all, meta = load_swell_all_samples(
-        data_dir=cfg.data_dir, modalities=cfg.modalities, subjects=cfg.subject_ids, normalize_features=False
+        data_dir=cfg.data_dir,
+        modalities=cfg.modalities,
+        subjects=cfg.subject_ids,
+        normalize_features=False,
     )
     subjects_all = subjects_all.astype(str)
     uniq_subjects = sorted(set(subjects_all.tolist()))
@@ -173,15 +181,22 @@ def plan_and_materialize_swell_federated(config_path: str) -> Dict:
     if cfg.mode == "manual":
         if not cfg.manual_assignments:
             raise ValueError("manual mode requires 'manual_assignments'")
-        node_map = {node: [str(s) for s in subs] for node, subs in cfg.manual_assignments.items()}
+        node_map = {
+            node: [str(s) for s in subs]
+            for node, subs in cfg.manual_assignments.items()
+        }
     else:
-        node_map = _auto_assign_nodes(uniq_subjects, cfg.num_fog_nodes, cfg.per_node_percentages, cfg.seed)
+        node_map = _auto_assign_nodes(
+            uniq_subjects, cfg.num_fog_nodes, cfg.per_node_percentages, cfg.seed
+        )
 
     # Ensure each node has at least one train subject assigned (to avoid empty train splits)
     if cfg.ensure_min_train_per_node:
         tr_set = set(tr_subj)
         # Build counts per node
-        node_tr_counts = {n: len(set(subs).intersection(tr_set)) for n, subs in node_map.items()}
+        node_tr_counts = {
+            n: len(set(subs).intersection(tr_set)) for n, subs in node_map.items()
+        }
         lacking_nodes = [n for n, c in node_tr_counts.items() if c == 0]
         donor_nodes = [n for n, c in node_tr_counts.items() if c > 1]
         for ln in lacking_nodes:
@@ -244,21 +259,32 @@ def plan_and_materialize_swell_federated(config_path: str) -> Dict:
             ss = np.array(sorted(set(node_subjects).intersection(set(split_subjects))))
             if ss.size == 0:
                 # create empty npz (consistent shape handling downstream)
-                np.savez(node_dir / f"{split_name}.npz", X=np.empty((0, X_all.shape[1]), dtype=np.float32), y=np.empty((0,), dtype=np.int64), subjects=np.empty((0,), dtype=object))
+                np.savez(
+                    node_dir / f"{split_name}.npz",
+                    X=np.empty((0, X_all.shape[1]), dtype=np.float32),
+                    y=np.empty((0,), dtype=np.int64),
+                    subjects=np.empty((0,), dtype=object),
+                )
                 continue
 
             mask = np.isin(subjects_all, ss)
             X_split = _apply_scale(X_all[mask])
             y_split = y_all[mask]
             sub_split = subjects_all[mask]
-            np.savez(node_dir / f"{split_name}.npz", X=X_split, y=y_split, subjects=sub_split)
+            np.savez(
+                node_dir / f"{split_name}.npz", X=X_split, y=y_split, subjects=sub_split
+            )
 
     manifest = {
         "config": {
             "data_dir": cfg.data_dir,
             "modalities": cfg.modalities,
             "seed": cfg.seed,
-            "split": {"train": cfg.split_train, "val": cfg.split_val, "test": cfg.split_test},
+            "split": {
+                "train": cfg.split_train,
+                "val": cfg.split_val,
+                "test": cfg.split_test,
+            },
             "scaler": cfg.scaler,
             "mode": cfg.mode,
             "num_fog_nodes": cfg.num_fog_nodes,
@@ -271,16 +297,26 @@ def plan_and_materialize_swell_federated(config_path: str) -> Dict:
             "all": uniq_subjects,
         },
         "nodes": node_map,
-        "meta": {k: v for k, v in meta.items() if k in ("modalities", "n_samples", "n_features", "n_subjects")},
+        "meta": {
+            k: v
+            for k, v in meta.items()
+            if k in ("modalities", "n_samples", "n_features", "n_subjects")
+        },
     }
-    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
     if scaler_payload is not None:
-        (out_dir / "scaler_global.json").write_text(json.dumps(scaler_payload, indent=2), encoding="utf-8")
+        (out_dir / "scaler_global.json").write_text(
+            json.dumps(scaler_payload, indent=2), encoding="utf-8"
+        )
 
     return {"output_dir": str(out_dir), "manifest": manifest}
 
 
-def load_node_split(split_file: str | os.PathLike) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def load_node_split(
+    split_file: str | os.PathLike,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Load a saved npz split (X, y, subjects)."""
     arr = np.load(split_file, allow_pickle=True)
     return arr["X"], arr["y"], arr["subjects"]

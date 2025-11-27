@@ -90,8 +90,7 @@ def _distribution_summary(y: np.ndarray) -> Dict[str, float]:
     if total == 0:
         return {}
     return {
-        str(int(cls)): float(count) / float(total)
-        for cls, count in zip(unique, counts)
+        str(int(cls)): float(count) / float(total) for cls, count in zip(unique, counts)
     }
 
 
@@ -155,7 +154,9 @@ def evaluate_models(
     combined_train_y = np.concatenate([dataset.train.y, dataset.val.y])
 
     for name, estimator in models.items():
-        print(f"\n[Baseline] Training {name} on train subjects: {dataset.train_subjects}")
+        print(
+            f"\n[Baseline] Training {name} on train subjects: {dataset.train_subjects}"
+        )
         model = clone(estimator)
         model.fit(dataset.train.X, dataset.train.y)
 

@@ -57,7 +57,9 @@ def _try_read_csv(path: Path) -> pd.DataFrame:
             # If read as single column and likely semicolon-separated, retry
             if df.shape[1] == 1:
                 # Peek raw first line
-                first_line = path.read_text(encoding=enc, errors="ignore").splitlines()[:1]
+                first_line = path.read_text(encoding=enc, errors="ignore").splitlines()[
+                    :1
+                ]
                 header_line = first_line[0] if first_line else ""
                 if ";" in header_line:
                     df = pd.read_csv(path, encoding=enc, sep=";")
@@ -88,8 +90,10 @@ def _coerce_numeric_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             a_nonnull = a.notna().sum()
 
             # Strategy B: replace thousands '.' and decimal ',' -> '.'
-            b_series = series.astype(str).str.replace(".", "", regex=False).str.replace(
-                ",", ".", regex=False
+            b_series = (
+                series.astype(str)
+                .str.replace(".", "", regex=False)
+                .str.replace(",", ".", regex=False)
             )
             b = pd.to_numeric(b_series, errors="coerce")
             b_nonnull = b.notna().sum()
@@ -100,7 +104,9 @@ def _coerce_numeric_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             c_nonnull = c.notna().sum()
 
             # Pick best
-            best = max([(a_nonnull, a), (b_nonnull, b), (c_nonnull, c)], key=lambda x: x[0])
+            best = max(
+                [(a_nonnull, a), (b_nonnull, b), (c_nonnull, c)], key=lambda x: x[0]
+            )
             result[col] = best[1]
         else:
             # Attempt best-effort coercion
@@ -120,7 +126,15 @@ def _normalize_subject_series(series: pd.Series) -> pd.Series:
     sl = s.str.lower()
 
     # Remove common prefixes
-    for prefix in ["p", "participant", "subject", "id", "pp", "participantno", "participant_id"]:
+    for prefix in [
+        "p",
+        "participant",
+        "subject",
+        "id",
+        "pp",
+        "participantno",
+        "participant_id",
+    ]:
         mask = sl.str.startswith(prefix)
         s.loc[mask] = s.loc[mask].str.replace(prefix, "", case=False, regex=False)
         sl = s.str.lower()
@@ -188,7 +202,9 @@ def load_swell_dataset(
             feature_dir = _cand
             break
     if feature_dir is None:
-        raise SWELLDatasetError(f"SWELL feature directory not found under any of: {_candidates}")
+        raise SWELLDatasetError(
+            f"SWELL feature directory not found under any of: {_candidates}"
+        )
 
     modality_patterns = {
         "computer": [
@@ -243,7 +259,13 @@ def load_swell_dataset(
 
             df.columns = df.columns.str.strip().str.replace(" ", "_").str.lower()
             if "participant" not in df.columns:
-                for subj_col in ["pp", "subject", "participantno", "participant_id", "id"]:
+                for subj_col in [
+                    "pp",
+                    "subject",
+                    "participantno",
+                    "participant_id",
+                    "id",
+                ]:
                     if subj_col in df.columns:
                         df = df.rename(columns={subj_col: "participant"})
                         break
@@ -324,7 +346,9 @@ def load_swell_dataset(
         "trial",
         "c",
     }
-    feature_columns = [col for col in merged_df.columns if col not in meta_candidate_cols]
+    feature_columns = [
+        col for col in merged_df.columns if col not in meta_candidate_cols
+    ]
     features_df = _coerce_numeric_dataframe(merged_df[feature_columns])
 
     conditions = (
@@ -559,6 +583,8 @@ def get_swell_info(data_dir: Union[str, Path] = "data/SWELL") -> Dict:
 # Compatibility aliases for common usage patterns
 load_swell = load_swell_dataset
 partition_swell = partition_swell_by_subjects
+
+
 def load_swell_all_samples(
     data_dir: Union[str, Path] = "data/SWELL",
     modalities: Optional[List[str]] = None,
@@ -626,7 +652,9 @@ def load_swell_all_samples(
             feature_dir = _cand
             break
     if feature_dir is None:
-        raise SWELLDatasetError(f"SWELL feature directory not found under any of: {_candidates}")
+        raise SWELLDatasetError(
+            f"SWELL feature directory not found under any of: {_candidates}"
+        )
 
     modality_patterns = {
         "computer": [
@@ -685,7 +713,13 @@ def load_swell_all_samples(
             df.columns = df.columns.str.strip().str.replace(" ", "_").str.lower()
             if "participant" not in df.columns:
                 # Normalize various subject column names to 'participant'
-                for subj_col in ["pp", "subject", "participantno", "participant_id", "id"]:
+                for subj_col in [
+                    "pp",
+                    "subject",
+                    "participantno",
+                    "participant_id",
+                    "id",
+                ]:
                     if subj_col in df.columns:
                         df = df.rename(columns={subj_col: "participant"})
                         break
@@ -767,7 +801,9 @@ def load_swell_all_samples(
         "trial",
         "c",
     }
-    feature_columns = [col for col in merged_df.columns if col not in meta_candidate_cols]
+    feature_columns = [
+        col for col in merged_df.columns if col not in meta_candidate_cols
+    ]
 
     features_df = _coerce_numeric_dataframe(merged_df[feature_columns])
 
@@ -794,7 +830,9 @@ def load_swell_all_samples(
         "r": 1,
     }
 
-    y = np.array([condition_mapping.get(cond, 1) for cond in conditions], dtype=np.int64)
+    y = np.array(
+        [condition_mapping.get(cond, 1) for cond in conditions], dtype=np.int64
+    )
     if len(np.unique(y)) < 2:
         y = LabelEncoder().fit_transform(conditions)
 
@@ -816,14 +854,19 @@ def load_swell_all_samples(
             UserWarning,
         )
         X = X[:, valid_features]
-        feature_columns = [col for idx, col in enumerate(feature_columns) if valid_features[idx]]
+        feature_columns = [
+            col for idx, col in enumerate(feature_columns) if valid_features[idx]
+        ]
 
     subject_series = merged_df[subject_col].to_numpy()
 
     if normalize_features:
         scaler = StandardScaler()
         X = scaler.fit_transform(X).astype(np.float32)
-        scaler_info = {"scaler_mean": scaler.mean_.astype(float).tolist(), "scaler_scale": scaler.scale_.astype(float).tolist()}
+        scaler_info = {
+            "scaler_mean": scaler.mean_.astype(float).tolist(),
+            "scaler_scale": scaler.scale_.astype(float).tolist(),
+        }
     else:
         scaler_info = None
 
@@ -840,5 +883,3 @@ def load_swell_all_samples(
         info.update(scaler_info)
 
     return X, y, subject_series, info
-
-
