@@ -1,0 +1,60 @@
+federated_architecture:
+  workflow: SWELL  # Flujo principal (SWELL | WESAD | SWEET)
+
+  # El servidor central puede preparar y distribuir las particiones SWELL automáticamente
+  dataset:
+    name: SWELL
+    data_dir: data/SWELL
+    modalities: [computer, facial, posture, physiology]
+    split:
+      train: 0.5
+      val: 0.2
+      test: 0.3
+      seed: 42
+      scaler: global
+    output_dir: federated_runs/swell
+    run_name: example_arch
+    ensure_min_train_per_node: true
+
+  orchestrator:
+    address: "0.0.0.0:8080"
+    rounds: 3
+    protocol: "MQTT"
+    mqtt:
+      broker: "localhost"
+      port: 1883
+      topics:
+        updates: "fl/updates"
+        partial: "fl/partial"
+        global_model: "fl/global_model"
+
+  model:
+    type: "swell_mlp"
+    # Dimensión de entrada del modelo SWELL (se obtiene de manifest.meta.n_features)
+    input_dim: 178
+
+  fog_nodes:
+    - id: fog_0
+      k: 2
+      clients:
+        - id: fog0_c1
+          dataset: "SWELL"
+          rounds: 3
+          # Ruta al nodo materializado por scripts/prepare_swell_federated.py (se rellena automáticamente con --manifest)
+          data_dir: "federated_runs/swell/example_manual/fog_0"
+        - id: fog0_c2
+          dataset: "SWELL"
+          rounds: 3
+          data_dir: "federated_runs/swell/example_manual/fog_0"
+
+    - id: fog_1
+      k: 2
+      clients:
+        - id: fog1_c1
+          dataset: "SWELL"
+          rounds: 3
+          data_dir: "federated_runs/swell/example_manual/fog_1"
+        - id: fog1_c2
+          dataset: "SWELL"
+          rounds: 3
+          data_dir: "federated_runs/swell/example_manual/fog_1"

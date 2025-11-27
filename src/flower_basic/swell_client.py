@@ -51,6 +51,7 @@ class SwellFLClientMQTT:
     ):
         self.node_dir = Path(node_dir)
         self.region = region
+        self.tag = f"[CLIENT {self.region}]"
         self.topic_updates = topic_updates
         self.topic_global = topic_global
 
@@ -101,7 +102,7 @@ class SwellFLClientMQTT:
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         client.subscribe(self.topic_global)
-        print(f"[SWELL-CLIENT] MQTT connected (rc={rc}). Subscribed to {self.topic_global}")
+        print(f"{self.tag} MQTT connected (rc={rc}). Subscribed to {self.topic_global}")
 
     def _on_message(self, client, userdata, msg):
         if msg.topic == self.topic_global:
@@ -114,9 +115,9 @@ class SwellFLClientMQTT:
                     with self._lock:
                         self._pending_global_state = state
                     self._got_global = True
-                    print(f"[SWELL-CLIENT] Global model available (round={payload.get('round','?')})")
+                    print(f"{self.tag} Global model available (round={payload.get('round','?')})")
             except Exception as e:
-                print(f"[SWELL-CLIENT] Error processing global model: {e}")
+                print(f"{self.tag} Error processing global model: {e}")
 
     def train_one_round(self) -> float:
         with self._lock:
@@ -132,7 +133,7 @@ class SwellFLClientMQTT:
                 total += loss.item() * X.size(0)
                 n += X.size(0)
             avg_loss = total / max(n, 1)
-        print(f"[SWELL-CLIENT] Train loss: {avg_loss:.4f}")
+        print(f"{self.tag} Train loss: {avg_loss:.4f}")
         return avg_loss
 
     def evaluate_val(self) -> dict:
@@ -158,7 +159,7 @@ class SwellFLClientMQTT:
             return {}
         val_loss = total / count
         val_acc = correct / count
-        print(f"[SWELL-CLIENT] Val loss: {val_loss:.4f} | Val acc: {val_acc:.3f}")
+        print(f"{self.tag} Val loss: {val_loss:.4f} | Val acc: {val_acc:.3f}")
         return {"val_loss": val_loss, "val_acc": val_acc}
 
     def publish_update(self, avg_loss: float) -> None:
@@ -173,7 +174,7 @@ class SwellFLClientMQTT:
             "loss": float(avg_loss),
         }
         self.mqtt.publish(self.topic_updates, json.dumps(payload))
-        print(f"[SWELL-CLIENT] Local update published to {self.topic_updates}")
+        print(f"{self.tag} Local update published to {self.topic_updates}")
 
     def wait_for_global(self, timeout_s: float = 30.0) -> bool:
         waited = 0.0
@@ -183,11 +184,11 @@ class SwellFLClientMQTT:
             time.sleep(interval)
             waited += interval
         if not self._got_global:
-            print("[SWELL-CLIENT] Timeout waiting for global model. Proceeding.")
+            print(f"{self.tag} Timeout waiting for global model. Proceeding.")
         return self._got_global
 
     def run(self, rounds: int = 3, delay: float = 2.0) -> None:
-        print(f"[SWELL-CLIENT] Starting {rounds} federated rounds (region={self.region})")
+        print(f"{self.tag} Starting {rounds} federated rounds (region={self.region})")
         for r in range(1, rounds + 1):
             print(f"\n=== Round {r}/{rounds} ===")
             avg_loss = self.train_one_round()
@@ -211,7 +212,7 @@ class SwellFLClientMQTT:
                     current.update(self._pending_global_state)
                     self.model.load_state_dict(current, strict=False)
                     self._pending_global_state = None
-                    print("[SWELL-CLIENT] Global model applied")
+                    print(f"{self.tag} Global model applied")
             if r < rounds:
                 time.sleep(delay)
         self.mqtt.loop_stop()

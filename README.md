@@ -81,6 +81,90 @@ Cross-validation artifacts: subject_cv_results/subject_cv_summary.csv and subjec
   - Print the summary inside the runner and compare with a centralised baseline using the same MLP/splits.  
   - Migrate to `flower-superlink` / `flower-supernode` to silence Flower deprecation warnings when upgrading.
 
+- **Config-driven fog–cloud runs**  
+  - Describe the full hierarchy in `configs/federated_architecture.example.yaml` (orchestrator, MQTT topics, fog nodes, clients per fog, K per fog).  
+  - Fill SWELL `data_dir` automatically from a manifest:  
+    ```bash
+    python scripts/run_architecture_from_config.py --config configs/federated_architecture.example.yaml ^
+      --manifest federated_runs\swell\example_manual\manifest.json --plan-only
+    ```  
+  - Or let the orchestrator prepare SWELL splits for you (uses the `dataset` block in the YAML):  
+    ```bash
+    python scripts/run_architecture_from_config.py --config configs/federated_architecture.example.yaml --prepare-splits --plan-only
+    ```  
+  - Launch + broadcast config to fog nodes via MQTT `fl/ctrl/plan/<fog_id>`:  
+    ```bash
+    python scripts/run_architecture_from_config.py --config configs/federated_architecture.example.yaml ^
+      --manifest federated_runs\swell\example_manual\manifest.json --dispatch-config --launch
+    ```  
+  - The fog broker now supports per-region K thresholds through `FOG_K_MAP` (JSON map of `{fog_id: k}`).
+
+### Esquema de flujo (Mermaid)
+
+```mermaid
+flowchart TD
+  A[Config YAML/JSON<br/>federated_architecture] --> B{Orchestrator}
+  B -->|Lee config| C[Materializa splits SWELL<br/>(manifest.json)]
+  B -->|envía plan<br/>fl/ctrl/plan/{fog}| D[Fog Bridge fog_0]
+  B -->|envía plan<br/>fl/ctrl/plan/{fog}| E[Fog Bridge fog_1]
+  C --> F1[fog_0 node_dir]
+  C --> F2[fog_1 node_dir]
+
+  subgraph Region_fog_0
+    F1 --> G1[Clients fog_0 (swell_client)]
+    G1 -->|MQTT fl/updates| H((Fog Broker))
+  end
+
+  subgraph Region_fog_1
+    F2 --> G2[Clients fog_1 (swell_client)]
+    G2 -->|MQTT fl/updates| H
+  end
+
+  H -->|Agrega K por región<br/>MQTT fl/partial| D
+  H -->|Agrega K por región<br/>MQTT fl/partial| E
+  D -->|Flower gRPC| S[Server SWELL]
+  E -->|Flower gRPC| S
+  S -->|MQTT fl/global_model| G1
+  S -->|MQTT fl/global_model| G2
+
+#### Tracing por capas (con colores)
+
+```mermaid
+flowchart LR
+  classDef central fill:#1f77b4,stroke:#0f3c60,color:#fff;
+  classDef bridge fill:#9467bd,stroke:#4b335e,color:#fff;
+  classDef broker fill:#2ca02c,stroke:#145014,color:#fff;
+  classDef client fill:#ff7f0e,stroke:#8a4107,color:#fff;
+
+  srv([🖥️ Servidor Central<br/>server_swell.py]):::central
+  fb0([🌫️ Bridge fog_0<br/>fog_flower_client_swell.py]):::bridge
+  fb1([🌫️ Bridge fog_1<br/>fog_flower_client_swell.py]):::bridge
+  brk([🤖 Broker Fog<br/>broker_fog.py]):::broker
+  c0a([🔬 Cliente fog_0_a<br/>swell_client.py]):::client
+  c0b([🔬 Cliente fog_0_b<br/>swell_client.py]):::client
+  c1a([🔬 Cliente fog_1_a<br/>swell_client.py]):::client
+  c1b([🔬 Cliente fog_1_b<br/>swell_client.py]):::client
+
+  c0a -- fl/updates --> brk
+  c0b -- fl/updates --> brk
+  c1a -- fl/updates --> brk
+  c1b -- fl/updates --> brk
+
+  brk -- fl/partial (fog_0) --> fb0
+  brk -- fl/partial (fog_1) --> fb1
+
+  fb0 -- gRPC parciales --> srv
+  fb1 -- gRPC parciales --> srv
+
+  srv -- fl/global_model --> fb0
+  srv -- fl/global_model --> fb1
+  fb0 -- fl/global_model --> c0a
+  fb0 -- fl/global_model --> c0b
+  fb1 -- fl/global_model --> c1a
+  fb1 -- fl/global_model --> c1b
+```
+```
+
 **Modern Python Federated Learning Framework** following current PEP standards with comprehensive type hints, automated testing, and production-ready architecture.
 
 This repository implements a **federated learning with fog computing** prototype using [Flower](https://flower.ai) and MQTT. It demonstrates a hierarchical aggregation architecture using advanced ML models trained on **WESAD** (physiological stress detection) and **SWELL** (multimodal stress detection) datasets.

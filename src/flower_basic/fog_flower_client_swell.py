@@ -37,6 +37,7 @@ class FogClientSwell(fl.client.NumPyClient):
         self,
         server_address: str,
         input_dim: int,
+        region: str,
         mqtt_broker: str = MQTT_BROKER,
         mqtt_port: int = MQTT_PORT,
         partial_topic: str = PARTIAL_TOPIC,
@@ -46,29 +47,34 @@ class FogClientSwell(fl.client.NumPyClient):
         self.param_names = list(self.model.state_dict().keys())
         self.partial_weights = None
         self.partial_topic = partial_topic
+        self.region = region
+        self.tag = f"[BRIDGE {self.region}]"
 
         self.mqtt = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.mqtt.on_connect = self._on_connect
         self.mqtt.on_message = self._on_partial
         self.mqtt.connect(mqtt_broker, mqtt_port)
         self.mqtt.loop_start()
-        print(f"[FOG_CLIENT_SWELL] Listening for partials on {self.partial_topic}")
+        print(f"{self.tag} Listening for partials on {self.partial_topic}")
 
     def _on_partial(self, client, userdata, msg):
         try:
             data = json.loads(msg.payload.decode())
             self.partial_weights = data.get("partial_weights")
             region = data.get("region", "unknown")
-            print(f"[FOG_CLIENT_SWELL] Partial aggregate received for region={region}")
+            if region != self.region:
+                # Ignorar agregados de otras regiones; otro fog_bridge los consumirá
+                return
+            print(f"{self.tag} Partial aggregate received for region={region}")
         except Exception as e:
-            print(f"[FOG_CLIENT_SWELL] Error processing partial: {e}")
+            print(f"{self.tag} Error processing partial: {e}")
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         if rc == 0:
             client.subscribe(self.partial_topic)
-            print(f"[FOG_CLIENT_SWELL] Subscribed to: {self.partial_topic}")
+            print(f"{self.tag} Subscribed to: {self.partial_topic}")
         else:
-            print(f"[FOG_CLIENT_SWELL] MQTT connect error: {rc}")
+            print(f"{self.tag} MQTT connect error: {rc}")
 
     def get_parameters(self, config):
         return get_parameters(self.model)
@@ -81,12 +87,12 @@ class FogClientSwell(fl.client.NumPyClient):
             time.sleep(0.5)
             waited += 0.5
         if self.partial_weights is None:
-            print("[FOG_CLIENT_SWELL] Timeout waiting for partial")
+            print(f"{self.tag} Timeout waiting for partial")
             return get_parameters(self.model), 1, {}
         partial_list = [np.array(self.partial_weights[name], dtype=np.float32) for name in self.param_names]
         self.partial_weights = None
         num_samples = 1000
-        print(f"[FOG_CLIENT_SWELL] Forwarding partial to central server")
+        print(f"{self.tag} Forwarding partial to central server")
         return partial_list, num_samples, {}
 
     def evaluate(self, parameters, config):
@@ -98,6 +104,7 @@ def main():
     ap = argparse.ArgumentParser(description="Fog bridge client for SWELL")
     ap.add_argument("--input_dim", type=int, required=True, help="Feature dimension (from manifest)")
     ap.add_argument("--server", default="localhost:8080")
+    ap.add_argument("--region", required=True, help="Fog region id this bridge represents (e.g., fog_0)")
     ap.add_argument("--mqtt-broker", default=MQTT_BROKER)
     ap.add_argument("--mqtt-port", type=int, default=MQTT_PORT)
     ap.add_argument("--topic-partial", default=PARTIAL_TOPIC)
@@ -109,6 +116,7 @@ def main():
         client=FogClientSwell(
             args.server,
             args.input_dim,
+            region=args.region,
             mqtt_broker=args.mqtt_broker,
             mqtt_port=args.mqtt_port,
             partial_topic=args.topic_partial,

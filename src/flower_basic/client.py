@@ -19,6 +19,7 @@ FLUJO:
 4. Actualiza modelo local y repite
 """
 
+import argparse
 import json
 import os
 import time
@@ -203,8 +204,17 @@ if __name__ == "__main__":
     - Participa en aprendizaje federado vÃ­a MQTT
     - Se comunica con la arquitectura fog computing
     """
+    parser = argparse.ArgumentParser(description="Cliente MQTT para flujo WESAD/ECG")
+    parser.add_argument("--rounds", type=int, default=int(os.getenv("CLIENT_ROUNDS", "3")), help="Rondas federadas")
+    parser.add_argument("--delay", type=float, default=float(os.getenv("CLIENT_DELAY", "2.0")), help="Delay entre rondas (s)")
+    parser.add_argument("--region", help="Override para MQTT_REGION (id de nodo fog)")
+    args = parser.parse_args()
+
+    if args.region:
+        os.environ["MQTT_REGION"] = args.region
+
     print("=== CLIENTE LOCAL DE APRENDIZAJE FEDERADO ===")
     print("Iniciando cliente MQTT para fog computing...")
 
     client = FLClientMQTT()
-    client.run(rounds=3, delay=2.0)
+    client.run(rounds=args.rounds, delay=args.delay)

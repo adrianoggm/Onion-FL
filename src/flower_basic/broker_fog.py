@@ -45,7 +45,9 @@ MQTT_BROKER = "localhost"
 MQTT_PORT = 1883
 
 # Número de actualizaciones por región antes de computar agregado parcial
+# K_MAP permite definir un umbral distinto por región (e.g., {"fog_1": 2, "fog_2": 3})
 K = 3
+K_MAP: Dict[str, int] = {}
 
 # -----------------------------------------------------------------------------
 # BUFFERS DE AGREGACIÓN POR REGIÓN
@@ -61,6 +63,13 @@ try:
     MQTT_BROKER = os.getenv("MQTT_BROKER", MQTT_BROKER)
     MQTT_PORT = int(os.getenv("MQTT_PORT", str(MQTT_PORT)))
     K = int(os.getenv("FOG_K", str(K)))
+    _k_map_env = os.getenv("FOG_K_MAP")
+    if _k_map_env:
+        try:
+            parsed = json.loads(_k_map_env)
+            K_MAP = {str(k): int(v) for k, v in parsed.items()}
+        except Exception:
+            K_MAP = {}
 except Exception:
     pass
 
@@ -124,13 +133,14 @@ def on_update(client, userdata, msg):
 
         # Almacenar actualización en buffer de la región
         buffers[region].append(weights)
+        region_k = K_MAP.get(region, K)
         print(
             f"[BROKER] Actualización recibida de cliente={client_id}, region={region}. "
-            f"Buffer: {len(buffers[region])}/{K}"
+            f"Buffer: {len(buffers[region])}/{region_k}"
         )
 
         # Cuando se acumulan K actualizaciones, computar agregado parcial
-        if len(buffers[region]) >= K:
+        if len(buffers[region]) >= region_k:
             partial = weighted_average(buffers[region])
             buffers[region].clear()
 
@@ -177,6 +187,12 @@ def main():
         help="Updates per region before computing partial aggregate",
     )
     parser.add_argument(
+        "--k-map",
+        type=str,
+        default=os.getenv("FOG_K_MAP"),
+        help="JSON mapping {region: k_value} to override K per region",
+    )
+    parser.add_argument(
         "--mqtt-broker",
         default=os.getenv("MQTT_BROKER", MQTT_BROKER),
         help="MQTT broker host",
@@ -205,6 +221,14 @@ def main():
     args = parser.parse_args()
 
     K = max(1, int(args.k))
+    if args.k_map:
+        try:
+            parsed = json.loads(args.k_map)
+            K_MAP.clear()
+            K_MAP.update({str(k): max(1, int(v)) for k, v in parsed.items()})
+        except Exception as exc:  # pragma: no cover - defensive
+            print(f"[BROKER] Ignorando k-map inválido: {exc}")
+
     MQTT_BROKER = args.mqtt_broker
     MQTT_PORT = int(args.mqtt_port)
     UPDATE_TOPIC = args.topic_updates
