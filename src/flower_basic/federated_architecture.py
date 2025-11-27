@@ -355,6 +355,16 @@ def build_runtime_plan(
     mqtt = arch.orchestrator.mqtt
     topics = mqtt.topics
     primary = infer_primary_workflow(arch)
+    py_path = str(root / "src")
+    if os.getenv("PYTHONPATH"):
+        py_path = py_path + os.pathsep + os.getenv("PYTHONPATH")
+    env_path = {"PYTHONPATH": py_path}
+
+    def _merge_env(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+        env = env_path.copy()
+        if extra:
+            env.update(extra)
+        return env
 
     if primary == "swell":
         inferred = _infer_input_dim_from_clients(arch, root)
@@ -391,10 +401,10 @@ def build_runtime_plan(
 
     # Central server
     if primary == "swell":
-        server_script = root / "src" / "flower_basic" / "server_swell.py"
         server_cmd = [
             python_exec,
-            str(server_script),
+            "-m",
+            "flower_basic.servers.swell",
             "--input_dim",
             str(int(arch.model.input_dim)),
             "--rounds",
@@ -413,10 +423,10 @@ def build_runtime_plan(
         if manifest_path is not None:
             server_cmd.extend(["--manifest", str(manifest_path)])
     else:
-        server_script = root / "src" / "flower_basic" / "server.py"
         server_cmd = [
             python_exec,
-            str(server_script),
+            "-m",
+            "flower_basic.server",
             "--server_addr",
             arch.orchestrator.address,
             "--rounds",
@@ -428,15 +438,15 @@ def build_runtime_plan(
             "--topic-global",
             topics.global_model,
         ]
-    commands.append(RuntimeCommand(role="server", cmd=server_cmd, cwd=str(root)))
+    commands.append(RuntimeCommand(role="server", cmd=server_cmd, cwd=str(root), env=_merge_env()))
 
     # Fog bridge client(s)
     if primary == "swell":
-        bridge_script = root / "src" / "flower_basic" / "fog_flower_client_swell.py"
         for fog in arch.fog_nodes:
             bridge_cmd = [
                 python_exec,
-                str(bridge_script),
+                "-m",
+                "flower_basic.clients.fog_bridge_swell",
                 "--input_dim",
                 str(int(arch.model.input_dim)),
                 "--region",
@@ -448,7 +458,9 @@ def build_runtime_plan(
                 "--topic-partial",
                 topics.partial,
             ]
-            commands.append(RuntimeCommand(role=f"fog_bridge_{fog.id}", cmd=bridge_cmd, cwd=str(root)))
+            commands.append(
+                RuntimeCommand(role=f"fog_bridge_{fog.id}", cmd=bridge_cmd, cwd=str(root), env=_merge_env())
+            )
     else:
         bridge_script = root / "src" / "flower_basic" / "fog_flower_client.py"
         bridge_cmd = [
@@ -463,13 +475,13 @@ def build_runtime_plan(
             "--topic-partial",
             topics.partial,
         ]
-        commands.append(RuntimeCommand(role="fog_bridge", cmd=bridge_cmd, cwd=str(root)))
+        commands.append(RuntimeCommand(role="fog_bridge", cmd=bridge_cmd, cwd=str(root), env=_merge_env()))
 
     # Fog broker
-    broker_script = root / "src" / "flower_basic" / "broker_fog.py"
     broker_cmd = [
         python_exec,
-        str(broker_script),
+        "-m",
+        "flower_basic.brokers.fog",
         "--mqtt-broker",
         mqtt.broker,
         "--mqtt-port",
@@ -483,13 +495,13 @@ def build_runtime_plan(
     ]
     if broker_k_arg is not None:
         broker_cmd.extend(["--k", str(int(broker_k_arg))])
-    commands.append(RuntimeCommand(role="broker", cmd=broker_cmd, env=broker_env, cwd=str(root)))
+    commands.append(RuntimeCommand(role="broker", cmd=broker_cmd, env=_merge_env(broker_env), cwd=str(root)))
 
     # Clients per fog node
     for fog in arch.fog_nodes:
         for client in fog.clients:
             workflow = _normalize_workflow(client.workflow or client.dataset) or primary
-            base_env = {
+            env_client = {
                 "MQTT_BROKER": mqtt.broker,
                 "MQTT_PORT": str(mqtt.port),
                 "MQTT_TOPIC_UPDATES": topics.updates,
@@ -500,10 +512,10 @@ def build_runtime_plan(
             if workflow == "swell":
                 if client.data_dir is None:
                     raise ValueError(f"Cliente {client.id} requiere data_dir para SWELL")
-                client_script = root / "src" / "flower_basic" / "swell_client.py"
                 cmd = [
                     python_exec,
-                    str(client_script),
+                    "-m",
+                    "flower_basic.clients.swell",
                     "--node_dir",
                     str(client.data_dir),
                     "--region",
@@ -519,7 +531,9 @@ def build_runtime_plan(
                     "--topic-global",
                     topics.global_model,
                 ]
-                commands.append(RuntimeCommand(role=f"client_{client.id}", cmd=cmd, env=base_env, cwd=str(root)))
+                commands.append(
+                    RuntimeCommand(role=f"client_{client.id}", cmd=cmd, env=_merge_env(env_client), cwd=str(root))
+                )
             elif workflow == "wesad":
                 client_script = root / "src" / "flower_basic" / "client.py"
                 cmd = [
@@ -530,7 +544,9 @@ def build_runtime_plan(
                     "--region",
                     fog.id,
                 ]
-                commands.append(RuntimeCommand(role=f"client_{client.id}", cmd=cmd, env=base_env, cwd=str(root)))
+                commands.append(
+                    RuntimeCommand(role=f"client_{client.id}", cmd=cmd, env=_merge_env(env_client), cwd=str(root))
+                )
             else:
                 raise ValueError(f"Workflow no soportado aún: {workflow}")
 

@@ -20,10 +20,12 @@ from pathlib import Path
 
 # Support running as script: add src to path and import absolute package
 try:
+    from .clients.baseclient import BaseMQTTComponent
     from .swell_model import SwellMLP, get_parameters, set_parameters
 except Exception:  # pragma: no cover
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from flower_basic.clients.baseclient import BaseMQTTComponent
     from flower_basic.swell_model import SwellMLP, get_parameters, set_parameters
 
 
@@ -32,7 +34,7 @@ MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 PARTIAL_TOPIC = os.getenv("MQTT_TOPIC_PARTIAL", "fl/partial")
 
 
-class FogClientSwell(fl.client.NumPyClient):
+class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
     def __init__(
         self,
         server_address: str,
@@ -49,15 +51,10 @@ class FogClientSwell(fl.client.NumPyClient):
         self.partial_topic = partial_topic
         self.region = region
         self.tag = f"[BRIDGE {self.region}]"
-
-        self.mqtt = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-        self.mqtt.on_connect = self._on_connect
-        self.mqtt.on_message = self._on_partial
-        self.mqtt.connect(mqtt_broker, mqtt_port)
-        self.mqtt.loop_start()
+        super().__init__(tag=self.tag, mqtt_broker=mqtt_broker, mqtt_port=mqtt_port, subscriptions=[self.partial_topic])
         print(f"{self.tag} Listening for partials on {self.partial_topic}")
 
-    def _on_partial(self, client, userdata, msg):
+    def on_message(self, client, userdata, msg):
         try:
             data = json.loads(msg.payload.decode())
             self.partial_weights = data.get("partial_weights")
@@ -68,13 +65,6 @@ class FogClientSwell(fl.client.NumPyClient):
             print(f"{self.tag} Partial aggregate received for region={region}")
         except Exception as e:
             print(f"{self.tag} Error processing partial: {e}")
-
-    def _on_connect(self, client, userdata, flags, rc, properties=None):
-        if rc == 0:
-            client.subscribe(self.partial_topic)
-            print(f"{self.tag} Subscribed to: {self.partial_topic}")
-        else:
-            print(f"{self.tag} MQTT connect error: {rc}")
 
     def get_parameters(self, config):
         return get_parameters(self.model)

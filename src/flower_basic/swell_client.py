@@ -24,11 +24,13 @@ from torch.utils.data import DataLoader, TensorDataset
 try:
     from .datasets.swell_federated import load_node_split
     from .swell_model import SwellMLP
+    from .clients.baseclient import BaseMQTTComponent
 except Exception:  # pragma: no cover
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from flower_basic.datasets.swell_federated import load_node_split
     from flower_basic.swell_model import SwellMLP
+    from flower_basic.clients.baseclient import BaseMQTTComponent
 
 
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
@@ -37,7 +39,7 @@ TOPIC_UPDATES = os.getenv("MQTT_TOPIC_UPDATES", "fl/updates")
 TOPIC_GLOBAL_MODEL = os.getenv("MQTT_TOPIC_GLOBAL", "fl/global_model")
 
 
-class SwellFLClientMQTT:
+class SwellFLClientMQTT(BaseMQTTComponent):
     def __init__(
         self,
         node_dir: str,
@@ -89,22 +91,13 @@ class SwellFLClientMQTT:
         # Metrics output path
         self.metrics_path = self.node_dir / "val_metrics.jsonl"
 
-        # MQTT
-        self.mqtt = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-        self.mqtt.on_connect = self._on_connect
-        self.mqtt.on_message = self._on_message
-        self.mqtt.connect(mqtt_broker, mqtt_port, keepalive=60)
-        self.mqtt.loop_start()
+        super().__init__(tag=self.tag, mqtt_broker=mqtt_broker, mqtt_port=mqtt_port, subscriptions=[self.topic_global])
         self._got_global = False
         # Protect model updates from MQTT callback during training
         self._lock = threading.Lock()
         self._pending_global_state = None
 
-    def _on_connect(self, client, userdata, flags, rc, properties=None):
-        client.subscribe(self.topic_global)
-        print(f"{self.tag} MQTT connected (rc={rc}). Subscribed to {self.topic_global}")
-
-    def _on_message(self, client, userdata, msg):
+    def on_message(self, client, userdata, msg):
         if msg.topic == self.topic_global:
             try:
                 payload = json.loads(msg.payload.decode())
@@ -215,8 +208,7 @@ class SwellFLClientMQTT:
                     print(f"{self.tag} Global model applied")
             if r < rounds:
                 time.sleep(delay)
-        self.mqtt.loop_stop()
-        self.mqtt.disconnect()
+        self.stop_mqtt()
 
 
 def main():
