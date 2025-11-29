@@ -259,6 +259,9 @@ class TestSWELLDataset:
     def test_swell_dataset_error_handling(self, tmp_path: Path):
         """Test SWELL dataset error handling for various failure modes."""
 
+        if not Path("data/SWELL").exists():
+            pytest.skip("SWELL dataset not available")
+
         # Test missing directory
         with pytest.raises(SWELLDatasetError, match="directory not found"):
             load_swell_dataset(data_dir="nonexistent/path")
@@ -271,7 +274,7 @@ class TestSWELLDataset:
 
         # Test invalid subjects
         with pytest.raises(ValueError, match="Subject IDs must be between 1 and 25"):
-            load_swell_dataset(subjects=[0, 30])
+            load_swell_dataset(subjects=[0, 30], data_dir=data_dir)
 
         # Test invalid test_size
         with pytest.raises(ValueError, match="test_size must be between"):
