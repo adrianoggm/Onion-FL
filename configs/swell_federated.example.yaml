@@ -1,0 +1,25 @@
+dataset:
+  data_dir: data/SWELL
+  modalities: [computer, facial, posture, physiology]
+  subjects: null  # opcional: lista de sujetos para limitar
+
+split:
+  train: 0.5
+  val: 0.2
+  test: 0.3
+  seed: 42
+  scaler: global  # global | none
+
+federation:
+  mode: manual   # manual | auto
+  # manual_assignments tiene prioridad cuando mode=manual
+  manual_assignments:
+    fog_0: [1, 2, 3, 4, 5, 6]
+    fog_1: [7, 8, 9, 10, 11, 12]
+    fog_2: [13, 14, 15, 16, 17, 18]
+  # si mode=auto, usar num_fog_nodes y per_node_percentages
+  num_fog_nodes: 3
+  per_node_percentages: [0.34, 0.33, 0.33]
+  output_dir: federated_runs/swell
+  run_name: example_manual
+

@@ -25,6 +25,8 @@
 | SWELL (computer interaction) | Random Forest | 0.992 | 0.991 | 20 | 5 |
 | Combined (multimodal) | Logistic Regression | 0.908 | 0.906 | 24 train / 6 val | 10 |
 | Combined (multimodal) | Random Forest | 0.975 | 0.975 | 24 train / 6 val | 10 |
+| SWEET (sample subjects) | Logistic Regression | 0.447 | 0.415 | 6 train / 2 val | 2 |
+| SWEET (sample subjects) | Random Forest | 0.566 | 0.479 | 6 train / 2 val | 2 |
 
 The combined evaluation uses subject-disjoint train/validation/test splits; the train column shows subjects in the training fold (validation adds 6 more). Detailed metrics live in `multi_dataset_demo_report.json` and `multimodal_baseline_results.json`.
 
@@ -38,8 +40,130 @@ The combined evaluation uses subject-disjoint train/validation/test splits; the 
 | SWELL (computer interaction) | Random Forest | 0.989 +/- 0.006 | 0.987 +/- 0.008 |
 | Combined (multimodal) | Logistic Regression | 0.931 +/- 0.026 | 0.928 +/- 0.029 |
 | Combined (multimodal) | Random Forest | 0.945 +/- 0.033 | 0.941 +/- 0.037 |
+| SWEET (sample subjects) | Logistic Regression | 0.596 +/- 0.132 | 0.542 +/- 0.088 |
+| SWEET (sample subjects) | Random Forest | 0.512 +/- 0.107 | 0.438 +/- 0.083 |
 
 Cross-validation artifacts: subject_cv_results/subject_cv_summary.csv and subject_cv_results/subject_cv_summary.json.
+
+### SWELL Federated Run (Oct 2025)
+
+- **Preparation**  
+  - `scripts/prepare_swell_federated.py --config configs/swell_federated.example.yaml`  
+  - Subject ID normalisation (`P01` → `1`) and automatic separator/decimal detection.  
+  - `federation.ensure_min_train_per_node = true` to guarantee at least one train subject per fog node.  
+  - Output artefacts: `federated_runs/swell/example_manual/{fog_*}/(train|val|test).npz`, `manifest.json`, `scaler_global.json`.
+
+- **Federated execution**  
+  - MQTT + fog broker + fog bridge + Flower server + SWELL clients.  
+  - Last run (3 rounds, 2 clients per region, K=2):
+    ```powershell
+    python scripts/run_swell_federated_demo.py `
+      --manifest federated_runs\swell\example_manual\manifest.json `
+      --rounds 3 `
+      --clients-per-node 2 `
+      --k-per-region 2 `
+      --mqtt-broker localhost `
+      --mqtt-port 1883 `
+      --topic-updates fl/updates `
+      --topic-partial fl/partial `
+      --topic-global fl/global_model
+    ```
+  - Each client evaluates `val.npz` every round; metrics logged to `federated_runs/swell/example_manual/fog_*/val_metrics.jsonl`.
+
+- **Aggregated results**  
+  - Consolidated summary: `federated_runs/swell/example_manual/metrics_summary.json` (per node, latest metrics).  
+  - Example validation trends:  
+    - `fog_0`: val_loss ≈ 13.1 → 10.2 → 12.6 ; val_acc ≈ 0.48–0.51  
+    - `fog_1`: val_loss ≈ 12.4 → 7.6 → 18.4 ; val_acc ≈ 0.55  
+    - `fog_2`: val_loss ≈ 12.1 → 12.4 → 15.1 ; val_acc ≈ 0.45–0.56
+
+- **Next steps**  
+  - Print the summary inside the runner and compare with a centralised baseline using the same MLP/splits.  
+  - Migrate to `flower-superlink` / `flower-supernode` to silence Flower deprecation warnings when upgrading.
+
+- **Config-driven fog–cloud runs**  
+  - Describe the full hierarchy in `configs/federated_architecture.example.yaml` (orchestrator, MQTT topics, fog nodes, clients per fog, K per fog).  
+  - Fill SWELL `data_dir` automatically from a manifest:  
+    ```bash
+    python scripts/run_architecture_from_config.py --config configs/federated_architecture.example.yaml ^
+      --manifest federated_runs\swell\example_manual\manifest.json --plan-only
+    ```  
+  - Or let the orchestrator prepare SWELL splits for you (uses the `dataset` block in the YAML):  
+    ```bash
+    python scripts/run_architecture_from_config.py --config configs/federated_architecture.example.yaml --prepare-splits --plan-only
+    ```  
+  - Launch + broadcast config to fog nodes via MQTT `fl/ctrl/plan/<fog_id>`:  
+    ```bash
+    python scripts/run_architecture_from_config.py --config configs/federated_architecture.example.yaml ^
+      --manifest federated_runs\swell\example_manual\manifest.json --dispatch-config --launch
+    ```  
+  - The fog broker now supports per-region K thresholds through `FOG_K_MAP` (JSON map of `{fog_id: k}`).
+
+### Esquema de flujo (Mermaid)
+
+```mermaid
+flowchart TD
+  A[Config YAML/JSON<br/>federated_architecture] --> B{Orchestrator}
+  B -->|Lee config| C[Materializa splits SWELL<br/>(manifest.json)]
+  B -->|envía plan<br/>fl/ctrl/plan/{fog}| D[Fog Bridge fog_0]
+  B -->|envía plan<br/>fl/ctrl/plan/{fog}| E[Fog Bridge fog_1]
+  C --> F1[fog_0 node_dir]
+  C --> F2[fog_1 node_dir]
+
+  subgraph Region_fog_0
+    F1 --> G1[Clients fog_0 (swell_client)]
+    G1 -->|MQTT fl/updates| H((Fog Broker))
+  end
+
+  subgraph Region_fog_1
+    F2 --> G2[Clients fog_1 (swell_client)]
+    G2 -->|MQTT fl/updates| H
+  end
+
+  H -->|Agrega K por región<br/>MQTT fl/partial| D
+  H -->|Agrega K por región<br/>MQTT fl/partial| E
+  D -->|Flower gRPC| S[Server SWELL]
+  E -->|Flower gRPC| S
+  S -->|MQTT fl/global_model| G1
+  S -->|MQTT fl/global_model| G2
+
+#### Tracing por capas (con colores)
+
+```mermaid
+flowchart LR
+  classDef central fill:#1f77b4,stroke:#0f3c60,color:#fff;
+  classDef bridge fill:#9467bd,stroke:#4b335e,color:#fff;
+  classDef broker fill:#2ca02c,stroke:#145014,color:#fff;
+  classDef client fill:#ff7f0e,stroke:#8a4107,color:#fff;
+
+  srv([🖥️ Servidor Central<br/>server_swell.py]):::central
+  fb0([🌫️ Bridge fog_0<br/>fog_flower_client_swell.py]):::bridge
+  fb1([🌫️ Bridge fog_1<br/>fog_flower_client_swell.py]):::bridge
+  brk([🤖 Broker Fog<br/>broker_fog.py]):::broker
+  c0a([🔬 Cliente fog_0_a<br/>swell_client.py]):::client
+  c0b([🔬 Cliente fog_0_b<br/>swell_client.py]):::client
+  c1a([🔬 Cliente fog_1_a<br/>swell_client.py]):::client
+  c1b([🔬 Cliente fog_1_b<br/>swell_client.py]):::client
+
+  c0a -- fl/updates --> brk
+  c0b -- fl/updates --> brk
+  c1a -- fl/updates --> brk
+  c1b -- fl/updates --> brk
+
+  brk -- fl/partial (fog_0) --> fb0
+  brk -- fl/partial (fog_1) --> fb1
+
+  fb0 -- gRPC parciales --> srv
+  fb1 -- gRPC parciales --> srv
+
+  srv -- fl/global_model --> fb0
+  srv -- fl/global_model --> fb1
+  fb0 -- fl/global_model --> c0a
+  fb0 -- fl/global_model --> c0b
+  fb1 -- fl/global_model --> c1a
+  fb1 -- fl/global_model --> c1b
+```
+```
 
 **Modern Python Federated Learning Framework** following current PEP standards with comprehensive type hints, automated testing, and production-ready architecture.
 
@@ -196,6 +320,18 @@ Heart Rate Variability (RMSSD): autonomic nervous system indicator
 Skin Conductance Level (SCL): electrodermal activity
 Additional: 8 unnamed physiological measures
 ```
+
+### SWEET Sample Subjects - Rapid Baseline
+
+- **Subjects**: 10 respondents with minute-level physiological aggregates plus self-reported stress (`MAXIMUM_STRESS`).
+- **Script**: `python scripts/evaluate_sweet_sample_baseline.py --output-dir baseline_results/sweet_samples`.
+- **Split Policy**: 60% train, 20% validation, 20% test at subject granularity (strictly disjoint) as mandated in `Context.md`.
+- **Labels**: Binary by default (`stress >= 2` -> elevated). Switch to ordinal with `--label-strategy ordinal` to keep levels 1-5.
+- **Threshold**: Level 1 se mapea a `0` (bajo); niveles >=2 quedan como `1`. Ajusta con `--sweet-threshold` si necesitas otro corte.
+- **Scope**: Operates on the curated subset located at `data/SWEET/sample_subjects`; ideal for smoke tests before full SWEET ingestion.
+- **Cross-Validation**: `python scripts/run_subject_cv.py --datasets sweet_samples --output-dir subject_cv_results/sweet_samples_cv` (append `--sweet-label-strategy ordinal` for multi-level labels).
+
+
 
 #### 💽 Data Integration Challenges
 ```

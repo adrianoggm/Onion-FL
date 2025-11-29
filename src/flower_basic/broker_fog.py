@@ -1,26 +1,16 @@
 #!/usr/bin/env python3
-"""Broker Fog - Nodo de Agregación Regional.
+"""Fog broker (regional aggregator).
 
-Este componente actúa como un nodo fog que agrega actualizaciones de múltiples
-clientes locales antes de enviarlas al servidor central. Implementa agregación
-jerárquica en la arquitectura de aprendizaje federado.
+This component aggregates local client updates per fog region before sending a
+partial model to the central server. It implements the fog layer aggregation in
+the hierarchical FL architecture.
 
-Funcionalidades:
-- Recibe actualizaciones de modelo de clientes locales via MQTT
-- Agrega K actualizaciones por región usando promedio ponderado
-- Publica agregados parciales para que los fog clients los reenvíen al servidor central
-- Maneja múltiples regiones simultáneamente
-
-Flujo:
-1. Escucha en topic 'fl/updates' para recibir actualizaciones de clientes
-2. Acumula actualizaciones hasta tener K por región
-3. Computa promedio ponderado de los K modelos
-4. Publica agregado parcial en topic 'fl/partial'
-5. Resetea buffer y espera próximas actualizaciones
-
-Configuración:
-- K=3: Número de clientes por región antes de agregar
-- Soporte para múltiples regiones concurrentes
+Flow:
+1. Subscribe to 'fl/updates' to receive client updates.
+2. Buffer K updates per region.
+3. Compute weighted average.
+4. Publish partial aggregate to 'fl/partial'.
+5. Clear buffer and wait for the next batch.
 """
 
 import json
@@ -29,27 +19,49 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+import argparse
+import os
 
 # -----------------------------------------------------------------------------
 import paho.mqtt.client as mqtt
 
-# CONFIGURACIÓN MQTT Y PARÁMETROS DE AGREGACIÓN
+# MQTT CONFIG AND AGGREGATION PARAMETERS
 # -----------------------------------------------------------------------------
-UPDATE_TOPIC = "fl/updates"  # clientes publican actualizaciones aquí
-PARTIAL_TOPIC = "fl/partial"  # este broker publica agregados parciales aquí
-GLOBAL_TOPIC = "fl/global_model"  # (opcional) para re-publicar modelo global
+UPDATE_TOPIC = "fl/updates"  # clients publish local updates here
+PARTIAL_TOPIC = "fl/partial"  # broker publishes partial aggregates here
+GLOBAL_TOPIC = "fl/global_model"  # (optional) republish global model
 
 MQTT_BROKER = "localhost"
 MQTT_PORT = 1883
 
-# Número de actualizaciones por región antes de computar agregado parcial
+# Number of updates per region before computing partial aggregate
+# K_MAP allows per-region thresholds (e.g., {"fog_1": 2, "fog_2": 3})
 K = 3
+K_MAP: Dict[str, int] = {}
 
 # -----------------------------------------------------------------------------
-# BUFFERS DE AGREGACIÓN POR REGIÓN
+# BUFFERS PER REGION
 # -----------------------------------------------------------------------------
-# Cada región mantiene su propio buffer de actualizaciones
+# Each region has its own buffer of updates
 buffers = defaultdict(list)
+
+# Environment overrides (optional)
+try:
+    UPDATE_TOPIC = os.getenv("MQTT_TOPIC_UPDATES", UPDATE_TOPIC)
+    PARTIAL_TOPIC = os.getenv("MQTT_TOPIC_PARTIAL", PARTIAL_TOPIC)
+    GLOBAL_TOPIC = os.getenv("MQTT_TOPIC_GLOBAL", GLOBAL_TOPIC)
+    MQTT_BROKER = os.getenv("MQTT_BROKER", MQTT_BROKER)
+    MQTT_PORT = int(os.getenv("MQTT_PORT", str(MQTT_PORT)))
+    K = int(os.getenv("FOG_K", str(K)))
+    _k_map_env = os.getenv("FOG_K_MAP")
+    if _k_map_env:
+        try:
+            parsed = json.loads(_k_map_env)
+            K_MAP = {str(k): int(v) for k, v in parsed.items()}
+        except Exception:
+            K_MAP = {}
+except Exception:
+    pass
 
 
 # -----------------------------------------------------------------------------
@@ -58,22 +70,21 @@ buffers = defaultdict(list)
 def weighted_average(
     updates: List[Dict[str, Any]], weights: Optional[List[float]] = None
 ) -> Dict[str, Any]:
-    """Realiza un promedio ponderado de actualizaciones de modelo por región.
+    """Compute weighted average of model updates per region.
 
     Args:
-        updates: Lista de diccionarios con parámetros del modelo
-                Cada dict tiene formato {param_name: numpy_array_serializable}
-        weights: Pesos para el promedio (opcional). Si None, usa promedio uniforme.
+        updates: List of dicts {param_name: numpy_array_serializable}
+        weights: Optional weights. If None, use uniform average.
 
     Returns:
-        Diccionario con parámetros promediados para agregar al servidor central
+        Dict with averaged parameters to send to central server
     """
     n = len(updates)
     if weights is None:
         weights = [1.0 / n] * n
     avg = {}
 
-    # Para cada parámetro del modelo...
+    # For each model parameter...
     for key in updates[0]:
         # Stack all parameter tensors for this key
         param_arrays = [np.array(up[key]) for up in updates]
@@ -87,20 +98,13 @@ def weighted_average(
 
 
 # -----------------------------------------------------------------------------
-# MQTT CALLBACK: Manejo de actualizaciones de clientes locales
+# MQTT CALLBACK: handle local client updates
 # -----------------------------------------------------------------------------
 def on_update(client, userdata, msg):
-    """
-    Callback que procesa actualizaciones de modelos enviadas por clientes locales.
-
-    Recibe actualizaciones vía MQTT del topic 'fl/updates', las almacena por región
-    y cuando acumula K actualizaciones computa un agregado parcial que envía al
-    servidor central vía topic 'fl/partial'.
-    """
+    """Handle local client updates and emit partial aggregates per region."""
     try:
         payload = json.loads(msg.payload.decode())
 
-        # Extraer información del mensaje del cliente
         region = payload.get("region", "default_region")
         weights = payload.get("weights", {})
         client_id = payload.get("client_id", "unknown")
@@ -109,26 +113,24 @@ def on_update(client, userdata, msg):
             print(f"[BROKER] Received empty weights from {client_id}")
             return
 
-        # Almacenar actualización en buffer de la región
         buffers[region].append(weights)
+        region_k = K_MAP.get(region, K)
         print(
-            f"[BROKER] Actualización recibida de cliente={client_id}, region={region}. "
-            f"Buffer: {len(buffers[region])}/{K}"
+            f"[BROKER] Update received from client={client_id}, region={region}. "
+            f"Buffer: {len(buffers[region])}/{region_k}"
         )
 
-        # Cuando se acumulan K actualizaciones, computar agregado parcial
-        if len(buffers[region]) >= K:
+        if len(buffers[region]) >= region_k:
             partial = weighted_average(buffers[region])
             buffers[region].clear()
 
-            # Publicar agregado parcial hacia el servidor central
             msg = {
                 "region": region,
                 "partial_weights": partial,
                 "timestamp": time.time(),
             }
             client.publish(PARTIAL_TOPIC, json.dumps(msg))
-            print(f"[BROKER] Agregado parcial publicado para region={region}")
+            print(f"[BROKER] Partial aggregate published for region={region}")
 
     except Exception as e:
         print(f"[BROKER ERROR] Error procesando actualización: {e}")
@@ -136,24 +138,67 @@ def on_update(client, userdata, msg):
 
 
 # -----------------------------------------------------------------------------
-# THREAD: listen for partials and forward to Flower aggregator
-# -----------------------------------------------------------------------------
-
-
-# -----------------------------------------------------------------------------
-# FUNCIÓN PRINCIPAL: Inicialización del broker fog
+# MAIN FUNCTION: start fog broker
 # -----------------------------------------------------------------------------
 def main():
-    """
-    Función principal que inicializa el broker fog MQTT.
+    """Start fog broker MQTT loop."""
+    global K, MQTT_BROKER, MQTT_PORT, UPDATE_TOPIC, PARTIAL_TOPIC, GLOBAL_TOPIC
+    parser = argparse.ArgumentParser(description="Fog broker (regional aggregator)")
+    parser.add_argument(
+        "--k",
+        type=int,
+        default=int(os.getenv("FOG_K", K)),
+        help="Updates per region before computing partial aggregate",
+    )
+    parser.add_argument(
+        "--k-map",
+        type=str,
+        default=os.getenv("FOG_K_MAP"),
+        help="JSON mapping {region: k_value} to override K per region",
+    )
+    parser.add_argument(
+        "--mqtt-broker",
+        default=os.getenv("MQTT_BROKER", MQTT_BROKER),
+        help="MQTT broker host",
+    )
+    parser.add_argument(
+        "--mqtt-port",
+        type=int,
+        default=int(os.getenv("MQTT_PORT", MQTT_PORT)),
+        help="MQTT broker port",
+    )
+    parser.add_argument(
+        "--topic-updates",
+        default=os.getenv("MQTT_TOPIC_UPDATES", UPDATE_TOPIC),
+        help="Topic for client updates -> broker",
+    )
+    parser.add_argument(
+        "--topic-partial",
+        default=os.getenv("MQTT_TOPIC_PARTIAL", PARTIAL_TOPIC),
+        help="Topic for broker partials -> fog bridge",
+    )
+    parser.add_argument(
+        "--topic-global",
+        default=os.getenv("MQTT_TOPIC_GLOBAL", GLOBAL_TOPIC),
+        help="Topic for global model publish",
+    )
+    args = parser.parse_args()
 
-    Este broker:
-    1. Se conecta al broker MQTT local (localhost:1883)
-    2. Se suscribe al topic 'fl/updates' para recibir actualizaciones de clientes
-    3. Acumula K actualizaciones por región en buffers
-    4. Computa agregados parciales y los publica en 'fl/partial'
-    5. Los agregados parciales son consumidos por el servidor central
-    """
+    K = max(1, int(args.k))
+    if args.k_map:
+        try:
+            parsed = json.loads(args.k_map)
+            K_MAP.clear()
+            K_MAP.update({str(k): max(1, int(v)) for k, v in parsed.items()})
+        except Exception as exc:  # pragma: no cover - defensive
+            print(f"[BROKER] Ignorando k-map inválido: {exc}")
+
+    MQTT_BROKER = args.mqtt_broker
+    MQTT_PORT = int(args.mqtt_port)
+    UPDATE_TOPIC = args.topic_updates
+    PARTIAL_TOPIC = args.topic_partial
+    GLOBAL_TOPIC = args.topic_global
+
     # Configurar cliente MQTT con callback API v2
     mqttc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     mqttc.on_connect = lambda c, u, f, rc, p=None: c.subscribe(UPDATE_TOPIC)

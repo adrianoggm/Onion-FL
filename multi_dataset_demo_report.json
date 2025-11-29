@@ -23,13 +23,27 @@
         "accuracy": 0.9616724738675958,
         "macro_f1": 0.9587821341375844
       }
+    },
+    "cross_validation": {
+      "logistic_regression": {
+        "accuracy_mean": 0.8288861689106486,
+        "accuracy_std": 0.056402994106984135,
+        "macro_f1_mean": 0.8109137597064613,
+        "macro_f1_std": 0.07412744096235956
+      },
+      "random_forest": {
+        "accuracy_mean": 0.8091459268325852,
+        "accuracy_std": 0.11054840096009795,
+        "macro_f1_mean": 0.7859587435586373,
+        "macro_f1_std": 0.12708363186219368
+      }
     }
   },
   "swell": {
     "name": "swell",
     "train_samples": 2500,
     "test_samples": 639,
-    "n_features": 17,
+    "n_features": 16,
     "train_subjects": 20,
     "train_distribution": {
       "0": 822,
@@ -42,12 +56,26 @@
     },
     "metrics": {
       "logistic_regression": {
-        "accuracy": 0.9530516431924883,
-        "macro_f1": 0.9481207646842322
+        "accuracy": 0.6791862284820032,
+        "macro_f1": 0.4310427950329443
       },
       "random_forest": {
-        "accuracy": 0.9921752738654147,
-        "macro_f1": 0.9910337685954588
+        "accuracy": 0.6713615023474179,
+        "macro_f1": 0.5710586881472958
+      }
+    },
+    "cross_validation": {
+      "logistic_regression": {
+        "accuracy_mean": 0.6689653916582464,
+        "accuracy_std": 0.013550638257658905,
+        "macro_f1_mean": 0.4222332964169858,
+        "macro_f1_std": 0.013650783977088384
+      },
+      "random_forest": {
+        "accuracy_mean": 0.6699840153000346,
+        "accuracy_std": 0.013620312413822541,
+        "macro_f1_mean": 0.5802780745583342,
+        "macro_f1_std": 0.013471844610180028
       }
     }
   },
@@ -56,7 +84,7 @@
     "train_samples": 2453,
     "validation_samples": 619,
     "test_samples": 926,
-    "n_features": 48,
+    "n_features": 47,
     "train_subjects": 24,
     "validation_subjects": 6,
     "test_subjects": 10,
@@ -74,22 +102,36 @@
     },
     "metrics": {
       "logistic_regression": {
-        "accuracy": 0.908207343412527,
-        "macro_f1": 0.9055613347395348
+        "accuracy": 0.7181425485961123,
+        "macro_f1": 0.6614259597806216
       },
       "random_forest": {
-        "accuracy": 0.9751619870410367,
-        "macro_f1": 0.974572436559435
+        "accuracy": 0.7526997840172787,
+        "macro_f1": 0.7426488524697599
       }
     },
     "validation_metrics": {
       "logistic_regression": {
-        "accuracy": 0.8820678513731826,
-        "macro_f1": 0.8740695325019159
+        "accuracy": 0.6607431340872375,
+        "macro_f1": 0.522573015220074
       },
       "random_forest": {
-        "accuracy": 0.9450726978998385,
-        "macro_f1": 0.9427375821688215
+        "accuracy": 0.6930533117932148,
+        "macro_f1": 0.6736319236319237
+      }
+    },
+    "cross_validation": {
+      "logistic_regression": {
+        "accuracy_mean": 0.6969524897570449,
+        "accuracy_std": 0.037342284907446156,
+        "macro_f1_mean": 0.615928205752075,
+        "macro_f1_std": 0.046892389546661944
+      },
+      "random_forest": {
+        "accuracy_mean": 0.6949221319097066,
+        "accuracy_std": 0.046623751348490755,
+        "macro_f1_mean": 0.6595769241877248,
+        "macro_f1_std": 0.059549712466901564
       }
     }
   }

@@ -9,12 +9,6 @@
 | logistic_regression | 0.930 | 0.921 |
 | random_forest | 0.962 | 0.959 |
 
-## Subject-Based 5-Fold Cross-Validation
-
-| Model | Accuracy (mean +/- std) | Macro F1 (mean +/- std) |
-| --- | --- | --- |
-| logistic_regression | 0.865 +/- 0.079 | 0.854 +/- 0.087 |
-| random_forest | 0.768 +/- 0.083 | 0.738 +/- 0.081 |
-
-Fuente: subject_cv_results/subject_cv_summary.csv.
-
+**5-fold Group Cross-Validation (accuracy +/- std / macro-F1 +/- std)**
+- logistic_regression: 0.829 +/- 0.056 / 0.811 +/- 0.074
+- random_forest: 0.809 +/- 0.111 / 0.786 +/- 0.127

@@ -7,6 +7,8 @@ import tempfile
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+from pathlib import Path
+
 import pytest
 import torch
 
@@ -356,9 +358,9 @@ class TestModelComparator:
         mock_fed_sim.return_value = mock_simulator
 
         # Run comparison
-        comparison = self.comparator.run_comparison(
-            epochs=10, num_clients=3, fl_rounds=5
-        )
+        if not Path("data/WESAD").exists():
+            pytest.skip("WESAD dataset not available")
+        comparison = self.comparator.run_comparison(epochs=10, num_clients=3, fl_rounds=5)
 
         # Check that comparison was generated
         assert "baseline" in comparison

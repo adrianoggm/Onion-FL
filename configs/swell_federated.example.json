@@ -1,0 +1,22 @@
+{
+  "dataset": {
+    "data_dir": "data/SWELL",
+    "modalities": ["computer", "facial", "posture", "physiology"],
+    "subjects": null
+  },
+  "split": {
+    "train": 0.5,
+    "val": 0.2,
+    "test": 0.3,
+    "seed": 42,
+    "scaler": "global"
+  },
+  "federation": {
+    "mode": "auto",
+    "num_fog_nodes": 3,
+    "per_node_percentages": [0.34, 0.33, 0.33],
+    "output_dir": "federated_runs/swell",
+    "run_name": "example_auto"
+  }
+}
+
