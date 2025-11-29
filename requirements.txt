@@ -6,6 +6,7 @@ scikit-learn>=1.0.0,<2.0.0   # Machine learning library
 scipy>=1.7.0,<2.0.0          # Scientific computing library
 flwr>=1.0.0,<2.0.0           # Flower federated learning framework
 paho-mqtt>=2.0.0,<3.0.0      # MQTT client library
+pyyaml>=6.0.0,<7.0.0         # YAML parsing for federated configs
 
 # Data processing and time series
 pandas>=1.3.0,<3.0.0         # Data manipulation and analysis

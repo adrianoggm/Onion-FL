@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import math
-
-import numpy as np
-import pytest
-
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from flower_basic.datasets.multimodal import load_real_multimodal_dataset
