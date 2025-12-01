@@ -171,7 +171,6 @@ def shutdown_telemetry():
             print(f"[OTEL] Failed to shutdown meter provider '{name}': {e}")
 
     # Shutdown tracer provider (flush pending traces)
-    global _tracer_provider
     if _tracer_provider is not None:
         try:
             if hasattr(_tracer_provider, "shutdown"):
