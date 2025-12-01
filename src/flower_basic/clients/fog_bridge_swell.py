@@ -20,17 +20,43 @@ import paho.mqtt.client as mqtt
 
 from flower_basic.clients.baseclient import BaseMQTTComponent
 from flower_basic.swell_model import SwellMLP, get_parameters, set_parameters
-from flower_basic.telemetry import init_otel, start_span
+from flower_basic.telemetry import (
+    init_otel,
+    create_counter,
+    create_histogram,
+    record_metric,
+    start_span,
+    shutdown_telemetry,
+)
 
 # Telemetry - initialized lazily in main() to avoid import-time side effects
 TRACER = None
 METER = None
+COUNTER_PARTIALS_RECEIVED = None
+COUNTER_FORWARDS_TO_SERVER = None
+COUNTER_TIMEOUTS = None
+HIST_WAIT_TIME = None
 
 
 def _init_telemetry():
     """Initialize telemetry. Called from main() to ensure proper service name."""
     global TRACER, METER
+    global COUNTER_PARTIALS_RECEIVED, COUNTER_FORWARDS_TO_SERVER, COUNTER_TIMEOUTS, HIST_WAIT_TIME
+    
     TRACER, METER = init_otel("fog-bridge")
+    
+    COUNTER_PARTIALS_RECEIVED = create_counter(
+        METER, "fl_bridge_partials_received_total", "Partial aggregates received from fog"
+    )
+    COUNTER_FORWARDS_TO_SERVER = create_counter(
+        METER, "fl_bridge_forwards_total", "Aggregates forwarded to central server"
+    )
+    COUNTER_TIMEOUTS = create_counter(
+        METER, "fl_bridge_timeouts_total", "Timeouts waiting for partial aggregates"
+    )
+    HIST_WAIT_TIME = create_histogram(
+        METER, "fl_bridge_wait_seconds", "Time waiting for partial aggregates", "s"
+    )
 
 
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
@@ -72,6 +98,7 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
                 return
             with start_span(TRACER, "receive_partial") as span:
                 span.set_attribute("region", region)
+                record_metric(COUNTER_PARTIALS_RECEIVED, 1, {"region": self.region})
                 print(f"{self.tag} Partial aggregate received for region={region}")
         except Exception as e:
             print(f"{self.tag} Error processing partial: {e}")
@@ -80,6 +107,8 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
         return get_parameters(self.model)
 
     def fit(self, parameters: List[np.ndarray], config):
+        start_wait = time.time()
+        
         with start_span(TRACER, "forward_to_server") as span:
             span.set_attribute("region", self.region)
             set_parameters(self.model, parameters)
@@ -88,10 +117,17 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
             while self.partial_weights is None and waited < timeout:
                 time.sleep(0.5)
                 waited += 0.5
+            
+            wait_duration = time.time() - start_wait
+            if HIST_WAIT_TIME:
+                HIST_WAIT_TIME.record(wait_duration, {"region": self.region})
+            
             if self.partial_weights is None:
                 print(f"{self.tag} Timeout waiting for partial")
                 span.set_attribute("status", "timeout")
+                record_metric(COUNTER_TIMEOUTS, 1, {"region": self.region})
                 return get_parameters(self.model), 1, {}
+            
             partial_list = [
                 np.array(self.partial_weights[name], dtype=np.float32)
                 for name in self.param_names
@@ -101,6 +137,7 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
             print(f"{self.tag} Forwarding partial to central server")
             span.set_attribute("status", "forwarded")
             span.set_attribute("num_samples", num_samples)
+            record_metric(COUNTER_FORWARDS_TO_SERVER, 1, {"region": self.region})
             return partial_list, num_samples, {}
 
     def evaluate(self, parameters, config):
@@ -138,6 +175,9 @@ def main():
             partial_topic=args.topic_partial,
         ),
     )
+    
+    # Ensure all telemetry is flushed before exit
+    shutdown_telemetry()
 
 
 if __name__ == "__main__":

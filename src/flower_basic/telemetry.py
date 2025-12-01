@@ -54,6 +54,8 @@ except Exception:  # pragma: no cover
 # Cache for tracers per service name
 _tracers: Dict[str, Any] = {}
 _meters: Dict[str, Any] = {}
+_meter_providers: Dict[str, Any] = {}  # Keep references for shutdown
+_tracer_provider: Any = None
 _provider_initialized = False
 
 
@@ -95,14 +97,15 @@ def init_otel(service_name: str, endpoint: Optional[str] = None):
     # Initialize the global provider only once per process
     # The first service to call init_otel sets the service name for the entire process
     try:
+        global _tracer_provider
         if not _provider_initialized:
             # Use the actual service name for this process
             resource = Resource.create({"service.name": service_name})
-            tracer_provider = TracerProvider(resource=resource)
-            tracer_provider.add_span_processor(
+            _tracer_provider = TracerProvider(resource=resource)
+            _tracer_provider.add_span_processor(
                 BatchSpanProcessor(OTLPSpanExporter(endpoint=traces_endpoint))
             )
-            trace.set_tracer_provider(tracer_provider)
+            trace.set_tracer_provider(_tracer_provider)
             _provider_initialized = True
             print(f"[OTEL] Provider initialized for '{service_name}' -> {traces_endpoint}")
         
@@ -125,6 +128,7 @@ def init_otel(service_name: str, endpoint: Optional[str] = None):
                 )
                 resource = Resource.create({"service.name": service_name})
                 meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
+                _meter_providers[service_name] = meter_provider  # Keep reference for shutdown
                 metrics.set_meter_provider(meter_provider)
                 meter = metrics.get_meter(service_name)
                 _meters[service_name] = meter
@@ -139,13 +143,90 @@ def init_otel(service_name: str, endpoint: Optional[str] = None):
     return tracer, meter
 
 
-def create_counter(meter, name: str, description: str):
+def shutdown_telemetry():
+    """Shutdown telemetry and flush all pending metrics/traces.
+    
+    Call this before process exit to ensure all metrics are exported.
+    """
+    if not OTEL_AVAILABLE:
+        return
+    
+    print("[OTEL] Shutting down telemetry...")
+    
+    # Shutdown all meter providers (flush pending metrics)
+    for name, provider in _meter_providers.items():
+        try:
+            if hasattr(provider, 'shutdown'):
+                provider.shutdown()
+                print(f"[OTEL] Meter provider '{name}' shutdown complete")
+        except Exception as e:
+            print(f"[OTEL] Failed to shutdown meter provider '{name}': {e}")
+    
+    # Shutdown tracer provider (flush pending traces)
+    global _tracer_provider
+    if _tracer_provider is not None:
+        try:
+            if hasattr(_tracer_provider, 'shutdown'):
+                _tracer_provider.shutdown()
+                print("[OTEL] Tracer provider shutdown complete")
+        except Exception as e:
+            print(f"[OTEL] Failed to shutdown tracer provider: {e}")
+
+
+def create_counter(meter, name: str, description: str, unit: str = "1"):
+    """Create a counter metric (monotonically increasing value)."""
     if meter is None:
         return None
     try:
-        return meter.create_counter(name, description=description)
+        return meter.create_counter(name, description=description, unit=unit)
     except Exception:
         return None
+
+
+def create_histogram(meter, name: str, description: str, unit: str = "s"):
+    """Create a histogram metric (distribution of values)."""
+    if meter is None:
+        return None
+    try:
+        return meter.create_histogram(name, description=description, unit=unit)
+    except Exception:
+        return None
+
+
+def create_gauge(meter, name: str, description: str, unit: str = "1"):
+    """Create an observable gauge metric (current value).
+    
+    Note: Observable gauges require a callback function to be registered.
+    For simple gauges, use UpDownCounter instead.
+    """
+    if meter is None:
+        return None
+    try:
+        return meter.create_up_down_counter(name, description=description, unit=unit)
+    except Exception:
+        return None
+
+
+def record_metric(metric, value, attributes: Optional[Dict[str, Any]] = None):
+    """Record a value on a metric (counter, histogram, or gauge)."""
+    if metric is None:
+        return
+    try:
+        if attributes:
+            metric.add(value, attributes)
+        else:
+            metric.add(value)
+    except AttributeError:
+        # For histograms, use record instead of add
+        try:
+            if attributes:
+                metric.record(value, attributes)
+            else:
+                metric.record(value)
+        except Exception:
+            pass
+    except Exception:
+        pass
 
 
 @contextmanager

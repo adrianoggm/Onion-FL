@@ -16,7 +16,15 @@ import paho.mqtt.client as mqtt
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from flower_basic.telemetry import create_counter, init_otel, start_span
+from flower_basic.telemetry import (
+    create_counter,
+    create_histogram,
+    create_gauge,
+    record_metric,
+    init_otel,
+    start_span,
+    shutdown_telemetry,
+)
 from flower_basic.datasets.swell_federated import load_node_split
 from flower_basic.swell_model import SwellMLP
 
@@ -27,15 +35,45 @@ TAG = "[SERVER_SWELL]"
 # Telemetry - initialized lazily in main() to avoid import-time side effects
 TRACER = None
 METER = None
-COUNTER_AGG = None
+# Metrics
+COUNTER_ROUNDS = None
+COUNTER_AGGREGATIONS = None
+HIST_AGGREGATION_TIME = None
+GAUGE_GLOBAL_ACCURACY = None
+GAUGE_GLOBAL_LOSS = None
+GAUGE_ACTIVE_CLIENTS = None
 
 
 def _init_telemetry():
     """Initialize telemetry. Called from main() to ensure proper service name."""
-    global TRACER, METER, COUNTER_AGG
+    global TRACER, METER
+    global COUNTER_ROUNDS, COUNTER_AGGREGATIONS, HIST_AGGREGATION_TIME
+    global GAUGE_GLOBAL_ACCURACY, GAUGE_GLOBAL_LOSS, GAUGE_ACTIVE_CLIENTS
+    
     TRACER, METER = init_otel("server-swell")
-    COUNTER_AGG = create_counter(
-        METER, "server.aggregations", "Aggregations completed per round"
+    
+    # Counters
+    COUNTER_ROUNDS = create_counter(
+        METER, "fl_rounds_total", "Total number of FL rounds completed"
+    )
+    COUNTER_AGGREGATIONS = create_counter(
+        METER, "fl_aggregations_total", "Total number of model aggregations"
+    )
+    
+    # Histograms
+    HIST_AGGREGATION_TIME = create_histogram(
+        METER, "fl_aggregation_duration_seconds", "Time to aggregate client updates", "s"
+    )
+    
+    # Gauges (using UpDownCounter)
+    GAUGE_GLOBAL_ACCURACY = create_gauge(
+        METER, "fl_global_accuracy", "Current global model accuracy", "1"
+    )
+    GAUGE_GLOBAL_LOSS = create_gauge(
+        METER, "fl_global_loss", "Current global model loss", "1"
+    )
+    GAUGE_ACTIVE_CLIENTS = create_gauge(
+        METER, "fl_active_clients", "Number of active clients in current round", "1"
     )
 
 
@@ -59,7 +97,14 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
         results: List[Tuple[Any, fl.common.FitRes]],
         failures,
     ) -> Optional[fl.common.Parameters]:
+        import time
+        start_time = time.time()
+        
         print(f"\n[SERVER_SWELL] === Round {server_round} ===")
+        
+        # Record number of active clients
+        record_metric(GAUGE_ACTIVE_CLIENTS, len(results), {"round": str(server_round)})
+        
         with start_span(TRACER, "server.aggregate_fit", {"round": server_round, "num_results": len(results)}):
             new_parameters = super().aggregate_fit(server_round, results, failures)
 
@@ -93,13 +138,22 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
                     self.global_model.load_state_dict(torch_state, strict=False)
                     loss, acc = _evaluate_global(self.global_model, self.eval_data)
                     print(f"{TAG} Global eval -> loss: {loss:.4f} | acc: {acc:.4f}")
+                    
+                    # Record global metrics
+                    record_metric(GAUGE_GLOBAL_ACCURACY, acc, {"round": str(server_round)})
+                    record_metric(GAUGE_GLOBAL_LOSS, loss, {"round": str(server_round)})
                 except Exception as eval_exc:
                     print(f"{TAG} Global eval failed: {eval_exc}")
         except Exception as e:
             print(f"{TAG} MQTT publish failed: {e}")
 
-        if COUNTER_AGG:
-            COUNTER_AGG.add(1, {"round": server_round})
+        # Record aggregation metrics
+        aggregation_time = time.time() - start_time
+        record_metric(COUNTER_AGGREGATIONS, 1, {"round": str(server_round)})
+        record_metric(COUNTER_ROUNDS, 1)
+        if HIST_AGGREGATION_TIME:
+            HIST_AGGREGATION_TIME.record(aggregation_time, {"round": str(server_round)})
+        
         return new_parameters
 
 
@@ -200,6 +254,9 @@ def main():
         config=fl.server.ServerConfig(num_rounds=args.rounds),
         strategy=strategy,
     )
+    
+    # Ensure all telemetry is flushed before exit
+    shutdown_telemetry()
 
 
 if __name__ == "__main__":

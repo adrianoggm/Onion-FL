@@ -18,7 +18,7 @@ federated_architecture:
 
   orchestrator:
     address: "0.0.0.0:8080"
-    rounds: 3
+    rounds: 10
     protocol: "MQTT"
     mqtt:
       broker: "localhost"
@@ -39,12 +39,11 @@ federated_architecture:
       clients:
         - id: fog0_c1
           dataset: "SWELL"
-          rounds: 3
-          # Ruta al nodo materializado por scripts/prepare_swell_federated.py (se rellena automáticamente con --manifest)
+          rounds: 10
           data_dir: "federated_runs/swell/example_manual/fog_0"
         - id: fog0_c2
           dataset: "SWELL"
-          rounds: 3
+          rounds: 10
           data_dir: "federated_runs/swell/example_manual/fog_0"
 
     - id: fog_1
@@ -52,9 +51,21 @@ federated_architecture:
       clients:
         - id: fog1_c1
           dataset: "SWELL"
-          rounds: 3
+          rounds: 10
           data_dir: "federated_runs/swell/example_manual/fog_1"
         - id: fog1_c2
           dataset: "SWELL"
-          rounds: 3
+          rounds: 10
           data_dir: "federated_runs/swell/example_manual/fog_1"
+
+    - id: fog_2
+      k: 2
+      clients:
+        - id: fog2_c1
+          dataset: "SWELL"
+          rounds: 10
+          data_dir: "federated_runs/swell/example_manual/fog_2"
+        - id: fog2_c2
+          dataset: "SWELL"
+          rounds: 10
+          data_dir: "federated_runs/swell/example_manual/fog_2"
