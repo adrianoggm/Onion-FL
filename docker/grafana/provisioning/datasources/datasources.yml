@@ -7,6 +7,7 @@ datasources:
   # Prometheus - for metrics
   - name: Prometheus
     type: prometheus
+    uid: prometheus
     access: proxy
     url: http://prometheus:9090
     isDefault: true
@@ -20,6 +21,7 @@ datasources:
   # Jaeger - for traces
   - name: Jaeger
     type: jaeger
+    uid: jaeger
     access: proxy
     url: http://jaeger:16686
     editable: false
