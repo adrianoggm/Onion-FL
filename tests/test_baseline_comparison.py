@@ -360,7 +360,9 @@ class TestModelComparator:
         # Run comparison
         if not Path("data/WESAD").exists():
             pytest.skip("WESAD dataset not available")
-        comparison = self.comparator.run_comparison(epochs=10, num_clients=3, fl_rounds=5)
+        comparison = self.comparator.run_comparison(
+            epochs=10, num_clients=3, fl_rounds=5
+        )
 
         # Check that comparison was generated
         assert "baseline" in comparison

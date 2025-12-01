@@ -1,0 +1,215 @@
+version: "3.9"
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    command: mosquitto -c /mosquitto-no-auth.conf
+
+  server:
+    build:
+      context: ..
+    working_dir: /app
+    volumes:
+      - ../:/app
+    environment:
+      PYTHONPATH: /app/src
+    command:
+      - python
+      - -m
+      - flower_basic.servers.swell
+      - --input_dim
+      - "${INPUT_DIM:-113}"
+      - --rounds
+      - "${ROUNDS:-3}"
+      - --mqtt-broker
+      - mosquitto
+      - --mqtt-port
+      - "1883"
+      - --topic-global
+      - fl/global_model
+      - --min-fit-clients
+      - "2"
+      - --min-available-clients
+      - "2"
+      - --manifest
+      - "${MANIFEST_PATH:-/app/federated_runs/swell/example_manual/manifest.json}"
+    depends_on:
+      - mosquitto
+
+  fog_bridge_fog_0:
+    build:
+      context: ..
+    working_dir: /app
+    volumes:
+      - ../:/app
+    environment:
+      PYTHONPATH: /app/src
+    command:
+      - python
+      - -m
+      - flower_basic.clients.fog_bridge_swell
+      - --input_dim
+      - "${INPUT_DIM:-113}"
+      - --region
+      - fog_0
+      - --mqtt-broker
+      - mosquitto
+      - --mqtt-port
+      - "1883"
+      - --topic-partial
+      - fl/partial
+    depends_on:
+      - mosquitto
+
+  fog_bridge_fog_1:
+    build:
+      context: ..
+    working_dir: /app
+    volumes:
+      - ../:/app
+    environment:
+      PYTHONPATH: /app/src
+    command:
+      - python
+      - -m
+      - flower_basic.clients.fog_bridge_swell
+      - --input_dim
+      - "${INPUT_DIM:-113}"
+      - --region
+      - fog_1
+      - --mqtt-broker
+      - mosquitto
+      - --mqtt-port
+      - "1883"
+      - --topic-partial
+      - fl/partial
+    depends_on:
+      - mosquitto
+
+  broker:
+    build:
+      context: ..
+    working_dir: /app
+    volumes:
+      - ../:/app
+    environment:
+      PYTHONPATH: /app/src
+      MQTT_BROKER: mosquitto
+      MQTT_PORT: "1883"
+      MQTT_TOPIC_UPDATES: fl/updates
+      MQTT_TOPIC_PARTIAL: fl/partial
+      MQTT_TOPIC_GLOBAL: fl/global_model
+      FOG_K: "${K:-2}"
+    command:
+      - python
+      - -m
+      - flower_basic.brokers.fog
+    depends_on:
+      - mosquitto
+
+  client_fog0_c1:
+    build:
+      context: ..
+    working_dir: /app
+    volumes:
+      - ../:/app
+    environment:
+      PYTHONPATH: /app/src
+      MQTT_BROKER: mosquitto
+      MQTT_PORT: "1883"
+      MQTT_TOPIC_UPDATES: fl/updates
+      MQTT_TOPIC_GLOBAL: fl/global_model
+      MQTT_REGION: fog_0
+    command:
+      - python
+      - -m
+      - flower_basic.clients.swell
+      - --node_dir
+      - "${FOG0_NODE_DIR:-/app/federated_runs/swell/example_manual/fog_0}"
+      - --region
+      - fog_0
+      - --rounds
+      - "${ROUNDS:-3}"
+      - --mqtt-broker
+      - mosquitto
+      - --mqtt-port
+      - "1883"
+      - --topic-updates
+      - fl/updates
+      - --topic-global
+      - fl/global_model
+    depends_on:
+      - mosquitto
+      - broker
+
+  client_fog0_c2:
+    <<: *client_fog0_c1
+    command:
+      - python
+      - -m
+      - flower_basic.clients.swell
+      - --node_dir
+      - "${FOG0_NODE_DIR:-/app/federated_runs/swell/example_manual/fog_0}"
+      - --region
+      - fog_0
+      - --rounds
+      - "${ROUNDS:-3}"
+      - --mqtt-broker
+      - mosquitto
+      - --mqtt-port
+      - "1883"
+      - --topic-updates
+      - fl/updates
+      - --topic-global
+      - fl/global_model
+
+  client_fog1_c1:
+    <<: *client_fog0_c1
+    environment:
+      PYTHONPATH: /app/src
+      MQTT_BROKER: mosquitto
+      MQTT_PORT: "1883"
+      MQTT_TOPIC_UPDATES: fl/updates
+      MQTT_TOPIC_GLOBAL: fl/global_model
+      MQTT_REGION: fog_1
+    command:
+      - python
+      - -m
+      - flower_basic.clients.swell
+      - --node_dir
+      - "${FOG1_NODE_DIR:-/app/federated_runs/swell/example_manual/fog_1}"
+      - --region
+      - fog_1
+      - --rounds
+      - "${ROUNDS:-3}"
+      - --mqtt-broker
+      - mosquitto
+      - --mqtt-port
+      - "1883"
+      - --topic-updates
+      - fl/updates
+      - --topic-global
+      - fl/global_model
+
+  client_fog1_c2:
+    <<: *client_fog1_c1
+    command:
+      - python
+      - -m
+      - flower_basic.clients.swell
+      - --node_dir
+      - "${FOG1_NODE_DIR:-/app/federated_runs/swell/example_manual/fog_1}"
+      - --region
+      - fog_1
+      - --rounds
+      - "${ROUNDS:-3}"
+      - --mqtt-broker
+      - mosquitto
+      - --mqtt-port
+      - "1883"
+      - --topic-updates
+      - fl/updates
+      - --topic-global
+      - fl/global_model

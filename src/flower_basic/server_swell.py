@@ -17,6 +17,9 @@ import paho.mqtt.client as mqtt
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
+# Telemetry (optional)
+from flower_basic.telemetry import create_counter, init_otel, start_span
+
 # Support running as a script (no package context)
 try:
     from .datasets.swell_federated import load_node_split
@@ -31,6 +34,10 @@ except Exception:  # pragma: no cover
 MODEL_TOPIC = os.getenv("MQTT_TOPIC_GLOBAL", "fl/global_model")
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
 TAG = "[SERVER_SWELL]"
+TRACER, METER = init_otel("server-swell")
+COUNTER_AGG = create_counter(
+    METER, "server.aggregations", "Aggregations completed per round"
+)
 
 
 class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
@@ -54,7 +61,12 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
         failures,
     ) -> Optional[fl.common.Parameters]:
         print(f"\n[SERVER_SWELL] === Round {server_round} ===")
-        new_parameters = super().aggregate_fit(server_round, results, failures)
+        with start_span(
+            TRACER,
+            "server.aggregate_fit",
+            {"round": server_round, "num_results": len(results)},
+        ):
+            new_parameters = super().aggregate_fit(server_round, results, failures)
         if new_parameters is None:
             print(f"{TAG} Aggregation returned None")
             return None
@@ -97,6 +109,8 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
                     print(f"{TAG} Global eval failed: {eval_exc}")
         except Exception as e:
             print(f"{TAG} MQTT publish failed: {e}")
+        if COUNTER_AGG:
+            COUNTER_AGG.add(1, {"round": server_round})
         return new_parameters
 
 

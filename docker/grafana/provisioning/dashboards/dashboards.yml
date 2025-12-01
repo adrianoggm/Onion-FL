@@ -1,0 +1,16 @@
+# Grafana Dashboard Provisioning
+# Auto-loads dashboards from the specified path
+
+apiVersion: 1
+
+providers:
+  - name: 'Flower Basic Dashboards'
+    orgId: 1
+    folder: 'Flower FL'
+    folderUid: flower-fl
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/json

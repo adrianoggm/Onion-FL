@@ -25,6 +25,8 @@ import os
 # -----------------------------------------------------------------------------
 import paho.mqtt.client as mqtt
 
+from .telemetry import create_counter, init_otel, start_span
+
 # MQTT CONFIG AND AGGREGATION PARAMETERS
 # -----------------------------------------------------------------------------
 UPDATE_TOPIC = "fl/updates"  # clients publish local updates here
@@ -62,6 +64,15 @@ try:
             K_MAP = {}
 except Exception:
     pass
+
+# Telemetry (optional)
+TRACER, METER = init_otel("fog-broker")
+COUNTER_UPDATE = create_counter(
+    METER, "broker.updates.received", "Local updates received per region"
+)
+COUNTER_PARTIAL = create_counter(
+    METER, "broker.partials.published", "Partial aggregates published per region"
+)
 
 
 # -----------------------------------------------------------------------------
@@ -113,24 +124,31 @@ def on_update(client, userdata, msg):
             print(f"[BROKER] Received empty weights from {client_id}")
             return
 
-        buffers[region].append(weights)
-        region_k = K_MAP.get(region, K)
-        print(
-            f"[BROKER] Update received from client={client_id}, region={region}. "
-            f"Buffer: {len(buffers[region])}/{region_k}"
-        )
+        with start_span(
+            TRACER, "broker.on_update", {"region": region, "client_id": client_id}
+        ):
+            buffers[region].append(weights)
+            region_k = K_MAP.get(region, K)
+            if COUNTER_UPDATE:
+                COUNTER_UPDATE.add(1, {"region": region})
+            print(
+                f"[BROKER] Update received from client={client_id}, region={region}. "
+                f"Buffer: {len(buffers[region])}/{region_k}"
+            )
 
-        if len(buffers[region]) >= region_k:
-            partial = weighted_average(buffers[region])
-            buffers[region].clear()
+            if len(buffers[region]) >= region_k:
+                partial = weighted_average(buffers[region])
+                buffers[region].clear()
 
-            msg = {
-                "region": region,
-                "partial_weights": partial,
-                "timestamp": time.time(),
-            }
-            client.publish(PARTIAL_TOPIC, json.dumps(msg))
-            print(f"[BROKER] Partial aggregate published for region={region}")
+                msg = {
+                    "region": region,
+                    "partial_weights": partial,
+                    "timestamp": time.time(),
+                }
+                client.publish(PARTIAL_TOPIC, json.dumps(msg))
+                if COUNTER_PARTIAL:
+                    COUNTER_PARTIAL.add(1, {"region": region})
+                print(f"[BROKER] Partial aggregate published for region={region}")
 
     except Exception as e:
         print(f"[BROKER ERROR] Error procesando actualización: {e}")
