@@ -1,0 +1,31 @@
+# Grafana Datasources Provisioning
+# Auto-configures Prometheus and Jaeger as datasources on startup
+
+apiVersion: 1
+
+datasources:
+  # Prometheus - for metrics
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: "15s"
+      httpMethod: POST
+      manageAlerts: true
+      prometheusType: Prometheus
+
+  # Jaeger - for traces
+  - name: Jaeger
+    type: jaeger
+    uid: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    editable: false
+    jsonData:
+      tracesToLogs:
+        datasourceUid: loki
+        mapTagNamesEnabled: true

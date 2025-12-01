@@ -1,4 +1,4 @@
-﻿"""SWELL-KW Dataset Loader for Stress Detection in Knowledge Work.
+"""SWELL-KW Dataset Loader for Stress Detection in Knowledge Work.
 
 This module provides utilities for loading and preprocessing the SWELL-KW dataset,
 which contains multimodal stress indicators from computer interaction, facial
@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import warnings
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -49,7 +48,7 @@ def _try_read_csv(path: Path) -> pd.DataFrame:
     - Fall back to default ',' if needed
     """
     encodings = ["utf-8", "latin-1", "cp1252"]
-    last_exc: Optional[Exception] = None
+    last_exc: Exception | None = None
     for enc in encodings:
         try:
             # First attempt: auto-detect separator
@@ -147,17 +146,17 @@ def _normalize_subject_series(series: pd.Series) -> pd.Series:
 
 
 def load_swell_dataset(
-    data_dir: Union[str, Path] = "data/SWELL",
-    modalities: Optional[List[str]] = None,
-    subjects: Optional[List[int]] = None,
+    data_dir: str | Path = "data/SWELL",
+    modalities: list[str] | None = None,
+    subjects: list[int] | None = None,
     test_size: float = 0.2,
     random_state: int = 42,
     normalize_features: bool = True,
     return_subject_info: bool = False,
-) -> Union[
-    Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
-    Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Dict[str, object]],
-]:
+) -> (
+    tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+    | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, object]]
+):
     """Load SWELL-KW dataset for stress detection in knowledge work."""
 
     data_dir = Path(data_dir)
@@ -178,7 +177,7 @@ def load_swell_dataset(
         raise ValueError("test_size must be between 0.0 and 1.0")
 
     if subjects is not None:
-        normalized_subjects: Set[str] = set()
+        normalized_subjects: set[str] = set()
         for subject in subjects:
             try:
                 value = int(subject)
@@ -233,8 +232,8 @@ def load_swell_dataset(
         ],
     }
 
-    dataframes: List[pd.DataFrame] = []
-    feature_info: Dict[str, Dict[str, object]] = {}
+    dataframes: list[pd.DataFrame] = []
+    feature_info: dict[str, dict[str, object]] = {}
 
     for modality in modalities:
         file_path = None
@@ -299,11 +298,13 @@ def load_swell_dataset(
             dataframes.append(df)
 
         except Exception as exc:  # pragma: no cover
-            raise SWELLDatasetError(f"Error loading {modality} features: {exc}")
+            raise SWELLDatasetError(
+                f"Error loading {modality} features: {exc}"
+            ) from exc
 
     merged_df = dataframes[0]
     for df in dataframes[1:]:
-        merge_cols: List[str] = []
+        merge_cols: list[str] = []
         for key in ["participant", "condition", "blok", "block", "trial", "c"]:
             if key in df.columns and key in merged_df.columns:
                 merge_cols.append(key)
@@ -312,6 +313,7 @@ def load_swell_dataset(
             warnings.warn(
                 "Could not determine common merge keys for a modality; skipping this modality.",
                 UserWarning,
+                stacklevel=2,
             )
             continue
 
@@ -384,6 +386,7 @@ def load_swell_dataset(
         warnings.warn(
             f"Found {int(features_df.isnull().sum().sum())} missing values. Filling with feature means.",
             UserWarning,
+            stacklevel=2,
         )
         features_df = features_df.fillna(features_df.mean())
     features_df = features_df.fillna(0.0)
@@ -396,6 +399,7 @@ def load_swell_dataset(
         warnings.warn(
             f"Removed {int((~valid_features).sum())} features with zero variance.",
             UserWarning,
+            stacklevel=2,
         )
         X = X[:, valid_features]
         feature_columns = [
@@ -434,11 +438,11 @@ def load_swell_dataset(
 
     if return_subject_info:
 
-        def _distribution(values: np.ndarray) -> Dict[int, int]:
+        def _distribution(values: np.ndarray) -> dict[int, int]:
             unique, counts = np.unique(values, return_counts=True)
             return {int(k): int(v) for k, v in zip(unique, counts)}
 
-        info: Dict[str, object] = {
+        info: dict[str, object] = {
             "modalities": modalities,
             "feature_names": feature_columns,
             "subjects": unique_subjects.tolist(),
@@ -464,11 +468,11 @@ def load_swell_dataset(
 
 
 def partition_swell_by_subjects(
-    data_dir: Union[str, Path] = "data/SWELL",
+    data_dir: str | Path = "data/SWELL",
     n_partitions: int = 5,
-    modalities: Optional[List[str]] = None,
+    modalities: list[str] | None = None,
     random_state: int = 42,
-) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+) -> list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
     """Partition SWELL dataset by subjects for federated learning.
 
     Creates subject-based partitions where each partition contains data from
@@ -542,12 +546,12 @@ def partition_swell_by_subjects(
         except Exception as e:
             raise SWELLDatasetError(
                 f"Error creating partition {i} with subjects {partition_subjects}: {e}"
-            )
+            ) from e
 
     return partitions
 
 
-def get_swell_info(data_dir: Union[str, Path] = "data/SWELL") -> Dict:
+def get_swell_info(data_dir: str | Path = "data/SWELL") -> dict:
     """Get comprehensive information about the SWELL dataset.
 
     Args:
@@ -586,11 +590,11 @@ partition_swell = partition_swell_by_subjects
 
 
 def load_swell_all_samples(
-    data_dir: Union[str, Path] = "data/SWELL",
-    modalities: Optional[List[str]] = None,
-    subjects: Optional[List[int]] = None,
+    data_dir: str | Path = "data/SWELL",
+    modalities: list[str] | None = None,
+    subjects: list[int] | None = None,
     normalize_features: bool = False,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[str, object]]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, object]]:
     """Load the COMPLETE SWELL dataset without splitting by subjects.
 
     Returns the full feature matrix X, labels y, and subject_ids array.
@@ -628,7 +632,7 @@ def load_swell_all_samples(
         )
 
     if subjects is not None:
-        normalized_subjects: Set[str] = set()
+        normalized_subjects: set[str] = set()
         for subject in subjects:
             try:
                 value = int(subject)
@@ -683,8 +687,8 @@ def load_swell_all_samples(
         ],
     }
 
-    dataframes: List[pd.DataFrame] = []
-    feature_info: Dict[str, Dict[str, object]] = {}
+    dataframes: list[pd.DataFrame] = []
+    feature_info: dict[str, dict[str, object]] = {}
 
     for modality in modalities:
         file_path = None
@@ -753,11 +757,13 @@ def load_swell_all_samples(
             dataframes.append(df)
 
         except Exception as exc:  # pragma: no cover
-            raise SWELLDatasetError(f"Error loading {modality} features: {exc}")
+            raise SWELLDatasetError(
+                f"Error loading {modality} features: {exc}"
+            ) from exc
 
     merged_df = dataframes[0]
     for df in dataframes[1:]:
-        merge_cols: List[str] = []
+        merge_cols: list[str] = []
         for key in ["participant", "condition", "blok", "block", "trial", "c"]:
             if key in df.columns and key in merged_df.columns:
                 merge_cols.append(key)
@@ -766,6 +772,7 @@ def load_swell_all_samples(
             warnings.warn(
                 "Could not determine common merge keys for a modality; skipping this modality.",
                 UserWarning,
+                stacklevel=2,
             )
             continue
 
@@ -840,6 +847,7 @@ def load_swell_all_samples(
         warnings.warn(
             f"Found {int(features_df.isnull().sum().sum())} missing values. Filling with feature means.",
             UserWarning,
+            stacklevel=2,
         )
         features_df = features_df.fillna(features_df.mean())
     features_df = features_df.fillna(0.0)
@@ -852,6 +860,7 @@ def load_swell_all_samples(
         warnings.warn(
             f"Removed {int((~valid_features).sum())} features with zero variance.",
             UserWarning,
+            stacklevel=2,
         )
         X = X[:, valid_features]
         feature_columns = [
@@ -870,7 +879,7 @@ def load_swell_all_samples(
     else:
         scaler_info = None
 
-    info: Dict[str, object] = {
+    info: dict[str, object] = {
         "modalities": modalities,
         "feature_names": feature_columns,
         "n_samples": int(X.shape[0]),

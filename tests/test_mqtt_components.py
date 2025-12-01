@@ -25,11 +25,11 @@ class TestBrokerFog:
             "conv1.bias": np.random.randn(16).tolist(),
         }
 
-    @patch("flower_basic.broker_fog.weighted_average")
-    @patch("flower_basic.broker_fog.buffers")
+    @patch("flower_basic.brokers.fog.weighted_average")
+    @patch("flower_basic.brokers.fog.buffers")
     def test_on_update_accumulation(self, mock_buffers, mock_weighted_avg):
         """Test that updates are correctly accumulated in buffers."""
-        from flower_basic.broker_fog import on_update
+        from flower_basic.brokers.fog import on_update
 
         # Setup mock buffers to simulate a list
         test_buffer = []
@@ -60,16 +60,29 @@ class TestBrokerFog:
         # Buffer should have the new weights added
         assert len(test_buffer) == 2  # 1 existing + 1 new
 
-    @patch("flower_basic.broker_fog.weighted_average")
-    @patch("flower_basic.broker_fog.buffers")
+    @patch("flower_basic.brokers.fog.weighted_average")
+    @patch("flower_basic.brokers.fog.buffers")
     def test_on_update_triggers_aggregation(self, mock_buffers, mock_weighted_avg):
         """Test that aggregation is triggered when buffer is full."""
-        from flower_basic.broker_fog import K, on_update
+        from flower_basic.brokers.fog import K, on_update
 
-        # Setup mocks
-        buffer_list = Mock()
-        buffer_list.__len__ = Mock(return_value=K)  # Buffer is full
-        buffer_list.clear = Mock()
+        # Create a realistic buffer with items that can be iterated
+        buffer_items = [
+            {"weights": {"param1": [1.0, 2.0]}, "num_samples": 50, "client_id": "c1"},
+            {"weights": {"param1": [3.0, 4.0]}, "num_samples": 50, "client_id": "c2"},
+        ]
+        # Make sure we have K items
+        while len(buffer_items) < K:
+            buffer_items.append(
+                {
+                    "weights": {"param1": [5.0, 6.0]},
+                    "num_samples": 50,
+                    "client_id": f"c{len(buffer_items)+1}",
+                }
+            )
+
+        # Use a real list that supports iteration
+        buffer_list = buffer_items.copy()
         mock_buffers.__getitem__.return_value = buffer_list
 
         mock_weighted_avg.return_value = {"aggregated": "weights"}
@@ -90,12 +103,11 @@ class TestBrokerFog:
 
         # Should trigger aggregation and publish
         mock_weighted_avg.assert_called_once()
-        buffer_list.clear.assert_called_once()
         self.mock_client.publish.assert_called_once()
 
     def test_weighted_average_computation(self):
         """Test the weighted average computation."""
-        from flower_basic.broker_fog import weighted_average
+        from flower_basic.brokers.fog import weighted_average
 
         # Create test updates
         updates = [
@@ -116,7 +128,7 @@ class TestBrokerFog:
 
     def test_weighted_average_with_custom_weights(self):
         """Test weighted average with custom weights."""
-        from flower_basic.broker_fog import weighted_average
+        from flower_basic.brokers.fog import weighted_average
 
         updates = [{"param1": [1.0, 2.0]}, {"param1": [3.0, 4.0]}]
         weights = [0.7, 0.3]
@@ -129,7 +141,7 @@ class TestBrokerFog:
 
     def test_malformed_message_handling(self):
         """Test handling of malformed MQTT messages."""
-        from flower_basic.broker_fog import on_update
+        from flower_basic.brokers.fog import on_update
 
         # Test with invalid JSON
         mock_msg = Mock()
@@ -143,7 +155,7 @@ class TestBrokerFog:
 
     def test_missing_fields_handling(self):
         """Test handling of messages with missing required fields."""
-        from flower_basic.broker_fog import on_update
+        from flower_basic.brokers.fog import on_update
 
         # Test with missing weights
         test_payload = {

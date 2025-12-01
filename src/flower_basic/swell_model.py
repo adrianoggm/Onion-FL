@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from typing import List
-
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 class SwellMLP(nn.Module):
@@ -18,14 +15,14 @@ class SwellMLP(nn.Module):
     """
 
     def __init__(
-        self, input_dim: int, hidden_dims: List[int] | None = None, num_classes: int = 2
+        self, input_dim: int, hidden_dims: list[int] | None = None, num_classes: int = 2
     ) -> None:
         super().__init__()
         if hidden_dims is None:
             hidden_dims = [128, 64]
 
         dims = [input_dim] + hidden_dims + [num_classes]
-        layers: List[nn.Module] = []
+        layers: list[nn.Module] = []
         for i in range(len(dims) - 2):
             layers.append(nn.Linear(dims[i], dims[i + 1]))
             layers.append(nn.ReLU())
@@ -37,7 +34,7 @@ class SwellMLP(nn.Module):
         return self.net(x)
 
 
-def get_parameters(model: nn.Module) -> List[np.ndarray]:
+def get_parameters(model: nn.Module) -> list[np.ndarray]:
     return [val.cpu().numpy() for _, val in model.state_dict().items()]
 
 

@@ -31,7 +31,7 @@ import torch
 from tabulate import tabulate
 
 from .baseline_model import BaselineTrainer
-from .datasets import load_wesad_dataset, partition_wesad_by_subjects
+from .datasets import load_wesad_dataset
 from .model import ECGModel
 from .utils import (
     detect_data_leakage,
@@ -731,7 +731,7 @@ class ModelComparator:
         centralized_results = []
         federated_results = []
 
-        for fold_idx, (X_train, X_test, y_train, y_test) in enumerate(cv_splits):
+        for fold_idx, (_X_train, _X_test, _y_train, _y_test) in enumerate(cv_splits):
             print(f"\n--- Cross-Validation Fold {fold_idx + 1}/{n_cv_folds} ---")
 
             # Run single comparison for this fold

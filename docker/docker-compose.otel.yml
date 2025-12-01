@@ -1,0 +1,131 @@
+version: "3.9"
+
+# ============================================================================
+# OpenTelemetry Observability Stack for Flower-Basic Federated Learning
+# ============================================================================
+# This compose file provides a complete observability stack:
+# - Mosquitto: MQTT broker for FL communication
+# - Jaeger: Distributed tracing backend and UI
+# - OpenTelemetry Collector: Central telemetry pipeline
+# - Prometheus: Metrics collection and storage
+# - Grafana: Metrics visualization dashboards
+#
+# Usage:
+#   docker compose -f docker-compose.otel.yml up -d
+#
+# Access UIs:
+#   - Jaeger UI: http://localhost:16686
+#   - Prometheus: http://localhost:9090
+#   - Grafana: http://localhost:3000 (admin/admin)
+#   - OTEL Collector Health: http://localhost:13133
+#   - MQTT Broker: localhost:1883
+# ============================================================================
+
+services:
+  # --------------------------------------------------------------------------
+  # Mosquitto - MQTT Broker for Federated Learning Communication
+  # --------------------------------------------------------------------------
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: flower-mosquitto
+    restart: unless-stopped
+    ports:
+      - "${MQTT_PORT:-1883}:1883"     # MQTT default port
+      - "9001:9001"                    # WebSocket port (optional)
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
+    networks:
+      - flower-otel
+  # --------------------------------------------------------------------------
+  # Jaeger - Distributed Tracing
+  # --------------------------------------------------------------------------
+  jaeger:
+    image: jaegertracing/all-in-one:1.53
+    container_name: flower-jaeger
+    restart: unless-stopped
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC receiver
+      - "4318:4318"     # OTLP HTTP receiver
+      - "14268:14268"   # Jaeger thrift receiver
+      - "14250:14250"   # Jaeger gRPC receiver
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - LOG_LEVEL=info
+    networks:
+      - flower-otel
+
+  # --------------------------------------------------------------------------
+  # OpenTelemetry Collector - Central Telemetry Pipeline
+  # --------------------------------------------------------------------------
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.91.0
+    container_name: flower-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4319:4317"     # OTLP gRPC receiver (remapped to avoid Jaeger conflict)
+      - "4320:4318"     # OTLP HTTP receiver (remapped)
+      - "8888:8888"     # Prometheus metrics exposed by the collector
+      - "8889:8889"     # Prometheus exporter metrics
+      - "13133:13133"   # Health check extension
+    depends_on:
+      - jaeger
+      - prometheus
+    networks:
+      - flower-otel
+
+  # --------------------------------------------------------------------------
+  # Prometheus - Metrics Storage
+  # --------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.48.1
+    container_name: flower-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - flower-otel
+
+  # --------------------------------------------------------------------------
+  # Grafana - Visualization
+  # --------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:10.2.3
+    container_name: flower-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - flower-otel
+
+networks:
+  flower-otel:
+    name: flower-otel-network
+    driver: bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  mosquitto-data:
+  mosquitto-log:

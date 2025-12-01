@@ -1,0 +1,106 @@
+# OpenTelemetry Collector Configuration for Flower-Basic
+# ============================================================================
+# This configuration sets up the OTEL Collector to:
+# - Receive telemetry from Flower components via OTLP (gRPC and HTTP)
+# - Process and batch telemetry data
+# - Export traces to Jaeger
+# - Export metrics to Prometheus
+# ============================================================================
+
+receivers:
+  # OTLP receiver - primary way to receive telemetry from Python apps
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins:
+            - "*"
+
+  # Prometheus receiver - scrape metrics from services
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'otel-collector'
+          scrape_interval: 10s
+          static_configs:
+            - targets: ['localhost:8888']
+
+processors:
+  # Batch processor - batches telemetry data before export
+  batch:
+    timeout: 5s
+    send_batch_size: 1000
+
+  # Memory limiter - prevents OOM
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  # Resource processor - adds common attributes
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: development
+        action: upsert
+      - key: service.namespace
+        value: flower-basic
+        action: upsert
+
+exporters:
+  # Jaeger exporter for traces
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+  # Prometheus exporter for metrics
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    namespace: flower
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # Debug exporter - logs telemetry to stdout (useful for debugging)
+  debug:
+    verbosity: basic
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+extensions:
+  # Health check extension
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+  # Performance profiler
+  pprof:
+    endpoint: 0.0.0.0:1777
+
+  # zPages for debugging
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+service:
+  extensions: [health_check, pprof, zpages]
+  
+  pipelines:
+    # Traces pipeline
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters: [otlp/jaeger, debug]
+
+    # Metrics pipeline
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [memory_limiter, batch, resource]
+      exporters: [prometheus, debug]
+
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      address: 0.0.0.0:8888

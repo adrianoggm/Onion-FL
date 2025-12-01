@@ -23,7 +23,7 @@ __email__ = "adriano.garcia@example.com"
 import warnings
 
 from .baseline_model import BaselineTrainer
-from .broker_fog import weighted_average
+from .brokers.fog import weighted_average
 from .compare_models import ModelComparator
 from .datasets import load_swell_dataset, load_wesad_dataset
 from .model import ECGModel, get_parameters, set_parameters

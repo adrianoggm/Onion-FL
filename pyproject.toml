@@ -117,6 +117,8 @@ known_third_party = ["torch", "numpy", "pandas", "matplotlib", "sklearn", "scipy
 [tool.ruff]
 target-version = "py38"
 line-length = 88
+
+[tool.ruff.lint]
 select = [
     "E",  # pycodestyle errors
     "W",  # pycodestyle warnings
@@ -130,9 +132,10 @@ ignore = [
     "E501", # line too long, handled by black
     "B008", # do not perform function calls in argument defaults
     "C901", # too complex
+    "E402", # module level import not at top of file (needed for docstrings)
 ]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "tests/*" = ["B011"]
 

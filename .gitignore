@@ -114,6 +114,7 @@ npm-debug.log*
 
 # Docker
 .dockerignore
+docker/.env
 
 # Local development
 .env.local

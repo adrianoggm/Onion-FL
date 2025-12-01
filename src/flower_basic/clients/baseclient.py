@@ -3,7 +3,7 @@ from __future__ import annotations
 """Base MQTT component used by federated clients and bridges."""
 
 import json
-from typing import Iterable, Optional
+from typing import Iterable
 
 import paho.mqtt.client as mqtt
 
@@ -16,7 +16,7 @@ class BaseMQTTComponent:
         tag: str,
         mqtt_broker: str,
         mqtt_port: int,
-        subscriptions: Optional[Iterable[str]] = None,
+        subscriptions: Iterable[str] | None = None,
     ) -> None:
         self.tag = tag
         self._subscriptions = list(subscriptions or [])

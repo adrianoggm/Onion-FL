@@ -14,13 +14,11 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from typing import Tuple
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
 import pytest
-from sklearn.datasets import make_classification
 
 from flower_basic.datasets import load_swell_dataset, load_wesad_dataset
 from flower_basic.datasets.swell import (
@@ -114,7 +112,6 @@ class TestWESADDataset:
     @pytest.mark.slow
     def test_partition_wesad_by_subjects(self) -> None:
         """Test subject-based partitioning for WESAD dataset."""
-        num_clients = 3
 
         # Test parameter validation
         with pytest.raises(ValueError, match="Cannot create .* clients"):
@@ -246,7 +243,7 @@ class TestSWELLDataset:
 
             assert len(partitions) == 3
 
-            for i, (X_train, X_test, y_train, y_test) in enumerate(partitions):
+            for _i, (X_train, X_test, y_train, y_test) in enumerate(partitions):
                 assert X_train.shape[0] > 0
                 assert X_test.shape[0] > 0
                 assert len(y_train) == X_train.shape[0]
@@ -295,8 +292,8 @@ class TestSWELLDataset:
             computer_df = pd.DataFrame(
                 {**base_data, "mouse_clicks": np.random.randn(6)}
             )
-            facial_df = pd.DataFrame({**base_data, "emotion_joy": np.random.randn(6)})
-            posture_df = pd.DataFrame({**base_data, "head_angle": np.random.randn(6)})
+            pd.DataFrame({**base_data, "emotion_joy": np.random.randn(6)})
+            pd.DataFrame({**base_data, "head_angle": np.random.randn(6)})
             physio_df = pd.DataFrame({**base_data, "hr_mean": np.random.randn(6)})
 
             # Test single modality
