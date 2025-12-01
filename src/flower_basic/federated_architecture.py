@@ -16,7 +16,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 try:
     import yaml  # type: ignore
@@ -45,7 +45,7 @@ class ModelConfig:
     """Global model settings."""
 
     type: str = "ecg_cnn"
-    input_dim: Optional[int] = None
+    input_dim: int | None = None
 
 
 @dataclass
@@ -54,18 +54,18 @@ class DatasetConfig:
 
     name: str = "swell"
     data_dir: str = "data/SWELL"
-    modalities: Optional[List[str]] = None
-    subjects: Optional[List[int]] = None
+    modalities: list[str] | None = None
+    subjects: list[int] | None = None
     seed: int = 42
     split_train: float = 0.5
     split_val: float = 0.2
     split_test: float = 0.3
     scaler: str = "global"
     output_dir: str = "federated_runs/swell"
-    run_name: Optional[str] = None
+    run_name: str | None = None
     mode: str = "auto"
-    manual_assignments: Optional[Dict[str, List[int]]] = None
-    per_node_percentages: Optional[List[float]] = None
+    manual_assignments: dict[str, list[int]] | None = None
+    per_node_percentages: list[float] | None = None
     ensure_min_train_per_node: bool = True
 
 
@@ -74,17 +74,17 @@ class ClientSpec:
     id: str
     dataset: str
     rounds: int = 3
-    data_dir: Optional[str] = None
-    params: Dict[str, Any] = field(default_factory=dict)
-    workflow: Optional[str] = None
+    data_dir: str | None = None
+    params: dict[str, Any] = field(default_factory=dict)
+    workflow: str | None = None
 
 
 @dataclass
 class FogNodeSpec:
     id: str
-    address: Optional[str] = None
+    address: str | None = None
     k: int = 1
-    clients: List[ClientSpec] = field(default_factory=list)
+    clients: list[ClientSpec] = field(default_factory=list)
 
 
 @dataclass
@@ -98,10 +98,10 @@ class OrchestratorSpec:
 @dataclass
 class FederatedArchitecture:
     orchestrator: OrchestratorSpec
-    fog_nodes: List[FogNodeSpec]
+    fog_nodes: list[FogNodeSpec]
     model: ModelConfig = field(default_factory=ModelConfig)
-    dataset: Optional[DatasetConfig] = None
-    workflow: Optional[str] = None
+    dataset: DatasetConfig | None = None
+    workflow: str | None = None
 
 
 @dataclass
@@ -109,12 +109,12 @@ class RuntimeCommand:
     """Command + environment to launch a federated component."""
 
     role: str
-    cmd: List[str]
-    env: Dict[str, str] = field(default_factory=dict)
-    cwd: Optional[str] = None
+    cmd: list[str]
+    env: dict[str, str] = field(default_factory=dict)
+    cwd: str | None = None
 
 
-def _normalize_workflow(name: Optional[str]) -> Optional[str]:
+def _normalize_workflow(name: str | None) -> str | None:
     if name is None:
         return None
     slug = str(name).strip().lower()
@@ -123,7 +123,7 @@ def _normalize_workflow(name: Optional[str]) -> Optional[str]:
     return slug
 
 
-def _read_architecture_file(path: Path) -> Dict[str, Any]:
+def _read_architecture_file(path: Path) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     if path.suffix.lower() in {".yaml", ".yml"}:
         if yaml is None:
@@ -196,9 +196,9 @@ def load_architecture_config(config_path: str | os.PathLike) -> FederatedArchite
             ),
         )
 
-    fog_nodes: List[FogNodeSpec] = []
+    fog_nodes: list[FogNodeSpec] = []
     for node_raw in root.get("fog_nodes", []):
-        clients: List[ClientSpec] = []
+        clients: list[ClientSpec] = []
         for c in node_raw.get("clients", []):
             clients.append(
                 ClientSpec(
@@ -268,7 +268,7 @@ def _default_repo_root() -> Path:
 
 def _infer_input_dim_from_clients(
     arch: FederatedArchitecture, repo_root: Path
-) -> Optional[int]:
+) -> int | None:
     """Try to infer input_dim from the first available client split (train.npz)."""
     for fog in arch.fog_nodes:
         for client in fog.clients:
@@ -367,8 +367,8 @@ def materialize_swell_partitions(
 def build_runtime_plan(
     arch: FederatedArchitecture,
     repo_root: Path | None = None,
-    manifest_path: Optional[Path | str] = None,
-) -> List[RuntimeCommand]:
+    manifest_path: Path | str | None = None,
+) -> list[RuntimeCommand]:
     """Translate architecture into runnable commands (without starting them)."""
     root = repo_root or _default_repo_root()
     python_exec = os.getenv("PYTHON", sys.executable)
@@ -380,7 +380,7 @@ def build_runtime_plan(
         py_path = py_path + os.pathsep + os.getenv("PYTHONPATH")
     env_path = {"PYTHONPATH": py_path}
 
-    def _merge_env(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    def _merge_env(extra: dict[str, str] | None = None) -> dict[str, str]:
         env = env_path.copy()
         if extra:
             env.update(extra)
@@ -419,7 +419,7 @@ def build_runtime_plan(
     else:
         broker_k_arg = next(iter(k_map.values())) if k_map else 1
 
-    commands: List[RuntimeCommand] = []
+    commands: list[RuntimeCommand] = []
 
     # Central server
     if primary == "swell":
@@ -606,12 +606,12 @@ def distribute_architecture(
     arch: FederatedArchitecture,
     mqtt_client: Any = None,
     base_topic: str = "fl/ctrl/plan",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Prepare and optionally publish per-fog configuration over MQTT.
 
     Returns the payloads so they can be inspected or unit-tested without a broker.
     """
-    payloads: List[Dict[str, Any]] = []
+    payloads: list[dict[str, Any]] = []
     topics = arch.orchestrator.mqtt.topics
     for fog in arch.fog_nodes:
         payload = {

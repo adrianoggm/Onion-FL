@@ -2,13 +2,14 @@
 
 Uses SwellMLP to maintain parameter names consistent with clients.
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 import os
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 import flwr as fl
 import numpy as np
@@ -16,17 +17,17 @@ import paho.mqtt.client as mqtt
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from flower_basic.telemetry import (
-    create_counter,
-    create_histogram,
-    create_gauge,
-    record_metric,
-    init_otel,
-    start_span,
-    shutdown_telemetry,
-)
 from flower_basic.datasets.swell_federated import load_node_split
 from flower_basic.swell_model import SwellMLP
+from flower_basic.telemetry import (
+    create_counter,
+    create_gauge,
+    create_histogram,
+    init_otel,
+    record_metric,
+    shutdown_telemetry,
+    start_span,
+)
 
 MODEL_TOPIC = os.getenv("MQTT_TOPIC_GLOBAL", "fl/global_model")
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
@@ -49,9 +50,9 @@ def _init_telemetry():
     global TRACER, METER
     global COUNTER_ROUNDS, COUNTER_AGGREGATIONS, HIST_AGGREGATION_TIME
     global GAUGE_GLOBAL_ACCURACY, GAUGE_GLOBAL_LOSS, GAUGE_ACTIVE_CLIENTS
-    
+
     TRACER, METER = init_otel("server-swell")
-    
+
     # Counters
     COUNTER_ROUNDS = create_counter(
         METER, "fl_rounds_total", "Total number of FL rounds completed"
@@ -59,12 +60,15 @@ def _init_telemetry():
     COUNTER_AGGREGATIONS = create_counter(
         METER, "fl_aggregations_total", "Total number of model aggregations"
     )
-    
+
     # Histograms
     HIST_AGGREGATION_TIME = create_histogram(
-        METER, "fl_aggregation_duration_seconds", "Time to aggregate client updates", "s"
+        METER,
+        "fl_aggregation_duration_seconds",
+        "Time to aggregate client updates",
+        "s",
     )
-    
+
     # Gauges (using UpDownCounter)
     GAUGE_GLOBAL_ACCURACY = create_gauge(
         METER, "fl_global_accuracy", "Current global model accuracy", "1"
@@ -81,8 +85,8 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
     def __init__(
         self,
         model: SwellMLP,
-        mqtt_client: Optional[mqtt.Client],
-        eval_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+        mqtt_client: mqtt.Client | None,
+        eval_data: tuple[np.ndarray, np.ndarray] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -94,18 +98,23 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
     def aggregate_fit(
         self,
         server_round: int,
-        results: List[Tuple[Any, fl.common.FitRes]],
+        results: list[tuple[Any, fl.common.FitRes]],
         failures,
-    ) -> Optional[fl.common.Parameters]:
+    ) -> fl.common.Parameters | None:
         import time
+
         start_time = time.time()
-        
+
         print(f"\n[SERVER_SWELL] === Round {server_round} ===")
-        
+
         # Record number of active clients
         record_metric(GAUGE_ACTIVE_CLIENTS, len(results), {"round": str(server_round)})
-        
-        with start_span(TRACER, "server.aggregate_fit", {"round": server_round, "num_results": len(results)}):
+
+        with start_span(
+            TRACER,
+            "server.aggregate_fit",
+            {"round": server_round, "num_results": len(results)},
+        ):
             new_parameters = super().aggregate_fit(server_round, results, failures)
 
         if new_parameters is None:
@@ -118,7 +127,9 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
                 parameters_obj = new_parameters[0]
 
             if hasattr(parameters_obj, "tensors"):
-                param_arrays = [fl.common.bytes_to_ndarray(t) for t in parameters_obj.tensors]
+                param_arrays = [
+                    fl.common.bytes_to_ndarray(t) for t in parameters_obj.tensors
+                ]
             else:
                 param_arrays = fl.common.parameters_to_ndarrays(parameters_obj)
 
@@ -127,7 +138,10 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
                 if i < len(param_arrays):
                     state_dict[name] = param_arrays[i]
 
-            payload = {"round": server_round, "global_weights": {k: v.tolist() for k, v in state_dict.items()}}
+            payload = {
+                "round": server_round,
+                "global_weights": {k: v.tolist() for k, v in state_dict.items()},
+            }
             if self.mqtt is not None:
                 self.mqtt.publish(MODEL_TOPIC, json.dumps(payload))
                 print(f"{TAG} Published global model on {MODEL_TOPIC}")
@@ -138,9 +152,11 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
                     self.global_model.load_state_dict(torch_state, strict=False)
                     loss, acc = _evaluate_global(self.global_model, self.eval_data)
                     print(f"{TAG} Global eval -> loss: {loss:.4f} | acc: {acc:.4f}")
-                    
+
                     # Record global metrics
-                    record_metric(GAUGE_GLOBAL_ACCURACY, acc, {"round": str(server_round)})
+                    record_metric(
+                        GAUGE_GLOBAL_ACCURACY, acc, {"round": str(server_round)}
+                    )
                     record_metric(GAUGE_GLOBAL_LOSS, loss, {"round": str(server_round)})
                 except Exception as eval_exc:
                     print(f"{TAG} Global eval failed: {eval_exc}")
@@ -153,11 +169,11 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
         record_metric(COUNTER_ROUNDS, 1)
         if HIST_AGGREGATION_TIME:
             HIST_AGGREGATION_TIME.record(aggregation_time, {"round": str(server_round)})
-        
+
         return new_parameters
 
 
-def _load_eval_data(manifest_path: Path) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+def _load_eval_data(manifest_path: Path) -> tuple[np.ndarray, np.ndarray] | None:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     nodes = manifest.get("nodes", {})
     base = manifest_path.parent
@@ -176,7 +192,9 @@ def _load_eval_data(manifest_path: Path) -> Optional[Tuple[np.ndarray, np.ndarra
     return np.concatenate(Xs, axis=0), np.concatenate(ys, axis=0)
 
 
-def _evaluate_global(model: SwellMLP, data: Tuple[np.ndarray, np.ndarray]) -> Tuple[float, float]:
+def _evaluate_global(
+    model: SwellMLP, data: tuple[np.ndarray, np.ndarray]
+) -> tuple[float, float]:
     X, y = data
     device = torch.device("cpu")
     model = model.to(device)
@@ -204,16 +222,18 @@ def _evaluate_global(model: SwellMLP, data: Tuple[np.ndarray, np.ndarray]) -> Tu
 
 def main():
     global MQTT_BROKER, MODEL_TOPIC
-    
+
     # Initialize telemetry for this service
     _init_telemetry()
-    
+
     ap = argparse.ArgumentParser(description="SWELL central Flower server")
     ap.add_argument("--input_dim", type=int, required=True, help="Feature dimension")
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--server_addr", default="0.0.0.0:8080")
     ap.add_argument("--mqtt-broker", default=MQTT_BROKER)
-    ap.add_argument("--mqtt-port", type=int, default=int(os.getenv("MQTT_PORT", "1883")))
+    ap.add_argument(
+        "--mqtt-port", type=int, default=int(os.getenv("MQTT_PORT", "1883"))
+    )
     ap.add_argument("--topic-global", default=MODEL_TOPIC)
     ap.add_argument("--manifest", type=str, help="Path to manifest.json")
     ap.add_argument("--min-fit-clients", type=int, default=1)
@@ -236,7 +256,11 @@ def main():
         print(f"{TAG} MQTT connection failed: {e}")
         mqtt_client = None
 
-    min_available = args.min_available_clients if args.min_available_clients is not None else args.min_fit_clients
+    min_available = (
+        args.min_available_clients
+        if args.min_available_clients is not None
+        else args.min_fit_clients
+    )
     strategy = MQTTFedAvgSwell(
         model=model,
         mqtt_client=mqtt_client,
@@ -254,7 +278,7 @@ def main():
         config=fl.server.ServerConfig(num_rounds=args.rounds),
         strategy=strategy,
     )
-    
+
     # Ensure all telemetry is flushed before exit
     shutdown_telemetry()
 

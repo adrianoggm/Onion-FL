@@ -20,19 +20,19 @@ import json
 import os
 import time
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 import paho.mqtt.client as mqtt
 
 from flower_basic.telemetry import (
     create_counter,
-    create_histogram,
     create_gauge,
-    record_metric,
+    create_histogram,
     init_otel,
-    start_span,
+    record_metric,
     shutdown_telemetry,
+    start_span,
 )
 
 # MQTT CONFIG AND AGGREGATION PARAMETERS
@@ -46,14 +46,14 @@ MQTT_PORT = 1883
 # Number of updates per region before computing partial aggregate
 # K_MAP allows per-region thresholds (e.g., {"fog_1": 2, "fog_2": 3})
 K = 3
-K_MAP: Dict[str, int] = {}
+K_MAP: dict[str, int] = {}
 
 # BUFFERS PER REGION
 # Each region has its own buffer of updates
 buffers = defaultdict(list)
 
 # Track unique clients per region
-clients_per_region: Dict[str, set] = defaultdict(set)
+clients_per_region: dict[str, set] = defaultdict(set)
 
 # Environment overrides (optional)
 try:
@@ -90,35 +90,46 @@ def _init_telemetry():
     global TRACER, METER
     global COUNTER_UPDATES_RECEIVED, COUNTER_PARTIALS_PUBLISHED, HIST_AGGREGATION_TIME, GAUGE_BUFFER_SIZE
     global GAUGE_CLIENT_CONTRIBUTION, COUNTER_AGGREGATIONS_TOTAL, GAUGE_CLIENTS_PER_REGION
-    
+
     TRACER, METER = init_otel("fog-broker")
-    
+
     COUNTER_UPDATES_RECEIVED = create_counter(
         METER, "fl_broker_updates_received_total", "Local updates received from clients"
     )
     COUNTER_PARTIALS_PUBLISHED = create_counter(
-        METER, "fl_broker_partials_published_total", "Partial aggregates published to bridge"
+        METER,
+        "fl_broker_partials_published_total",
+        "Partial aggregates published to bridge",
     )
     HIST_AGGREGATION_TIME = create_histogram(
-        METER, "fl_broker_aggregation_duration_seconds", "Time to aggregate client updates", "s"
+        METER,
+        "fl_broker_aggregation_duration_seconds",
+        "Time to aggregate client updates",
+        "s",
     )
     GAUGE_BUFFER_SIZE = create_gauge(
         METER, "fl_broker_buffer_size", "Current buffer size per region", "1"
     )
     GAUGE_CLIENT_CONTRIBUTION = create_gauge(
-        METER, "fl_broker_client_contribution", "Number of samples contributed by each client", "1"
+        METER,
+        "fl_broker_client_contribution",
+        "Number of samples contributed by each client",
+        "1",
     )
     COUNTER_AGGREGATIONS_TOTAL = create_counter(
         METER, "fl_broker_aggregations_total", "Total regional aggregations performed"
     )
     GAUGE_CLIENTS_PER_REGION = create_gauge(
-        METER, "fl_broker_clients_per_region", "Number of unique clients per fog region", "1"
+        METER,
+        "fl_broker_clients_per_region",
+        "Number of unique clients per fog region",
+        "1",
     )
 
 
 def weighted_average(
-    updates: List[Dict[str, Any]], weights: Optional[List[float]] = None
-) -> Dict[str, Any]:
+    updates: list[dict[str, Any]], weights: list[float] | None = None
+) -> dict[str, Any]:
     """Compute weighted average of model updates per region.
 
     Args:
@@ -161,25 +172,35 @@ def on_update(client, userdata, msg):
             return
 
         with start_span(
-            TRACER, "broker.on_update", {"region": region, "client_id": client_id, "num_samples": num_samples}
+            TRACER,
+            "broker.on_update",
+            {"region": region, "client_id": client_id, "num_samples": num_samples},
         ):
             # Store weights along with metadata for weighted aggregation
-            buffers[region].append({
-                "weights": weights,
-                "num_samples": num_samples,
-                "client_id": client_id
-            })
+            buffers[region].append(
+                {"weights": weights, "num_samples": num_samples, "client_id": client_id}
+            )
             region_k = K_MAP.get(region, K)
-            
+
             # Track unique clients per region
             clients_per_region[region].add(client_id)
-            
+
             # Record metrics
-            record_metric(COUNTER_UPDATES_RECEIVED, 1, {"region": region, "client_id": client_id})
+            record_metric(
+                COUNTER_UPDATES_RECEIVED, 1, {"region": region, "client_id": client_id}
+            )
             record_metric(GAUGE_BUFFER_SIZE, len(buffers[region]), {"region": region})
-            record_metric(GAUGE_CLIENT_CONTRIBUTION, num_samples, {"region": region, "client_id": client_id})
-            record_metric(GAUGE_CLIENTS_PER_REGION, len(clients_per_region[region]), {"region": region})
-            
+            record_metric(
+                GAUGE_CLIENT_CONTRIBUTION,
+                num_samples,
+                {"region": region, "client_id": client_id},
+            )
+            record_metric(
+                GAUGE_CLIENTS_PER_REGION,
+                len(clients_per_region[region]),
+                {"region": region},
+            )
+
             print(
                 f"[BROKER] Update received from client={client_id}, region={region}, samples={num_samples}. "
                 f"Buffer: {len(buffers[region])}/{region_k}"
@@ -187,26 +208,32 @@ def on_update(client, userdata, msg):
 
             if len(buffers[region]) >= region_k:
                 agg_start = time.time()
-                
+
                 # Extract weights and compute sample-weighted average
                 weight_list = [item["weights"] for item in buffers[region]]
                 sample_counts = [item["num_samples"] for item in buffers[region]]
                 total_samples = sum(sample_counts)
-                
+
                 # Use sample counts as weights for FedAvg
                 if total_samples > 0:
                     weights_for_avg = [s / total_samples for s in sample_counts]
                 else:
                     weights_for_avg = None
-                    
+
                 partial = weighted_average(weight_list, weights_for_avg)
                 agg_duration = time.time() - agg_start
-                
+
                 # Log contribution breakdown
                 for item in buffers[region]:
-                    contrib_pct = (item["num_samples"] / total_samples * 100) if total_samples > 0 else 0
-                    print(f"[BROKER] Client {item['client_id']} contributed {item['num_samples']} samples ({contrib_pct:.1f}%)")
-                
+                    contrib_pct = (
+                        (item["num_samples"] / total_samples * 100)
+                        if total_samples > 0
+                        else 0
+                    )
+                    print(
+                        f"[BROKER] Client {item['client_id']} contributed {item['num_samples']} samples ({contrib_pct:.1f}%)"
+                    )
+
                 buffers[region].clear()
                 record_metric(GAUGE_BUFFER_SIZE, 0, {"region": region})
 
@@ -217,28 +244,31 @@ def on_update(client, userdata, msg):
                     "timestamp": time.time(),
                 }
                 client.publish(PARTIAL_TOPIC, json.dumps(msg_payload))
-                
+
                 # Record aggregation metrics
                 record_metric(COUNTER_PARTIALS_PUBLISHED, 1, {"region": region})
                 record_metric(COUNTER_AGGREGATIONS_TOTAL, 1, {"region": region})
                 if HIST_AGGREGATION_TIME:
                     HIST_AGGREGATION_TIME.record(agg_duration, {"region": region})
-                
-                print(f"[BROKER] Partial aggregate published for region={region} (total samples: {total_samples})")
+
+                print(
+                    f"[BROKER] Partial aggregate published for region={region} (total samples: {total_samples})"
+                )
 
     except Exception as e:
         print(f"[BROKER ERROR] Error procesando actualización: {e}")
         import traceback
+
         traceback.print_exc()
 
 
 def main():
     """Start fog broker MQTT loop."""
     global K, MQTT_BROKER, MQTT_PORT, UPDATE_TOPIC, PARTIAL_TOPIC, GLOBAL_TOPIC
-    
+
     # Initialize telemetry for this service
     _init_telemetry()
-    
+
     parser = argparse.ArgumentParser(description="Fog broker (regional aggregator)")
     parser.add_argument(
         "--k",

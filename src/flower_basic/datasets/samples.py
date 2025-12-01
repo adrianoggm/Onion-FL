@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pickle
 from pathlib import Path
-from typing import Tuple
 
 import numpy as np
 import pandas as pd
@@ -16,7 +15,7 @@ def load_wesad_sample_windows(
     sample_path: Path | None = None,
     window_size: int = 200,
     step: int = 100,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Load the real WESAD sample and create sliding-window features."""
     path = sample_path or (SAMPLES_DIR / "wesad_real_sample.pkl")
     with path.open("rb") as handle:
@@ -39,7 +38,7 @@ def load_wesad_sample_windows(
             binary_label = 1 if np.mean(window_labels == stress_label) >= 0.5 else 0
 
             window_values: list[float] = []
-            for signal_name, values in signals.items():
+            for _signal_name, values in signals.items():
                 segment = np.asarray(values[start:end])
                 if segment.ndim == 1:
                     segment = segment.reshape(-1, 1)
@@ -67,7 +66,7 @@ def load_wesad_sample_windows(
 
 def load_swell_sample_features(
     sample_path: Path | None = None,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Load the SWELL sample and return numeric computer-interaction features."""
     path = sample_path or (SAMPLES_DIR / "swell_real_sample.pkl")
     with path.open("rb") as handle:

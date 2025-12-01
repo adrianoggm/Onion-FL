@@ -14,7 +14,6 @@ The ECG5000 dataset contains:
 from __future__ import annotations
 
 import logging
-from typing import Optional, Tuple, Union
 
 import numpy as np
 from sklearn.datasets import fetch_openml
@@ -36,10 +35,10 @@ def load_ecg5000_dataset(
     stratified: bool = True,
     normalize: bool = True,
     return_subject_ids: bool = False,
-) -> Union[
-    Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
-    Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
-]:
+) -> (
+    tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+    | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+):
     """Load ECG5000 dataset from OpenML with comprehensive preprocessing.
 
     Downloads and preprocesses the ECG5000 dataset for federated learning,
@@ -138,9 +137,7 @@ def load_ecg5000_dataset(
         n_subjects = 15
         subjects_per_class = n_subjects // 2
 
-        subject_ids = np.empty(
-            len(X), dtype=f"U10"
-        )  # String array with sufficient size
+        subject_ids = np.empty(len(X), dtype="U10")  # String array with sufficient size
 
         # Assign subjects within each class
         for class_label in [0, 1]:

@@ -4,7 +4,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Tuple
+from typing import Literal
 
 import numpy as np
 
@@ -13,9 +13,9 @@ try:
 except Exception:  # pragma: no cover
     yaml = None
 
-from .swell import SWELLDatasetError, load_swell_all_samples
 from sklearn.preprocessing import StandardScaler
 
+from .swell import SWELLDatasetError, load_swell_all_samples
 
 SplitMode = Literal["global", "none"]
 
@@ -23,8 +23,8 @@ SplitMode = Literal["global", "none"]
 @dataclass
 class FederatedConfig:
     data_dir: str = "data/SWELL"
-    modalities: Optional[List[str]] = None
-    subject_ids: Optional[List[int]] = None
+    modalities: list[str] | None = None
+    subject_ids: list[int] | None = None
     seed: int = 42
     split_train: float = 0.5
     split_val: float = 0.2
@@ -32,10 +32,10 @@ class FederatedConfig:
     scaler: SplitMode = "global"
     mode: Literal["manual", "auto"] = "manual"
     num_fog_nodes: int = 1
-    manual_assignments: Optional[Dict[str, List[int]]] = None
-    per_node_percentages: Optional[List[float]] = None
+    manual_assignments: dict[str, list[int]] | None = None
+    per_node_percentages: list[float] | None = None
     output_dir: str = "federated_runs/swell"
-    run_name: Optional[str] = None
+    run_name: str | None = None
     ensure_min_train_per_node: bool = True
 
 
@@ -45,7 +45,7 @@ def _read_config(config_path: str | os.PathLike) -> FederatedConfig:
         raise FileNotFoundError(f"Config not found: {p}")
 
     text = p.read_text(encoding="utf-8")
-    data: Dict
+    data: dict
     if p.suffix.lower() in {".yaml", ".yml"}:
         if yaml is None:
             raise RuntimeError("PyYAML not installed; use JSON or install pyyaml")
@@ -86,8 +86,8 @@ def _read_config(config_path: str | os.PathLike) -> FederatedConfig:
 
 
 def _split_subjects(
-    subjects: List[str], train: float, val: float, test: float, seed: int
-) -> Tuple[List[str], List[str], List[str]]:
+    subjects: list[str], train: float, val: float, test: float, seed: int
+) -> tuple[list[str], list[str], list[str]]:
     uniq = np.array(sorted(set(subjects)))
     if uniq.size < 2:
         raise SWELLDatasetError("Not enough subjects to split")
@@ -113,11 +113,11 @@ def _split_subjects(
 
 
 def _auto_assign_nodes(
-    all_subjects: List[str],
+    all_subjects: list[str],
     num_nodes: int,
-    percentages: Optional[List[float]],
+    percentages: list[float] | None,
     seed: int,
-) -> Dict[str, List[str]]:
+) -> dict[str, list[str]]:
     if num_nodes < 1:
         raise ValueError("num_fog_nodes must be >= 1")
 
@@ -131,7 +131,7 @@ def _auto_assign_nodes(
         for i in range(len(subs) % num_nodes):
             counts[i] += 1
         idx = 0
-        mapping: Dict[str, List[str]] = {}
+        mapping: dict[str, list[str]] = {}
         for n, c in enumerate(counts):
             mapping[f"fog_{n}"] = subs[idx : idx + c].tolist()
             idx += c
@@ -153,7 +153,7 @@ def _auto_assign_nodes(
     return mapping
 
 
-def plan_and_materialize_swell_federated(config_path: str) -> Dict:
+def plan_and_materialize_swell_federated(config_path: str) -> dict:
     """Create federated SWELL subject splits from JSON/YAML config and save npz artifacts.
 
     Output structure (under output_dir/run_name):
@@ -316,7 +316,7 @@ def plan_and_materialize_swell_federated(config_path: str) -> Dict:
 
 def load_node_split(
     split_file: str | os.PathLike,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Load a saved npz split (X, y, subjects)."""
     arr = np.load(split_file, allow_pickle=True)
     return arr["X"], arr["y"], arr["subjects"]

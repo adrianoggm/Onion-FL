@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -34,14 +34,14 @@ class DatasetSplit:
     y_test: np.ndarray
     train_subject_ids: np.ndarray
     test_subject_ids: np.ndarray
-    feature_names: List[str]
+    feature_names: list[str]
 
 
 @dataclass
 class CombinedDataset:
     """Combined WESAD + SWELL dataset representation."""
 
-    feature_names: List[str]
+    feature_names: list[str]
     X_train: np.ndarray
     X_test: np.ndarray
     y_train: np.ndarray
@@ -54,13 +54,13 @@ class CombinedDataset:
 
 def _canonicalize_feature_frame(
     X: np.ndarray,
-    feature_names: List[str],
+    feature_names: list[str],
     dataset_label: str,
 ) -> pd.DataFrame:
     """Return a dataframe with canonical/shared feature names."""
 
     df = pd.DataFrame(X, columns=feature_names)
-    rename_map: Dict[str, str] = {}
+    rename_map: dict[str, str] = {}
     prefix = f"{dataset_label}_"
 
     for name in feature_names:
@@ -74,7 +74,7 @@ def _canonicalize_feature_frame(
     return df.rename(columns=rename_map)
 
 
-def _load_wesad_split(kwargs: Optional[Dict[str, Any]] = None) -> DatasetSplit:
+def _load_wesad_split(kwargs: dict[str, Any] | None = None) -> DatasetSplit:
     """Load WESAD data with real samples and metadata."""
 
     kwargs = kwargs or {}
@@ -106,7 +106,7 @@ def _load_wesad_split(kwargs: Optional[Dict[str, Any]] = None) -> DatasetSplit:
     )
 
 
-def _load_swell_split(kwargs: Optional[Dict[str, Any]] = None) -> DatasetSplit:
+def _load_swell_split(kwargs: dict[str, Any] | None = None) -> DatasetSplit:
     """Load SWELL data with real samples and metadata."""
 
     kwargs = kwargs or {}
@@ -138,10 +138,10 @@ def _load_swell_split(kwargs: Optional[Dict[str, Any]] = None) -> DatasetSplit:
     )
 
 
-def _combine_columns(wesad_columns: List[str], swell_columns: List[str]) -> List[str]:
+def _combine_columns(wesad_columns: list[str], swell_columns: list[str]) -> list[str]:
     """Preserve order while merging feature name lists."""
 
-    ordered: List[str] = []
+    ordered: list[str] = []
     for name in wesad_columns + swell_columns:
         if name not in ordered:
             ordered.append(name)
@@ -149,10 +149,10 @@ def _combine_columns(wesad_columns: List[str], swell_columns: List[str]) -> List
 
 
 def load_real_multimodal_dataset(
-    wesad_kwargs: Optional[Dict[str, Any]] = None,
-    swell_kwargs: Optional[Dict[str, Any]] = None,
+    wesad_kwargs: dict[str, Any] | None = None,
+    swell_kwargs: dict[str, Any] | None = None,
     include_dataset_indicator: bool = True,
-) -> Tuple[DatasetSplit, DatasetSplit, CombinedDataset]:
+) -> tuple[DatasetSplit, DatasetSplit, CombinedDataset]:
     """Load real WESAD and SWELL datasets and produce a combined split."""
 
     wesad_split = _load_wesad_split(wesad_kwargs)

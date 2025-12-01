@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence, Tuple
+from typing import Iterable, Sequence
 
 import numpy as np
 import pandas as pd
@@ -52,11 +52,11 @@ class SWEETSamplePartition:
 class SWEETSampleDataset:
     """Full dataset split for SWEET sample subjects."""
 
-    feature_names: List[str]
+    feature_names: list[str]
     label_strategy: str
-    train_subjects: List[str]
-    val_subjects: List[str]
-    test_subjects: List[str]
+    train_subjects: list[str]
+    val_subjects: list[str]
+    test_subjects: list[str]
     train: SWEETSamplePartition
     val: SWEETSamplePartition
     test: SWEETSamplePartition
@@ -143,11 +143,11 @@ def _materialize_subject_datasets(
     label_strategy: str,
     elevated_threshold: float,
     min_samples: int,
-) -> Tuple[List[Tuple[str, pd.DataFrame]], List[str]]:
+) -> tuple[list[tuple[str, pd.DataFrame]], list[str]]:
     """Return per-subject aligned samples and the shared feature schema."""
 
-    aligned_subjects: List[Tuple[str, pd.DataFrame]] = []
-    feature_names: List[str] | None = None
+    aligned_subjects: list[tuple[str, pd.DataFrame]] = []
+    feature_names: list[str] | None = None
 
     for subject_dir in sorted(base_path.iterdir()):
         if not subject_dir.is_dir():
@@ -290,7 +290,7 @@ def _split_subjects(
     train_fraction: float,
     val_fraction: float,
     random_state: int,
-) -> Tuple[List[str], List[str], List[str]]:
+) -> tuple[list[str], list[str], list[str]]:
     """Return subject identifiers for train/val/test partitions."""
 
     if not 0.0 < train_fraction < 1.0:
@@ -332,16 +332,16 @@ def _split_subjects(
 
 
 def _collate_partition(
-    subject_datasets: Iterable[Tuple[str, pd.DataFrame]],
+    subject_datasets: Iterable[tuple[str, pd.DataFrame]],
     selected_subjects: Sequence[str],
     feature_names: Sequence[str],
 ) -> SWEETSamplePartition:
     """Stack samples for the requested subject identifiers."""
 
     selected_set = set(selected_subjects)
-    features: List[np.ndarray] = []
-    labels: List[np.ndarray] = []
-    subject_labels: List[np.ndarray] = []
+    features: list[np.ndarray] = []
+    labels: list[np.ndarray] = []
+    subject_labels: list[np.ndarray] = []
 
     for subject_id, df in subject_datasets:
         if subject_id not in selected_set:
@@ -376,7 +376,7 @@ def load_sweet_sample_full(
     label_strategy: str = "binary",
     elevated_threshold: float = 2.0,
     min_samples_per_subject: int = 5,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[str]]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[str]]:
     """Load all SWEET sample-subject data with aligned labels and subject ids.
 
     This helper is intended for subject-aware cross-validation where the entire
@@ -408,9 +408,9 @@ def load_sweet_sample_full(
             f"No SWEET sample subjects available under {Path(data_dir).resolve()}"
         )
 
-    features: List[np.ndarray] = []
-    labels: List[np.ndarray] = []
-    subject_ids: List[np.ndarray] = []
+    features: list[np.ndarray] = []
+    labels: list[np.ndarray] = []
+    subject_ids: list[np.ndarray] = []
 
     for subject_id, df in subject_datasets:
         features.append(df[feature_names].to_numpy(dtype=np.float32, copy=False))

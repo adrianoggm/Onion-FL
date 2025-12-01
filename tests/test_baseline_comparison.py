@@ -4,11 +4,10 @@ import json
 import os
 import shutil
 import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-from pathlib import Path
-
 import pytest
 import torch
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, Tuple
+from typing import Iterable
 
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
@@ -22,7 +22,7 @@ class CrossValidationResult:
     macro_f1_mean: float
     macro_f1_std: float
 
-    def as_dict(self) -> Dict[str, float]:
+    def as_dict(self) -> dict[str, float]:
         return {
             "accuracy_mean": float(self.accuracy_mean),
             "accuracy_std": float(self.accuracy_std),
@@ -31,7 +31,7 @@ class CrossValidationResult:
         }
 
 
-def _summarize(scores: Iterable[Tuple[float, float]]) -> CrossValidationResult:
+def _summarize(scores: Iterable[tuple[float, float]]) -> CrossValidationResult:
     accuracies, macro_f1 = zip(*scores)
     return CrossValidationResult(
         accuracy_mean=float(np.mean(accuracies)),
@@ -46,7 +46,7 @@ def group_cross_validation(
     y: np.ndarray,
     groups: Iterable[str] | np.ndarray,
     n_splits: int = 5,
-) -> Dict[str, Dict[str, float]]:
+) -> dict[str, dict[str, float]]:
     """Run group-aware k-fold cross-validation.
 
     Args:
@@ -75,8 +75,8 @@ def group_cross_validation(
 
     splitter = GroupKFold(n_splits=n_splits)
 
-    lr_scores: list[Tuple[float, float]] = []
-    rf_scores: list[Tuple[float, float]] = []
+    lr_scores: list[tuple[float, float]] = []
+    rf_scores: list[tuple[float, float]] = []
 
     for train_idx, test_idx in splitter.split(X, y, groups):
         X_train, X_test = X[train_idx], X[test_idx]

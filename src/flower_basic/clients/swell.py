@@ -11,29 +11,27 @@ Publishes updated weights to the fog broker over MQTT.
 import argparse
 import json
 import os
+import threading
 import time
 from pathlib import Path
-import threading
 
-import numpy as np
-import paho.mqtt.client as mqtt
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-# Telemetry (optional)
-from flower_basic.telemetry import (
-    init_otel,
-    create_counter,
-    create_histogram,
-    create_gauge,
-    record_metric,
-    start_span,
-    shutdown_telemetry,
-)
+from flower_basic.clients.baseclient import BaseMQTTComponent
 from flower_basic.datasets.swell_federated import load_node_split
 from flower_basic.swell_model import SwellMLP
-from flower_basic.clients.baseclient import BaseMQTTComponent
 
+# Telemetry (optional)
+from flower_basic.telemetry import (
+    create_counter,
+    create_gauge,
+    create_histogram,
+    init_otel,
+    record_metric,
+    shutdown_telemetry,
+    start_span,
+)
 
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
@@ -61,9 +59,9 @@ def _init_telemetry():
     global COUNTER_TRAINING_ROUNDS, COUNTER_UPDATES_PUBLISHED, COUNTER_GLOBAL_MODELS_RECEIVED
     global HIST_TRAINING_DURATION, HIST_TRAINING_LOSS, GAUGE_TRAIN_SAMPLES, GAUGE_VAL_SAMPLES, GAUGE_TEST_SAMPLES
     global GAUGE_CONTRIBUTION_WEIGHT, COUNTER_BATCHES_PROCESSED
-    
+
     TRACER, METER = init_otel("swell-client")
-    
+
     COUNTER_TRAINING_ROUNDS = create_counter(
         METER, "fl_client_training_rounds_total", "Training rounds completed by client"
     )
@@ -71,10 +69,15 @@ def _init_telemetry():
         METER, "fl_client_updates_published_total", "Model updates published to MQTT"
     )
     COUNTER_GLOBAL_MODELS_RECEIVED = create_counter(
-        METER, "fl_client_global_models_received_total", "Global models received from server"
+        METER,
+        "fl_client_global_models_received_total",
+        "Global models received from server",
     )
     HIST_TRAINING_DURATION = create_histogram(
-        METER, "fl_client_training_duration_seconds", "Time for local training round", "s"
+        METER,
+        "fl_client_training_duration_seconds",
+        "Time for local training round",
+        "s",
     )
     HIST_TRAINING_LOSS = create_histogram(
         METER, "fl_client_training_loss", "Training loss distribution", "1"
@@ -89,10 +92,15 @@ def _init_telemetry():
         METER, "fl_client_test_samples", "Number of test samples", "1"
     )
     GAUGE_CONTRIBUTION_WEIGHT = create_gauge(
-        METER, "fl_client_contribution_weight", "Estimated contribution weight (samples/total)", "1"
+        METER,
+        "fl_client_contribution_weight",
+        "Estimated contribution weight (samples/total)",
+        "1",
     )
     COUNTER_BATCHES_PROCESSED = create_counter(
-        METER, "fl_client_batches_processed_total", "Total batches processed during training"
+        METER,
+        "fl_client_batches_processed_total",
+        "Total batches processed during training",
     )
 
 
@@ -155,7 +163,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
             except Exception:
                 self.val_loader = None
                 self.num_val_samples = 0
-            
+
         # Load test samples count
         self.num_test_samples = 0
         test_path = self.node_dir / "test.npz"
@@ -165,7 +173,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                 self.num_test_samples = len(X_test) if X_test.size > 0 else 0
             except Exception:
                 self.num_test_samples = 0
-                
+
         # Metrics output path
         self.metrics_path = self.node_dir / "val_metrics.jsonl"
 
@@ -179,13 +187,15 @@ class SwellFLClientMQTT(BaseMQTTComponent):
         # Protect model updates from MQTT callback during training
         self._lock = threading.Lock()
         self._pending_global_state = None
-        
+
         # Store sample count for contribution tracking
         self.num_samples = len(X_train)
-        
+
         # Report dataset distribution
-        total_samples = self.num_samples + self.num_val_samples + self.num_test_samples
-        print(f"{self.tag} Initialized with {self.num_samples} train / {self.num_val_samples} val / {self.num_test_samples} test samples")
+        self.num_samples + self.num_val_samples + self.num_test_samples
+        print(
+            f"{self.tag} Initialized with {self.num_samples} train / {self.num_val_samples} val / {self.num_test_samples} test samples"
+        )
 
     def on_message(self, client, userdata, msg):
         if msg.topic == self.topic_global:
@@ -202,7 +212,9 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                     with self._lock:
                         self._pending_global_state = state
                     self._got_global = True
-                    record_metric(COUNTER_GLOBAL_MODELS_RECEIVED, 1, {"region": self.region})
+                    record_metric(
+                        COUNTER_GLOBAL_MODELS_RECEIVED, 1, {"region": self.region}
+                    )
                     print(
                         f"{self.tag} Global model available (round={payload.get('round','?')})"
                     )
@@ -211,7 +223,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
 
     def train_one_round(self) -> float:
         start_time = time.time()
-        
+
         with start_span(TRACER, "client.train_one_round", {"region": self.region}):
             with self._lock:
                 self.model.train()
@@ -228,18 +240,24 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                     n += X.size(0)
                     batch_count += 1
                 avg_loss = total / max(n, 1)
-            
+
             # Record metrics
             training_duration = time.time() - start_time
             record_metric(COUNTER_TRAINING_ROUNDS, 1, {"region": self.region})
-            record_metric(COUNTER_BATCHES_PROCESSED, batch_count, {"region": self.region})
+            record_metric(
+                COUNTER_BATCHES_PROCESSED, batch_count, {"region": self.region}
+            )
             if HIST_TRAINING_DURATION:
-                HIST_TRAINING_DURATION.record(training_duration, {"region": self.region})
+                HIST_TRAINING_DURATION.record(
+                    training_duration, {"region": self.region}
+                )
             if HIST_TRAINING_LOSS:
                 HIST_TRAINING_LOSS.record(avg_loss, {"region": self.region})
             record_metric(GAUGE_TRAIN_SAMPLES, n, {"region": self.region})
-            
-        print(f"{self.tag} Train loss: {avg_loss:.4f} | samples: {n} | batches: {batch_count}")
+
+        print(
+            f"{self.tag} Train loss: {avg_loss:.4f} | samples: {n} | batches: {batch_count}"
+        )
         return avg_loss
 
     def evaluate_val(self) -> dict:
@@ -272,11 +290,13 @@ class SwellFLClientMQTT(BaseMQTTComponent):
         with start_span(TRACER, "client.publish_update", {"region": self.region}):
             with self._lock:
                 state = self.model.state_dict()
-                weights = {k: v.detach().cpu().numpy().tolist() for k, v in state.items()}
-            
+                weights = {
+                    k: v.detach().cpu().numpy().tolist() for k, v in state.items()
+                }
+
             # Use consistent client_id based on region and process id
             client_id = f"{self.region}_client_{os.getpid() % 10000}"
-            
+
             payload = {
                 "client_id": client_id,
                 "region": self.region,
@@ -285,8 +305,14 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                 "loss": float(avg_loss),
             }
             self.mqtt.publish(self.topic_updates, json.dumps(payload))
-            record_metric(COUNTER_UPDATES_PUBLISHED, 1, {"region": self.region, "client_id": client_id})
-        print(f"{self.tag} Local update published ({self.num_samples} samples) to {self.topic_updates}")
+            record_metric(
+                COUNTER_UPDATES_PUBLISHED,
+                1,
+                {"region": self.region, "client_id": client_id},
+            )
+        print(
+            f"{self.tag} Local update published ({self.num_samples} samples) to {self.topic_updates}"
+        )
 
     def wait_for_global(self, timeout_s: float = 30.0) -> bool:
         waited = 0.0
@@ -301,12 +327,14 @@ class SwellFLClientMQTT(BaseMQTTComponent):
 
     def run(self, rounds: int = 3, delay: float = 2.0) -> None:
         print(f"{self.tag} Starting {rounds} federated rounds (region={self.region})")
-        
+
         # Register dataset distribution metrics once at start
         record_metric(GAUGE_TRAIN_SAMPLES, self.num_samples, {"region": self.region})
         record_metric(GAUGE_VAL_SAMPLES, self.num_val_samples, {"region": self.region})
-        record_metric(GAUGE_TEST_SAMPLES, self.num_test_samples, {"region": self.region})
-        
+        record_metric(
+            GAUGE_TEST_SAMPLES, self.num_test_samples, {"region": self.region}
+        )
+
         for r in range(1, rounds + 1):
             print(f"\n=== Round {r}/{rounds} ===")
             avg_loss = self.train_one_round()
@@ -340,7 +368,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
 def main():
     # Initialize telemetry for this service
     _init_telemetry()
-    
+
     ap = argparse.ArgumentParser(description="SWELL MQTT federated local client")
     ap.add_argument(
         "--node_dir",
@@ -370,7 +398,7 @@ def main():
         topic_global=args.topic_global,
     )
     client.run(rounds=args.rounds)
-    
+
     # Ensure all telemetry is flushed before exit
     shutdown_telemetry()
 

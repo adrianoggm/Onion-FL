@@ -19,14 +19,14 @@ All loaders follow consistent interfaces and provide:
 from __future__ import annotations
 
 from .ecg5000 import load_ecg5000_dataset, partition_ecg5000_by_subjects
+from .sweet_samples import load_sweet_sample_dataset, load_sweet_sample_full
 from .swell import (
     get_swell_info,
+    load_swell_all_samples,
     load_swell_dataset,
     partition_swell_by_subjects,
-    load_swell_all_samples,
 )
 from .swell_federated import plan_and_materialize_swell_federated
-from .sweet_samples import load_sweet_sample_dataset, load_sweet_sample_full
 from .wesad import load_wesad_dataset, partition_wesad_by_subjects
 
 __all__ = [

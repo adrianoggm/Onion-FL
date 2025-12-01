@@ -21,10 +21,8 @@ from __future__ import annotations
 import logging
 import pickle
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
-import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
@@ -87,23 +85,27 @@ LABEL_SAMPLING_RATE = WESAD_SIGNALS["chest"]["ACC"]
 
 
 def load_wesad_dataset(
-    data_dir: Optional[Union[str, Path]] = None,
-    subjects: Optional[List[str]] = None,
-    signals: List[str] = ["BVP", "EDA", "ACC", "TEMP"],
+    data_dir: str | Path | None = None,
+    subjects: list[str] | None = None,
+    signals: list[str] = None,
     sensor_location: str = "wrist",
-    conditions: List[str] = ["baseline", "stress"],
+    conditions: list[str] = None,
     test_size: float = 0.2,
     normalize: bool = True,
     window_size: int = 60,
     overlap: float = 0.5,
     random_state: int = 42,
     return_subject_info: bool = False,
-) -> Union[
-    Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
-    Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Dict[str, object]],
-]:
+) -> (
+    tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+    | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, object]]
+):
     """Load and preprocess WESAD dataset for federated learning."""
 
+    if conditions is None:
+        conditions = ["baseline", "stress"]
+    if signals is None:
+        signals = ["BVP", "EDA", "ACC", "TEMP"]
     if data_dir is None:
         data_dir = Path("data/WESAD")
     else:
@@ -153,7 +155,7 @@ def load_wesad_dataset(
 
     try:
 
-        def _distribution(values: np.ndarray) -> Dict[int, int]:
+        def _distribution(values: np.ndarray) -> dict[int, int]:
             unique, counts = np.unique(values, return_counts=True)
             return {int(k): int(v) for k, v in zip(unique, counts)}
 
@@ -166,10 +168,10 @@ def load_wesad_dataset(
             conditions,
         )
 
-        all_features: List[np.ndarray] = []
-        all_labels: List[np.ndarray] = []
-        all_subject_ids: List[str] = []
-        feature_names: Optional[List[str]] = None
+        all_features: list[np.ndarray] = []
+        all_labels: list[np.ndarray] = []
+        all_subject_ids: list[str] = []
+        feature_names: list[str] | None = None
 
         for subject_id in subjects:
             try:
@@ -249,7 +251,7 @@ def load_wesad_dataset(
             feature_names = [f"feature_{idx}" for idx in range(X_train.shape[1])]
 
         if return_subject_info:
-            info: Dict[str, object] = {
+            info: dict[str, object] = {
                 "feature_names": feature_names,
                 "subjects": unique_subjects.tolist(),
                 "train_subjects": train_subjects.tolist(),
@@ -281,12 +283,12 @@ def load_wesad_dataset(
 def _load_subject_data(
     data_dir: Path,
     subject_id: str,
-    signals: List[str],
+    signals: list[str],
     sensor_location: str,
-    conditions: List[str],
+    conditions: list[str],
     window_size: int,
     overlap: float,
-) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+) -> tuple[np.ndarray, np.ndarray, list[str]]:
     """Load and preprocess data for a single subject."""
 
     subject_path = data_dir / subject_id / f"{subject_id}.pkl"
@@ -312,7 +314,7 @@ def _load_subject_data(
         raise WESADDatasetError(f"No label data available for {subject_id}")
 
     # Precompute channel naming for deterministic feature ordering
-    channel_names: List[str] = []
+    channel_names: list[str] = []
     for signal_name in signals:
         if signal_name not in signal_data:
             logger.warning("Signal %s not found for %s", signal_name, subject_id)
@@ -325,8 +327,8 @@ def _load_subject_data(
         else:
             channel_names.append(signal_name.lower())
 
-    features: List[List[float]] = []
-    window_labels: List[int] = []
+    features: list[list[float]] = []
+    window_labels: list[int] = []
 
     step_seconds = window_size * (1 - overlap)
     if step_seconds <= 0:
@@ -349,7 +351,7 @@ def _load_subject_data(
             start_time += step_seconds
             continue
 
-        window_feature_values: List[float] = []
+        window_feature_values: list[float] = []
         valid_window = True
 
         for signal_name in signals:
@@ -417,13 +419,13 @@ def _load_subject_data(
 
 
 def partition_wesad_by_subjects(
-    data_dir: Optional[Union[str, Path]] = None,
+    data_dir: str | Path | None = None,
     num_clients: int = 5,
-    signals: List[str] = ["BVP", "EDA", "ACC", "TEMP"],
+    signals: list[str] = None,
     sensor_location: str = "wrist",
-    conditions: List[str] = ["baseline", "stress"],
+    conditions: list[str] = None,
     **kwargs,
-) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+) -> list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
     """Partition WESAD dataset by subjects for federated learning.
 
     Creates federated data partitions by assigning subjects to different
@@ -457,6 +459,10 @@ def partition_wesad_by_subjects(
         X_train_0, X_test_0, y_train_0, y_test_0 = client_datasets[0]
         ```
     """
+    if conditions is None:
+        conditions = ["baseline", "stress"]
+    if signals is None:
+        signals = ["BVP", "EDA", "ACC", "TEMP"]
     if num_clients > len(WESAD_SUBJECTS):
         raise ValueError(
             f"Cannot create {num_clients} clients with only "

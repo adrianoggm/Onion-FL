@@ -12,21 +12,19 @@ import argparse
 import json
 import os
 import time
-from typing import List
 
 import flwr as fl
 import numpy as np
-import paho.mqtt.client as mqtt
 
 from flower_basic.clients.baseclient import BaseMQTTComponent
 from flower_basic.swell_model import SwellMLP, get_parameters, set_parameters
 from flower_basic.telemetry import (
-    init_otel,
     create_counter,
     create_histogram,
+    init_otel,
     record_metric,
-    start_span,
     shutdown_telemetry,
+    start_span,
 )
 
 # Telemetry - initialized lazily in main() to avoid import-time side effects
@@ -42,11 +40,13 @@ def _init_telemetry():
     """Initialize telemetry. Called from main() to ensure proper service name."""
     global TRACER, METER
     global COUNTER_PARTIALS_RECEIVED, COUNTER_FORWARDS_TO_SERVER, COUNTER_TIMEOUTS, HIST_WAIT_TIME
-    
+
     TRACER, METER = init_otel("fog-bridge")
-    
+
     COUNTER_PARTIALS_RECEIVED = create_counter(
-        METER, "fl_bridge_partials_received_total", "Partial aggregates received from fog"
+        METER,
+        "fl_bridge_partials_received_total",
+        "Partial aggregates received from fog",
     )
     COUNTER_FORWARDS_TO_SERVER = create_counter(
         METER, "fl_bridge_forwards_total", "Aggregates forwarded to central server"
@@ -106,9 +106,9 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
     def get_parameters(self, config):
         return get_parameters(self.model)
 
-    def fit(self, parameters: List[np.ndarray], config):
+    def fit(self, parameters: list[np.ndarray], config):
         start_wait = time.time()
-        
+
         with start_span(TRACER, "forward_to_server") as span:
             span.set_attribute("region", self.region)
             set_parameters(self.model, parameters)
@@ -117,17 +117,17 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
             while self.partial_weights is None and waited < timeout:
                 time.sleep(0.5)
                 waited += 0.5
-            
+
             wait_duration = time.time() - start_wait
             if HIST_WAIT_TIME:
                 HIST_WAIT_TIME.record(wait_duration, {"region": self.region})
-            
+
             if self.partial_weights is None:
                 print(f"{self.tag} Timeout waiting for partial")
                 span.set_attribute("status", "timeout")
                 record_metric(COUNTER_TIMEOUTS, 1, {"region": self.region})
                 return get_parameters(self.model), 1, {}
-            
+
             partial_list = [
                 np.array(self.partial_weights[name], dtype=np.float32)
                 for name in self.param_names
@@ -147,7 +147,7 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
 def main():
     # Initialize telemetry for this service
     _init_telemetry()
-    
+
     ap = argparse.ArgumentParser(description="Fog bridge client for SWELL")
     ap.add_argument(
         "--input_dim", type=int, required=True, help="Feature dimension (from manifest)"
@@ -175,7 +175,7 @@ def main():
             partial_topic=args.topic_partial,
         ),
     )
-    
+
     # Ensure all telemetry is flushed before exit
     shutdown_telemetry()
 
