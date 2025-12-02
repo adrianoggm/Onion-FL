@@ -133,8 +133,6 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
         results: list[tuple[Any, fl.common.FitRes]],
         failures,
     ) -> fl.common.Parameters | None:
-        import time
-
         start_time = time.time()
 
         print(f"\n{TAG} ╔══════════════════════════════════════════╗")
