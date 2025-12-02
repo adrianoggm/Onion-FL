@@ -9,8 +9,10 @@ Publishes updated weights to the fog broker over MQTT.
 """
 
 import argparse
+import atexit
 import json
 import os
+import signal
 import threading
 import time
 from pathlib import Path
@@ -31,6 +33,27 @@ from flower_basic.telemetry import (
     record_metric,
     shutdown_telemetry,
     start_span,
+    start_client_span,
+    start_server_span,
+    start_consumer_span,
+    start_producer_span,
+    start_linked_producer_span,
+    start_linked_consumer_span,
+    inject_trace_context,
+    extract_trace_context,
+    SpanKind,
+)
+from flower_basic.prometheus_metrics import (
+    start_metrics_server,
+    get_metrics_port_from_env,
+    push_metrics_to_gateway,
+    CLIENT_TRAIN_SAMPLES,
+    CLIENT_VAL_SAMPLES,
+    CLIENT_TEST_SAMPLES,
+    CLIENT_TRAINING_ROUNDS,
+    CLIENT_TRAINING_DURATION,
+    CLIENT_LOCAL_LOSS,
+    CLIENT_LOCAL_ACCURACY,
 )
 
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
@@ -202,22 +225,31 @@ class SwellFLClientMQTT(BaseMQTTComponent):
             try:
                 payload = json.loads(msg.payload.decode())
                 weights = payload.get("global_weights")
+                trace_context = payload.get("trace_context", {})  # Extract trace context
                 if weights:
-                    # Buffer the global state to apply between rounds (avoid in-place during training)
-                    state = {
-                        k: torch.tensor(v)
-                        for k, v in weights.items()
-                        if k in self.model.state_dict()
-                    }
-                    with self._lock:
-                        self._pending_global_state = state
-                    self._got_global = True
-                    record_metric(
-                        COUNTER_GLOBAL_MODELS_RECEIVED, 1, {"region": self.region}
-                    )
-                    print(
-                        f"{self.tag} Global model available (round={payload.get('round','?')})"
-                    )
+                    # Use linked CONSUMER span to continue trace from server
+                    with start_linked_consumer_span(
+                        TRACER,
+                        "client.receive_global_model",
+                        trace_context,
+                        source_service="server-swell",
+                        attributes={"region": self.region, "round": payload.get("round", "?")}
+                    ):
+                        # Buffer the global state to apply between rounds (avoid in-place during training)
+                        state = {
+                            k: torch.tensor(v)
+                            for k, v in weights.items()
+                            if k in self.model.state_dict()
+                        }
+                        with self._lock:
+                            self._pending_global_state = state
+                        self._got_global = True
+                        record_metric(
+                            COUNTER_GLOBAL_MODELS_RECEIVED, 1, {"region": self.region}
+                        )
+                        print(
+                            f"{self.tag} Global model available (round={payload.get('round','?')})"
+                        )
             except Exception as e:
                 print(f"{self.tag} Error processing global model: {e}")
 
@@ -241,7 +273,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                     batch_count += 1
                 avg_loss = total / max(n, 1)
 
-            # Record metrics
+            # Record metrics (OTEL)
             training_duration = time.time() - start_time
             record_metric(COUNTER_TRAINING_ROUNDS, 1, {"region": self.region})
             record_metric(
@@ -254,6 +286,12 @@ class SwellFLClientMQTT(BaseMQTTComponent):
             if HIST_TRAINING_LOSS:
                 HIST_TRAINING_LOSS.record(avg_loss, {"region": self.region})
             record_metric(GAUGE_TRAIN_SAMPLES, n, {"region": self.region})
+            
+            # Record Prometheus metrics
+            client_id = f"{self.region}_client_{os.getpid() % 10000}"
+            CLIENT_TRAINING_ROUNDS.labels(client_id=client_id, region=self.region).inc()
+            CLIENT_TRAINING_DURATION.labels(client_id=client_id, region=self.region).observe(training_duration)
+            CLIENT_LOCAL_LOSS.labels(client_id=client_id, region=self.region).set(avg_loss)
 
         print(
             f"{self.tag} Train loss: {avg_loss:.4f} | samples: {n} | batches: {batch_count}"
@@ -283,11 +321,17 @@ class SwellFLClientMQTT(BaseMQTTComponent):
             return {}
         val_loss = total / count
         val_acc = correct / count
+        
+        # Record Prometheus validation accuracy
+        client_id = f"{self.region}_client_{os.getpid() % 10000}"
+        CLIENT_LOCAL_ACCURACY.labels(client_id=client_id, region=self.region).set(val_acc)
+        
         print(f"{self.tag} Val loss: {val_loss:.4f} | Val acc: {val_acc:.3f}")
         return {"val_loss": val_loss, "val_acc": val_acc}
 
-    def publish_update(self, avg_loss: float) -> None:
-        with start_span(TRACER, "client.publish_update", {"region": self.region}):
+    def publish_update(self, avg_loss: float, val_acc: float = 0.0) -> None:
+        # Use PRODUCER span with context propagation for distributed tracing
+        with start_linked_producer_span(TRACER, "client.publish_update", "fog-broker", {"region": self.region}) as (span, trace_ctx):
             with self._lock:
                 state = self.model.state_dict()
                 weights = {
@@ -303,6 +347,8 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                 "weights": weights,
                 "num_samples": self.num_samples,
                 "loss": float(avg_loss),
+                "val_acc": float(val_acc),  # Include validation accuracy
+                "trace_context": trace_ctx,  # Propagate trace context
             }
             self.mqtt.publish(self.topic_updates, json.dumps(payload))
             record_metric(
@@ -327,19 +373,28 @@ class SwellFLClientMQTT(BaseMQTTComponent):
 
     def run(self, rounds: int = 3, delay: float = 2.0) -> None:
         print(f"{self.tag} Starting {rounds} federated rounds (region={self.region})")
+        
+        # Client ID for metrics
+        client_id = f"{self.region}_client_{os.getpid() % 10000}"
 
-        # Register dataset distribution metrics once at start
+        # Register dataset distribution metrics once at start (OTEL)
         record_metric(GAUGE_TRAIN_SAMPLES, self.num_samples, {"region": self.region})
         record_metric(GAUGE_VAL_SAMPLES, self.num_val_samples, {"region": self.region})
         record_metric(
             GAUGE_TEST_SAMPLES, self.num_test_samples, {"region": self.region}
         )
+        
+        # Register Prometheus metrics
+        CLIENT_TRAIN_SAMPLES.labels(client_id=client_id, region=self.region).set(self.num_samples)
+        CLIENT_VAL_SAMPLES.labels(client_id=client_id, region=self.region).set(self.num_val_samples)
+        CLIENT_TEST_SAMPLES.labels(client_id=client_id, region=self.region).set(self.num_test_samples)
 
         for r in range(1, rounds + 1):
             print(f"\n=== Round {r}/{rounds} ===")
             avg_loss = self.train_one_round()
             # Validate before publishing update
             val_metrics = self.evaluate_val()
+            val_acc = val_metrics.get("val_acc", 0.0)
             # Persist metrics
             try:
                 rec = {"round": r, "region": self.region, "train_loss": float(avg_loss)}
@@ -350,7 +405,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                     f.write(_json.dumps(rec) + "\n")
             except Exception:
                 pass
-            self.publish_update(avg_loss)
+            self.publish_update(avg_loss, val_acc)  # Include validation accuracy
             self.wait_for_global()
             # Apply pending global safely between rounds
             with self._lock:
@@ -366,9 +421,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
 
 
 def main():
-    # Initialize telemetry for this service
-    _init_telemetry()
-
+    # Parse arguments first to get client index for metrics port
     ap = argparse.ArgumentParser(description="SWELL MQTT federated local client")
     ap.add_argument(
         "--node_dir",
@@ -385,7 +438,34 @@ def main():
     ap.add_argument("--mqtt-port", type=int, default=MQTT_PORT)
     ap.add_argument("--topic-updates", default=TOPIC_UPDATES)
     ap.add_argument("--topic-global", default=TOPIC_GLOBAL_MODEL)
+    ap.add_argument("--client-index", type=int, default=-1, 
+                    help="Client index for metrics port (0-99). If -1, uses PID-based port.")
     args = ap.parse_args()
+
+    # Initialize telemetry for this service
+    _init_telemetry()
+    
+    # Start Prometheus metrics server with deterministic port
+    base_port = get_metrics_port_from_env(default=8100, component="CLIENT")
+    if args.client_index >= 0:
+        client_port = base_port + args.client_index
+    else:
+        client_port = base_port + (os.getpid() % 100)  # Fallback to PID-based
+    start_metrics_server(port=client_port)
+    
+    # Cleanup function to push metrics before exit
+    def cleanup(*_args):
+        print(f"[CLIENT {args.region}] Pushing metrics before shutdown...")
+        push_metrics_to_gateway(
+            job="flower-client", 
+            grouping_key={"region": args.region, "client_index": str(args.client_index)}
+        )
+        shutdown_telemetry()
+    
+    # Register cleanup for various termination signals
+    atexit.register(cleanup)
+    signal.signal(signal.SIGTERM, lambda s, f: (cleanup(), exit(0)))
+    signal.signal(signal.SIGINT, lambda s, f: (cleanup(), exit(0)))
 
     client = SwellFLClientMQTT(
         args.node_dir,
@@ -397,10 +477,11 @@ def main():
         topic_updates=args.topic_updates,
         topic_global=args.topic_global,
     )
-    client.run(rounds=args.rounds)
-
-    # Ensure all telemetry is flushed before exit
-    shutdown_telemetry()
+    
+    try:
+        client.run(rounds=args.rounds)
+    finally:
+        cleanup()
 
 
 if __name__ == "__main__":

@@ -16,8 +16,10 @@ Flow:
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
+import signal
 import time
 from collections import defaultdict
 from typing import Any
@@ -33,6 +35,32 @@ from flower_basic.telemetry import (
     record_metric,
     shutdown_telemetry,
     start_span,
+    start_consumer_span,
+    start_producer_span,
+    start_server_span,
+    start_linked_consumer_span,
+    start_linked_producer_span,
+    inject_trace_context,
+    extract_trace_context,
+    SpanKind,
+)
+from flower_basic.prometheus_metrics import (
+    start_metrics_server,
+    get_metrics_port_from_env,
+    push_metrics_to_gateway,
+    BROKER_CLIENTS_PER_REGION,
+    BROKER_AGGREGATIONS,
+    BROKER_BUFFER_SIZE,
+    BROKER_UPDATES_RECEIVED,
+    BROKER_PARTIALS_PUBLISHED,
+    BROKER_CLIENT_CONTRIBUTION,
+    set_broker_clients,
+    FOG_REGION_ACCURACY,
+    FOG_REGION_LOSS,
+    FOG_REGION_SAMPLES,
+    FOG_REGION_MODEL_NORM,
+    FOG_REGION_MODEL_MEAN,
+    FOG_REGION_MODEL_STD,
 )
 
 # MQTT CONFIG AND AGGREGATION PARAMETERS
@@ -129,7 +157,7 @@ def _init_telemetry():
 
 def weighted_average(
     updates: list[dict[str, Any]], weights: list[float] | None = None
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, float]]:
     """Compute weighted average of model updates per region.
 
     Args:
@@ -137,7 +165,9 @@ def weighted_average(
         weights: Optional weights. If None, use uniform average.
 
     Returns:
-        Dict with averaged parameters to send to central server
+        Tuple of:
+        - Dict with averaged parameters to send to central server
+        - Dict with centroid statistics (norm, mean, std)
     """
     n = len(updates)
     if weights is None:
@@ -145,6 +175,7 @@ def weighted_average(
     avg = {}
 
     # For each model parameter...
+    all_params = []  # Collect all flattened parameters for stats
     for key in updates[0]:
         # Stack all parameter tensors for this key
         param_arrays = [np.array(up[key]) for up in updates]
@@ -152,9 +183,20 @@ def weighted_average(
 
         # Compute weighted average along the first axis
         weights_array = np.array(weights).reshape(-1, *([1] * (stacked.ndim - 1)))
-        avg[key] = (stacked * weights_array).sum(axis=0).tolist()
+        averaged = (stacked * weights_array).sum(axis=0)
+        avg[key] = averaged.tolist()
+        all_params.append(averaged.flatten())
 
-    return avg
+    # Calculate centroid statistics
+    all_weights = np.concatenate(all_params)
+    centroid_stats = {
+        "norm": float(np.linalg.norm(all_weights)),  # L2 norm
+        "mean": float(np.mean(all_weights)),
+        "std": float(np.std(all_weights)),
+        "num_params": len(all_weights),
+    }
+
+    return avg, centroid_stats
 
 
 def on_update(client, userdata, msg):
@@ -166,26 +208,30 @@ def on_update(client, userdata, msg):
         weights = payload.get("weights", {})
         client_id = payload.get("client_id", "unknown")
         num_samples = payload.get("num_samples", 0)  # Track contribution
+        trace_context = payload.get("trace_context", {})  # Extract trace context
 
         if not weights:
             print(f"[BROKER] Received empty weights from {client_id}")
             return
 
-        with start_span(
+        # Use linked CONSUMER span to continue trace from swell-client
+        with start_linked_consumer_span(
             TRACER,
-            "broker.on_update",
-            {"region": region, "client_id": client_id, "num_samples": num_samples},
+            "broker.receive_update",
+            trace_context,
+            source_service="swell-client",
+            attributes={"region": region, "client_id": client_id, "num_samples": num_samples},
         ):
             # Store weights along with metadata for weighted aggregation
             buffers[region].append(
-                {"weights": weights, "num_samples": num_samples, "client_id": client_id}
+                {"weights": weights, "num_samples": num_samples, "client_id": client_id, "trace_context": trace_context}
             )
             region_k = K_MAP.get(region, K)
 
             # Track unique clients per region
             clients_per_region[region].add(client_id)
 
-            # Record metrics
+            # Record metrics (OTEL)
             record_metric(
                 COUNTER_UPDATES_RECEIVED, 1, {"region": region, "client_id": client_id}
             )
@@ -200,6 +246,12 @@ def on_update(client, userdata, msg):
                 len(clients_per_region[region]),
                 {"region": region},
             )
+            
+            # Record Prometheus metrics
+            BROKER_UPDATES_RECEIVED.labels(region=region).inc()
+            BROKER_BUFFER_SIZE.labels(region=region).set(len(buffers[region]))
+            BROKER_CLIENT_CONTRIBUTION.labels(client_id=client_id, region=region).set(num_samples)
+            BROKER_CLIENTS_PER_REGION.labels(region=region).set(len(clients_per_region[region]))
 
             print(
                 f"[BROKER] Update received from client={client_id}, region={region}, samples={num_samples}. "
@@ -220,8 +272,26 @@ def on_update(client, userdata, msg):
                 else:
                     weights_for_avg = None
 
-                partial = weighted_average(weight_list, weights_for_avg)
-                agg_duration = time.time() - agg_start
+                # Use SERVER span for aggregation processing
+                with start_server_span(
+                    TRACER,
+                    "broker.aggregate",
+                    attributes={"region": region, "num_clients": len(weight_list), "total_samples": total_samples},
+                ):
+                    partial, centroid_stats = weighted_average(weight_list, weights_for_avg)
+                    agg_duration = time.time() - agg_start
+
+                # Record centroid (model) metrics for this fog region
+                FOG_REGION_MODEL_NORM.labels(region=region).set(centroid_stats["norm"])
+                FOG_REGION_MODEL_MEAN.labels(region=region).set(centroid_stats["mean"])
+                FOG_REGION_MODEL_STD.labels(region=region).set(centroid_stats["std"])
+                FOG_REGION_SAMPLES.labels(region=region).set(total_samples)
+                
+                print(
+                    f"[BROKER] Centroid stats for {region}: norm={centroid_stats['norm']:.4f}, "
+                    f"mean={centroid_stats['mean']:.6f}, std={centroid_stats['std']:.4f}, "
+                    f"params={centroid_stats['num_params']}"
+                )
 
                 # Log contribution breakdown
                 for item in buffers[region]:
@@ -236,20 +306,35 @@ def on_update(client, userdata, msg):
 
                 buffers[region].clear()
                 record_metric(GAUGE_BUFFER_SIZE, 0, {"region": region})
+                
+                # Record Prometheus metrics after aggregation
+                BROKER_BUFFER_SIZE.labels(region=region).set(0)
 
-                msg_payload = {
-                    "region": region,
-                    "partial_weights": partial,
-                    "total_samples": total_samples,
-                    "timestamp": time.time(),
-                }
-                client.publish(PARTIAL_TOPIC, json.dumps(msg_payload))
+                # Use PRODUCER span with context propagation to fog-bridge
+                with start_linked_producer_span(
+                    TRACER,
+                    "broker.publish_partial",
+                    target_service="fog-bridge",
+                    attributes={"region": region, "total_samples": total_samples},
+                ) as (span, trace_ctx):
+                    msg_payload = {
+                        "region": region,
+                        "partial_weights": partial,
+                        "total_samples": total_samples,
+                        "timestamp": time.time(),
+                        "trace_context": trace_ctx,  # Propagate trace context
+                    }
+                    client.publish(PARTIAL_TOPIC, json.dumps(msg_payload))
 
-                # Record aggregation metrics
+                # Record aggregation metrics (OTEL)
                 record_metric(COUNTER_PARTIALS_PUBLISHED, 1, {"region": region})
                 record_metric(COUNTER_AGGREGATIONS_TOTAL, 1, {"region": region})
                 if HIST_AGGREGATION_TIME:
                     HIST_AGGREGATION_TIME.record(agg_duration, {"region": region})
+                
+                # Record Prometheus metrics
+                BROKER_PARTIALS_PUBLISHED.labels(region=region).inc()
+                BROKER_AGGREGATIONS.labels(region=region).inc()
 
                 print(
                     f"[BROKER] Partial aggregate published for region={region} (total samples: {total_samples})"
@@ -268,6 +353,10 @@ def main():
 
     # Initialize telemetry for this service
     _init_telemetry()
+    
+    # Start Prometheus metrics server
+    metrics_port = get_metrics_port_from_env(default=8001, component="BROKER")
+    start_metrics_server(port=metrics_port)
 
     parser = argparse.ArgumentParser(description="Fog broker (regional aggregator)")
     parser.add_argument(
@@ -334,13 +423,24 @@ def main():
     print(
         f"[BROKER] Agregando K={K} actualizaciones por región antes de enviar al servidor central"
     )
+    
+    # Cleanup function to push metrics before exit
+    def cleanup(*args):
+        print("[BROKER] Pushing metrics before shutdown...")
+        push_metrics_to_gateway(job="flower-broker", grouping_key={"component": "broker"})
+        shutdown_telemetry()
+    
+    # Register cleanup for various termination signals
+    atexit.register(cleanup)
+    signal.signal(signal.SIGTERM, lambda s, f: (cleanup(), exit(0)))
+    signal.signal(signal.SIGINT, lambda s, f: (cleanup(), exit(0)))
+    
     try:
         mqttc.loop_forever()
     except KeyboardInterrupt:
         print("[BROKER] Shutting down...")
     finally:
-        # Ensure all telemetry is flushed before exit
-        shutdown_telemetry()
+        cleanup()
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 # Prometheus Configuration for Flower-Basic
 # ============================================================================
 # Scrape configuration for collecting metrics from Flower FL components
+# Includes spanmetrics for Jaeger Service Dependencies
 # ============================================================================
 
 global:
@@ -27,21 +28,69 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
-  # OpenTelemetry Collector metrics
+  # OpenTelemetry Collector internal metrics
   - job_name: 'otel-collector'
     static_configs:
       - targets: ['otel-collector:8888']
     metrics_path: /metrics
 
-  # Metrics exported by OTEL Collector from Flower components
-  - job_name: 'flower-metrics'
+  # Span metrics from OTEL Collector - Required for Jaeger Service Dependencies
+  - job_name: 'spanmetrics'
     static_configs:
       - targets: ['otel-collector:8889']
     metrics_path: /metrics
 
-  # Optional: Direct scraping of Flower services (if they expose /metrics)
-  # Uncomment and adjust if services expose Prometheus metrics directly
-  # - job_name: 'flower-server'
-  #   static_configs:
-  #     - targets: ['server:8080']
-  #   metrics_path: /metrics
+  # Flower Server - FL metrics (running on host)
+  - job_name: 'flower-server'
+    static_configs:
+      - targets: ['host.docker.internal:8000']
+    metrics_path: /metrics
+    scrape_interval: 5s
+
+  # Flower Fog Broker - aggregation metrics (running on host)
+  - job_name: 'flower-broker'
+    static_configs:
+      - targets: ['host.docker.internal:8001']
+    metrics_path: /metrics
+    scrape_interval: 5s
+
+  # Flower Clients - training metrics (running on host, multiple ports)
+  # Clients use ports 8100-8199 based on PID offset
+  - job_name: 'flower-clients'
+    static_configs:
+      - targets: 
+        - 'host.docker.internal:8100'
+        - 'host.docker.internal:8101'
+        - 'host.docker.internal:8102'
+        - 'host.docker.internal:8103'
+        - 'host.docker.internal:8104'
+        - 'host.docker.internal:8105'
+        - 'host.docker.internal:8106'
+        - 'host.docker.internal:8107'
+        - 'host.docker.internal:8108'
+        - 'host.docker.internal:8109'
+        - 'host.docker.internal:8110'
+        - 'host.docker.internal:8111'
+        - 'host.docker.internal:8112'
+        - 'host.docker.internal:8113'
+        - 'host.docker.internal:8114'
+        - 'host.docker.internal:8115'
+        - 'host.docker.internal:8116'
+        - 'host.docker.internal:8117'
+        - 'host.docker.internal:8118'
+        - 'host.docker.internal:8119'
+        - 'host.docker.internal:8120'
+        - 'host.docker.internal:8121'
+        - 'host.docker.internal:8122'
+        - 'host.docker.internal:8123'
+        - 'host.docker.internal:8124'
+    metrics_path: /metrics
+    scrape_interval: 5s
+
+  # Pushgateway - Persistent metrics for short-lived FL processes
+  - job_name: 'pushgateway'
+    honor_labels: true
+    static_configs:
+      - targets: ['pushgateway:9091']
+    metrics_path: /metrics
+    scrape_interval: 5s

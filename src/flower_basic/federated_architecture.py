@@ -534,7 +534,8 @@ def build_runtime_plan(
         )
     )
 
-    # Clients per fog node
+    # Clients per fog node (with unique index for metrics port)
+    client_index = 0  # Global client index for deterministic metrics ports
     for fog in arch.fog_nodes:
         for client in fog.clients:
             workflow = _normalize_workflow(client.workflow or client.dataset) or primary
@@ -569,6 +570,8 @@ def build_runtime_plan(
                     topics.updates,
                     "--topic-global",
                     topics.global_model,
+                    "--client-index",
+                    str(client_index),
                 ]
                 commands.append(
                     RuntimeCommand(
@@ -578,6 +581,7 @@ def build_runtime_plan(
                         cwd=str(root),
                     )
                 )
+                client_index += 1
             elif workflow == "wesad":
                 client_script = root / "src" / "flower_basic" / "client.py"
                 cmd = [

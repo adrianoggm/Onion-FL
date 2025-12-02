@@ -25,6 +25,14 @@ from flower_basic.telemetry import (
     record_metric,
     shutdown_telemetry,
     start_span,
+    start_consumer_span,
+    start_client_span,
+    start_linked_consumer_span,
+    start_linked_producer_span,
+    start_linked_client_span,
+    inject_trace_context,
+    extract_trace_context,
+    SpanKind,
 )
 
 # Telemetry - initialized lazily in main() to avoid import-time side effects
@@ -78,6 +86,7 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
         self.model = SwellMLP(input_dim=input_dim)
         self.param_names = list(self.model.state_dict().keys())
         self.partial_weights = None
+        self.partial_trace_context = None  # Store trace context from partial
         self.partial_topic = partial_topic
         self.region = region
         self.tag = f"[BRIDGE {self.region}]"
@@ -93,11 +102,18 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
         try:
             data = json.loads(msg.payload.decode())
             self.partial_weights = data.get("partial_weights")
+            self.partial_trace_context = data.get("trace_context", {})  # Extract trace context
             region = data.get("region", "unknown")
             if region != self.region:
                 return
-            with start_span(TRACER, "receive_partial") as span:
-                span.set_attribute("region", region)
+            # Use linked CONSUMER span to continue trace from fog-broker
+            with start_linked_consumer_span(
+                TRACER, 
+                "bridge.receive_partial", 
+                self.partial_trace_context,
+                source_service="fog-broker",
+                attributes={"region": region}
+            ) as span:
                 record_metric(COUNTER_PARTIALS_RECEIVED, 1, {"region": self.region})
                 print(f"{self.tag} Partial aggregate received for region={region}")
         except Exception as e:
@@ -109,8 +125,15 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
     def fit(self, parameters: list[np.ndarray], config):
         start_wait = time.time()
 
-        with start_span(TRACER, "forward_to_server") as span:
-            span.set_attribute("region", self.region)
+        # Use linked CLIENT span to continue the trace and show dependency to server-swell
+        # This links from the fog-broker trace through to the server
+        with start_linked_client_span(
+            TRACER, 
+            "bridge.forward_to_server", 
+            "server-swell", 
+            trace_context=self.partial_trace_context,
+            attributes={"region": self.region}
+        ) as span:
             set_parameters(self.model, parameters)
             timeout = 60
             waited = 0
@@ -124,7 +147,8 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
 
             if self.partial_weights is None:
                 print(f"{self.tag} Timeout waiting for partial")
-                span.set_attribute("status", "timeout")
+                if span:
+                    span.set_attribute("status", "timeout")
                 record_metric(COUNTER_TIMEOUTS, 1, {"region": self.region})
                 return get_parameters(self.model), 1, {}
 
@@ -133,10 +157,12 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
                 for name in self.param_names
             ]
             self.partial_weights = None
+            self.partial_trace_context = None  # Clear trace context after use
             num_samples = 1000
             print(f"{self.tag} Forwarding partial to central server")
-            span.set_attribute("status", "forwarded")
-            span.set_attribute("num_samples", num_samples)
+            if span:
+                span.set_attribute("status", "forwarded")
+                span.set_attribute("num_samples", num_samples)
             record_metric(COUNTER_FORWARDS_TO_SERVER, 1, {"region": self.region})
             return partial_list, num_samples, {}
 
