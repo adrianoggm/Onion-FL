@@ -31,7 +31,9 @@ class FederatedConfig:
     split_val: float = 0.2
     split_test: float = 0.3
     scaler: ScalerMode = "global"
-    split_strategy: SplitStrategy = "per_subject"  # "global" = subjects in one split, "per_subject" = each subject has own splits
+    split_strategy: SplitStrategy = (
+        "per_subject"  # "global" = subjects in one split, "per_subject" = each subject has own splits
+    )
     mode: Literal["manual", "auto"] = "manual"
     num_fog_nodes: int = 1
     manual_assignments: dict[str, list[int]] | None = None
@@ -69,7 +71,9 @@ def _read_config(config_path: str | os.PathLike) -> FederatedConfig:
         split_val=float(split.get("val", 0.2)),
         split_test=float(split.get("test", 0.3)),
         scaler=split.get("scaler", "global"),
-        split_strategy=split.get("strategy", "per_subject"),  # Default to per_subject for FL
+        split_strategy=split.get(
+            "strategy", "per_subject"
+        ),  # Default to per_subject for FL
         mode=federation.get("mode", "manual"),
         num_fog_nodes=int(federation.get("num_fog_nodes", 1)),
         manual_assignments=federation.get("manual_assignments"),
@@ -162,7 +166,7 @@ def plan_and_materialize_swell_federated(config_path: str) -> dict:
     Supports two split strategies:
     - "global": Each subject belongs to exactly one split (train OR val OR test)
     - "per_subject": Each subject has its own internal train/val/test split
-    
+
     Output structure (under output_dir/run_name):
       - manifest.json: full config + subject splits + nodes mapping
       - scaler_global.json (if scaler==global)
@@ -221,13 +225,13 @@ def _materialize_per_subject_strategy(
     meta: dict,
 ) -> dict:
     """Each subject has its own internal train/val/test split.
-    
+
     This is the recommended strategy for federated learning where:
     - Each client (subject) can train AND validate AND test locally
     - Global test is aggregated from all subjects' test splits
     """
     rng = np.random.default_rng(cfg.seed)
-    
+
     # First pass: compute global scaler on ALL training data (from all subjects)
     # We need to know which samples will be train to fit scaler
     scaler_payload = None
@@ -244,7 +248,7 @@ def _materialize_per_subject_strategy(
             subj_rng = np.random.default_rng(cfg.seed + hash(subj) % (2**31))
             perm = subj_rng.permutation(n_subj)
             train_indices.extend(subj_indices[perm[:n_train]])
-        
+
         if train_indices:
             scaler = StandardScaler()
             scaler.fit(X_all[train_indices])
@@ -264,28 +268,28 @@ def _materialize_per_subject_strategy(
     # Track which subjects have train data (all should in per_subject mode)
     subjects_with_train = set()
     clients_map = {}  # fog_id -> {client_id: subject_id}
-    
+
     # Per-subject split storage for aggregation
     fog_splits = {node: {"train": [], "val": [], "test": []} for node in node_map}
-    
+
     for node, node_subjects in node_map.items():
         node_dir = out_dir / node
         node_dir.mkdir(parents=True, exist_ok=True)
         clients_map[node] = {}
-        
+
         for subj in node_subjects:
             subj_str = str(subj)
             client_id = f"{node}_client_{subj_str}"
             clients_map[node][client_id] = subj_str
-            
+
             subj_dir = node_dir / f"subject_{subj_str}"
             subj_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Get all data for this subject
             subj_mask = subjects_all == subj_str
             X_subj = X_all[subj_mask]
             y_subj = y_all[subj_mask]
-            
+
             if len(X_subj) == 0:
                 # Empty subject - create empty files
                 for split_name in ("train", "val", "test"):
@@ -296,13 +300,13 @@ def _materialize_per_subject_strategy(
                         subjects=np.empty((0,), dtype=object),
                     )
                 continue
-            
+
             # Split this subject's data internally
             n = len(X_subj)
             n_train = max(1, int(round(cfg.split_train * n)))
             n_val = max(0, int(round(cfg.split_val * n)))
             n_test = n - n_train - n_val
-            
+
             # Ensure at least 1 test sample if possible
             if n_test < 1 and n > n_train:
                 n_test = 1
@@ -310,38 +314,44 @@ def _materialize_per_subject_strategy(
                     n_val -= 1
                 else:
                     n_train -= 1
-            
+
             # Shuffle indices for this subject (reproducible per subject)
             subj_rng = np.random.default_rng(cfg.seed + hash(subj_str) % (2**31))
             perm = subj_rng.permutation(n)
-            
+
             idx_train = perm[:n_train]
-            idx_val = perm[n_train:n_train + n_val]
-            idx_test = perm[n_train + n_val:]
-            
+            idx_val = perm[n_train : n_train + n_val]
+            idx_test = perm[n_train + n_val :]
+
             # Mark subject as having train data
             if len(idx_train) > 0:
                 subjects_with_train.add(subj_str)
-            
+
             # Save splits for this subject
-            for split_name, idx in [("train", idx_train), ("val", idx_val), ("test", idx_test)]:
+            for split_name, idx in [
+                ("train", idx_train),
+                ("val", idx_val),
+                ("test", idx_test),
+            ]:
                 if len(idx) > 0:
                     X_split = _apply_scale(X_subj[idx])
                     y_split = y_subj[idx]
                     subj_arr = np.full(len(idx), subj_str, dtype=object)
-                    
+
                     # Store for fog aggregation
                     fog_splits[node][split_name].append((X_split, y_split, subj_arr))
                 else:
                     X_split = np.empty((0, X_all.shape[1]), dtype=np.float32)
                     y_split = np.empty((0,), dtype=np.int64)
                     subj_arr = np.empty((0,), dtype=object)
-                
+
                 np.savez(
                     subj_dir / f"{split_name}.npz",
-                    X=X_split, y=y_split, subjects=subj_arr
+                    X=X_split,
+                    y=y_split,
+                    subjects=subj_arr,
                 )
-        
+
         # Save aggregated fog-level splits
         for split_name in ("train", "val", "test"):
             parts = fog_splits[node][split_name]
@@ -353,7 +363,7 @@ def _materialize_per_subject_strategy(
                 X_agg = np.empty((0, X_all.shape[1]), dtype=np.float32)
                 y_agg = np.empty((0,), dtype=np.int64)
                 s_agg = np.empty((0,), dtype=object)
-            
+
             np.savez(node_dir / f"{split_name}.npz", X=X_agg, y=y_agg, subjects=s_agg)
 
     # Build manifest
@@ -387,7 +397,7 @@ def _materialize_per_subject_strategy(
             if k in ("modalities", "n_samples", "n_features", "n_subjects")
         },
     }
-    
+
     (out_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2), encoding="utf-8"
     )
@@ -397,9 +407,13 @@ def _materialize_per_subject_strategy(
         )
 
     print(f"[MATERIALIZE] Strategy: per_subject")
-    print(f"[MATERIALIZE] All {len(uniq_subjects)} subjects have internal train/val/test splits")
-    print(f"[MATERIALIZE] Split ratios: train={cfg.split_train:.0%}, val={cfg.split_val:.0%}, test={cfg.split_test:.0%}")
-    
+    print(
+        f"[MATERIALIZE] All {len(uniq_subjects)} subjects have internal train/val/test splits"
+    )
+    print(
+        f"[MATERIALIZE] Split ratios: train={cfg.split_train:.0%}, val={cfg.split_val:.0%}, test={cfg.split_test:.0%}"
+    )
+
     return {"output_dir": str(out_dir), "manifest": manifest}
 
 
@@ -414,7 +428,7 @@ def _materialize_global_strategy(
     meta: dict,
 ) -> dict:
     """Original global subject-based split: each subject belongs to exactly one split.
-    
+
     This means a subject in 'train' has ALL its data in train, none in val/test.
     """
     # Global subject-based split
@@ -467,7 +481,7 @@ def _materialize_global_strategy(
         return ((X - mean) / scale).astype(np.float32)
 
     clients_map = {}
-    
+
     for node, node_subjects in node_map.items():
         node_dir = out_dir / node
         node_dir.mkdir(parents=True, exist_ok=True)
@@ -502,10 +516,10 @@ def _materialize_global_strategy(
             subj_str = str(subj)
             client_id = f"{node}_client_{subj_str}"
             clients_map[node][client_id] = subj_str
-            
+
             subj_dir = node_dir / f"subject_{subj_str}"
             subj_dir.mkdir(parents=True, exist_ok=True)
-            
+
             for split_name, split_subjects in (
                 ("train", tr_subj),
                 ("val", va_subj),
@@ -519,13 +533,16 @@ def _materialize_global_strategy(
                         subjects=np.empty((0,), dtype=object),
                     )
                     continue
-                
+
                 mask = subjects_all == subj_str
                 X_split = _apply_scale(X_all[mask])
                 y_split = y_all[mask]
                 sub_split = subjects_all[mask]
                 np.savez(
-                    subj_dir / f"{split_name}.npz", X=X_split, y=y_split, subjects=sub_split
+                    subj_dir / f"{split_name}.npz",
+                    X=X_split,
+                    y=y_split,
+                    subjects=sub_split,
                 )
 
     manifest = {
@@ -558,7 +575,7 @@ def _materialize_global_strategy(
             if k in ("modalities", "n_samples", "n_features", "n_subjects")
         },
     }
-    
+
     (out_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2), encoding="utf-8"
     )
@@ -568,8 +585,10 @@ def _materialize_global_strategy(
         )
 
     print(f"[MATERIALIZE] Strategy: global (subject-level split)")
-    print(f"[MATERIALIZE] Train subjects: {len(tr_subj)}, Val subjects: {len(va_subj)}, Test subjects: {len(te_subj)}")
-    
+    print(
+        f"[MATERIALIZE] Train subjects: {len(tr_subj)}, Val subjects: {len(va_subj)}, Test subjects: {len(te_subj)}"
+    )
+
     return {"output_dir": str(out_dir), "manifest": manifest}
 
 

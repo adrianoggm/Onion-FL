@@ -102,17 +102,19 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
         try:
             data = json.loads(msg.payload.decode())
             self.partial_weights = data.get("partial_weights")
-            self.partial_trace_context = data.get("trace_context", {})  # Extract trace context
+            self.partial_trace_context = data.get(
+                "trace_context", {}
+            )  # Extract trace context
             region = data.get("region", "unknown")
             if region != self.region:
                 return
             # Use linked CONSUMER span to continue trace from fog-broker
             with start_linked_consumer_span(
-                TRACER, 
-                "bridge.receive_partial", 
+                TRACER,
+                "bridge.receive_partial",
                 self.partial_trace_context,
                 source_service="fog-broker",
-                attributes={"region": region}
+                attributes={"region": region},
             ) as span:
                 record_metric(COUNTER_PARTIALS_RECEIVED, 1, {"region": self.region})
                 print(f"{self.tag} Partial aggregate received for region={region}")
@@ -128,11 +130,11 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
         # Use linked CLIENT span to continue the trace and show dependency to server-swell
         # This links from the fog-broker trace through to the server
         with start_linked_client_span(
-            TRACER, 
-            "bridge.forward_to_server", 
-            "server-swell", 
+            TRACER,
+            "bridge.forward_to_server",
+            "server-swell",
             trace_context=self.partial_trace_context,
-            attributes={"region": self.region}
+            attributes={"region": self.region},
         ) as span:
             set_parameters(self.model, parameters)
             timeout = 60

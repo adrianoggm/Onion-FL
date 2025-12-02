@@ -114,14 +114,18 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
         self.eval_data = eval_data
         self.total_rounds = total_rounds
         self.history = {"round": [], "loss": [], "accuracy": []}
-        
+
         # Log evaluation data status
         if self.eval_data is not None:
             X, y = self.eval_data
             unique_labels = np.unique(y)
-            print(f"{TAG} Evaluation data loaded: {X.shape[0]} samples, {len(unique_labels)} classes")
+            print(
+                f"{TAG} Evaluation data loaded: {X.shape[0]} samples, {len(unique_labels)} classes"
+            )
         else:
-            print(f"{TAG} WARNING: No evaluation data - model quality will NOT be verified!")
+            print(
+                f"{TAG} WARNING: No evaluation data - model quality will NOT be verified!"
+            )
 
     def aggregate_fit(
         self,
@@ -134,9 +138,13 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
         start_time = time.time()
 
         print(f"\n{TAG} ╔══════════════════════════════════════════╗")
-        print(f"{TAG} ║           ROUND {server_round}/{self.total_rounds}                        ║")
+        print(
+            f"{TAG} ║           ROUND {server_round}/{self.total_rounds}                        ║"
+        )
         print(f"{TAG} ╚══════════════════════════════════════════╝")
-        print(f"{TAG} Received results from {len(results)} fog nodes, {len(failures)} failures")
+        print(
+            f"{TAG} Received results from {len(results)} fog nodes, {len(failures)} failures"
+        )
 
         # Record number of active clients
         record_metric(GAUGE_ACTIVE_CLIENTS, len(results), {"round": str(server_round)})
@@ -180,7 +188,9 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
                 ) as (span, trace_ctx):
                     payload = {
                         "round": server_round,
-                        "global_weights": {k: v.tolist() for k, v in state_dict.items()},
+                        "global_weights": {
+                            k: v.tolist() for k, v in state_dict.items()
+                        },
                         "trace_context": trace_ctx,  # Propagate trace context
                     }
                     self.mqtt.publish(MODEL_TOPIC, json.dumps(payload))
@@ -190,10 +200,12 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
             if server_round == self.total_rounds:
                 if self.eval_data is not None:
                     try:
-                        torch_state = {k: torch.tensor(v) for k, v in state_dict.items()}
+                        torch_state = {
+                            k: torch.tensor(v) for k, v in state_dict.items()
+                        }
                         self.global_model.load_state_dict(torch_state, strict=False)
                         loss, acc = _evaluate_global(self.global_model, self.eval_data)
-                        
+
                         # Store final metrics
                         self.history["round"].append(server_round)
                         self.history["loss"].append(loss)
@@ -203,22 +215,29 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
                         record_metric(
                             GAUGE_GLOBAL_ACCURACY, acc, {"round": str(server_round)}
                         )
-                        record_metric(GAUGE_GLOBAL_LOSS, loss, {"round": str(server_round)})
-                        
+                        record_metric(
+                            GAUGE_GLOBAL_LOSS, loss, {"round": str(server_round)}
+                        )
+
                         # Record Prometheus metrics
                         FL_ACCURACY.labels(server="swell").set(acc)
                         FL_LOSS.labels(server="swell").set(loss)
-                        
+
                         # Print final evaluation summary
                         self._print_final_evaluation(loss, acc)
                     except Exception as eval_exc:
                         print(f"{TAG} Final evaluation failed: {eval_exc}")
                         import traceback
+
                         traceback.print_exc()
                 else:
-                    print(f"{TAG} ⚠ FINAL ROUND: No test data available for evaluation!")
+                    print(
+                        f"{TAG} ⚠ FINAL ROUND: No test data available for evaluation!"
+                    )
             else:
-                print(f"{TAG} Round {server_round}/{self.total_rounds} complete. Evaluation will run after final round.")
+                print(
+                    f"{TAG} Round {server_round}/{self.total_rounds} complete. Evaluation will run after final round."
+                )
         except Exception as e:
             print(f"{TAG} MQTT publish failed: {e}")
 
@@ -228,7 +247,7 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
         record_metric(COUNTER_ROUNDS, 1)
         if HIST_AGGREGATION_TIME:
             HIST_AGGREGATION_TIME.record(aggregation_time, {"round": str(server_round)})
-        
+
         # Record Prometheus metrics
         FL_ROUNDS.labels(server="swell").inc()
         FL_AGGREGATIONS.labels(server="swell").inc()
@@ -242,22 +261,32 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
         X, y = self.eval_data
         n_samples = X.shape[0]
         n_classes = len(np.unique(y))
-        
-        print(f"\n{TAG} ╔══════════════════════════════════════════════════════════════╗")
+
+        print(
+            f"\n{TAG} ╔══════════════════════════════════════════════════════════════╗"
+        )
         print(f"{TAG} ║     FEDERATED LEARNING COMPLETE - FINAL MODEL EVALUATION     ║")
         print(f"{TAG} ╠══════════════════════════════════════════════════════════════╣")
         print(f"{TAG} ║                                                              ║")
         print(f"{TAG} ║  Test Dataset:                                               ║")
-        print(f"{TAG} ║    - Samples: {n_samples:>10,}                                   ║")
-        print(f"{TAG} ║    - Classes: {n_classes:>10}                                   ║")
+        print(
+            f"{TAG} ║    - Samples: {n_samples:>10,}                                   ║"
+        )
+        print(
+            f"{TAG} ║    - Classes: {n_classes:>10}                                   ║"
+        )
         print(f"{TAG} ║                                                              ║")
         print(f"{TAG} ║  Model Performance:                                          ║")
         print(f"{TAG} ║    ┌────────────────────────────────────────────────┐        ║")
-        print(f"{TAG} ║    │  Loss:     {loss:>10.4f}                        │        ║")
-        print(f"{TAG} ║    │  Accuracy: {acc:>10.4f}  ({acc*100:>6.2f}%)            │        ║")
+        print(
+            f"{TAG} ║    │  Loss:     {loss:>10.4f}                        │        ║"
+        )
+        print(
+            f"{TAG} ║    │  Accuracy: {acc:>10.4f}  ({acc*100:>6.2f}%)            │        ║"
+        )
         print(f"{TAG} ║    └────────────────────────────────────────────────┘        ║")
         print(f"{TAG} ║                                                              ║")
-        
+
         # Visual accuracy bar
         bar_len = 40
         filled = int(acc * bar_len)
@@ -265,7 +294,9 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
         print(f"{TAG} ║  Accuracy: [{bar}]  ║")
         print(f"{TAG} ║             0%                                   100%        ║")
         print(f"{TAG} ║                                                              ║")
-        print(f"{TAG} ╚══════════════════════════════════════════════════════════════╝\n")
+        print(
+            f"{TAG} ╚══════════════════════════════════════════════════════════════╝\n"
+        )
 
 
 def _load_eval_data(manifest_path: Path) -> tuple[np.ndarray, np.ndarray] | None:
@@ -293,7 +324,9 @@ def _load_eval_data(manifest_path: Path) -> tuple[np.ndarray, np.ndarray] | None
         return None
     total_X = np.concatenate(Xs, axis=0)
     total_y = np.concatenate(ys, axis=0)
-    print(f"{TAG} Total evaluation data: {total_X.shape[0]} samples, {total_X.shape[1]} features")
+    print(
+        f"{TAG} Total evaluation data: {total_X.shape[0]} samples, {total_X.shape[1]} features"
+    )
     return total_X, total_y
 
 
@@ -330,7 +363,7 @@ def main():
 
     # Initialize telemetry for this service
     _init_telemetry()
-    
+
     # Start Prometheus metrics server
     metrics_port = get_metrics_port_from_env(default=8000, component="SERVER")
     start_metrics_server(port=metrics_port)
@@ -398,7 +431,7 @@ def main():
 
     # Push metrics to Pushgateway before exit (ensures metrics persist)
     push_metrics_to_gateway(job="flower-server", grouping_key={"component": "server"})
-    
+
     # Ensure all telemetry is flushed before exit
     shutdown_telemetry()
 

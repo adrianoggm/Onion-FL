@@ -33,82 +33,97 @@ from flower_basic.federated_architecture import (  # noqa: E402
 
 def _apply_manifest_paths(arch: FederatedArchitecture, manifest_path: Path) -> None:
     """Fill/regenerate SWELL clients from manifest, 1 client per subject.
-    
+
     Behavior depends on split strategy in manifest:
     - per_subject: All subjects have train data (internal split)
     - global: Only subjects in global train split have train data
     """
     from flower_basic.federated_architecture import ClientSpec
-    
+
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     nodes = manifest.get("nodes", {})
     clients_map = manifest.get("clients", {})  # fog_id -> {client_id: subject_id}
     global_subjects = manifest.get("global_subjects", {})
     config = manifest.get("config", {})
     split_config = config.get("split", {})
-    split_strategy = split_config.get("strategy", "global")  # Default to global for backward compat
-    
+    split_strategy = split_config.get(
+        "strategy", "global"
+    )  # Default to global for backward compat
+
     # Determine which subjects have train data based on strategy
     if split_strategy == "per_subject":
         # All subjects have their own internal train split
         train_subjects = set(global_subjects.get("all", []))
-        print(f"[MANIFEST] Strategy: per_subject - all {len(train_subjects)} subjects have train data")
+        print(
+            f"[MANIFEST] Strategy: per_subject - all {len(train_subjects)} subjects have train data"
+        )
     else:
         # Only subjects in global train split have train data
         train_subjects = set(global_subjects.get("train", []))
-        print(f"[MANIFEST] Strategy: global - only {len(train_subjects)} subjects in train split")
-    
+        print(
+            f"[MANIFEST] Strategy: global - only {len(train_subjects)} subjects in train split"
+        )
+
     base = manifest_path.parent
     meta = manifest.get("meta", {})
     n_features = meta.get("n_features")
     if n_features is not None:
         arch.model.input_dim = int(n_features)
-    
+
     for fog in arch.fog_nodes:
         if fog.id not in nodes:
             continue
-        
+
         # Get clients for this fog from manifest
         fog_clients = clients_map.get(fog.id, {})
         if not fog_clients:
             continue
-        
+
         # Regenerate clients list from manifest (1 per subject with training data)
         new_clients = []
         for client_id, subject_id in fog_clients.items():
             # Skip subjects without training data
             if subject_id not in train_subjects:
-                print(f"[MANIFEST] Skipping {client_id} (subject {subject_id} has no train data)")
+                print(
+                    f"[MANIFEST] Skipping {client_id} (subject {subject_id} has no train data)"
+                )
                 continue
-            
+
             # Verify train.npz exists and has data
             subject_dir = base / fog.id / f"subject_{subject_id}"
             train_file = subject_dir / "train.npz"
             if train_file.exists():
                 import numpy as np
+
                 try:
                     arr = np.load(train_file)
                     if arr["X"].shape[0] == 0:
                         print(f"[MANIFEST] Skipping {client_id} (train.npz is empty)")
                         continue
                 except Exception as e:
-                    print(f"[MANIFEST] Skipping {client_id} (error reading train.npz: {e})")
+                    print(
+                        f"[MANIFEST] Skipping {client_id} (error reading train.npz: {e})"
+                    )
                     continue
             else:
                 print(f"[MANIFEST] Skipping {client_id} (train.npz not found)")
                 continue
-                
-            new_clients.append(ClientSpec(
-                id=client_id,
-                dataset="swell",
-                workflow="swell",
-                rounds=arch.orchestrator.rounds,
-                data_dir=str(subject_dir),
-            ))
-        
+
+            new_clients.append(
+                ClientSpec(
+                    id=client_id,
+                    dataset="swell",
+                    workflow="swell",
+                    rounds=arch.orchestrator.rounds,
+                    data_dir=str(subject_dir),
+                )
+            )
+
         fog.clients = new_clients
         fog.k = len(new_clients)  # Wait for ALL clients in this fog
-        print(f"[MANIFEST] {fog.id}: {len(new_clients)} clientes con training data (K={fog.k})")
+        print(
+            f"[MANIFEST] {fog.id}: {len(new_clients)} clientes con training data (K={fog.k})"
+        )
 
 
 def _print_plan(commands) -> None:
@@ -120,12 +135,12 @@ def _print_plan(commands) -> None:
 
 def _launch(commands, delay: float = 1.0) -> None:
     procs: List[subprocess.Popen] = []
-    
+
     # Load .env file to ensure OTEL variables are available
     env_file = REPO_ROOT / ".env"
     if not env_file.exists():
         env_file = REPO_ROOT / "docker" / ".env"
-    
+
     otel_env = {}
     if env_file.exists():
         print(f"[LAUNCH] Loading environment from {env_file}")
@@ -139,12 +154,12 @@ def _launch(commands, delay: float = 1.0) -> None:
                 if key.startswith(("OTEL_", "MQTT_")):
                     otel_env[key] = value
         print(f"[LAUNCH] Loaded OTEL vars: {list(otel_env.keys())}")
-    
+
     try:
         for cmd in commands:
             env = os.environ.copy()
             env.update(otel_env)  # Add OTEL vars from .env
-            env.update(cmd.env)   # Add command-specific vars
+            env.update(cmd.env)  # Add command-specific vars
             print(f"[LAUNCH] {cmd.role}: {' '.join(cmd.cmd)}")
             proc = subprocess.Popen(cmd.cmd, cwd=cmd.cwd, env=env)
             procs.append(proc)
@@ -156,7 +171,9 @@ def _launch(commands, delay: float = 1.0) -> None:
         while True:
             time.sleep(0.5)
             if server_proc and server_proc.poll() is not None:
-                print(f"[INFO] Server terminó (exit code: {server_proc.returncode}); deteniendo resto de procesos...")
+                print(
+                    f"[INFO] Server terminó (exit code: {server_proc.returncode}); deteniendo resto de procesos..."
+                )
                 break
     except KeyboardInterrupt:
         print("\n[SHUTDOWN] Deteniendo procesos (Ctrl+C)...")
@@ -172,7 +189,7 @@ def _launch(commands, delay: float = 1.0) -> None:
                         proc.terminate()
             except Exception as e:
                 print(f"[SHUTDOWN] Error terminando proceso {i}: {e}")
-        
+
         # Wait for processes to actually terminate (with timeout)
         print("[SHUTDOWN] Esperando que los procesos terminen...")
         for i, proc in enumerate(procs):
@@ -183,7 +200,7 @@ def _launch(commands, delay: float = 1.0) -> None:
                 proc.kill()
             except Exception:
                 pass
-        
+
         print("[DONE] Todos los procesos terminados.")
 
 

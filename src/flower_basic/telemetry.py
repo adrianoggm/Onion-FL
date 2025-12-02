@@ -53,13 +53,16 @@ try:
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
     from opentelemetry.trace import SpanKind, Status, StatusCode
     from opentelemetry.propagate import inject, extract
-    from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+    from opentelemetry.trace.propagation.tracecontext import (
+        TraceContextTextMapPropagator,
+    )
 
     OTEL_AVAILABLE = True
     _propagator = TraceContextTextMapPropagator()
 except Exception:  # pragma: no cover
     OTEL_AVAILABLE = False
     _propagator = None
+
     # Define SpanKind enum for when OTEL is not available
     class SpanKind(Enum):
         INTERNAL = 0
@@ -263,7 +266,7 @@ def start_span(
     peer_service: str | None = None,
 ):
     """Start a span with the tracer, adding service name as attribute.
-    
+
     Args:
         tracer: The OpenTelemetry tracer instance
         name: Name of the span
@@ -274,7 +277,7 @@ def start_span(
               - Use PRODUCER when sending messages (MQTT)
               - Use CONSUMER when receiving messages
         peer_service: Name of the service being called (required for dependencies)
-    
+
     For Jaeger Service Dependencies to work, you must:
     1. Set kind=SpanKind.CLIENT when making outgoing calls
     2. Set peer_service to the name of the service being called
@@ -282,23 +285,23 @@ def start_span(
     if tracer is None:
         yield None
         return
-    
+
     # Use INTERNAL as default kind if none specified (avoid None which causes export error)
     if OTEL_AVAILABLE:
         span_kind = kind if kind is not None else SpanKind.INTERNAL
     else:
         span_kind = None
-    
+
     with tracer.start_as_current_span(name, kind=span_kind) as span:
         # Add service name from tracer's instrumentation scope
         if hasattr(tracer, "_instrumentation_scope") and tracer._instrumentation_scope:
             span.set_attribute("service.name", tracer._instrumentation_scope.name)
-        
+
         # Add peer service for dependency tracking (critical for Jaeger architecture view)
         if peer_service:
             span.set_attribute("peer.service", peer_service)
             span.set_attribute("net.peer.name", peer_service)
-        
+
         if attributes:
             for k, v in attributes.items():
                 span.set_attribute(k, v)
@@ -306,18 +309,20 @@ def start_span(
 
 
 @contextmanager
-def start_client_span(tracer, name: str, target_service: str, attributes: dict[str, Any] | None = None):
+def start_client_span(
+    tracer, name: str, target_service: str, attributes: dict[str, Any] | None = None
+):
     """Start a CLIENT span for outgoing calls to another service.
-    
+
     This is a convenience wrapper around start_span that automatically sets
     the correct SpanKind and peer.service attributes for dependency tracking.
-    
+
     Args:
         tracer: The OpenTelemetry tracer instance
         name: Name of the span (e.g., "send_model_update")
         target_service: Name of the service being called (e.g., "fl-server")
         attributes: Additional attributes
-    
+
     Example:
         with start_client_span(tracer, "send_weights", "fl-server") as span:
             client.send(weights)
@@ -326,14 +331,10 @@ def start_client_span(tracer, name: str, target_service: str, attributes: dict[s
     if tracer is None:
         yield None
         return
-    
+
     kind = SpanKind.CLIENT if OTEL_AVAILABLE else None
     with start_span(
-        tracer,
-        name,
-        attributes=attributes,
-        kind=kind,
-        peer_service=target_service
+        tracer, name, attributes=attributes, kind=kind, peer_service=target_service
     ) as span:
         yield span
 
@@ -341,12 +342,12 @@ def start_client_span(tracer, name: str, target_service: str, attributes: dict[s
 @contextmanager
 def start_server_span(tracer, name: str, attributes: dict[str, Any] | None = None):
     """Start a SERVER span for incoming requests.
-    
+
     Args:
         tracer: The OpenTelemetry tracer instance
         name: Name of the span (e.g., "handle_client_update")
         attributes: Additional attributes
-    
+
     Example:
         with start_server_span(tracer, "aggregate_round") as span:
             aggregate_results()
@@ -355,7 +356,7 @@ def start_server_span(tracer, name: str, attributes: dict[str, Any] | None = Non
     if tracer is None:
         yield None
         return
-    
+
     kind = SpanKind.SERVER if OTEL_AVAILABLE else None
     with start_span(
         tracer,
@@ -367,15 +368,17 @@ def start_server_span(tracer, name: str, attributes: dict[str, Any] | None = Non
 
 
 @contextmanager
-def start_producer_span(tracer, name: str, target_service: str, attributes: dict[str, Any] | None = None):
+def start_producer_span(
+    tracer, name: str, target_service: str, attributes: dict[str, Any] | None = None
+):
     """Start a PRODUCER span for sending messages (e.g., MQTT publish).
-    
+
     Args:
         tracer: The OpenTelemetry tracer instance
         name: Name of the span (e.g., "mqtt_publish")
         target_service: Name of the service receiving the message
         attributes: Additional attributes
-    
+
     Example:
         with start_producer_span(tracer, "publish_weights", "mqtt-broker") as span:
             mqtt_client.publish(topic, payload)
@@ -384,28 +387,29 @@ def start_producer_span(tracer, name: str, target_service: str, attributes: dict
     if tracer is None:
         yield None
         return
-    
+
     kind = SpanKind.PRODUCER if OTEL_AVAILABLE else None
     with start_span(
-        tracer,
-        name,
-        attributes=attributes,
-        kind=kind,
-        peer_service=target_service
+        tracer, name, attributes=attributes, kind=kind, peer_service=target_service
     ) as span:
         yield span
 
 
-@contextmanager  
-def start_consumer_span(tracer, name: str, source_service: str | None = None, attributes: dict[str, Any] | None = None):
+@contextmanager
+def start_consumer_span(
+    tracer,
+    name: str,
+    source_service: str | None = None,
+    attributes: dict[str, Any] | None = None,
+):
     """Start a CONSUMER span for receiving messages (e.g., MQTT subscribe).
-    
+
     Args:
         tracer: The OpenTelemetry tracer instance
         name: Name of the span (e.g., "mqtt_receive")
         source_service: Name of the service that sent the message (optional)
         attributes: Additional attributes
-    
+
     Example:
         with start_consumer_span(tracer, "receive_weights", "fl-client") as span:
             process_message(msg)
@@ -414,11 +418,11 @@ def start_consumer_span(tracer, name: str, source_service: str | None = None, at
     if tracer is None:
         yield None
         return
-    
+
     attrs = attributes.copy() if attributes else {}
     if source_service:
         attrs["messaging.source.name"] = source_service
-    
+
     kind = SpanKind.CONSUMER if OTEL_AVAILABLE else None
     with start_span(
         tracer,
@@ -438,17 +442,17 @@ def start_consumer_span(tracer, name: str, source_service: str | None = None, at
 
 def inject_trace_context(carrier: dict[str, Any] | None = None) -> dict[str, str]:
     """Inject current trace context into a carrier dict for propagation.
-    
+
     Call this when SENDING a message to another service. The returned dict
     contains W3C Trace Context headers (traceparent, tracestate) that should
     be included in the MQTT message payload.
-    
+
     Args:
         carrier: Optional existing dict to inject into. If None, creates new dict.
-    
+
     Returns:
         Dict with trace context headers (traceparent, tracestate)
-    
+
     Example:
         with start_producer_span(tracer, "publish_update", "fog-broker") as span:
             trace_ctx = inject_trace_context()
@@ -457,7 +461,7 @@ def inject_trace_context(carrier: dict[str, Any] | None = None) -> dict[str, str
     """
     if not OTEL_AVAILABLE or _propagator is None:
         return {}
-    
+
     carrier = carrier if carrier is not None else {}
     try:
         inject(carrier)
@@ -468,16 +472,16 @@ def inject_trace_context(carrier: dict[str, Any] | None = None) -> dict[str, str
 
 def extract_trace_context(carrier: dict[str, Any]) -> Any:
     """Extract trace context from a carrier dict received from another service.
-    
+
     Call this when RECEIVING a message from another service. Returns a context
     object that can be used with start_span_with_context().
-    
+
     Args:
         carrier: Dict containing trace context headers (from inject_trace_context)
-    
+
     Returns:
         OpenTelemetry context object (or None if extraction fails)
-    
+
     Example:
         payload = json.loads(msg.payload)
         trace_ctx = payload.get("trace_context", {})
@@ -487,7 +491,7 @@ def extract_trace_context(carrier: dict[str, Any]) -> Any:
     """
     if not OTEL_AVAILABLE or _propagator is None or not carrier:
         return None
-    
+
     try:
         return extract(carrier)
     except Exception:
@@ -504,10 +508,10 @@ def start_span_with_context(
     peer_service: str | None = None,
 ):
     """Start a span with an extracted parent context for distributed tracing.
-    
+
     Use this when processing a message received from another service to create
     a child span that continues the trace from the sending service.
-    
+
     Args:
         tracer: The OpenTelemetry tracer instance
         name: Name of the span
@@ -515,12 +519,12 @@ def start_span_with_context(
         attributes: Additional attributes to set on the span
         kind: SpanKind (typically SERVER or CONSUMER for incoming messages)
         peer_service: Name of the calling service (for dependency tracking)
-    
+
     Example:
         trace_ctx = payload.get("trace_context", {})
         parent_ctx = extract_trace_context(trace_ctx)
         with start_span_with_context(
-            tracer, "process_update", parent_ctx, 
+            tracer, "process_update", parent_ctx,
             kind=SpanKind.SERVER, peer_service="swell-client"
         ) as span:
             process_update(payload)
@@ -528,33 +532,30 @@ def start_span_with_context(
     if tracer is None:
         yield None
         return
-    
+
     # Use INTERNAL as default kind if none specified
     if OTEL_AVAILABLE:
         span_kind = kind if kind is not None else SpanKind.INTERNAL
     else:
         span_kind = None
-    
+
     # Start span with parent context if available
-    ctx_manager = tracer.start_as_current_span(
-        name,
-        context=parent_context,
-        kind=span_kind
-    ) if parent_context and OTEL_AVAILABLE else tracer.start_as_current_span(
-        name,
-        kind=span_kind
+    ctx_manager = (
+        tracer.start_as_current_span(name, context=parent_context, kind=span_kind)
+        if parent_context and OTEL_AVAILABLE
+        else tracer.start_as_current_span(name, kind=span_kind)
     )
-    
+
     with ctx_manager as span:
         # Add service name from tracer's instrumentation scope
         if hasattr(tracer, "_instrumentation_scope") and tracer._instrumentation_scope:
             span.set_attribute("service.name", tracer._instrumentation_scope.name)
-        
+
         # Add peer service for dependency tracking
         if peer_service:
             span.set_attribute("peer.service", peer_service)
             span.set_attribute("net.peer.name", peer_service)
-        
+
         if attributes:
             for k, v in attributes.items():
                 span.set_attribute(k, v)
@@ -570,20 +571,20 @@ def start_linked_consumer_span(
     attributes: dict[str, Any] | None = None,
 ):
     """Start a CONSUMER span linked to a parent trace from another service.
-    
+
     Convenience wrapper that extracts context and creates a properly linked span.
-    
+
     Args:
         tracer: The OpenTelemetry tracer instance
         name: Name of the span (e.g., "receive_update")
         trace_context: Dict with trace context from the message payload
         source_service: Name of the service that sent the message
         attributes: Additional attributes
-    
+
     Example:
         payload = json.loads(msg.payload)
         with start_linked_consumer_span(
-            tracer, "receive_update", 
+            tracer, "receive_update",
             payload.get("trace_context"),
             source_service="swell-client"
         ) as span:
@@ -592,23 +593,23 @@ def start_linked_consumer_span(
     if tracer is None:
         yield None
         return
-    
+
     parent_ctx = extract_trace_context(trace_context) if trace_context else None
-    
+
     attrs = attributes.copy() if attributes else {}
     if source_service:
         attrs["messaging.source.name"] = source_service
         attrs["peer.service"] = source_service
-    
+
     kind = SpanKind.CONSUMER if OTEL_AVAILABLE else None
-    
+
     with start_span_with_context(
         tracer,
         name,
         parent_ctx,
         attributes=attrs,
         kind=kind,
-        peer_service=source_service
+        peer_service=source_service,
     ) as span:
         yield span
 
@@ -621,19 +622,19 @@ def start_linked_producer_span(
     attributes: dict[str, Any] | None = None,
 ):
     """Start a PRODUCER span and return trace context for propagation.
-    
+
     Convenience wrapper that creates a producer span and provides the trace
     context to inject into the outgoing message.
-    
+
     Args:
         tracer: The OpenTelemetry tracer instance
         name: Name of the span (e.g., "publish_update")
         target_service: Name of the service receiving the message
         attributes: Additional attributes
-    
+
     Yields:
         Tuple of (span, trace_context_dict)
-    
+
     Example:
         with start_linked_producer_span(tracer, "publish_update", "fog-broker") as (span, trace_ctx):
             payload = {"weights": weights, "trace_context": trace_ctx}
@@ -642,15 +643,11 @@ def start_linked_producer_span(
     if tracer is None:
         yield None, {}
         return
-    
+
     kind = SpanKind.PRODUCER if OTEL_AVAILABLE else None
-    
+
     with start_span(
-        tracer,
-        name,
-        attributes=attributes,
-        kind=kind,
-        peer_service=target_service
+        tracer, name, attributes=attributes, kind=kind, peer_service=target_service
     ) as span:
         trace_ctx = inject_trace_context()
         yield span, trace_ctx
@@ -665,17 +662,17 @@ def start_linked_client_span(
     attributes: dict[str, Any] | None = None,
 ):
     """Start a CLIENT span linked to a parent trace for outgoing calls.
-    
+
     Use this when making an outgoing call (e.g., gRPC, HTTP) and you want to
     continue a trace received from another service.
-    
+
     Args:
         tracer: The OpenTelemetry tracer instance
         name: Name of the span (e.g., "forward_to_server")
         target_service: Name of the service being called
         trace_context: Dict with trace context from a previous message (optional)
         attributes: Additional attributes
-    
+
     Example:
         # Forward request to server, continuing trace from received message
         with start_linked_client_span(
@@ -687,17 +684,17 @@ def start_linked_client_span(
     if tracer is None:
         yield None
         return
-    
+
     parent_ctx = extract_trace_context(trace_context) if trace_context else None
-    
+
     kind = SpanKind.CLIENT if OTEL_AVAILABLE else None
-    
+
     with start_span_with_context(
         tracer,
         name,
         parent_ctx,
         attributes=attributes,
         kind=kind,
-        peer_service=target_service
+        peer_service=target_service,
     ) as span:
         yield span
