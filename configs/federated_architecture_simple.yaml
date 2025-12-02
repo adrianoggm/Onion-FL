@@ -1,0 +1,56 @@
+federated_architecture:
+  workflow: SWELL
+
+  dataset:
+    name: SWELL
+    data_dir: data/SWELL
+    modalities: [computer, facial, posture, physiology]
+    split:
+      train: 0.5
+      val: 0.2
+      test: 0.3
+      seed: 42
+      scaler: global
+    output_dir: federated_runs/swell
+    run_name: simple_test
+
+  orchestrator:
+    address: "0.0.0.0:8080"
+    rounds: 5  # Menos rondas para test rápido
+    protocol: "MQTT"
+    mqtt:
+      broker: "localhost"
+      port: 1883
+      topics:
+        updates: "fl/updates"
+        partial: "fl/partial"
+        global_model: "fl/global_model"
+
+  model:
+    type: "swell_mlp"
+    input_dim: 113  # Se actualiza del manifest
+
+  # Configuración SIMPLE: 1 cliente por fog, K=1
+  # Cada fog tiene datos de diferentes sujetos (del manifest)
+  fog_nodes:
+    - id: fog_0
+      k: 1  # Esperar 1 update antes de agregar
+      clients:
+        - id: fog0_client
+          dataset: "SWELL"
+          rounds: 5
+          # data_dir se asigna desde manifest -> federated_runs/swell/example_manual/fog_0
+
+    - id: fog_1
+      k: 1
+      clients:
+        - id: fog1_client
+          dataset: "SWELL"
+          rounds: 5
+
+    - id: fog_2
+      k: 1
+      clients:
+        - id: fog2_client
+          dataset: "SWELL"
+          rounds: 5

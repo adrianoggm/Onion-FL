@@ -4,19 +4,25 @@ dataset:
   subjects: null  # opcional: lista de sujetos para limitar
 
 split:
-  train: 0.5
-  val: 0.2
-  test: 0.3
+  train: 0.7      # 70% para entrenamiento
+  val: 0.15       # 15% para validación  
+  test: 0.15      # 15% para test
   seed: 42
   scaler: global  # global | none
+  # strategy: Cómo dividir los datos
+  #   - "per_subject" (default): Cada sujeto tiene su propio split train/val/test interno
+  #                              Ideal para FL donde cada cliente puede validar localmente
+  #   - "global": Cada sujeto pertenece a UN solo split (train OR val OR test)
+  #               Un sujeto de train no tiene datos de val/test
+  strategy: per_subject
 
 federation:
   mode: manual   # manual | auto
   # manual_assignments tiene prioridad cuando mode=manual
   manual_assignments:
-    fog_0: [1, 2, 3, 4, 5, 6]
-    fog_1: [7, 8, 9, 10, 11, 12]
-    fog_2: [13, 14, 15, 16, 17, 18]
+    fog_0: [1, 2, 3, 4, 5, 6, 19, 20, 21]
+    fog_1: [7, 8, 9, 10, 11, 12, 22, 23]
+    fog_2: [13, 14, 15, 16, 17, 18, 24, 25]
   # si mode=auto, usar num_fog_nodes y per_node_percentages
   num_fog_nodes: 3
   per_node_percentages: [0.34, 0.33, 0.33]

@@ -33,6 +33,23 @@ from .utils import (
     statistical_significance_test,
 )
 
+# Telemetry exports
+from .telemetry import (
+    init_otel,
+    start_span,
+    start_client_span,
+    start_server_span,
+    start_producer_span,
+    start_consumer_span,
+    shutdown_telemetry,
+    create_counter,
+    create_histogram,
+    create_gauge,
+    record_metric,
+    OTEL_AVAILABLE,
+    SpanKind,
+)
+
 try:
     from .datasets import load_ecg5000_dataset
     from .utils import load_ecg5000_subject_based
@@ -73,6 +90,20 @@ __all__ = [
     "get_parameters",
     "set_parameters",
     "weighted_average",
+    # Telemetry
+    "init_otel",
+    "start_span",
+    "start_client_span",
+    "start_server_span",
+    "start_producer_span",
+    "start_consumer_span",
+    "shutdown_telemetry",
+    "create_counter",
+    "create_histogram",
+    "create_gauge",
+    "record_metric",
+    "OTEL_AVAILABLE",
+    "SpanKind",
     # Deprecated (will be removed in v0.2.0)
     "_deprecated_load_ecg5000_dataset",
     "_deprecated_load_ecg5000_subject_based",

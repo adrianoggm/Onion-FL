@@ -5,6 +5,7 @@
 # - Process and batch telemetry data
 # - Export traces to Jaeger
 # - Export metrics to Prometheus
+# - Generate span metrics for Jaeger Service Dependencies
 # ============================================================================
 
 receivers:
@@ -27,6 +28,29 @@ receivers:
           scrape_interval: 10s
           static_configs:
             - targets: ['localhost:8888']
+
+# Connectors - link traces to metrics for service dependencies
+connectors:
+  # Spanmetrics connector - generates metrics from spans for Jaeger SPM
+  spanmetrics:
+    histogram:
+      explicit:
+        buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms, 500ms, 1s, 2s, 5s, 10s]
+    dimensions:
+      # Additional useful dimensions (span.kind and status.code are implicit)
+      - name: peer.service
+      - name: http.method
+        default: GET
+      - name: http.status_code
+      - name: rpc.method
+      - name: rpc.service
+      - name: region
+      - name: client_id
+    exemplars:
+      enabled: true
+    dimensions_cache_size: 1000
+    aggregation_temporality: "AGGREGATION_TEMPORALITY_CUMULATIVE"
+    metrics_flush_interval: 15s
 
 processors:
   # Batch processor - batches telemetry data before export
@@ -87,15 +111,15 @@ service:
   extensions: [health_check, pprof, zpages]
   
   pipelines:
-    # Traces pipeline
+    # Traces pipeline - also sends to spanmetrics connector
     traces:
       receivers: [otlp]
       processors: [memory_limiter, batch, resource]
-      exporters: [otlp/jaeger, debug]
+      exporters: [otlp/jaeger, spanmetrics, debug]
 
-    # Metrics pipeline
+    # Metrics pipeline - receives from spanmetrics connector for service dependencies
     metrics:
-      receivers: [otlp, prometheus]
+      receivers: [otlp, prometheus, spanmetrics]
       processors: [memory_limiter, batch, resource]
       exporters: [prometheus, debug]
 

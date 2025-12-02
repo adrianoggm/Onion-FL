@@ -120,8 +120,8 @@ class TestSystemIntegration:
                 update[param_name] = param.tolist()
             client_updates.append(update)
 
-        # Compute weighted average
-        aggregated = weighted_average(client_updates)
+        # Compute weighted average - now returns (weights, stats) tuple
+        aggregated, stats = weighted_average(client_updates)
 
         # Verify shapes are preserved
         for param_name, shape in param_shapes.items():
@@ -137,6 +137,11 @@ class TestSystemIntegration:
             np.testing.assert_array_almost_equal(
                 aggregated_param, manual_avg, decimal=5
             )
+
+        # Verify stats are returned
+        assert "norm" in stats
+        assert "mean" in stats
+        assert "std" in stats
 
     def test_multiple_rounds_simulation(self):
         """Simulate multiple rounds of federated learning."""
@@ -173,8 +178,8 @@ class TestSystemIntegration:
                 update = {k: v.cpu().numpy().tolist() for k, v in state_dict.items()}
                 client_updates.append(update)
 
-            # 3. Broker aggregates updates
-            aggregated_weights = weighted_average(client_updates)
+            # 3. Broker aggregates updates - now returns (weights, stats) tuple
+            aggregated_weights, _stats = weighted_average(client_updates)
 
             # 4. Server updates global model
             state_dict = {k: torch.tensor(v) for k, v in aggregated_weights.items()}
@@ -273,9 +278,9 @@ class TestPerformanceCharacteristics:
             }
             large_updates.append(update)
 
-        # Time the aggregation
+        # Time the aggregation - now returns (weights, stats) tuple
         start_time = time.time()
-        result = weighted_average(large_updates)
+        result, stats = weighted_average(large_updates)
         end_time = time.time()
 
         aggregation_time = end_time - start_time
@@ -288,6 +293,9 @@ class TestPerformanceCharacteristics:
         # Result should be correct shape
         assert len(result["large_param"]) == 1000
         assert len(result["large_param"][0]) == 1000
+
+        # Verify stats are returned
+        assert "norm" in stats
 
     def test_memory_usage_patterns(self):
         """Test memory usage during normal operations."""
