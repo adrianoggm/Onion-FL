@@ -225,7 +225,9 @@ class SwellFLClientMQTT(BaseMQTTComponent):
             try:
                 payload = json.loads(msg.payload.decode())
                 weights = payload.get("global_weights")
-                trace_context = payload.get("trace_context", {})  # Extract trace context
+                trace_context = payload.get(
+                    "trace_context", {}
+                )  # Extract trace context
                 if weights:
                     # Use linked CONSUMER span to continue trace from server
                     with start_linked_consumer_span(
@@ -233,7 +235,10 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                         "client.receive_global_model",
                         trace_context,
                         source_service="server-swell",
-                        attributes={"region": self.region, "round": payload.get("round", "?")}
+                        attributes={
+                            "region": self.region,
+                            "round": payload.get("round", "?"),
+                        },
                     ):
                         # Buffer the global state to apply between rounds (avoid in-place during training)
                         state = {
@@ -286,12 +291,16 @@ class SwellFLClientMQTT(BaseMQTTComponent):
             if HIST_TRAINING_LOSS:
                 HIST_TRAINING_LOSS.record(avg_loss, {"region": self.region})
             record_metric(GAUGE_TRAIN_SAMPLES, n, {"region": self.region})
-            
+
             # Record Prometheus metrics
             client_id = f"{self.region}_client_{os.getpid() % 10000}"
             CLIENT_TRAINING_ROUNDS.labels(client_id=client_id, region=self.region).inc()
-            CLIENT_TRAINING_DURATION.labels(client_id=client_id, region=self.region).observe(training_duration)
-            CLIENT_LOCAL_LOSS.labels(client_id=client_id, region=self.region).set(avg_loss)
+            CLIENT_TRAINING_DURATION.labels(
+                client_id=client_id, region=self.region
+            ).observe(training_duration)
+            CLIENT_LOCAL_LOSS.labels(client_id=client_id, region=self.region).set(
+                avg_loss
+            )
 
         print(
             f"{self.tag} Train loss: {avg_loss:.4f} | samples: {n} | batches: {batch_count}"
@@ -321,17 +330,21 @@ class SwellFLClientMQTT(BaseMQTTComponent):
             return {}
         val_loss = total / count
         val_acc = correct / count
-        
+
         # Record Prometheus validation accuracy
         client_id = f"{self.region}_client_{os.getpid() % 10000}"
-        CLIENT_LOCAL_ACCURACY.labels(client_id=client_id, region=self.region).set(val_acc)
-        
+        CLIENT_LOCAL_ACCURACY.labels(client_id=client_id, region=self.region).set(
+            val_acc
+        )
+
         print(f"{self.tag} Val loss: {val_loss:.4f} | Val acc: {val_acc:.3f}")
         return {"val_loss": val_loss, "val_acc": val_acc}
 
     def publish_update(self, avg_loss: float, val_acc: float = 0.0) -> None:
         # Use PRODUCER span with context propagation for distributed tracing
-        with start_linked_producer_span(TRACER, "client.publish_update", "fog-broker", {"region": self.region}) as (span, trace_ctx):
+        with start_linked_producer_span(
+            TRACER, "client.publish_update", "fog-broker", {"region": self.region}
+        ) as (span, trace_ctx):
             with self._lock:
                 state = self.model.state_dict()
                 weights = {
@@ -373,7 +386,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
 
     def run(self, rounds: int = 3, delay: float = 2.0) -> None:
         print(f"{self.tag} Starting {rounds} federated rounds (region={self.region})")
-        
+
         # Client ID for metrics
         client_id = f"{self.region}_client_{os.getpid() % 10000}"
 
@@ -383,11 +396,17 @@ class SwellFLClientMQTT(BaseMQTTComponent):
         record_metric(
             GAUGE_TEST_SAMPLES, self.num_test_samples, {"region": self.region}
         )
-        
+
         # Register Prometheus metrics
-        CLIENT_TRAIN_SAMPLES.labels(client_id=client_id, region=self.region).set(self.num_samples)
-        CLIENT_VAL_SAMPLES.labels(client_id=client_id, region=self.region).set(self.num_val_samples)
-        CLIENT_TEST_SAMPLES.labels(client_id=client_id, region=self.region).set(self.num_test_samples)
+        CLIENT_TRAIN_SAMPLES.labels(client_id=client_id, region=self.region).set(
+            self.num_samples
+        )
+        CLIENT_VAL_SAMPLES.labels(client_id=client_id, region=self.region).set(
+            self.num_val_samples
+        )
+        CLIENT_TEST_SAMPLES.labels(client_id=client_id, region=self.region).set(
+            self.num_test_samples
+        )
 
         for r in range(1, rounds + 1):
             print(f"\n=== Round {r}/{rounds} ===")
@@ -438,13 +457,17 @@ def main():
     ap.add_argument("--mqtt-port", type=int, default=MQTT_PORT)
     ap.add_argument("--topic-updates", default=TOPIC_UPDATES)
     ap.add_argument("--topic-global", default=TOPIC_GLOBAL_MODEL)
-    ap.add_argument("--client-index", type=int, default=-1, 
-                    help="Client index for metrics port (0-99). If -1, uses PID-based port.")
+    ap.add_argument(
+        "--client-index",
+        type=int,
+        default=-1,
+        help="Client index for metrics port (0-99). If -1, uses PID-based port.",
+    )
     args = ap.parse_args()
 
     # Initialize telemetry for this service
     _init_telemetry()
-    
+
     # Start Prometheus metrics server with deterministic port
     base_port = get_metrics_port_from_env(default=8100, component="CLIENT")
     if args.client_index >= 0:
@@ -452,16 +475,19 @@ def main():
     else:
         client_port = base_port + (os.getpid() % 100)  # Fallback to PID-based
     start_metrics_server(port=client_port)
-    
+
     # Cleanup function to push metrics before exit
     def cleanup(*_args):
         print(f"[CLIENT {args.region}] Pushing metrics before shutdown...")
         push_metrics_to_gateway(
-            job="flower-client", 
-            grouping_key={"region": args.region, "client_index": str(args.client_index)}
+            job="flower-client",
+            grouping_key={
+                "region": args.region,
+                "client_index": str(args.client_index),
+            },
         )
         shutdown_telemetry()
-    
+
     # Register cleanup for various termination signals
     atexit.register(cleanup)
     signal.signal(signal.SIGTERM, lambda s, f: (cleanup(), exit(0)))
@@ -477,7 +503,7 @@ def main():
         topic_updates=args.topic_updates,
         topic_global=args.topic_global,
     )
-    
+
     try:
         client.run(rounds=args.rounds)
     finally:

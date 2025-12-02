@@ -30,8 +30,11 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
 
+      - name: Format check (black)
+        run: black --check src/ scripts/ --exclude tests/
+
       - name: Lint (flake8)
-        run: flake8 .
+        run: flake8 src/ scripts/ --exclude tests/
 
       - name: Tests
         run: pytest -q

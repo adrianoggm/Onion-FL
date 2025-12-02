@@ -220,11 +220,20 @@ def on_update(client, userdata, msg):
             "broker.receive_update",
             trace_context,
             source_service="swell-client",
-            attributes={"region": region, "client_id": client_id, "num_samples": num_samples},
+            attributes={
+                "region": region,
+                "client_id": client_id,
+                "num_samples": num_samples,
+            },
         ):
             # Store weights along with metadata for weighted aggregation
             buffers[region].append(
-                {"weights": weights, "num_samples": num_samples, "client_id": client_id, "trace_context": trace_context}
+                {
+                    "weights": weights,
+                    "num_samples": num_samples,
+                    "client_id": client_id,
+                    "trace_context": trace_context,
+                }
             )
             region_k = K_MAP.get(region, K)
 
@@ -246,12 +255,16 @@ def on_update(client, userdata, msg):
                 len(clients_per_region[region]),
                 {"region": region},
             )
-            
+
             # Record Prometheus metrics
             BROKER_UPDATES_RECEIVED.labels(region=region).inc()
             BROKER_BUFFER_SIZE.labels(region=region).set(len(buffers[region]))
-            BROKER_CLIENT_CONTRIBUTION.labels(client_id=client_id, region=region).set(num_samples)
-            BROKER_CLIENTS_PER_REGION.labels(region=region).set(len(clients_per_region[region]))
+            BROKER_CLIENT_CONTRIBUTION.labels(client_id=client_id, region=region).set(
+                num_samples
+            )
+            BROKER_CLIENTS_PER_REGION.labels(region=region).set(
+                len(clients_per_region[region])
+            )
 
             print(
                 f"[BROKER] Update received from client={client_id}, region={region}, samples={num_samples}. "
@@ -276,9 +289,15 @@ def on_update(client, userdata, msg):
                 with start_server_span(
                     TRACER,
                     "broker.aggregate",
-                    attributes={"region": region, "num_clients": len(weight_list), "total_samples": total_samples},
+                    attributes={
+                        "region": region,
+                        "num_clients": len(weight_list),
+                        "total_samples": total_samples,
+                    },
                 ):
-                    partial, centroid_stats = weighted_average(weight_list, weights_for_avg)
+                    partial, centroid_stats = weighted_average(
+                        weight_list, weights_for_avg
+                    )
                     agg_duration = time.time() - agg_start
 
                 # Record centroid (model) metrics for this fog region
@@ -286,7 +305,7 @@ def on_update(client, userdata, msg):
                 FOG_REGION_MODEL_MEAN.labels(region=region).set(centroid_stats["mean"])
                 FOG_REGION_MODEL_STD.labels(region=region).set(centroid_stats["std"])
                 FOG_REGION_SAMPLES.labels(region=region).set(total_samples)
-                
+
                 print(
                     f"[BROKER] Centroid stats for {region}: norm={centroid_stats['norm']:.4f}, "
                     f"mean={centroid_stats['mean']:.6f}, std={centroid_stats['std']:.4f}, "
@@ -306,7 +325,7 @@ def on_update(client, userdata, msg):
 
                 buffers[region].clear()
                 record_metric(GAUGE_BUFFER_SIZE, 0, {"region": region})
-                
+
                 # Record Prometheus metrics after aggregation
                 BROKER_BUFFER_SIZE.labels(region=region).set(0)
 
@@ -331,7 +350,7 @@ def on_update(client, userdata, msg):
                 record_metric(COUNTER_AGGREGATIONS_TOTAL, 1, {"region": region})
                 if HIST_AGGREGATION_TIME:
                     HIST_AGGREGATION_TIME.record(agg_duration, {"region": region})
-                
+
                 # Record Prometheus metrics
                 BROKER_PARTIALS_PUBLISHED.labels(region=region).inc()
                 BROKER_AGGREGATIONS.labels(region=region).inc()
@@ -353,7 +372,7 @@ def main():
 
     # Initialize telemetry for this service
     _init_telemetry()
-    
+
     # Start Prometheus metrics server
     metrics_port = get_metrics_port_from_env(default=8001, component="BROKER")
     start_metrics_server(port=metrics_port)
@@ -423,18 +442,20 @@ def main():
     print(
         f"[BROKER] Agregando K={K} actualizaciones por región antes de enviar al servidor central"
     )
-    
+
     # Cleanup function to push metrics before exit
     def cleanup(*args):
         print("[BROKER] Pushing metrics before shutdown...")
-        push_metrics_to_gateway(job="flower-broker", grouping_key={"component": "broker"})
+        push_metrics_to_gateway(
+            job="flower-broker", grouping_key={"component": "broker"}
+        )
         shutdown_telemetry()
-    
+
     # Register cleanup for various termination signals
     atexit.register(cleanup)
     signal.signal(signal.SIGTERM, lambda s, f: (cleanup(), exit(0)))
     signal.signal(signal.SIGINT, lambda s, f: (cleanup(), exit(0)))
-    
+
     try:
         mqttc.loop_forever()
     except KeyboardInterrupt:

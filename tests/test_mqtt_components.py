@@ -85,7 +85,10 @@ class TestBrokerFog:
         buffer_list = buffer_items.copy()
         mock_buffers.__getitem__.return_value = buffer_list
 
-        mock_weighted_avg.return_value = {"aggregated": "weights"}
+        mock_weighted_avg.return_value = (
+            {"aggregated": "weights"},
+            {"norm": 1.0, "mean": 0.0, "std": 0.1, "num_params": 10},
+        )
 
         # Create test message
         test_payload = {
@@ -116,8 +119,8 @@ class TestBrokerFog:
             {"param1": [3.0, 4.0], "param2": [5.0]},
         ]
 
-        # Test uniform weighting
-        result = weighted_average(updates)
+        # Test uniform weighting - now returns (weights, stats) tuple
+        result, stats = weighted_average(updates)
 
         # Expected: [2.0, 3.0] for param1, [4.0] for param2
         expected_param1 = [2.0, 3.0]
@@ -126,6 +129,11 @@ class TestBrokerFog:
         np.testing.assert_array_almost_equal(result["param1"], expected_param1)
         np.testing.assert_array_almost_equal(result["param2"], expected_param2)
 
+        # Verify stats are returned
+        assert "norm" in stats
+        assert "mean" in stats
+        assert "std" in stats
+
     def test_weighted_average_with_custom_weights(self):
         """Test weighted average with custom weights."""
         from flower_basic.brokers.fog import weighted_average
@@ -133,11 +141,15 @@ class TestBrokerFog:
         updates = [{"param1": [1.0, 2.0]}, {"param1": [3.0, 4.0]}]
         weights = [0.7, 0.3]
 
-        result = weighted_average(updates, weights)
+        result, stats = weighted_average(updates, weights)
 
         # Expected: 0.7 * [1.0, 2.0] + 0.3 * [3.0, 4.0] = [1.6, 2.6]
         expected = [1.6, 2.6]
         np.testing.assert_array_almost_equal(result["param1"], expected)
+
+        # Verify stats are returned
+        assert "norm" in stats
+        assert "mean" in stats
 
     def test_malformed_message_handling(self):
         """Test handling of malformed MQTT messages."""
