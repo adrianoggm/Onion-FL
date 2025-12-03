@@ -31,15 +31,26 @@ from sklearn.metrics import (
     accuracy_score,
     classification_report,
     confusion_matrix,
+    ConfusionMatrixDisplay,
     f1_score,
     precision_score,
     recall_score,
 )
+from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-# Suppress warnings for cleaner output
-warnings.filterwarnings("ignore")
+# Add matplotlib for visualizations
+try:
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    from scipy import signal
+    VISUALIZATIONS_AVAILABLE = True
+    plt.style.use('default')
+    sns.set_palette("husl")
+except ImportError:
+    VISUALIZATIONS_AVAILABLE = False
+    print("⚠️  Visualization libraries (matplotlib, seaborn, scipy) not available. Skipping plots.")
 
 
 class SWELLBaselineEvaluator:
@@ -49,7 +60,7 @@ class SWELLBaselineEvaluator:
         self.data_dir = Path(data_dir)
         self.results = {}
 
-    def load_swell_data(self) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+    def load_swell_data(self) -> Tuple[np.ndarray, np.ndarray, List[str], pd.DataFrame]:
         """Load COMPLETE SWELL dataset - MANDATORY for evaluations."""
         print("Loading COMPLETE SWELL dataset...")
 
@@ -334,6 +345,7 @@ class SWELLBaselineEvaluator:
             "participantno",
             "participant_id",
             "id",
+            "pp",
         ]:
             if possible_col in merged_df.columns:
                 subject_col = possible_col
@@ -472,7 +484,424 @@ class SWELLBaselineEvaluator:
         print(f"  Unique subjects: {len(set(subjects))}")
         print(f"  Class distribution: {dict(zip(*np.unique(y, return_counts=True)))}")
 
-        return X, y, subjects
+        return X, y, subjects, merged_df
+
+    def analyze_dataset(self, df: pd.DataFrame) -> None:
+        """Analyze and print detailed dataset information."""
+        print("\n" + "=" * 60)
+        print("📊 SWELL DATASET ANALYSIS")
+        print("=" * 60)
+
+        # Basic info
+        print(f"\nDataset Shape: {df.shape}")
+        print(f"Number of rows (samples): {df.shape[0]}")
+        print(f"Number of columns: {df.shape[1]}")
+
+        # Columns
+        print(f"\nColumns ({len(df.columns)}):")
+        for i, col in enumerate(df.columns, 1):
+            print(f"  {i:2d}. {col}")
+
+        # Data types
+        print(f"\nData Types:")
+        dtypes = df.dtypes
+        for col, dtype in dtypes.items():
+            print(f"  {col}: {dtype}")
+
+        # Subject information
+        subject_col = None
+        for possible_col in ["participant", "subject", "participantno", "participant_id", "id", "pp"]:
+            if possible_col in df.columns:
+                subject_col = possible_col
+                break
+
+        if subject_col:
+            unique_subjects = df[subject_col].nunique()
+            print(f"\nSubject Information:")
+            print(f"  Subject column: {subject_col}")
+            print(f"  Unique subjects: {unique_subjects}")
+            print(f"  Samples per subject (top 10):")
+            subject_counts = df[subject_col].value_counts().head(10)
+            for subj, count in subject_counts.items():
+                print(f"    {subj}: {count} samples")
+
+        # Condition (stress questionnaire) analysis
+        if "condition" in df.columns:
+            print(f"\nCondition (Stress Levels) Analysis:")
+            print(f"  Unique conditions: {df['condition'].nunique()}")
+            print(f"  Condition distribution:")
+            condition_counts = df['condition'].value_counts()
+            for cond, count in condition_counts.items():
+                print(f"    '{cond}': {count} samples ({count/len(df)*100:.1f}%)")
+
+            # Mapped stress levels
+            condition_mapping = {
+                "N": 0, "n": 0, "T": 1, "t": 1, "I": 1, "i": 1, "R": 1, "r": 1,
+                "normal": 0, "baseline": 0, "control": 0, "no stress": 0,
+                "time pressure": 1, "interruption": 1, "interruptions": 1, "combined": 1, "stress": 1,
+            }
+            stress_labels = []
+            for cond in df['condition'].astype(str).str.lower().str.strip():
+                if cond in condition_mapping:
+                    stress_labels.append("No Stress" if condition_mapping[cond] == 0 else "Stress")
+                elif any(word in cond for word in ["stress", "pressure", "interrupt", "high", "load"]):
+                    stress_labels.append("Stress")
+                elif any(word in cond for word in ["baseline", "control", "normal", "rest", "low"]):
+                    stress_labels.append("No Stress")
+                else:
+                    stress_labels.append("Unknown")
+
+            stress_counts = pd.Series(stress_labels).value_counts()
+            print(f"  Mapped stress distribution:")
+            for label, count in stress_counts.items():
+                print(f"    {label}: {count} samples ({count/len(df)*100:.1f}%)")
+
+        # Feature columns analysis
+        non_feature_cols = [subject_col, "condition", "timestamp", "timestamp_1", "timestamp_2", "timestamp_3", "blok", "pp", "c"]
+        feature_cols = [col for col in df.columns if col not in non_feature_cols]
+
+        print(f"\nFeature Columns ({len(feature_cols)}):")
+        print(f"  Numeric features: {len([col for col in feature_cols if df[col].dtype in ['int64', 'float64']])}")
+        print(f"  Non-numeric features: {len([col for col in feature_cols if df[col].dtype not in ['int64', 'float64']])}")
+
+        # Descriptive statistics for numeric features
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) > 0:
+            print(f"\nDescriptive Statistics (Numeric Features):")
+            desc = df[numeric_cols].describe()
+            print(desc)
+
+            # Check for missing values
+            missing = df[numeric_cols].isnull().sum()
+            if missing.sum() > 0:
+                print(f"\nMissing Values in Numeric Columns:")
+                for col, count in missing[missing > 0].items():
+                    print(f"  {col}: {count} missing ({count/len(df)*100:.1f}%)")
+
+        # Modality breakdown (if prefixed)
+        modalities = {}
+        for col in feature_cols:
+            if "_" in col:
+                modality = col.split("_")[0]
+                if modality not in modalities:
+                    modalities[modality] = []
+                modalities[modality].append(col)
+
+        if modalities:
+            print(f"\nModality Breakdown:")
+            for modality, cols in modalities.items():
+                print(f"  {modality}: {len(cols)} features")
+                if len(cols) <= 10:
+                    print(f"    Features: {cols}")
+                else:
+                    print(f"    Features: {cols[:5]} ... {cols[-5:]}")
+
+        # Save analysis to file
+        analysis_data = {
+            "dataset_shape": df.shape,
+            "columns": df.columns.tolist(),
+            "dtypes": {col: str(dtype) for col, dtype in dtypes.items()},
+            "subject_info": {
+                "subject_column": subject_col,
+                "unique_subjects": df[subject_col].nunique() if subject_col else None,
+                "samples_per_subject": df[subject_col].value_counts().to_dict() if subject_col else None,
+            },
+            "condition_analysis": {
+                "unique_conditions": df['condition'].nunique() if 'condition' in df.columns else None,
+                "condition_distribution": df['condition'].value_counts().to_dict() if 'condition' in df.columns else None,
+                "stress_distribution": stress_counts.to_dict() if 'condition' in df.columns else None,
+            },
+            "feature_info": {
+                "total_features": len(feature_cols),
+                "numeric_features": len([col for col in feature_cols if df[col].dtype in ['int64', 'float64']]),
+                "modalities": {mod: len(cols) for mod, cols in modalities.items()},
+            },
+            "descriptive_stats": df[numeric_cols].describe().to_dict() if len(numeric_cols) > 0 else None,
+        }
+
+        import json
+        with open("swell_dataset_analysis.json", "w") as f:
+            json.dump(analysis_data, f, indent=2, default=str)
+
+        print(f"\n💾 Dataset analysis saved to: swell_dataset_analysis.json")
+
+    def create_visualizations(self, df: pd.DataFrame, X: np.ndarray, y: np.ndarray, results: Dict) -> None:
+        """Create comprehensive visualizations for dataset analysis."""
+        if not VISUALIZATIONS_AVAILABLE:
+            return
+
+        print("\n📊 Creating visualizations...")
+
+        # Create plots directory
+        plots_dir = Path("swell_plots")
+        plots_dir.mkdir(exist_ok=True)
+
+        # 1. Correlation Matrix
+        self.plot_correlation_matrix(df, plots_dir)
+
+        # 2. Feature Distributions
+        self.plot_feature_distributions(df, plots_dir)
+
+        # 3. Class Distribution
+        self.plot_class_distribution(df, plots_dir)
+
+        # 4. Cross-correlation Analysis
+        self.plot_cross_correlations(df, plots_dir)
+
+        # 5. Feature Importance (if Random Forest available)
+        self.plot_feature_importance(df, X, y, plots_dir)
+
+        # 6. Confusion Matrices
+        self.plot_confusion_matrices(results, plots_dir)
+
+        print(f"💾 Plots saved to: {plots_dir}/")
+
+    def plot_correlation_matrix(self, df: pd.DataFrame, plots_dir: Path) -> None:
+        """Plot correlation matrix of numeric features."""
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) > 20:  # Limit to avoid huge matrix
+            # Select most variable features
+            variances = df[numeric_cols].var()
+            top_features = variances.nlargest(20).index
+            numeric_cols = top_features
+
+        corr_matrix = df[numeric_cols].corr()
+
+        plt.figure(figsize=(12, 10))
+        sns.heatmap(corr_matrix, annot=False, cmap='coolwarm', center=0,
+                   square=True, linewidths=0.5)
+        plt.title('SWELL Dataset - Correlation Matrix (Numeric Features)')
+        plt.tight_layout()
+        plt.savefig(plots_dir / 'correlation_matrix.png', dpi=300, bbox_inches='tight')
+        plt.close()
+
+        # Save correlation values
+        corr_matrix.to_csv(plots_dir / 'correlation_matrix.csv')
+
+    def plot_feature_distributions(self, df: pd.DataFrame, plots_dir: Path) -> None:
+        """Plot distributions of key features."""
+        # Select key features from different modalities
+        key_features = {
+            'HRV': ['physiology_hr', 'physiology_rmssd', 'physiology_scl'],
+            'Computer': ['computer_snmouseact', 'computer_snkeystrokes', 'computer_snchars'],
+            'Facial': ['facial_svalence', 'facial_sau01_innerbrowraiser', 'facial_sau12_lipcornerpuller'],
+            'Posture': ['posture_leanangle(avg)', 'posture_leftshoulderangle(avg)', 'posture_rightshoulderangle(avg)']
+        }
+
+        for modality, features in key_features.items():
+            available_features = [f for f in features if f in df.columns]
+            if not available_features:
+                continue
+
+            fig, axes = plt.subplots(1, len(available_features), figsize=(5*len(available_features), 4))
+
+            if len(available_features) == 1:
+                axes = [axes]
+
+            for i, feature in enumerate(available_features):
+                # Convert to numeric if needed
+                data = pd.to_numeric(df[feature], errors='coerce').dropna()
+
+                if len(data) > 0:
+                    axes[i].hist(data, bins=50, alpha=0.7, edgecolor='black')
+                    axes[i].set_title(f'{feature}')
+                    axes[i].set_xlabel('Value')
+                    axes[i].set_ylabel('Frequency')
+                    axes[i].grid(True, alpha=0.3)
+
+            plt.suptitle(f'Distributions - {modality} Modality')
+            plt.tight_layout()
+            plt.savefig(plots_dir / f'distributions_{modality.lower()}.png', dpi=300, bbox_inches='tight')
+            plt.close()
+
+    def plot_class_distribution(self, df: pd.DataFrame, plots_dir: Path) -> None:
+        """Plot class distribution and condition analysis."""
+        if 'condition' not in df.columns:
+            return
+
+        # Map conditions to stress levels
+        condition_mapping = {
+            "N": "No Stress", "n": "No Stress", "T": "Stress", "t": "Stress",
+            "I": "Stress", "i": "Stress", "R": "Stress", "r": "Stress",
+            "normal": "No Stress", "baseline": "No Stress", "control": "No Stress",
+            "time pressure": "Stress", "interruption": "Stress", "interruptions": "Stress",
+            "combined": "Stress", "stress": "Stress",
+        }
+
+        df_plot = df.copy()
+        df_plot['stress_level'] = df_plot['condition'].astype(str).str.lower().str.strip().map(condition_mapping)
+
+        # Condition distribution
+        plt.figure(figsize=(10, 6))
+        condition_counts = df_plot['condition'].value_counts()
+        condition_counts.plot(kind='bar', color='skyblue', edgecolor='black')
+        plt.title('SWELL Dataset - Condition Distribution')
+        plt.xlabel('Condition')
+        plt.ylabel('Number of Samples')
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(plots_dir / 'condition_distribution.png', dpi=300, bbox_inches='tight')
+        plt.close()
+
+        # Stress level distribution
+        plt.figure(figsize=(8, 6))
+        stress_counts = df_plot['stress_level'].value_counts()
+        stress_counts.plot(kind='pie', autopct='%1.1f%%', colors=['lightcoral', 'lightgreen'])
+        plt.title('SWELL Dataset - Stress Level Distribution')
+        plt.ylabel('')
+        plt.tight_layout()
+        plt.savefig(plots_dir / 'stress_distribution.png', dpi=300, bbox_inches='tight')
+        plt.close()
+
+    def plot_cross_correlations(self, df: pd.DataFrame, plots_dir: Path) -> None:
+        """Plot cross-correlations between key features with lag k=3."""
+        # Select key features for cross-correlation
+        key_features = ['physiology_hr', 'physiology_rmssd', 'physiology_scl',
+                       'computer_snmouseact', 'facial_svalence', 'posture_leanangle(avg)']
+
+        available_features = [f for f in key_features if f in df.columns]
+        if len(available_features) < 2:
+            return
+
+        # Convert to numeric and handle NaN
+        data_numeric = df[available_features].apply(pd.to_numeric, errors='coerce').fillna(method='ffill').fillna(0)
+
+        # Calculate cross-correlations with lag k=3
+        max_lag = 3
+        fig, axes = plt.subplots(len(available_features), len(available_features),
+                                figsize=(15, 15))
+
+        for i, feat1 in enumerate(available_features):
+            for j, feat2 in enumerate(available_features):
+                if i == j:
+                    # Auto-correlation
+                    corr = self.cross_correlation(data_numeric[feat1], data_numeric[feat1], max_lag)
+                    axes[i, j].plot(range(-max_lag, max_lag+1), corr, 'b-o', markersize=3)
+                    axes[i, j].axvline(x=0, color='r', linestyle='--', alpha=0.7)
+                    axes[i, j].set_title(f'{feat1[:15]}...', fontsize=8)
+                else:
+                    # Cross-correlation
+                    corr = self.cross_correlation(data_numeric[feat1], data_numeric[feat2], max_lag)
+                    axes[i, j].plot(range(-max_lag, max_lag+1), corr, 'g-o', markersize=3)
+                    axes[i, j].axvline(x=0, color='r', linestyle='--', alpha=0.7)
+
+                if i == len(available_features)-1:
+                    axes[i, j].set_xlabel('Lag')
+                if j == 0:
+                    axes[i, j].set_ylabel('Correlation')
+
+        plt.suptitle('SWELL Dataset - Cross-Correlation Analysis (k=3)', fontsize=16)
+        plt.tight_layout()
+        plt.savefig(plots_dir / 'cross_correlations_k3.png', dpi=300, bbox_inches='tight')
+        plt.close()
+
+        # Save cross-correlation values
+        corr_matrix = np.zeros((len(available_features), len(available_features)))
+        for i, feat1 in enumerate(available_features):
+            for j, feat2 in enumerate(available_features):
+                corr = self.cross_correlation(data_numeric[feat1], data_numeric[feat2], max_lag)
+                corr_matrix[i, j] = corr[max_lag]  # Zero-lag correlation
+
+        corr_df = pd.DataFrame(corr_matrix, index=available_features, columns=available_features)
+        corr_df.to_csv(plots_dir / 'cross_correlations_k3.csv')
+
+    def cross_correlation(self, x: pd.Series, y: pd.Series, max_lag: int) -> np.ndarray:
+        """Calculate cross-correlation with lags from -max_lag to +max_lag."""
+        x = x.values
+        y = y.values
+        correlations = []
+
+        for lag in range(-max_lag, max_lag + 1):
+            if lag < 0:
+                corr = np.corrcoef(x[:lag], y[-lag:])[0, 1]
+            elif lag == 0:
+                corr = np.corrcoef(x, y)[0, 1]
+            else:
+                corr = np.corrcoef(x[lag:], y[:-lag])[0, 1]
+            correlations.append(corr if not np.isnan(corr) else 0)
+
+        return np.array(correlations)
+
+    def plot_feature_importance(self, df: pd.DataFrame, X: np.ndarray, y: np.ndarray, plots_dir: Path) -> None:
+        """Plot feature importance using Random Forest."""
+        try:
+            # Get feature names
+            non_feature_cols = ['pp', 'condition', 'timestamp', 'timestamp_1', 'timestamp_2', 'timestamp_3',
+                              'blok', 'c']
+            feature_cols = [col for col in df.columns if col not in non_feature_cols]
+            numeric_cols = df[feature_cols].select_dtypes(include=[np.number]).columns.tolist()
+
+            if len(numeric_cols) > 50:  # Limit features for importance
+                # Select most variable features
+                variances = df[numeric_cols].var()
+                numeric_cols = variances.nlargest(50).index.tolist()
+
+            # Train a quick Random Forest for feature importance
+            rf = RandomForestClassifier(n_estimators=50, random_state=42, n_jobs=-1)
+            X_subset = df[numeric_cols].fillna(0).values
+            rf.fit(X_subset, y)
+
+            # Get feature importance
+            importance = rf.feature_importances_
+            indices = np.argsort(importance)[::-1][:20]  # Top 20
+
+            plt.figure(figsize=(12, 8))
+            plt.barh(range(len(indices)), importance[indices], align='center')
+            plt.yticks(range(len(indices)), [numeric_cols[i] for i in indices])
+            plt.xlabel('Importance')
+            plt.title('SWELL Dataset - Top 20 Feature Importance (Random Forest)')
+            plt.gca().invert_yaxis()
+            plt.tight_layout()
+            plt.savefig(plots_dir / 'feature_importance.png', dpi=300, bbox_inches='tight')
+            plt.close()
+
+            # Save importance values
+            importance_df = pd.DataFrame({
+                'feature': [numeric_cols[i] for i in indices],
+                'importance': importance[indices]
+            })
+            importance_df.to_csv(plots_dir / 'feature_importance.csv', index=False)
+
+        except Exception as e:
+            print(f"⚠️  Could not create feature importance plot: {e}")
+
+    def plot_confusion_matrices(self, results: Dict, plots_dir: Path) -> None:
+        """Plot confusion matrices for all models."""
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        axes = axes.ravel()
+
+        model_names = ["Logistic Regression", "Random Forest", "SVM", "Multimodal Network"]
+
+        for i, model_name in enumerate(model_names):
+            if model_name in results and "confusion_matrix" in results[model_name]:
+                cm = results[model_name]["confusion_matrix"]
+                disp = ConfusionMatrixDisplay(confusion_matrix=cm,
+                                            display_labels=["No Stress", "Stress"])
+                disp.plot(ax=axes[i], cmap='Blues', colorbar=False)
+                axes[i].set_title(f'{model_name}\nAccuracy: {results[model_name]["test"]["accuracy"]:.3f}')
+            else:
+                axes[i].text(0.5, 0.5, f'{model_name}\nNo CM available',
+                           ha='center', va='center', transform=axes[i].transAxes)
+                axes[i].set_title(model_name)
+
+        plt.suptitle('SWELL Dataset - Confusion Matrices (Test Set)', fontsize=16)
+        plt.tight_layout()
+        plt.savefig(plots_dir / 'confusion_matrices.png', dpi=300, bbox_inches='tight')
+        plt.close()
+
+        # Save individual confusion matrices
+        for model_name in model_names:
+            if model_name in results and "confusion_matrix" in results[model_name]:
+                cm = results[model_name]["confusion_matrix"]
+                plt.figure(figsize=(6, 5))
+                disp = ConfusionMatrixDisplay(confusion_matrix=cm,
+                                            display_labels=["No Stress", "Stress"])
+                disp.plot(cmap='Blues')
+                plt.title(f'{model_name} - Confusion Matrix\nAccuracy: {results[model_name]["test"]["accuracy"]:.3f}')
+                plt.tight_layout()
+                plt.savefig(plots_dir / f'confusion_matrix_{model_name.lower().replace(" ", "_")}.png',
+                           dpi=300, bbox_inches='tight')
+                plt.close()
 
     # STRICT RULES ENFORCEMENT:
     # 1. Evaluations MUST use COMPLETE datasets (100% SWELL/WESAD)
@@ -526,7 +955,7 @@ class SWELLBaselineEvaluator:
         y_val: np.ndarray,
         y_test: np.ndarray,
     ) -> Dict:
-        """Train classical ML models and evaluate performance."""
+        """Train classical ML models and evaluate performance with cross-validation and confusion matrices."""
         print("\nTraining classical models...")
 
         # Normalize features
@@ -535,10 +964,14 @@ class SWELLBaselineEvaluator:
         X_val_scaled = scaler.transform(X_val)
         X_test_scaled = scaler.transform(X_test)
 
+        # Combine train and validation for cross-validation
+        X_train_val = np.vstack([X_train_scaled, X_val_scaled])
+        y_train_val = np.concatenate([y_train, y_val])
+
         models = {
             "Logistic Regression": LogisticRegression(random_state=42, max_iter=1000),
             "Random Forest": RandomForestClassifier(random_state=42, n_estimators=100),
-            "SVM": SVC(random_state=42, probability=True),
+            "SVM": SVC(random_state=42, kernel='linear', C=1.0, probability=False),
         }
 
         results = {}
@@ -546,24 +979,35 @@ class SWELLBaselineEvaluator:
         for name, model in models.items():
             print(f"\n  Training {name}...")
 
-            # Train model
-            model.fit(X_train_scaled, y_train)
+            # Cross-validation
+            cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+            cv_scores = cross_val_score(model, X_train_val, y_train_val, cv=cv,
+                                      scoring='accuracy')
 
-            # Predict on validation and test sets
-            y_val_pred = model.predict(X_val_scaled)
+            print(f"    Cross-Validation Accuracy: {cv_scores.mean():.3f} (+/- {cv_scores.std() * 2:.3f})")
+
+            # Train final model on full training + validation data
+            model.fit(X_train_val, y_train_val)
+
+            # Predict on test set
             y_test_pred = model.predict(X_test_scaled)
 
             # Calculate metrics
-            val_metrics = self.calculate_metrics(y_val, y_val_pred, "Validation")
             test_metrics = self.calculate_metrics(y_test, y_test_pred, "Test")
 
+            # Generate confusion matrix
+            cm = confusion_matrix(y_test, y_test_pred)
+            print(f"    Confusion Matrix:")
+            print(f"      {cm}")
+
             results[name] = {
-                "validation": val_metrics,
+                "validation": test_metrics,  # Using test as final validation
                 "test": test_metrics,
                 "model": model,
+                "cv_scores": cv_scores,
+                "confusion_matrix": cm,
             }
 
-            print(f"    Validation Accuracy: {val_metrics['accuracy']:.3f}")
             print(f"    Test Accuracy: {test_metrics['accuracy']:.3f}")
 
         return results
@@ -732,7 +1176,10 @@ class SWELLBaselineEvaluator:
         print("=" * 60)
 
         # Load data
-        X, y, subjects = self.load_swell_data()
+        X, y, subjects, df = self.load_swell_data()
+
+        # Analyze dataset
+        self.analyze_dataset(df)
 
         # Split by subjects
         X_train, X_val, X_test, y_train, y_val, y_test = self.split_by_subjects(
@@ -757,6 +1204,9 @@ class SWELLBaselineEvaluator:
         # Combine results
         all_results = {**classical_results, "Multimodal Network": nn_results}
 
+        # Create visualizations
+        self.create_visualizations(df, X, y, all_results)
+
         # Print summary
         self.print_summary(all_results)
 
@@ -772,22 +1222,39 @@ class SWELLBaselineEvaluator:
         print("-" * 40)
 
         for model_name, result in results.items():
+            if model_name == "Multimodal Network":
+                continue  # Skip model object for now
+
             test_metrics = result["test"]
             print(f"\n{model_name}:")
-            print(f"  Accuracy:  {test_metrics['accuracy']:.3f}")
-            print(f"  Precision: {test_metrics['precision']:.3f}")
-            print(f"  Recall:    {test_metrics['recall']:.3f}")
-            print(f"  F1-Score:  {test_metrics['f1']:.3f}")
+
+            # Cross-validation results
+            if "cv_scores" in result:
+                cv_mean = result["cv_scores"].mean()
+                cv_std = result["cv_scores"].std()
+                print(f"  CV Accuracy: {cv_mean:.3f} (+/- {cv_std * 2:.3f})")
+
+            print(f"  Test Accuracy:  {test_metrics['accuracy']:.3f}")
+            print(f"  Test Precision: {test_metrics['precision']:.3f}")
+            print(f"  Test Recall:    {test_metrics['recall']:.3f}")
+            print(f"  Test F1-Score:  {test_metrics['f1']:.3f}")
+
+            # Confusion matrix
+            if "confusion_matrix" in result:
+                cm = result["confusion_matrix"]
+                print(f"  Confusion Matrix:")
+                print(f"    {cm[0]}  (No Stress)")
+                print(f"    {cm[1]}  (Stress)")
 
         # Best model
-        best_model = max(results.items(), key=lambda x: x[1]["test"]["accuracy"])
+        best_model = max(results.items(), key=lambda x: x[1]["test"]["accuracy"] if x[0] != "Multimodal Network" else 0)
         print(f"\n🏆 Best Model: {best_model[0]}")
         print(f"   Test Accuracy: {best_model[1]['test']['accuracy']:.3f}")
 
         print(f"\n💡 Key Insights:")
-        print(
-            f"   - Multimodal approach leverages computer + facial + posture + physiology"
-        )
+        print(f"   - Cross-validation provides robust performance estimates")
+        print(f"   - Confusion matrices show prediction patterns")
+        print(f"   - Multimodal approach leverages computer + facial + posture + physiology")
         print(f"   - Subject-based splitting prevents data leakage")
         print(f"   - Results represent realistic federated learning scenarios")
         print(f"   - Can compare with 3-node federated learning performance")
