@@ -1,0 +1,83 @@
+{
+  "total_time_minutes": 16.403621447086334,
+  "models_tuned": [
+    "Gradient_Boosting_Tuned",
+    "XGBoost_Tuned",
+    "Random_Forest_Tuned",
+    "KNN_Tuned",
+    "MLP_Tuned"
+  ],
+  "best_model": "XGBoost_Tuned",
+  "best_score": 0.5544295457227145,
+  "results": {
+    "Gradient_Boosting_Tuned": {
+      "best_score": 0.5540925634184625,
+      "best_params": {
+        "subsample": 0.9,
+        "n_estimators": 100,
+        "min_samples_split": 2,
+        "min_samples_leaf": 2,
+        "max_features": "log2",
+        "max_depth": 5,
+        "learning_rate": 0.01
+      },
+      "tuning_time_minutes": 8.830143896738688
+    },
+    "XGBoost_Tuned": {
+      "best_score": 0.5544295457227145,
+      "best_params": {
+        "subsample": 0.6,
+        "reg_lambda": 2,
+        "reg_alpha": 1.0,
+        "n_estimators": 300,
+        "min_child_weight": 1,
+        "max_depth": 4,
+        "learning_rate": 0.01,
+        "gamma": 0.3,
+        "colsample_bytree": 0.6
+      },
+      "tuning_time_minutes": 1.6044755260149637
+    },
+    "Random_Forest_Tuned": {
+      "best_score": 0.5509739959852202,
+      "best_params": {
+        "n_estimators": 200,
+        "min_samples_split": 2,
+        "min_samples_leaf": 1,
+        "max_features": "log2",
+        "max_depth": 10,
+        "bootstrap": true
+      },
+      "tuning_time_minutes": 5.048331530888875
+    },
+    "KNN_Tuned": {
+      "best_score": 0.5411406026249708,
+      "best_params": {
+        "algorithm": "auto",
+        "metric": "minkowski",
+        "n_neighbors": 51,
+        "p": 3,
+        "weights": "uniform"
+      },
+      "tuning_time_minutes": 0.579279359181722
+    },
+    "MLP_Tuned": {
+      "best_score": 0.5530250247638673,
+      "best_params": {
+        "validation_fraction": 0.1,
+        "solver": "adam",
+        "max_iter": 500,
+        "learning_rate_init": 0.1,
+        "learning_rate": "constant",
+        "hidden_layer_sizes": [
+          64,
+          64
+        ],
+        "early_stopping": true,
+        "alpha": 0.01,
+        "activation": "relu"
+      },
+      "tuning_time_minutes": 0.34132392406463624
+    }
+  }
+}

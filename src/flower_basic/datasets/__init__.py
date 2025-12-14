@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from .ecg5000 import load_ecg5000_dataset, partition_ecg5000_by_subjects
 from .sweet_samples import load_sweet_sample_dataset, load_sweet_sample_full
+from .sweet_federated import plan_and_materialize_sweet_federated
 from .swell import (
     get_swell_info,
     load_swell_all_samples,
@@ -45,4 +46,5 @@ __all__ = [
     # SWEET sample subjects
     "load_sweet_sample_dataset",
     "load_sweet_sample_full",
+    "plan_and_materialize_sweet_federated",
 ]

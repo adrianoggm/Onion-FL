@@ -1,0 +1,227 @@
+{
+  "results": {
+    "XGBoost_Ultra_Deep": {
+      "mean_accuracy": 0.5311022589036906,
+      "std_accuracy": 0.01703603791156293,
+      "mean_f1": 0.45134487593586303,
+      "confusion_matrix": [
+        [
+          1864,
+          301,
+          4
+        ],
+        [
+          1070,
+          221,
+          1
+        ],
+        [
+          392,
+          74,
+          0
+        ]
+      ],
+      "config": {
+        "n_estimators": 1000,
+        "max_depth": 15,
+        "learning_rate": 0.005,
+        "subsample": 0.7,
+        "colsample_bytree": 0.7,
+        "min_child_weight": 1,
+        "gamma": 0.1,
+        "reg_alpha": 0.5,
+        "reg_lambda": 2.0
+      }
+    },
+    "XGBoost_Very_Wide": {
+      "mean_accuracy": 0.5235610094453218,
+      "std_accuracy": 0.02259657315333107,
+      "mean_f1": 0.4505983155859391,
+      "confusion_matrix": [
+        [
+          1815,
+          346,
+          8
+        ],
+        [
+          1047,
+          240,
+          5
+        ],
+        [
+          377,
+          89,
+          0
+        ]
+      ],
+      "config": {
+        "n_estimators": 700,
+        "max_depth": 8,
+        "learning_rate": 0.01,
+        "subsample": 0.8,
+        "colsample_bytree": 0.9,
+        "min_child_weight": 1,
+        "gamma": 0.2,
+        "reg_alpha": 0.3,
+        "reg_lambda": 1.5,
+        "max_leaves": 255
+      }
+    },
+    "XGBoost_Extreme_Regularized": {
+      "mean_accuracy": 0.5379171651021144,
+      "std_accuracy": 0.025403093098807405,
+      "mean_f1": 0.4448284162614818,
+      "confusion_matrix": [
+        [
+          1937,
+          232,
+          0
+        ],
+        [
+          1118,
+          174,
+          0
+        ],
+        [
+          409,
+          57,
+          0
+        ]
+      ],
+      "config": {
+        "n_estimators": 500,
+        "max_depth": 10,
+        "learning_rate": 0.01,
+        "subsample": 0.5,
+        "colsample_bytree": 0.5,
+        "min_child_weight": 5,
+        "gamma": 0.5,
+        "reg_alpha": 2.0,
+        "reg_lambda": 3.0
+      }
+    },
+    "UltraDeep_MLP_20layers": {
+      "mean_accuracy": 0.5200793164419658,
+      "std_accuracy": 0.019865710835314264,
+      "mean_f1": 0.4527133669950968,
+      "confusion_matrix": [
+        [
+          1770,
+          399,
+          0
+        ],
+        [
+          1022,
+          269,
+          1
+        ],
+        [
+          361,
+          105,
+          0
+        ]
+      ],
+      "architecture": "UltraDeepMLP",
+      "config": "{'depth': 20, 'hidden_dim': 512, 'dropout': 0.3}"
+    },
+    "UltraDeep_MLP_30layers": {
+      "mean_accuracy": 0.5270522950941998,
+      "std_accuracy": 0.025220008125979305,
+      "mean_f1": 0.41566985289791597,
+      "confusion_matrix": [
+        [
+          1901,
+          268,
+          0
+        ],
+        [
+          1128,
+          164,
+          0
+        ],
+        [
+          416,
+          50,
+          0
+        ]
+      ],
+      "architecture": "UltraDeepMLP",
+      "config": "{'depth': 30, 'hidden_dim': 256, 'dropout': 0.4}"
+    },
+    "VeryWide_Deep_MLP": {
+      "mean_accuracy": 0.4894633308524998,
+      "std_accuracy": 0.03656666414568897,
+      "mean_f1": 0.4439788339004302,
+      "confusion_matrix": [
+        [
+          1581,
+          559,
+          29
+        ],
+        [
+          941,
+          335,
+          16
+        ],
+        [
+          323,
+          139,
+          4
+        ]
+      ],
+      "architecture": "VeryWideDeepMLP",
+      "config": "{'hidden_dims': [1024, 1024, 512, 512, 256, 256, 128, 128], 'dropout': 0.4}"
+    },
+    "Pyramid_MLP_12layers": {
+      "mean_accuracy": 0.5307611604626381,
+      "std_accuracy": 0.027626374849134758,
+      "mean_f1": 0.4148794152645035,
+      "confusion_matrix": [
+        [
+          1947,
+          222,
+          0
+        ],
+        [
+          1160,
+          132,
+          0
+        ],
+        [
+          424,
+          42,
+          0
+        ]
+      ],
+      "architecture": "PyramidMLP",
+      "config": "{'max_width': 2048, 'min_width': 64, 'depth': 12, 'dropout': 0.3}"
+    },
+    "Pyramid_MLP_16layers": {
+      "mean_accuracy": 0.5530250247638673,
+      "std_accuracy": 0.025062570716193742,
+      "mean_f1": 0.3941940140406538,
+      "confusion_matrix": [
+        [
+          2169,
+          0,
+          0
+        ],
+        [
+          1292,
+          0,
+          0
+        ],
+        [
+          466,
+          0,
+          0
+        ]
+      ],
+      "architecture": "PyramidMLP",
+      "config": "{'max_width': 1024, 'min_width': 32, 'depth': 16, 'dropout': 0.35}"
+    }
+  },
+  "elapsed_time_minutes": 21.020439902941387,
+  "best_model": "Pyramid_MLP_16layers",
+  "best_accuracy": 0.5530250247638673
+}

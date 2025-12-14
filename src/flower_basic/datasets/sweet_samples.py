@@ -80,8 +80,10 @@ def load_sweet_sample_dataset(
 
     Args:
         data_dir: Base directory containing per-subject folders.
-        label_strategy: ``"binary"`` maps MAXIMUM_STRESS >= threshold to 1,
-            otherwise uses the raw ordinal values.
+        label_strategy: 
+            - ``"binary"``: maps MAXIMUM_STRESS >= threshold to 1, else 0
+            - ``"ordinal"``: uses raw 1-5 stress values
+            - ``"ordinal_3class"``: maps to 3 classes (1->0 low, 2->1 medium, 3/4/5->2 high)
         elevated_threshold: Threshold used when ``label_strategy == "binary"``.
         train_fraction: Proportion of subjects assigned to the training split.
         val_fraction: Proportion of subjects assigned to the validation split.
@@ -273,10 +275,17 @@ def _load_single_subject(
         )
     elif label_strategy == "ordinal":
         merged["label"] = merged["MAXIMUM_STRESS"].round().astype(np.int64)
+    elif label_strategy == "ordinal_3class":
+        # Map to 3 classes: 1->0 (low), 2->1 (medium), 3/4/5->2 (high)
+        stress_values = merged["MAXIMUM_STRESS"].round().astype(np.int64)
+        merged["label"] = np.where(
+            stress_values == 1, 0,
+            np.where(stress_values == 2, 1, 2)
+        )
     else:
         raise SWEETSampleLoaderError(
             f"Unsupported label strategy: {label_strategy!r} "
-            "(expected 'binary' or 'ordinal')"
+            "(expected 'binary', 'ordinal', or 'ordinal_3class')"
         )
 
     merged["subject_id"] = subject_dir.name

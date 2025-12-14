@@ -1,0 +1,105 @@
+federated_architecture:
+  workflow: SWEET  # Dataset: SWEET
+
+  # Dataset configuration
+  dataset:
+    name: SWEET
+    data_dir: data/SWEET/selection2/users
+    label_strategy: ordinal_3class  # 0=low, 1=medium, 2=high stress
+    elevated_threshold: 2.0
+    min_samples_per_subject: 5
+    
+    # Subject-level splits (STRICT: if subject is TRAIN, ALL data is TRAIN)
+    split:
+      train: 0.6      # 60% subjects for training
+      val: 0.2        # 20% subjects for validation
+      test: 0.2       # 20% subjects for test
+      seed: 42
+      scaler: global  # Global StandardScaler fitted on training data only
+      strategy: global  # Each subject belongs to ONE split only (train OR val OR test)
+    
+    # Federated distribution
+    federation:
+      mode: auto  # Automatic distribution across fog nodes
+      num_fog_nodes: 5
+      per_node_percentages: [0.2, 0.2, 0.2, 0.2, 0.2]  # Equal distribution
+      output_dir: federated_runs/sweet
+      run_name: auto_5nodes
+      ensure_min_train_per_node: true
+
+  # Pre-trained model (transfer learning)
+  pretrained:
+    enabled: true
+    model_path: baseline_models/sweet/xgboost_tuned_model.json
+    scaler_path: baseline_models/sweet/scaler.json
+    # If clients don't have the model, they request it from server
+    request_from_server: true
+    freeze_initial_weights: false
+    fine_tune_lr_multiplier: 0.1
+
+  # Orchestration
+  orchestrator:
+    address: "0.0.0.0:8080"
+    rounds: 10
+    protocol: "MQTT"
+    mqtt:
+      broker: "localhost"
+      port: 1883
+      topics:
+        updates: "fl/updates"
+        partial: "fl/partial"
+        global_model: "fl/global_model"
+
+  # Model architecture
+  model:
+    type: "sweet_mlp"
+    input_dim: 14  # SWEET selection2 features (will be auto-detected)
+    hidden_dims: [64, 32]
+    num_classes: 3  # ordinal_3class
+    dropout: 0.3
+    lr: 0.001
+
+  # Fog nodes configuration (auto-generated, 1 client per node)
+  fog_nodes:
+    - id: fog_0
+      k: 1  # Wait for 1 client update before aggregation
+      clients:
+        - id: fog0_client
+          dataset: "SWEET"
+          rounds: 10
+          # data_dir will be auto-set to federated_runs/sweet/auto_5nodes/fog_0
+
+    - id: fog_1
+      k: 1
+      clients:
+        - id: fog1_client
+          dataset: "SWEET"
+          rounds: 10
+
+    - id: fog_2
+      k: 1
+      clients:
+        - id: fog2_client
+          dataset: "SWEET"
+          rounds: 10
+
+    - id: fog_3
+      k: 1
+      clients:
+        - id: fog3_client
+          dataset: "SWEET"
+          rounds: 10
+
+    - id: fog_4
+      k: 1
+      clients:
+        - id: fog4_client
+          dataset: "SWEET"
+          rounds: 10
+
+  # Telemetry (optional)
+  telemetry:
+    enabled: false
+    otel_endpoint: "http://localhost:4317"
+    prometheus_enabled: false
+    prometheus_port: 9090

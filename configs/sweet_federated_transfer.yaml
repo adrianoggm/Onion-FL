@@ -1,0 +1,28 @@
+dataset:
+  data_dir: data/SWEET/selection2/users
+  label_strategy: ordinal_3class  # 0=low, 1=medium, 2=high stress
+  elevated_threshold: 2.0
+  min_samples_per_subject: 5
+
+split:
+  train: 0.6      # 60% para entrenamiento
+  val: 0.2        # 20% para validación  
+  test: 0.2       # 20% para test
+  seed: 42
+  scaler: global  # global | none
+  strategy: per_subject  # per_subject | global
+
+transfer_learning:
+  # Pre-trained model from selection1 (102 subjects, 55.44% accuracy)
+  pretrained_model_path: baseline_models/sweet/xgboost_tuned_model.json
+  pretrained_scaler_path: baseline_models/sweet/scaler.json
+  freeze_initial_weights: false
+  fine_tune_lr_multiplier: 0.1  # Reduce learning rate for fine-tuning
+
+federation:
+  mode: auto     # manual | auto
+  num_fog_nodes: 3
+  per_node_percentages: [0.34, 0.33, 0.33]
+  output_dir: federated_runs/sweet
+  run_name: transfer_selection2
+  ensure_min_train_per_node: true

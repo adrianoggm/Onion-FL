@@ -1,0 +1,50 @@
+{
+  "dataset": {
+    "name": "SWEET selection1",
+    "data_dir": "data/SWEET/selection1/users",
+    "label_strategy": "ordinal_3class",
+    "num_subjects": 102,
+    "num_samples": 3927,
+    "num_features": 14,
+    "class_distribution": {
+      "0_low": 2169,
+      "1_medium": 1292,
+      "2_high": 466
+    }
+  },
+  "model": {
+    "type": "XGBoost",
+    "hyperparameters": {
+      "max_depth": 4,
+      "n_estimators": 300,
+      "learning_rate": 0.01,
+      "subsample": 0.6,
+      "colsample_bytree": 0.6,
+      "reg_alpha": 1.0,
+      "reg_lambda": 2,
+      "gamma": 0.3,
+      "min_child_weight": 1,
+      "objective": "multi:softmax",
+      "num_class": 3,
+      "random_state": 42,
+      "n_jobs": -1
+    }
+  },
+  "training": {
+    "cv_method": "5-fold subject-level stratified",
+    "cv_scores": [
+      0.595360824742268,
+      0.5435041716328963,
+      0.5630026809651475,
+      0.5194109772423026,
+      0.5347985347985348
+    ],
+    "mean_cv_accuracy": 0.5512154378762298,
+    "std_cv_accuracy": 0.02618494350248804,
+    "final_train_accuracy": 0.5727018079959256
+  },
+  "outputs": {
+    "model_path": "baseline_models\\sweet\\xgboost_tuned_model.json",
+    "scaler_path": "baseline_models\\sweet\\scaler.json"
+  }
+}
