@@ -158,12 +158,18 @@ def _auto_assign_nodes(
 def plan_and_materialize_sweet_federated(config_path: str) -> dict:
     """Create federated SWEET subject splits from JSON/YAML config.
     
+    Supports two strategies:
+    - "global": Each subject belongs to exactly ONE split (train OR val OR test)
+      → Only training subjects become clients (~84 clients with 70/15/15 split)
+    - "per_subject": Each subject has internal train/val/test splits
+      → All subjects become clients (~120 clients), each with local validation
+    
     Output structure (under output_dir/run_name):
-      - manifest.json: full config + subject splits + nodes mapping
+      - manifest.json: full config + subject splits + nodes mapping + clients mapping
       - scaler_global.json (if scaler==global)
       - pretrained_model.json, pretrained_scaler.json (if transfer learning)
-      - fog_<id>/train.npz, val.npz, test.npz
-      - fog_<id>/subject_<N>/train.npz, val.npz, test.npz
+      - fog_<id>/train.npz, val.npz, test.npz (aggregated per fog node)
+      - fog_<id>/subject_<N>/train.npz, val.npz, test.npz (per client - only train subjects in global mode)
     
     Returns:
         Manifest dictionary with splits and paths
@@ -182,7 +188,34 @@ def plan_and_materialize_sweet_federated(config_path: str) -> dict:
     )
     
     # Get unique subjects
-    all_subjects = list(np.unique(subject_ids))
+    all_subjects = sorted(list(set(subject_ids.tolist())))
+    
+    # Check which strategy to use
+    if cfg.split_strategy == "global":
+        # Global strategy: each subject in ONE split only
+        return _materialize_global_strategy_sweet(
+            cfg, X, y, subject_ids, all_subjects, feature_names
+        )
+    else:
+        # Per-subject strategy: each subject has internal splits
+        return _materialize_per_subject_strategy_sweet(
+            cfg, X, y, subject_ids, all_subjects, feature_names
+        )
+
+
+def _materialize_global_strategy_sweet(
+    cfg: FederatedConfigSWEET,
+    X: np.ndarray,
+    y: np.ndarray,
+    subject_ids: np.ndarray,
+    all_subjects: list[str],
+    feature_names: list[str],
+) -> dict:
+    """Global strategy: each subject belongs to ONE split (train OR val OR test).
+    
+    Only training subjects become federated clients.
+    """
+    from sklearn.model_selection import train_test_split
     
     # Subject-level train/val/test split
     subjects_train, subjects_temp = train_test_split(
@@ -199,7 +232,212 @@ def plan_and_materialize_sweet_federated(config_path: str) -> dict:
         shuffle=True,
     )
     
-    # Node subject mapping
+    print(f"[SPLIT] Global strategy: {len(subjects_train)} train, {len(subjects_val)} val, {len(subjects_test)} test subjects")
+    
+    # Node subject mapping - distribute ONLY training subjects
+    if cfg.mode == "manual":
+        if not cfg.manual_assignments:
+            raise ValueError("manual mode requires 'manual_assignments'")
+        node_map = {
+            node: [str(s) for s in subs if s in subjects_train]
+            for node, subs in cfg.manual_assignments.items()
+        }
+    else:
+        # Only distribute training subjects across fog nodes
+        node_map = _auto_assign_nodes(
+            subjects_train, cfg.num_fog_nodes, cfg.per_node_percentages, cfg.seed
+        )
+    
+    # Prepare output directory
+    run_id = cfg.run_name or f"run_{cfg.seed}"
+    run_dir = Path(cfg.output_dir) / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Copy pre-trained model and scaler if provided
+    if cfg.pretrained_model_path:
+        pretrained_model_src = Path(cfg.pretrained_model_path)
+        if pretrained_model_src.exists():
+            pretrained_model_dst = run_dir / "pretrained_model.json"
+            pretrained_model_dst.write_text(pretrained_model_src.read_text())
+            print(f"✓ Copied pre-trained model to {pretrained_model_dst}")
+    
+    if cfg.pretrained_scaler_path:
+        pretrained_scaler_src = Path(cfg.pretrained_scaler_path)
+        if pretrained_scaler_src.exists():
+            pretrained_scaler_dst = run_dir / "pretrained_scaler.json"
+            pretrained_scaler_dst.write_text(pretrained_scaler_src.read_text())
+            print(f"✓ Copied pre-trained scaler to {pretrained_scaler_dst}")
+    
+    # Global scaler - fit on training subjects only
+    scaler_payload = None
+    if cfg.scaler == "global":
+        train_mask = np.isin(subject_ids, subjects_train)
+        from sklearn.preprocessing import StandardScaler
+        scaler = StandardScaler()
+        scaler.fit(X[train_mask])
+        scaler_payload = {
+            "mean": scaler.mean_.astype(float).tolist(),
+            "scale": scaler.scale_.astype(float).tolist(),
+            "var": scaler.var_.astype(float).tolist(),
+        }
+        scaler_path = run_dir / "scaler_global.json"
+        scaler_path.write_text(json.dumps(scaler_payload, indent=2))
+    
+    def _apply_scale(X_arr: np.ndarray) -> np.ndarray:
+        if scaler_payload is None:
+            return X_arr.astype(np.float32)
+        mean = np.array(scaler_payload["mean"], dtype=np.float64)
+        scale = np.array(scaler_payload["scale"], dtype=np.float64)
+        scale = np.where(scale == 0.0, 1.0, scale)
+        return ((X_arr - mean) / scale).astype(np.float32)
+    
+    # Create clients mapping (only training subjects)
+    clients_map = {}
+    
+    # Create per-node splits
+    for node_id, node_subjects in node_map.items():
+        node_dir = run_dir / node_id
+        node_dir.mkdir(exist_ok=True)
+        clients_map[node_id] = {}
+        
+        # Save aggregated fog-level splits
+        for split_name, split_subjects in [
+            ("train", subjects_train),
+            ("val", subjects_val),
+            ("test", subjects_test),
+        ]:
+            node_split_subjects = [s for s in node_subjects if s in split_subjects]
+            
+            if not node_split_subjects:
+                # Empty split
+                np.savez(
+                    node_dir / f"{split_name}.npz",
+                    X=np.empty((0, X.shape[1]), dtype=np.float32),
+                    y=np.empty((0,), dtype=np.int64),
+                    subjects=np.empty((0,), dtype=object),
+                )
+                continue
+            
+            mask = np.isin(subject_ids, node_split_subjects)
+            X_split = _apply_scale(X[mask])
+            y_split = y[mask]
+            s_split = subject_ids[mask]
+            np.savez(
+                node_dir / f"{split_name}.npz",
+                X=X_split,
+                y=y_split,
+                subjects=s_split,
+            )
+        
+        # Create per-subject directories (ONLY for training subjects)
+        for subj in node_subjects:
+            if subj not in subjects_train:
+                continue  # Skip non-training subjects
+            
+            subj_str = str(subj)
+            client_id = f"{node_id}_client_{subj_str}"
+            clients_map[node_id][client_id] = subj_str
+            
+            subj_dir = node_dir / f"subject_{subj_str}"
+            subj_dir.mkdir(exist_ok=True)
+            
+            # Only create train.npz for training subjects
+            mask = subject_ids == subj_str
+            X_subj = _apply_scale(X[mask])
+            y_subj = y[mask]
+            s_subj = subject_ids[mask]
+            
+            np.savez(
+                subj_dir / "train.npz",
+                X=X_subj,
+                y=y_subj,
+                subjects=s_subj,
+            )
+            
+            # Create empty val and test files
+            for split_name in ["val", "test"]:
+                np.savez(
+                    subj_dir / f"{split_name}.npz",
+                    X=np.empty((0, X.shape[1]), dtype=np.float32),
+                    y=np.empty((0,), dtype=np.int64),
+                    subjects=np.empty((0,), dtype=object),
+                )
+    
+    # Save manifest
+    total_clients = sum(len(clients) for clients in clients_map.values())
+    manifest = {
+        "config": {
+            "data_dir": cfg.data_dir,
+            "label_strategy": cfg.label_strategy,
+            "seed": cfg.seed,
+            "split": {
+                "train": cfg.split_train,
+                "val": cfg.split_val,
+                "test": cfg.split_test,
+                "strategy": "global",
+            },
+            "scaler": cfg.scaler,
+            "mode": cfg.mode,
+            "num_fog_nodes": cfg.num_fog_nodes,
+            "per_node_percentages": cfg.per_node_percentages,
+            "pretrained_model_path": cfg.pretrained_model_path,
+            "pretrained_scaler_path": cfg.pretrained_scaler_path,
+            "freeze_initial_weights": cfg.freeze_initial_weights,
+            "fine_tune_lr_multiplier": cfg.fine_tune_lr_multiplier,
+        },
+        "global_subjects": {
+            "train": subjects_train,
+            "val": subjects_val,
+            "test": subjects_test,
+            "all": all_subjects,
+        },
+        "nodes": node_map,
+        "clients": clients_map,
+        "meta": {
+            "feature_names": feature_names,
+            "n_features": len(feature_names),
+            "n_subjects": len(all_subjects),
+            "n_train_subjects": len(subjects_train),
+            "n_val_subjects": len(subjects_val),
+            "n_test_subjects": len(subjects_test),
+        },
+        "output_dir": str(run_dir),
+    }
+    
+    manifest_path = run_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2))
+    
+    print(f"\n✓ SWEET federated splits materialized at: {run_dir}")
+    print(f"  Strategy: global (each subject in ONE split only)")
+    print(f"  Nodes: {len(node_map)}")
+    print(f"  Features: {len(feature_names)}")
+    print(f"  Total subjects: {len(all_subjects)} (train: {len(subjects_train)}, val: {len(subjects_val)}, test: {len(subjects_test)})")
+    print(f"  Total clients: {total_clients} (only training subjects)")
+    if cfg.pretrained_model_path:
+        print(f"  Transfer learning: Pre-trained model from {cfg.pretrained_model_path}")
+    for node_id, node_subjects in node_map.items():
+        print(f"  {node_id}: {len(node_subjects)} subjects ({len(clients_map[node_id])} clients)")
+    
+    return manifest
+
+
+def _materialize_per_subject_strategy_sweet(
+    cfg: FederatedConfigSWEET,
+    X: np.ndarray,
+    y: np.ndarray,
+    subject_ids: np.ndarray,
+    all_subjects: list[str],
+    feature_names: list[str],
+) -> dict:
+    """Per-subject strategy: each subject has internal train/val/test splits.
+    
+    All subjects become federated clients with local validation capability.
+    """
+    
+    # Get unique subjects
+    all_subjects = sorted(list(set(subject_ids.tolist())))
+    
+    # Node subject mapping (distribute ALL subjects across fog nodes)
     if cfg.mode == "manual":
         if not cfg.manual_assignments:
             raise ValueError("manual mode requires 'manual_assignments'")
@@ -232,115 +470,142 @@ def plan_and_materialize_sweet_federated(config_path: str) -> dict:
             pretrained_scaler_dst.write_text(pretrained_scaler_src.read_text())
             print(f"✓ Copied pre-trained scaler to {pretrained_scaler_dst}")
     
-    # Global scaler (if needed)
-    scaler = None
+    # Global scaler - fit on ALL training data (from all subjects' training portions)
+    scaler_payload = None
     if cfg.scaler == "global":
-        scaler = StandardScaler()
-        # Fit only on training subjects
-        train_mask = np.isin(subject_ids, subjects_train)
-        scaler.fit(X[train_mask])
+        # Collect training indices from all subjects
+        train_indices = []
+        for subj in all_subjects:
+            subj_mask = subject_ids == subj
+            subj_indices = np.where(subj_mask)[0]
+            n_subj = len(subj_indices)
+            if n_subj == 0:
+                continue
+            # Internal split for this subject
+            n_train = max(1, int(round(cfg.split_train * n_subj)))
+            # Reproducible shuffle per subject
+            subj_rng = np.random.default_rng(cfg.seed + hash(subj) % (2**31))
+            perm = subj_rng.permutation(n_subj)
+            train_indices.extend(subj_indices[perm[:n_train]])
         
-        scaler_path = run_dir / "scaler_global.json"
-        scaler_data = {
-            "mean": scaler.mean_.tolist(),
-            "scale": scaler.scale_.tolist(),
-            "var": scaler.var_.tolist(),
-        }
-        scaler_path.write_text(json.dumps(scaler_data, indent=2))
+        if train_indices:
+            scaler = StandardScaler()
+            scaler.fit(X[train_indices])
+            scaler_payload = {
+                "mean": scaler.mean_.astype(float).tolist(),
+                "scale": scaler.scale_.astype(float).tolist(),
+                "var": scaler.var_.astype(float).tolist(),
+            }
+            scaler_path = run_dir / "scaler_global.json"
+            scaler_path.write_text(json.dumps(scaler_payload, indent=2))
     
-    # Create per-node splits
-    node_stats = {}
+    def _apply_scale(X_arr: np.ndarray) -> np.ndarray:
+        if scaler_payload is None:
+            return X_arr.astype(np.float32)
+        mean = np.array(scaler_payload["mean"], dtype=np.float64)
+        scale = np.array(scaler_payload["scale"], dtype=np.float64)
+        scale = np.where(scale == 0.0, 1.0, scale)
+        return ((X_arr - mean) / scale).astype(np.float32)
+    
+    # Track subjects with train data and client mapping
+    subjects_with_train = set()
+    clients_map = {}
+    fog_splits = {node: {"train": [], "val": [], "test": []} for node in node_map}
+    
+    # Create per-subject splits (per_subject strategy)
     for node_id, node_subjects in node_map.items():
         node_dir = run_dir / node_id
         node_dir.mkdir(exist_ok=True)
-        
-        # Aggregate node data
-        train_X_list, train_y_list = [], []
-        val_X_list, val_y_list = [], []
-        test_X_list, test_y_list = [], []
+        clients_map[node_id] = {}
         
         for subj in node_subjects:
-            # Get subject data from full dataset
-            subj_mask = subject_ids == subj
+            subj_str = str(subj)
+            client_id = f"{node_id}_client_{subj_str}"
+            clients_map[node_id][client_id] = subj_str
+            
+            subj_dir = node_dir / f"subject_{subj_str}"
+            subj_dir.mkdir(exist_ok=True)
+            
+            # Get all data for this subject
+            subj_mask = subject_ids == subj_str
             X_subj = X[subj_mask]
             y_subj = y[subj_mask]
             
-            # Determine split for this subject
-            if subj in subjects_train:
-                train_X_list.append(X_subj)
-                train_y_list.append(y_subj)
-            elif subj in subjects_val:
-                val_X_list.append(X_subj)
-                val_y_list.append(y_subj)
-            elif subj in subjects_test:
-                test_X_list.append(X_subj)
-                test_y_list.append(y_subj)
+            if len(X_subj) == 0:
+                # Empty subject - create empty files
+                for split_name in ("train", "val", "test"):
+                    np.savez(
+                        subj_dir / f"{split_name}.npz",
+                        X=np.empty((0, X.shape[1]), dtype=np.float32),
+                        y=np.empty((0,), dtype=np.int64),
+                        subjects=np.empty((0,), dtype=object),
+                    )
+                continue
             
-            # Per-subject splits
-            subj_dir = node_dir / f"subject_{subj}"
-            subj_dir.mkdir(exist_ok=True)
+            # Internal split for this subject
+            n = len(X_subj)
+            n_train = max(1, int(round(cfg.split_train * n)))
+            n_val = max(0, int(round(cfg.split_val * n)))
+            n_test = n - n_train - n_val
             
-            if subj in subjects_train:
-                X_s = X_subj.copy()
-                if scaler:
-                    X_s = scaler.transform(X_s)
+            # Ensure at least 1 test sample if possible
+            if n_test < 1 and n > n_train:
+                n_test = 1
+                if n_val > 0:
+                    n_val -= 1
+                else:
+                    n_train -= 1
+            
+            # Reproducible shuffle per subject
+            subj_rng = np.random.default_rng(cfg.seed + hash(subj_str) % (2**31))
+            perm = subj_rng.permutation(n)
+            
+            idx_train = perm[:n_train]
+            idx_val = perm[n_train : n_train + n_val]
+            idx_test = perm[n_train + n_val :]
+            
+            # Mark subject as having train data
+            if len(idx_train) > 0:
+                subjects_with_train.add(subj_str)
+            
+            # Save splits for this subject
+            for split_name, idx in [
+                ("train", idx_train),
+                ("val", idx_val),
+                ("test", idx_test),
+            ]:
+                if len(idx) > 0:
+                    X_split = _apply_scale(X_subj[idx])
+                    y_split = y_subj[idx]
+                    subj_arr = np.full(len(idx), subj_str, dtype=object)
+                    
+                    # Store for fog aggregation
+                    fog_splits[node_id][split_name].append((X_split, y_split, subj_arr))
+                else:
+                    X_split = np.empty((0, X.shape[1]), dtype=np.float32)
+                    y_split = np.empty((0,), dtype=np.int64)
+                    subj_arr = np.empty((0,), dtype=object)
+                
                 np.savez(
-                    subj_dir / "train.npz",
-                    X=X_s,
-                    y=y_subj,
-                    subject_id=np.array([subj] * len(y_subj)),
+                    subj_dir / f"{split_name}.npz",
+                    X=X_split,
+                    y=y_split,
+                    subjects=subj_arr,
                 )
+        
+        # Save aggregated fog-level splits
+        for split_name in ("train", "val", "test"):
+            parts = fog_splits[node_id][split_name]
+            if parts:
+                X_agg = np.concatenate([p[0] for p in parts], axis=0)
+                y_agg = np.concatenate([p[1] for p in parts], axis=0)
+                s_agg = np.concatenate([p[2] for p in parts], axis=0)
+            else:
+                X_agg = np.empty((0, X.shape[1]), dtype=np.float32)
+                y_agg = np.empty((0,), dtype=np.int64)
+                s_agg = np.empty((0,), dtype=object)
             
-            if subj in subjects_val:
-                X_s = X_subj.copy()
-                if scaler:
-                    X_s = scaler.transform(X_s)
-                np.savez(
-                    subj_dir / "val.npz",
-                    X=X_s,
-                    y=y_subj,
-                    subject_id=np.array([subj] * len(y_subj)),
-                )
-            
-            if subj in subjects_test:
-                X_s = X_subj.copy()
-                if scaler:
-                    X_s = scaler.transform(X_s)
-                np.savez(
-                    subj_dir / "test.npz",
-                    X=X_s,
-                    y=y_subj,
-                    subject_id=np.array([subj] * len(y_subj)),
-                )
-        
-        # Aggregated node splits
-        if train_X_list:
-            train_X_agg = np.vstack(train_X_list)
-            train_y_agg = np.concatenate(train_y_list)
-            if scaler:
-                train_X_agg = scaler.transform(train_X_agg)
-            np.savez(node_dir / "train.npz", X=train_X_agg, y=train_y_agg)
-        
-        if val_X_list:
-            val_X_agg = np.vstack(val_X_list)
-            val_y_agg = np.concatenate(val_y_list)
-            if scaler:
-                val_X_agg = scaler.transform(val_X_agg)
-            np.savez(node_dir / "val.npz", X=val_X_agg, y=val_y_agg)
-        
-        if test_X_list:
-            test_X_agg = np.vstack(test_X_list)
-            test_y_agg = np.concatenate(test_y_list)
-            if scaler:
-                test_X_agg = scaler.transform(test_X_agg)
-            np.savez(node_dir / "test.npz", X=test_X_agg, y=test_y_agg)
-        
-        node_stats[node_id] = {
-            "subjects": node_subjects,
-            "train_samples": sum(len(y) for y in train_y_list) if train_y_list else 0,
-            "val_samples": sum(len(y) for y in val_y_list) if val_y_list else 0,
-            "test_samples": sum(len(y) for y in test_y_list) if test_y_list else 0,
-        }
+            np.savez(node_dir / f"{split_name}.npz", X=X_agg, y=y_agg, subjects=s_agg)
     
     # Save manifest
     manifest = {
@@ -348,63 +613,68 @@ def plan_and_materialize_sweet_federated(config_path: str) -> dict:
             "data_dir": cfg.data_dir,
             "label_strategy": cfg.label_strategy,
             "seed": cfg.seed,
+            "split": {
+                "train": cfg.split_train,
+                "val": cfg.split_val,
+                "test": cfg.split_test,
+                "strategy": "per_subject",
+            },
             "scaler": cfg.scaler,
-            "split_strategy": cfg.split_strategy,
+            "mode": cfg.mode,
+            "num_fog_nodes": cfg.num_fog_nodes,
+            "per_node_percentages": cfg.per_node_percentages,
             "pretrained_model_path": cfg.pretrained_model_path,
             "pretrained_scaler_path": cfg.pretrained_scaler_path,
             "freeze_initial_weights": cfg.freeze_initial_weights,
             "fine_tune_lr_multiplier": cfg.fine_tune_lr_multiplier,
         },
-        "feature_names": feature_names,
-        "num_features": len(feature_names),
-        "nodes": node_stats,
-        "node_mapping": node_map,
+        "global_subjects": {
+            "train": sorted(subjects_with_train),
+            "val": sorted(all_subjects),  # All subjects have val (internal)
+            "test": sorted(all_subjects),  # All subjects have test (internal)
+            "all": sorted(all_subjects),
+        },
+        "nodes": node_map,
+        "clients": clients_map,
+        "meta": {
+            "feature_names": feature_names,
+            "n_features": len(feature_names),
+            "n_subjects": len(all_subjects),
+        },
         "output_dir": str(run_dir),
-        "subjects_train": subjects_train,
-        "subjects_val": subjects_val,
-        "subjects_test": subjects_test,
     }
     
     manifest_path = run_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2))
     
-    print(f"✓ SWEET federated splits materialized at: {run_dir}")
+    print(f"\n✓ SWEET federated splits materialized at: {run_dir}")
+    print(f"  Strategy: per_subject (each subject has internal train/val/test)")
     print(f"  Nodes: {len(node_map)}")
     print(f"  Features: {len(feature_names)}")
-    print(f"  Total subjects: {len(all_subjects)} (train: {len(subjects_train)}, val: {len(subjects_val)}, test: {len(subjects_test)})")
+    print(f"  Total subjects: {len(all_subjects)}")
+    print(f"  Total clients: {sum(len(clients) for clients in clients_map.values())}")
+    print(f"  Split ratios: train={cfg.split_train:.0%}, val={cfg.split_val:.0%}, test={cfg.split_test:.0%}")
     if cfg.pretrained_model_path:
         print(f"  Transfer learning: Pre-trained model from {cfg.pretrained_model_path}")
-    for node_id, stats in node_stats.items():
-        print(
-            f"  {node_id}: {len(stats['subjects'])} subjects, "
-            f"{stats['train_samples']} train, {stats['val_samples']} val, "
-            f"{stats['test_samples']} test samples"
-        )
+    for node_id, node_subjects in node_map.items():
+        print(f"  {node_id}: {len(node_subjects)} subjects ({len(clients_map[node_id])} clients)")
     
     return manifest
 
 
 def load_node_split(
-    run_dir: str | Path,
-    node_id: str,
-    split: Literal["train", "val", "test"] = "train",
-) -> tuple[np.ndarray, np.ndarray]:
-    """Load aggregated split for a fog node.
+    split_file: str | os.PathLike,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Load a saved npz split (X, y, subjects).
     
     Args:
-        run_dir: Path to federated run directory
-        node_id: Node identifier (e.g., 'fog_0')
-        split: Which split to load
+        split_file: Path to the .npz file (e.g., fog_0/train.npz or fog_0/subject_123/train.npz)
         
     Returns:
-        Tuple of (X, y) arrays
+        Tuple of (X, y, subjects) arrays
     """
-    path = Path(run_dir) / node_id / f"{split}.npz"
-    if not path.exists():
-        raise FileNotFoundError(f"Split not found: {path}")
-    
-    data = np.load(path)
-    return data["X"], data["y"]
+    arr = np.load(split_file, allow_pickle=True)
+    return arr["X"], arr["y"], arr["subjects"]
 
 
 def load_subject_split(
@@ -412,7 +682,7 @@ def load_subject_split(
     node_id: str,
     subject_id: str,
     split: Literal["train", "val", "test"] = "train",
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Load split for a specific subject within a node.
     
     Args:
@@ -422,11 +692,10 @@ def load_subject_split(
         split: Which split to load
         
     Returns:
-        Tuple of (X, y) arrays
+        Tuple of (X, y, subjects) arrays
     """
     path = Path(run_dir) / node_id / f"subject_{subject_id}" / f"{split}.npz"
     if not path.exists():
         raise FileNotFoundError(f"Subject split not found: {path}")
     
-    data = np.load(path)
-    return data["X"], data["y"]
+    return load_node_split(path)

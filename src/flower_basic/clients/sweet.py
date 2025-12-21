@@ -118,6 +118,7 @@ class SweetFLClientMQTT(BaseMQTTComponent):
         input_dim: int,
         hidden_dims: list[int],
         num_classes: int,
+        subject_id: str | None = None,  # For per-subject client
         lr: float = 1e-3,
         batch_size: int = 32,
         local_epochs: int = 5,
@@ -126,27 +127,71 @@ class SweetFLClientMQTT(BaseMQTTComponent):
         topic_updates: str = TOPIC_UPDATES,
         topic_global: str = TOPIC_GLOBAL_MODEL,
     ):
+        """SWEET FL client using MQTT.
+        
+        Args:
+            node_dir: Path to fog node directory (e.g., federated_runs/sweet/auto_5nodes/fog_0)
+            region: Node identifier (e.g., 'fog_0')
+            input_dim: Number of input features
+            hidden_dims: Hidden layer dimensions
+            num_classes: Number of classes
+            subject_id: Optional subject ID for per-subject client (e.g., '123')
+            lr: Learning rate
+            batch_size: Batch size for training
+            local_epochs: Number of local epochs per round
+            mqtt_broker: MQTT broker address
+            mqtt_port: MQTT broker port
+            topic_updates: MQTT topic for publishing updates
+            topic_global: MQTT topic for receiving global model
+        """
         self.node_dir = Path(node_dir)
         self.region = region
-        self.tag = f"[CLIENT {self.region}]"
+        self.subject_id = subject_id
+        self.tag = f"[CLIENT {self.region}{'_' + self.subject_id if self.subject_id else ''}]"
         self.topic_updates = topic_updates
         self.topic_global = topic_global
         self.local_epochs = local_epochs
 
-        # Load splits
-        # node_dir is already the full path to fog_X, so we need to extract run_dir and node_id
-        run_dir = self.node_dir.parent
-        node_id = self.node_dir.name
-        X_train, y_train = load_node_split(run_dir, node_id, "train")
+        # Load splits - support both aggregated and per-subject
+        if subject_id:
+            # Per-subject client (like SWELL)
+            train_file = self.node_dir / f"subject_{subject_id}" / "train.npz"
+            val_file = self.node_dir / f"subject_{subject_id}" / "val.npz"
+            test_file = self.node_dir / f"subject_{subject_id}" / "test.npz"
+        else:
+            # Aggregated node client (legacy)
+            train_file = self.node_dir / "train.npz"
+            val_file = self.node_dir / "val.npz"
+            test_file = self.node_dir / "test.npz"
+        
+        from flower_basic.datasets.sweet_federated import load_node_split
+        
+        X_train, y_train, _ = load_node_split(train_file)
         if X_train.size == 0:
             raise RuntimeError(
-                "Train split is empty for this node. Check subject assignments."
+                f"Train split is empty for {self.tag}. Check subject assignments."
             )
 
         # Model
         self.model = SweetMLP(
             input_dim=input_dim, hidden_dims=hidden_dims, num_classes=num_classes
         )
+        
+        # Load pre-trained model if available (transfer learning)
+        pretrained_path = self.node_dir.parent / "pretrained_model.json"
+        if pretrained_path.exists():
+            try:
+                import json
+                with open(pretrained_path, 'r') as f:
+                    pretrained_data = json.load(f)
+                
+                # Convert XGBoost weights to PyTorch (if needed)
+                # For now, just log that pre-trained model exists
+                print(f"{self.tag} Pre-trained model found at {pretrained_path}")
+                print(f"{self.tag} Note: Transfer learning from XGBoost to PyTorch requires weight conversion")
+                # TODO: Implement XGBoost → PyTorch weight transfer
+            except Exception as e:
+                print(f"{self.tag} Warning: Could not load pre-trained model: {e}")
 
         # DataLoaders
         self.train_loader = DataLoader(
@@ -163,21 +208,23 @@ class SweetFLClientMQTT(BaseMQTTComponent):
         # Validation split
         self.val_loader = None
         self.num_val_samples = 0
-        val_X, val_y = load_node_split(run_dir, node_id, "val")
-        if val_X.size > 0:
-            self.val_loader = DataLoader(
-                TensorDataset(
-                    torch.from_numpy(val_X).float(), torch.from_numpy(val_y).long()
-                ),
-                batch_size=256,
-                shuffle=False,
-            )
-            self.num_val_samples = len(val_X)
+        if val_file.exists():
+            val_X, val_y, _ = load_node_split(val_file)
+            if val_X.size > 0:
+                self.val_loader = DataLoader(
+                    TensorDataset(
+                        torch.from_numpy(val_X).float(), torch.from_numpy(val_y).long()
+                    ),
+                    batch_size=256,
+                    shuffle=False,
+                )
+                self.num_val_samples = len(val_X)
 
         # Test samples count
         self.num_test_samples = 0
-        test_X, _ = load_node_split(run_dir, node_id, "test")
-        self.num_test_samples = len(test_X) if test_X.size > 0 else 0
+        if test_file.exists():
+            test_X, _, _ = load_node_split(test_file)
+            self.num_test_samples = len(test_X) if test_X.size > 0 else 0
 
         super().__init__(
             tag=self.tag,
@@ -419,6 +466,7 @@ def main():
     parser = argparse.ArgumentParser(description="SWEET Federated Client (MQTT)")
     parser.add_argument("--node-dir", required=True, help="Node data directory")
     parser.add_argument("--region", required=True, help="Region/Node ID (fog_0, etc)")
+    parser.add_argument("--subject-id", help="Subject ID for per-subject client")
     parser.add_argument("--input-dim", type=int, required=True)
     parser.add_argument("--hidden-dims", type=int, nargs="+", default=[64, 32])
     parser.add_argument("--num-classes", type=int, default=3)
@@ -450,6 +498,7 @@ def main():
         input_dim=args.input_dim,
         hidden_dims=args.hidden_dims,
         num_classes=args.num_classes,
+        subject_id=args.subject_id,
         lr=args.lr,
         batch_size=args.batch_size,
         local_epochs=args.local_epochs,

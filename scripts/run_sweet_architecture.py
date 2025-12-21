@@ -92,10 +92,13 @@ def dispatch_config(config: dict[str, Any]) -> Path:
         
         print(f"\n[SUCCESS] Manifest generated: {manifest_path}")
         print(f"  Nodes: {len(manifest['nodes'])}")
-        print(f"  Features: {manifest['num_features']}")
-        print(f"  Total subjects: {len(manifest.get('subjects_train', []))} train, "
-              f"{len(manifest.get('subjects_val', []))} val, "
-              f"{len(manifest.get('subjects_test', []))} test")
+        print(f"  Features: {manifest['meta']['n_features']}")
+        print(f"  Total subjects: {manifest['meta']['n_subjects']}")
+        print(f"  Total clients: {sum(len(clients) for clients in manifest['clients'].values())}")
+        
+        for node_id in manifest['nodes'].keys():
+            num_clients = len(manifest['clients'][node_id])
+            print(f"    {node_id}: {num_clients} clients")
         
         # Clean up temp config
         temp_config_path.unlink()
@@ -139,7 +142,7 @@ def launch_federated_system(
         manifest = json.load(f)
     
     run_dir = Path(manifest["output_dir"])
-    input_dim = manifest["num_features"]
+    input_dim = manifest["meta"]["n_features"]
     num_classes = model_cfg.get("num_classes", 3)
     hidden_dims = model_cfg.get("hidden_dims", [64, 32])
     rounds = orchestrator.get("rounds", 10)
@@ -201,8 +204,13 @@ def launch_federated_system(
     # ========================================================================
     print(f"\n[LAUNCH] Layer 2A: Starting {len(manifest['nodes'])} Fog Brokers...")
     
-    # K=1 because we have 1 client per fog node
-    k_map = {node_id: 1 for node_id in manifest["nodes"].keys()}
+    # Calculate K per fog node based on number of clients (subjects) in each node
+    k_map = {}
+    total_clients = 0
+    for node_id, clients_dict in manifest["clients"].items():
+        k_map[node_id] = len(clients_dict)
+        total_clients += len(clients_dict)
+    
     k_map_json = json.dumps(k_map)
     
     broker_cmd = [
@@ -214,12 +222,13 @@ def launch_federated_system(
         "--mqtt-port",
         str(mqtt_cfg["port"]),
         "--k",
-        "1",  # Default K
+        str(k_map[list(k_map.keys())[0]]),  # Default K (first fog node)
         "--k-map",
         k_map_json,  # Per-region K values
     ]
     
     print(f"  Broker K map: {k_map}")
+    print(f"  Total clients: {total_clients}")
     print(f"  Topics: fl/updates (in), fl/partial (out)")
     broker_proc = subprocess.Popen(broker_cmd)
     procs.append(broker_proc)
@@ -260,53 +269,56 @@ def launch_federated_system(
     time.sleep(2)  # Give bridges time to connect to server
     
     # ========================================================================
-    # LAYER 3: SWEET Clients (Local Training)
+    # LAYER 3: SWEET Clients (Local Training - Per Subject)
     # ========================================================================
-    print(f"\n[LAUNCH] Layer 3: Starting {len(manifest['nodes'])} SWEET Clients...")
+    print(f"\n[LAUNCH] Layer 3: Starting {total_clients} SWEET Clients (per subject)...")
     
-    for node_id, node_info in manifest["nodes"].items():
+    for node_id, clients_dict in manifest["clients"].items():
         node_dir = run_dir / node_id
         
-        client_cmd = [
-            sys.executable,
-            "-m",
-            "flower_basic.clients.sweet",
-            "--node-dir",
-            str(node_dir),
-            "--region",
-            node_id,
-            "--input-dim",
-            str(input_dim),
-            "--num-classes",
-            str(num_classes),
-            "--lr",
-            str(model_cfg.get("lr", 0.001)),
-            "--batch-size",
-            str(model_cfg.get("batch_size", 32)),
-            "--local-epochs",
-            str(model_cfg.get("local_epochs", 5)),
-            "--rounds",
-            str(rounds),
-            "--mqtt-broker",
-            mqtt_cfg["broker"],
-            "--mqtt-port",
-            str(mqtt_cfg["port"]),
-        ]
-        
-        # Add hidden dims
-        client_cmd.extend(["--hidden-dims"] + [str(d) for d in hidden_dims])
-        
-        print(f"  Starting client for {node_id}...")
-        client_proc = subprocess.Popen(client_cmd)
-        procs.append(client_proc)
-        time.sleep(0.5)
+        for client_id, subject_id in clients_dict.items():
+            client_cmd = [
+                sys.executable,
+                "-m",
+                "flower_basic.clients.sweet",
+                "--node-dir",
+                str(node_dir),
+                "--region",
+                node_id,
+                "--subject-id",
+                str(subject_id),
+                "--input-dim",
+                str(input_dim),
+                "--num-classes",
+                str(num_classes),
+                "--lr",
+                str(model_cfg.get("lr", 0.001)),
+                "--batch-size",
+                str(model_cfg.get("batch_size", 32)),
+                "--local-epochs",
+                str(model_cfg.get("local_epochs", 5)),
+                "--rounds",
+                str(rounds),
+                "--mqtt-broker",
+                mqtt_cfg["broker"],
+                "--mqtt-port",
+                str(mqtt_cfg["port"]),
+            ]
+            
+            # Add hidden dims
+            client_cmd.extend(["--hidden-dims"] + [str(d) for d in hidden_dims])
+            
+            print(f"  Starting client {client_id} (subject {subject_id})...")
+            client_proc = subprocess.Popen(client_cmd)
+            procs.append(client_proc)
+            time.sleep(0.2)  # Reduced delay for many clients
     
     print(f"\n[RUNNING] Federated system running with {len(procs)} processes:")
     print(f"  - 1 Central Server")
     print(f"  - 1 Fog Broker (aggregates {len(manifest['nodes'])} regions)")
     print(f"  - {len(manifest['nodes'])} Fog Bridges")
-    print(f"  - {len(manifest['nodes'])} SWEET Clients")
-    print(f"\n  Architecture: Clients → Fog Broker → Fog Bridges → Central Server")
+    print(f"  - {total_clients} SWEET Clients (per subject)")
+    print(f"\n  Architecture: {total_clients} Clients → Fog Broker → {len(manifest['nodes'])} Bridges → Central Server")
     print("  Press Ctrl+C to stop all processes")
     
     return procs
@@ -370,8 +382,9 @@ def main():
     else:
         # Try to find manifest from config
         dataset_cfg = arch["dataset"]
-        run_name = dataset_cfg.get("run_name", "auto_5nodes")
-        output_dir = dataset_cfg.get("output_dir", "federated_runs/sweet")
+        fed_cfg = dataset_cfg["federation"]
+        run_name = fed_cfg.get("run_name", "auto_5nodes")
+        output_dir = fed_cfg.get("output_dir", "federated_runs/sweet")
         manifest_path = Path(output_dir) / run_name / "manifest.json"
         
         if not manifest_path.exists():

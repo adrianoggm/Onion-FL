@@ -46,20 +46,22 @@ def main():
         print("=" * 80)
         print(f"Output directory: {manifest['output_dir']}")
         print(f"Number of nodes: {len(manifest['nodes'])}")
-        print(f"Number of features: {manifest['num_features']}")
+        print(f"Number of features: {manifest['meta']['n_features']}")
+        print(f"Total subjects: {manifest['meta']['n_subjects']}")
+        print(f"Total clients: {sum(len(clients) for clients in manifest['clients'].values())}")
         
         print("\nNode Details:")
-        for node_id, stats in manifest['nodes'].items():
+        for node_id, subjects_list in manifest['nodes'].items():
+            num_clients = len(manifest['clients'][node_id])
             print(f"  {node_id}:")
-            print(f"    Subjects: {', '.join(stats['subjects'])}")
-            print(f"    Train samples: {stats['train_samples']}")
-            print(f"    Val samples: {stats['val_samples']}")
-            print(f"    Test samples: {stats['test_samples']}")
+            print(f"    Subjects: {len(subjects_list)}")
+            print(f"    Clients: {num_clients}")
+            print(f"    Sample subjects: {', '.join(subjects_list[:3])}...")
         
         print("\nNext steps:")
         print("  1. Start MQTT broker (if not running)")
-        print("  2. Start server: python -m flower_basic.servers.sweet ...")
-        print("  3. Start clients: python -m flower_basic.clients.sweet ...")
+        print("  2. Run architecture script:")
+        print(f"     python scripts/run_sweet_architecture.py --config {args.config} --launch")
         
     except Exception as e:
         print(f"\n❌ ERROR: {e}")

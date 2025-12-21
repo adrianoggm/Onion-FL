@@ -308,7 +308,7 @@ def _load_eval_data(manifest_path: Path) -> tuple[np.ndarray, np.ndarray] | None
         if not test_path.exists():
             print(f"{TAG}   Node {node_id}: test.npz NOT FOUND at {test_path}")
             continue
-        X, y = load_node_split(base, node_id, "test")
+        X, y, _ = load_node_split(test_path)
         if X.size > 0:
             Xs.append(X)
             ys.append(y)

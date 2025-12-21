@@ -18,13 +18,13 @@ federated_architecture:
       scaler: global  # Global StandardScaler fitted on training subjects only
       strategy: global  # Each subject in ONE split only (train OR val OR test)
     
-    # Federated distribution
+    # Federated distribution - REDUCED FOR TESTING
     federation:
       mode: auto  # Automatic distribution across fog nodes
-      num_fog_nodes: 5
-      per_node_percentages: [0.2, 0.2, 0.2, 0.2, 0.2]  # Equal distribution
+      num_fog_nodes: 2  # Just 2 nodes for testing
+      per_node_percentages: [0.5, 0.5]  # Equal distribution
       output_dir: federated_runs/sweet
-      run_name: auto_5nodes
+      run_name: test_2nodes
       ensure_min_train_per_node: true
 
   # Pre-trained model (transfer learning)
@@ -32,7 +32,6 @@ federated_architecture:
     enabled: true
     model_path: baseline_models/sweet/xgboost_tuned_model.json
     scaler_path: baseline_models/sweet/scaler.json
-    # If clients don't have the model, they request it from server
     request_from_server: true
     freeze_initial_weights: false
     fine_tune_lr_multiplier: 0.1
@@ -40,7 +39,7 @@ federated_architecture:
   # Orchestration
   orchestrator:
     address: "0.0.0.0:8080"
-    rounds: 10
+    rounds: 3  # Just 3 rounds for testing
     protocol: "MQTT"
     mqtt:
       broker: "localhost"
@@ -53,21 +52,16 @@ federated_architecture:
   # Model architecture
   model:
     type: "sweet_mlp"
-    input_dim: 14  # SWEET selection2 features (will be auto-detected)
+    input_dim: 14  # SWEET selection2 features
     hidden_dims: [64, 32]
     num_classes: 3  # ordinal_3class
     dropout: 0.3
     lr: 0.001
     batch_size: 32
-    local_epochs: 5
-
-  # Fog nodes - auto-generated based on federation.num_fog_nodes
-  # Each fog node will have multiple clients (one per subject)
-  # K values are calculated automatically based on subject distribution
+    local_epochs: 2  # Reduced for faster testing
 
   # Telemetry (optional)
   telemetry:
     enabled: false
-    otel_endpoint: "http://localhost:4317"
-    prometheus_enabled: false
-    prometheus_port: 9090
+    prometheus:
+      enabled: false
