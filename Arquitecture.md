@@ -120,6 +120,70 @@ CloudStore -->|Modelo global| EdgeData
 classDef continuum fill:#f2f4f8,stroke:#4a4a4a,stroke-width:2px;
 classDef sensors fill:#fef3c7,stroke:#d97706,stroke-width:
 
-
-
 ```
+
+```mermaid
+
+flowchart TB
+
+subgraph Continuum["Computing Continuum<br/>(Edge–Fog–Cloud)"]
+  direction TB
+
+  %% =======================
+  %% EDGE LAYER
+  %% =======================
+  subgraph EdgeLayer["Edge Nodes"]
+    direction TB
+    EdgeData["Datos locales<br/>(ya disponibles en el nodo)"]
+    EdgeTrain["Entrenamiento local<br/>sobre datos privados"]
+    EdgeDelta["Actualizaciones locales<br/>(Δθ)"]
+    EdgeData --> EdgeTrain --> EdgeDelta
+  end
+
+  %% =======================
+  %% FOG LAYER
+  %% =======================
+  subgraph FogLayer["Fog Nodes"]
+    direction TB
+    FogReceive["Recepción de actualizaciones<br/>Edge (MQTT)"]
+    FogAgg["Agregación parcial<br/>(manual / personalizada)"]
+    FogBuffer["Gestión de disponibilidad<br/>y tolerancia a fallos"]
+    FogReceive --> FogAgg --> FogBuffer
+  end
+
+  %% =======================
+  %% CLOUD LAYER
+  %% =======================
+  subgraph CloudLayer["Cloud Node"]
+    direction TB
+    CloudOrch["Orquestación global<br/>Flower"]
+    CloudAgg["Agregación global<br/>FedAvg"]
+    CloudStore["Versionado y almacenamiento<br/>del modelo global"]
+    CloudOrch --> CloudAgg --> CloudStore
+  end
+end
+
+%% =======================
+%% COMMUNICATION
+%% =======================
+
+MQTT["Broker MQTT<br/>(Edge ↔ Fog)"]
+FlowerComm["Comunicación FL<br/>Flower (Fog ↔ Cloud)"]
+
+EdgeDelta -->|Publicación MQTT| MQTT
+MQTT -->|Suscripción| FogReceive
+
+FogBuffer -->|Modelo parcial| FlowerComm
+FlowerComm -->|Rondas FL| CloudOrch
+
+CloudStore -->|Modelo global| EdgeData
+
+%% =======================
+%% STYLES
+%% =======================
+classDef continuum fill:#f2f4f8,stroke:#4a4a4a,stroke-width:2px;
+classDef comm fill:#e0f2fe,stroke:#0284c7,stroke-width:2px;
+
+class Continuum continuum
+class MQTT,FlowerComm comm
+``
