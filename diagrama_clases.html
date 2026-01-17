@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diagrama de Clases - Flower-Basic Arquitectura</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #1976d2;
+        }
+        .diagram-section {
+            margin: 30px 0;
+        }
+        .mermaid {
+            display: flex;
+            justify-content: center;
+        }
+        .legend {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f0f7ff;
+            border-left: 4px solid #1976d2;
+            border-radius: 4px;
+        }
+        .color-box {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            margin-right: 10px;
+            vertical-align: middle;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Diagrama de Clases - Arquitectura Flower-Basic</h1>
+        
+        <div class="legend">
+            <h3>Leyenda de Colores:</h3>
+            <div>
+                <span class="color-box" style="background: #e1f5ff;"></span>
+                <strong>Clases Base (Abstract)</strong>
+            </div>
+            <div>
+                <span class="color-box" style="background: #f3e5f5;"></span>
+                <strong>Clientes Edge (MQTT Directo)</strong>
+            </div>
+            <div>
+                <span class="color-box" style="background: #e8f5e9;"></span>
+                <strong>Clientes Fog Bridge (Flower + MQTT)</strong>
+            </div>
+            <div>
+                <span class="color-box" style="background: #fce4ec;"></span>
+                <strong>Brokers Fog (Agregación MQTT)</strong>
+            </div>
+            <div>
+                <span class="color-box" style="background: #c8e6c9;"></span>
+                <strong>Servidores Centrales (Flower)</strong>
+            </div>
+            <div>
+                <span class="color-box" style="background: #ffecb3;"></span>
+                <strong>Modelos (PyTorch)</strong>
+            </div>
+        </div>
+
+        <div class="diagram-section">
+            <h2>1. Diagrama de Herencia</h2>
+            <div class="mermaid">
+                graph TD
+                    BaseMQTT["BaseMQTTComponent<br/>+ mqtt: mqtt.Client<br/>+ on_message()"]
+                    FLClient["fl.client.NumPyClient<br/>+ fit(parameters, config)<br/>+ get_parameters(config)"]
+                    FLServer["fl.server.strategy.FedAvg<br/>+ configure_fit()<br/>+ aggregate_fit()"]
+                    
+                    SwellClient["SwellFLClientMQTT"]
+                    SweetClient["SweetFLClientMQTT"]
+                    FogBridgeSwell["FogClientSwell"]
+                    FogBridgeSweet["FogClientSweet"]
+                    SwellServer["MQTTFedAvgSwell"]
+                    SweetServer["MQTTFedAvgSweet"]
+                    
+                    BaseMQTT --> SwellClient
+                    BaseMQTT --> SweetClient
+                    BaseMQTT --> FogBridgeSwell
+                    BaseMQTT --> FogBridgeSweet
+                    FLClient --> FogBridgeSwell
+                    FLClient --> FogBridgeSweet
+                    FLServer --> SwellServer
+                    FLServer --> SweetServer
+                    
+                    style BaseMQTT fill:#e1f5ff
+                    style FLClient fill:#fff3e0
+                    style FLServer fill:#fff3e0
+                    style SwellClient fill:#f3e5f5
+                    style SweetClient fill:#f3e5f5
+                    style FogBridgeSwell fill:#e8f5e9
+                    style FogBridgeSweet fill:#e8f5e9
+                    style SwellServer fill:#c8e6c9
+                    style SweetServer fill:#c8e6c9
+            </div>
+        </div>
+
+        <div class="diagram-section">
+            <h2>2. Arquitectura de Capas y Comunicación</h2>
+            <div class="mermaid">
+                graph TB
+                    subgraph CENTRAL["🌐 CAPA CENTRAL"]
+                        SwellSrv["MQTTFedAvgSwell<br/>Servidor Flower"]
+                        SweetSrv["MQTTFedAvgSweet<br/>Servidor Flower"]
+                    end
+                    
+                    subgraph BRIDGE["🌉 CAPA FOG BRIDGE"]
+                        BridgeSwell["FogClientSwell<br/>Flower NumPyClient"]
+                        BridgeSweet["FogClientSweet<br/>Flower NumPyClient"]
+                    end
+                    
+                    subgraph BROKER["🔗 CAPA FOG BROKER"]
+                        FogBroker["fog.py<br/>Agregación NumPy"]
+                        SweetFogBroker["sweet_fog.py<br/>Agregación NumPy"]
+                    end
+                    
+                    subgraph EDGE["📱 CAPA EDGE"]
+                        SwellCli["SwellFLClientMQTT<br/>Cliente Local"]
+                        SweetCli["SweetFLClientMQTT<br/>Cliente Local"]
+                    end
+                    
+                    subgraph MQTT["📡 MQTT Topics"]
+                        Updates["fl/updates"]
+                        Partial["fl/partial"]
+                        Global["fl/global_model"]
+                    end
+                    
+                    SwellCli -->|publica| Updates
+                    SweetCli -->|publica| Updates
+                    Updates -->|suscribe| FogBroker
+                    Updates -->|suscribe| SweetFogBroker
+                    FogBroker -->|publica| Partial
+                    SweetFogBroker -->|publica| Partial
+                    Partial -->|suscribe| BridgeSwell
+                    Partial -->|suscribe| BridgeSweet
+                    BridgeSwell -->|Flower gRPC| SwellSrv
+                    BridgeSweet -->|Flower gRPC| SweetSrv
+                    SwellSrv -->|publica| Global
+                    SweetSrv -->|publica| Global
+                    Global -->|suscribe| SwellCli
+                    Global -->|suscribe| SweetCli
+                    
+                    style CENTRAL fill:#c8e6c9
+                    style BRIDGE fill:#e8f5e9
+                    style BROKER fill:#fce4ec
+                    style EDGE fill:#f3e5f5
+                    style MQTT fill:#fff3e0
+            </div>
+        </div>
+
+        <div class="diagram-section">
+            <h2>3. Relaciones de Composición</h2>
+            <div class="mermaid">
+                graph TB
+                    SwellClient["SwellFLClientMQTT"]
+                    SweetClient["SweetFLClientMQTT"]
+                    BridgeSwell["FogClientSwell"]
+                    BridgeSweet["FogClientSweet"]
+                    SwellSrv["MQTTFedAvgSwell"]
+                    SweetSrv["MQTTFedAvgSweet"]
+                    
+                    SwellMLP["SwellMLP<br/>pytorch nn.Module"]
+                    SweetMLP["SweetMLP<br/>pytorch nn.Module"]
+                    DataLoader["DataLoader<br/>training data"]
+                    MQTT["mqtt.Client<br/>paho-mqtt"]
+                    
+                    SwellClient -->|usa| SwellMLP
+                    SwellClient -->|usa| DataLoader
+                    SwellClient -->|hereda| MQTT
+                    
+                    SweetClient -->|usa| SweetMLP
+                    SweetClient -->|usa| DataLoader
+                    SweetClient -->|hereda| MQTT
+                    
+                    BridgeSwell -->|usa| SwellMLP
+                    BridgeSwell -->|hereda| MQTT
+                    
+                    BridgeSweet -->|usa| SweetMLP
+                    BridgeSweet -->|hereda| MQTT
+                    
+                    SwellSrv -->|usa| SwellMLP
+                    SwellSrv -->|usa| MQTT
+                    
+                    SweetSrv -->|usa| SweetMLP
+                    SweetSrv -->|usa| MQTT
+                    
+                    style SwellMLP fill:#ffecb3
+                    style SweetMLP fill:#ffecb3
+                    style DataLoader fill:#e0e0e0
+                    style MQTT fill:#e0e0e0
+            </div>
+        </div>
+
+        <div class="diagram-section">
+            <h2>4. Flujo de Datos Detallado</h2>
+            <div class="mermaid">
+                sequenceDiagram
+                    participant SC as SwellFLClientMQTT
+                    participant FB as fog.py<br/>Broker
+                    participant BC as FogClientSwell<br/>Bridge
+                    participant SS as MQTTFedAvgSwell<br/>Server
+                    
+                    SC->>SC: train_local()
+                    SC->>SC: weights = model(...)
+                    SC->>FB: publish(fl/updates)<br/>{weights, samples}
+                    
+                    FB->>FB: buffer += weights
+                    FB->>FB: if len(buffer) >= K
+                    FB->>FB: partial = weighted_avg(buffer)
+                    FB->>BC: publish(fl/partial)<br/>{partial_weights}
+                    
+                    BC->>BC: on_message() recibe partial
+                    BC->>BC: self.partial_weights = data
+                    BC->>SS: fit(parameters, config)
+                    SS->>SS: aggregate_fit([partial1, partial2])
+                    SS->>SS: global = fedavg(partials)
+                    SS->>SC: publish(fl/global_model)<br/>{global_weights}
+                    
+                    SC->>SC: on_message() recibe global
+                    SC->>SC: self.global_model = data
+                    SC->>SC: Próxima ronda: train_local()
+            </div>
+        </div>
+
+        <div class="diagram-section">
+            <h2>5. Métodos Clave por Clase</h2>
+            
+            <h3>BaseMQTTComponent</h3>
+            <div class="mermaid">
+                graph TB
+                    Base["BaseMQTTComponent"]
+                    M1["+ __init__(tag, broker, port, subscriptions)"]
+                    M2["+ on_message(client, userdata, msg)"]
+                    M3["+ publish_json(topic, payload)"]
+                    M4["+ stop_mqtt()"]
+                    
+                    Base --> M1
+                    Base --> M2
+                    Base --> M3
+                    Base --> M4
+                    
+                    style Base fill:#e1f5ff
+                    style M1 fill:#e1f5ff
+                    style M2 fill:#e1f5ff
+                    style M3 fill:#e1f5ff
+                    style M4 fill:#e1f5ff
+            </div>
+
+            <h3>SwellFLClientMQTT / SweetFLClientMQTT</h3>
+            <div class="mermaid">
+                graph TB
+                    Client["SwellFLClientMQTT / SweetFLClientMQTT"]
+                    M1["+ train_local() → Tensor"]
+                    M2["+ on_message(msg) → ∅"]
+                    M3["+ publish_update() → ∅"]
+                    M4["+ process_global_weights() → ∅"]
+                    M5["+ run_rounds(total_rounds) → ∅"]
+                    
+                    Client --> M1
+                    Client --> M2
+                    Client --> M3
+                    Client --> M4
+                    Client --> M5
+                    
+                    style Client fill:#f3e5f5
+                    style M1 fill:#f3e5f5
+                    style M2 fill:#f3e5f5
+                    style M3 fill:#f3e5f5
+                    style M4 fill:#f3e5f5
+                    style M5 fill:#f3e5f5
+            </div>
+
+            <h3>FogClientSwell / FogClientSweet</h3>
+            <div class="mermaid">
+                graph TB
+                    Bridge["FogClientSwell / FogClientSweet"]
+                    M1["+ fit(parameters, config) → List, int, dict"]
+                    M2["+ get_parameters(config) → List"]
+                    M3["+ on_message(msg) → ∅"]
+                    M4["+ evaluate(parameters, config) → float, int, dict"]
+                    
+                    Bridge --> M1
+                    Bridge --> M2
+                    Bridge --> M3
+                    Bridge --> M4
+                    
+                    style Bridge fill:#e8f5e9
+                    style M1 fill:#e8f5e9
+                    style M2 fill:#e8f5e9
+                    style M3 fill:#e8f5e9
+                    style M4 fill:#e8f5e9
+            </div>
+
+            <h3>fog.py / sweet_fog.py Brokers</h3>
+            <div class="mermaid">
+                graph TB
+                    Broker["fog.py / sweet_fog.py"]
+                    M1["+ on_update(client, msg) → ∅"]
+                    M2["+ weighted_average(updates, weights) → dict, dict"]
+                    M3["+ main() → ∅"]
+                    
+                    Broker --> M1
+                    Broker --> M2
+                    Broker --> M3
+                    
+                    style Broker fill:#fce4ec
+                    style M1 fill:#fce4ec
+                    style M2 fill:#fce4ec
+                    style M3 fill:#fce4ec
+            </div>
+
+            <h3>MQTTFedAvgSwell / MQTTFedAvgSweet</h3>
+            <div class="mermaid">
+                graph TB
+                    Server["MQTTFedAvgSwell / MQTTFedAvgSweet"]
+                    M1["+ configure_fit(rnd, parameters, ...) → List, dict"]
+                    M2["+ aggregate_fit(rnd, results, failures) → tuple"]
+                    M3["+ evaluate(rnd, parameters) → tuple"]
+                    M4["+ publish_global_model(weights) → ∅"]
+                    
+                    Server --> M1
+                    Server --> M2
+                    Server --> M3
+                    Server --> M4
+                    
+                    style Server fill:#c8e6c9
+                    style M1 fill:#c8e6c9
+                    style M2 fill:#c8e6c9
+                    style M3 fill:#c8e6c9
+                    style M4 fill:#c8e6c9
+            </div>
+        </div>
+
+        <div class="diagram-section">
+            <h2>6. Topología de Instancias en Docker</h2>
+            <div class="mermaid">
+                graph TB
+                    Mosquitto["🔗 Mosquitto MQTT<br/>localhost:1883"]
+                    
+                    subgraph SERVER["Capa Central"]
+                        SwellSrv["MQTTFedAvgSwell<br/>Flower Server<br/>8080"]
+                    end
+                    
+                    subgraph BRIDGES["Capa Fog Bridge"]
+                        B0["FogClientSwell<br/>region=fog_0"]
+                        B1["FogClientSwell<br/>region=fog_1"]
+                    end
+                    
+                    subgraph BROKERS["Capa Fog Broker"]
+                        BRK["fog.py<br/>Broker Regional"]
+                    end
+                    
+                    subgraph CLIENTS["Capa Edge"]
+                        C1["SwellFLClientMQTT<br/>region=fog_0"]
+                        C2["SwellFLClientMQTT<br/>region=fog_0"]
+                        C3["SwellFLClientMQTT<br/>region=fog_1"]
+                    end
+                    
+                    Mosquitto ---|depende| SERVER
+                    Mosquitto ---|depende| BRIDGES
+                    Mosquitto ---|depende| BROKERS
+                    Mosquitto ---|depende| CLIENTS
+                    
+                    C1 -->|fl/updates| BRK
+                    C2 -->|fl/updates| BRK
+                    C3 -->|fl/updates| BRK
+                    BRK -->|fl/partial| B0
+                    BRK -->|fl/partial| B1
+                    B0 -->|gRPC| SwellSrv
+                    B1 -->|gRPC| SwellSrv
+                    SwellSrv -->|fl/global_model| Mosquitto
+                    Mosquitto -->|fl/global_model| C1
+                    Mosquitto -->|fl/global_model| C2
+                    Mosquitto -->|fl/global_model| C3
+                    
+                    style Mosquitto fill:#ff9800
+                    style SwellSrv fill:#c8e6c9
+                    style B0 fill:#e8f5e9
+                    style B1 fill:#e8f5e9
+                    style BRK fill:#fce4ec
+                    style C1 fill:#f3e5f5
+                    style C2 fill:#f3e5f5
+                    style C3 fill:#f3e5f5
+            </div>
+        </div>
+
+        <div class="legend" style="margin-top: 40px;">
+            <h3>📝 Notas Importantes</h3>
+            <ul>
+                <li><strong>Herencia Múltiple:</strong> FogClientSwell/Sweet heredan de BaseMQTTComponent Y fl.client.NumPyClient</li>
+                <li><strong>Aggregación en Fog:</strong> fog.py usa solo NumPy (no Flower) para agregación regional</li>
+                <li><strong>MQTT + gRPC:</strong> Comunicación en dos niveles: MQTT (edge-fog) + gRPC (fog-central)</li>
+                <li><strong>Publishing de Servidor:</strong> Servidores Flower publican global model en MQTT para que clientes lo reciban</li>
+                <li><strong>Pattern Strategy:</strong> MQTTFedAvgSwell/Sweet extienden FedAvg de Flower</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

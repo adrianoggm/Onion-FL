@@ -1,0 +1,187 @@
+@startuml
+!theme plain
+skinparam linetype ortho
+skinparam nodesep 80
+skinparam ranksep 80
+left to right direction
+
+' ===== INTERFACES Y CLASES ABSTRACTAS =====
+interface NumPyClient {
+    + fit(parameters, config)
+    + get_parameters(config)
+    + evaluate(parameters, config)
+}
+
+abstract class FedAvg {
+    + aggregate_fit(rnd, results, failures)
+    + aggregate_evaluate(rnd, results, failures)
+    + evaluate(rnd, parameters)
+}
+
+abstract class NNModule {
+    + forward(x)
+    + state_dict()
+    + load_state_dict(state_dict)
+}
+
+abstract class BaseMQTTComponent {
+    - tag: str
+    - mqtt_client: mqtt.Client
+    - subscriptions: List[str]
+    + on_message(client, userdata, msg)*
+    + publish_json(topic, payload)
+    + stop_mqtt()
+}
+
+' ===== MODELOS ML =====
+class SwellMLP {
+    - input_dim: int
+    - hidden_dims: List[int]
+    - layers: ModuleList
+    + forward(x: Tensor): Tensor
+    + state_dict(): dict
+    + load_state_dict(state_dict: dict)
+}
+
+class SweetMLP {
+    - input_dim: int
+    - hidden_dims: List[int]
+    - layers: ModuleList
+    + forward(x: Tensor): Tensor
+    + state_dict(): dict
+    + load_state_dict(state_dict: dict)
+}
+
+' ===== EDGE LAYER - CLIENTES LOCALES =====
+class SwellFLClientMQTT {
+    - model: SwellMLP
+    - train_loader: DataLoader
+    - region: str
+    - global_model: dict
+    + train_local(): Tuple[dict, int]
+    + publish_update(): void
+    + on_message(client, userdata, msg)
+    + run_rounds(total_rounds): void
+}
+
+class SweetFLClientMQTT {
+    - model: SweetMLP
+    - train_loader: DataLoader
+    - subject_id: str
+    - global_model: dict
+    + train_local(): Tuple[dict, int]
+    + publish_update(): void
+    + on_message(client, userdata, msg)
+    + run_rounds(total_rounds): void
+}
+
+' ===== FOG LAYER =====
+class FogBroker {
+    - buffers: Dict[str, List]
+    - clients_per_region: Dict
+    - K: int
+    - mqtt_client: mqtt.Client
+    + on_update(client, userdata, msg)
+    + weighted_average(updates): dict
+    + publish_partial(): void
+    + main(): void
+}
+
+class FogClientSwell {
+    - model: SwellMLP
+    - server_address: str
+    - region: str
+    - partial_weights: dict
+    + fit(parameters, config): Tuple
+    + get_parameters(config): List
+    + evaluate(parameters, config): Tuple
+    - on_message(client, userdata, msg)
+    - _wait_for_partial(): bool
+}
+
+class FogClientSweet {
+    - model: SweetMLP
+    - server_address: str
+    - region: str
+    - partial_weights: dict
+    + fit(parameters, config): Tuple
+    + get_parameters(config): List
+    + evaluate(parameters, config): Tuple
+    - on_message(client, userdata, msg)
+    - _wait_for_partial(): bool
+}
+
+' ===== CENTRAL SERVER LAYER =====
+class MQTTFedAvgSwell {
+    - model: SwellMLP
+    - mqtt_client: mqtt.Client
+    - eval_data: Tuple
+    - total_rounds: int
+    + configure_fit(rnd, parameters, cm)
+    + aggregate_fit(rnd, results, failures)
+    + evaluate(rnd, parameters)
+    + publish_global_model(weights): void
+}
+
+class MQTTFedAvgSweet {
+    - model: SweetMLP
+    - mqtt_client: mqtt.Client
+    - eval_data: Tuple
+    - total_rounds: int
+    + configure_fit(rnd, parameters, cm)
+    + aggregate_fit(rnd, results, failures)
+    + evaluate(rnd, parameters)
+    + publish_global_model(weights): void
+}
+
+' ===== RELACIONES DE HERENCIA =====
+SwellMLP --|> NNModule
+SweetMLP --|> NNModule
+SwellFLClientMQTT --|> BaseMQTTComponent
+SweetFLClientMQTT --|> BaseMQTTComponent
+FogClientSwell --|> BaseMQTTComponent
+FogClientSweet --|> BaseMQTTComponent
+MQTTFedAvgSwell --|> FedAvg
+MQTTFedAvgSweet --|> FedAvg
+
+' ===== RELACIONES DE IMPLEMENTACIÓN =====
+FogClientSwell ..|> NumPyClient
+FogClientSweet ..|> NumPyClient
+
+' ===== RELACIONES DE USO/COMPOSICIÓN =====
+SwellFLClientMQTT --> SwellMLP: uses
+SweetFLClientMQTT --> SweetMLP: uses
+FogClientSwell --> SwellMLP: uses
+FogClientSweet --> SweetMLP: uses
+MQTTFedAvgSwell --> SwellMLP: uses
+MQTTFedAvgSweet --> SweetMLP: uses
+
+' ===== NOTAS EXPLICATIVAS =====
+note right of SwellFLClientMQTT
+  **Edge Client**
+  Entrena modelo localmente
+  Publica updates en MQTT fl/updates
+end note
+
+note right of FogBroker
+  **Fog Aggregator**
+  Agrega K=3 actualizaciones
+  Usa NumPy weighted_average()
+  Publica partial en MQTT fl/partial
+end note
+
+note right of FogClientSwell
+  **Fog Bridge**
+  Puente MQTT ↔ Flower gRPC
+  Implementa NumPyClient
+  Recibe partial, forwarding a servidor
+end note
+
+note right of MQTTFedAvgSwell
+  **Central Server**
+  Agrega múltiples regiones
+  Extiende FedAvg (Flower)
+  Publica global_model en MQTT
+end note
+
+@enduml

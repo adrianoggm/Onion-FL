@@ -1,0 +1,121 @@
+@startuml Diagrama_Secuencia_Federado
+!theme plain
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 10
+skinparam maxMessageSize 200
+skinparam backgroundColor #FEFEFE
+skinparam fontColor #333333
+skinparam ArrowColor #1976D2
+skinparam ActorBorderColor #1976D2
+skinparam SequenceGroupBorderColor #1976D2
+skinparam SequenceGroupHeaderBackgroundColor #E3F2FD
+skinparam ParticipantBackgroundColor #E3F2FD
+skinparam ParticipantBorderColor #1976D2
+
+title Diagrama de Secuencia - Ronda de Entrenamiento Federado
+note over FLClientMQTT, MQTTFedAvg
+    Una ronda completa de aprendizaje federado con fog computing
+end note
+
+participant "FLClientMQTT\n(Clientes)" as Client
+participant "BrokerFog\n(Agregador)" as Broker
+participant "FogClient\n(Puente)" as FogC
+participant "MQTTFedAvg\n(Servidor)" as Server
+participant "MQTT Broker\n(Infraestructura)" as MQTT
+
+== FASE 1: ENTRENAMIENTO LOCAL ==
+Client ->> Client: train_round()
+note right of Client
+    - Entrena 1 época
+    - Computa gradientes
+    - Actualiza pesos
+end note
+
+== FASE 2: PUBLICACIÓN AL BROKER FOG ==
+Client ->> MQTT: publish(fl/updates, weights)
+note left of MQTT
+    Topic: fl/updates
+    Payload: {client_id, round, weights}
+end note
+
+MQTT ->> Broker: on_message()
+Broker ->> Broker: buffers[region].append(weights)
+note right of Broker
+    Acumula actualizaciones
+    por región
+end note
+
+== FASE 3: AGREGACIÓN REGIONAL (K=3) ==
+alt Actualizaciones < K
+    Broker ->> Broker: espera más actualizaciones
+    note right of Broker
+        Esperando K=3 clientes
+    end note
+else Actualizaciones >= K
+    Broker ->> Broker: weighted_average(K clientes)
+    note right of Broker
+        - Promedio ponderado
+        - Agregado parcial listo
+    end note
+    
+    == FASE 4: ENVÍO DE AGREGADO PARCIAL ==
+    Broker ->> MQTT: publish(fl/partial, aggregated)
+    note left of MQTT
+        Topic: fl/partial
+        Payload: {region, round, partial_weights}
+    end note
+    
+    MQTT ->> FogC: on_message()
+    FogC ->> FogC: _on_partial()
+    note right of FogC
+        - Recibe agregado parcial
+        - Almacena en partial_weights
+    end note
+end
+
+== FASE 5: PARTICIPACIÓN EN RONDA FLOWER ==
+FogC ->> Server: fit(parameters, config)
+note over FogC, Server
+    Comunicación gRPC
+    Protocolo Flower
+end note
+Server ->> Server: aggregate_fit(results)
+note right of Server
+    - Agrega múltiples regiones
+    - FedAvg: promedio global
+    - Computa nuevo modelo global
+end note
+
+== FASE 6: PUBLICACIÓN DEL MODELO GLOBAL ==
+Server ->> MQTT: publish(fl/global_model, global_weights)
+note left of MQTT
+    Topic: fl/global_model
+    Payload: {round, global_weights, metrics}
+end note
+
+MQTT ->> Client: on_message()
+Client ->> Client: _on_message()
+Client ->> Client: load_state_dict(global_weights)
+note right of Client
+    - Recibe modelo global
+    - Actualiza modelo local
+    - Listo para próxima ronda
+end note
+
+== FIN DE RONDA ==
+Server ->> Server: round += 1
+note right of Server
+    Próxima ronda
+    de entrenamiento
+end note
+
+== FASE 7: EVALUACIÓN (OPCIONAL) ==
+FogC ->> Server: evaluate(parameters, config)
+Server ->> Server: aggregate_evaluate()
+note right of Server
+    - Métricas globales
+    - Logging
+    - Monitoreo
+end note
+
+@enduml

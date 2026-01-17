@@ -1,0 +1,65 @@
+@startuml
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam backgroundColor #FFFFFF
+
+actor "Edge Client" as Edge
+participant "FogBroker\n(fog.py)" as Broker
+participant "FogClientSwell\n(Bridge)" as Bridge
+participant "MQTTFedAvgSwell\n(Server)" as Server
+
+== RONDA N ==
+
+activate Edge
+Edge -> Edge: train_local()
+note right: Entrena modelo CNN\ncon datos locales
+Edge -> Edge: weights = model.state_dict()
+Edge -> Broker: publish(fl/updates)\n{weights, samples, region}
+deactivate Edge
+
+activate Broker
+Broker -> Broker: buffers[region].append(weights)
+note right: Acumula K=3\nactualizaciones
+
+alt len(buffers[region]) >= K
+    Broker -> Broker: partial = weighted_average(buffers)
+    note right: NumPy FedAvg:\nΣ(w_i * θ_i)\nw_i = samples_i / Σ(samples)
+    
+    Broker -> Bridge: publish(fl/partial)\n{partial_weights, total_samples}
+    deactivate Broker
+    
+    activate Bridge
+    Bridge -> Bridge: on_message() recibe partial
+    Bridge -> Bridge: self.partial_weights = data
+    note right: Almacena agregado\nregional
+    deactivate Bridge
+end
+
+== Flower FL Round ==
+
+activate Bridge
+note over Bridge,Server: Flower llama a fit() en todos los bridges
+Bridge -> Server: fit(parameters, config)\n[gRPC]
+note right: Envía partial_weights\ncomo NumPy arrays
+deactivate Bridge
+
+activate Server
+Server -> Server: Aggregates K regions
+note right: FedAvg de Flower:\naggregate_fit([partial1, partial2, ...])
+
+Server -> Server: global_weights = aggregate_fit()
+Server -> Server: Evaluate on test set
+note right: Calcula accuracy y loss
+
+Server -> Edge: publish(fl/global_model)\n{global_weights, metrics}
+deactivate Server
+
+activate Edge
+Edge -> Edge: on_message() recibe global
+Edge -> Edge: model.load_state_dict(global_weights)
+note right: Actualiza modelo local\npara próxima ronda
+deactivate Edge
+
+== Fin Ronda N - Inicio Ronda N+1 ==
+
+@enduml

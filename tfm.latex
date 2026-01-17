@@ -1,0 +1,1521 @@
+% =========================
+% Planificación del backlog reorganizado
+% =========================
+\subsection*{Planificación del backlog reorganizado}
+La planificación se organiza por sprints y cada elemento se formula como historia de usuario (HU). Las tareas técnicas se integran en el alcance de la HU correspondiente.
+
+En función de esta estimación, se definen las siguientes categorías de tamaño:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+\textbf{Tamaño} & \textbf{Esfuerzo (HP)} \\ \hline
+XS & 2 \\ \hline
+S  & 4 \\ \hline
+M  & 8 \\ \hline
+L  & 12 \\ \hline
+XL & 16 \\ \hline
+\end{tabular}
+\caption{Categorías de esfuerzo en función del tamaño de la historia o tarea.}
+\end{table}
+
+Esta clasificación facilita la estimación del esfuerzo y la planificación de sprints.
+
+\begin{table}[H]
+\centering
+\caption{Requisitos del sistema (HU-001 a HU-015)}
+\label{tab:requisitos_sistema}
+\begin{tabular}{|l|p{10cm}|c|}
+\hline
+\textbf{ID} & \textbf{Historia de usuario} & \textbf{Tamaño} \\ \hline
+HU-001 & Preprocesamiento local automático en el Edge & M \\ \hline
+HU-002 & Incorporación segura de nodos al sistema & L \\ \hline
+HU-003 & Configuración de capacidades Fog & M \\ \hline
+HU-004 & Distribución del modelo global & M \\ \hline
+HU-005 & Selección inteligente de clientes & M \\ \hline
+HU-006 & Monitorización de métricas & M \\ \hline
+HU-007 & Modo síncrono/asíncrono configurable & M \\ \hline
+HU-008 & Particionado avanzado de \textit{datasets} & L \\ \hline
+HU-009 & Aprendizaje incremental local & M \\ \hline
+HU-010 & Explicación del modelo federado & L \\ \hline
+HU-011 & Seguridad y privacidad reforzada & XL \\ \hline
+HU-012 & Tolerancia a fallos & L \\ \hline
+HU-013 & Entrenamiento híbrido & L \\ \hline
+HU-014 & Ranking de contribución & L \\ \hline
+HU-015 & Gestión de hiperparámetros & M \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Sprint 0: Preparación y definición de requisitos}
+\label{tab:sprint0}
+\begin{tabular}{|l|p{10cm}|c|}
+\hline
+\textbf{ID} & \textbf{Historia de usuario} & \textbf{Tamaño} \\ \hline
+HU-016 & Consolidación de requisitos funcionales & S \\ \hline
+HU-017 & Definición de requisitos no funcionales & S \\ \hline
+HU-018 & Definición de la arquitectura preliminar Edge--Fog--Cloud & M \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Sprint 1: Infraestructura, entorno y primeros estudios}
+\label{tab:sprint1}
+\begin{tabular}{|l|p{10cm}|c|}
+\hline
+\textbf{ID} & \textbf{Historia de usuario} & \textbf{Tamaño} \\ \hline
+HU-019 & Estandarización automática del código & S \\ \hline
+HU-020 & Configuración de integración continua (CI) & S \\ \hline
+HU-021 & Configuración del entorno de desarrollo en Python & S \\ \hline
+HU-022 & Estudio de frameworks de Aprendizaje Federado & M \\ \hline
+HU-023 & Estudio de TensorFlow Federated & S \\ \hline
+HU-024 & Revisión bibliográfica de frameworks de Aprendizaje Federado & M \\ \hline
+HU-025 & Análisis del framework FLEX (UGR) & M \\ \hline
+HU-026 & Consolidación de criterios técnicos para evaluación de frameworks & S \\ \hline
+HU-027 & Contacto y coordinación de reunión técnica con equipo FLEX & XS \\ \hline
+HU-028 & Documentación de decisiones técnicas y evidencias (Sprint 1) & S \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Sprint 2: Evaluación de frameworks}
+\label{tab:sprint2}
+\begin{tabular}{|l|p{10cm}|c|}
+\hline
+\textbf{ID} & \textbf{Historia de usuario} & \textbf{Tamaño} \\ \hline
+HU-029 & Estudio del framework FLOWER & M \\ \hline
+HU-030 & Implementación de modelos baseline sobre ECG5000 & M \\ \hline
+HU-031 & Evaluación técnica y decisión sobre viabilidad del framework FLEX & M \\ \hline
+HU-032 & Documentación de decisiones técnicas y conclusiones (Sprint 2) & S \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Sprint 3: Diseño arquitectónico detallado y selección tecnológica}
+\label{tab:sprint3}
+\begin{tabular}{|l|p{10cm}|c|}
+\hline
+\textbf{ID} & \textbf{Historia de usuario} & \textbf{Tamaño} \\ \hline
+HU-033 & Análisis de asincronía en el framework Flower & M \\ \hline
+HU-034 & Diseño arquitectónico definiendo tecnologías en cada capa & M \\ \hline
+HU-035 & Estudio y selección de broker MQTT & S \\ \hline
+HU-036 & Implementación y puesta a punto de broker MQTT contenerizado & S \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Sprint 4: Análisis de datos y diseño a bajo nivel}
+\label{tab:sprint4}
+\begin{tabular}{|l|p{10cm}|c|}
+\hline
+\textbf{ID} & \textbf{Historia de usuario} & \textbf{Tamaño} \\ \hline
+HU-037 & Diseño a bajo nivel del prototipo (clases y responsabilidades) & M \\ \hline
+HU-038 & Análisis exploratorio del dataset WESAD & M \\ \hline
+HU-039 & Análisis exploratorio del dataset SWELL & M \\ \hline
+HU-040 & Diseño de baseline en WESAD/SWELL & M \\ \hline
+HU-041 & Planificación del plan de reproducibilidad experimental (baseline) & S \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Sprint 5: Implementación de componentes Edge, Fog y baselines}
+\label{tab:sprint5}
+\begin{tabular}{|l|p{10cm}|c|}
+\hline
+\textbf{ID} & \textbf{Historia de usuario} & \textbf{Tamaño} \\ \hline
+HU-042 & Desarrollo de nodos cliente (Edge) & L \\ \hline
+HU-043 & Desarrollo del nodo cliente para SWELL & M \\ \hline
+HU-044 & Desarrollo de nodos Fog (recepción y agregación parcial) & L \\ \hline
+HU-045 & Desarrollo de nodos Fog para SWELL & M \\ \hline
+HU-046 & Particionado avanzado de \textit{datasets} & L \\ \hline
+HU-047 & Desarrollo de modelos baseline centralizados & L \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Sprint 6: Integración del servidor central federado}
+\label{tab:sprint6}
+\begin{tabular}{|l|p{10cm}|c|}
+\hline
+\textbf{ID} & \textbf{Historia de usuario} & \textbf{Tamaño} \\ \hline
+HU-048 & Servidor Cloud Flower & L \\ \hline
+HU-049 & Fog como cliente Flower & L \\ \hline
+HU-050 & Estandarización de pesos/serialización Fog--Cloud & M \\ \hline
+HU-051 & Validación E2E reproducible en SWELL & M \\ \hline
+HU-052 & Observabilidad/trazabilidad & S \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Sprint 7: Análisis de Federated Transfer Learning y validación metodológica}
+\label{tab:sprint7}
+\begin{tabular}{|l|p{10cm}|c|}
+\hline
+\textbf{ID} & \textbf{Historia de usuario} & \textbf{Tamaño} \\ \hline
+HU-053 & Análisis de viabilidad de Federated Transfer Learning & M \\ \hline
+HU-054 & Validación metodológica del particionado por sujeto & S \\ \hline
+HU-055 & Análisis de compatibilidad entre datasets para transferencia & M \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Sprint 8: Redefinición experimental y multi-dataset}
+\label{tab:sprint8}
+\begin{tabular}{|l|p{10cm}|c|}
+\hline
+\textbf{ID} & \textbf{Historia de usuario} & \textbf{Tamaño} \\ \hline
+HU-056 & Redefinición del particionado experimental por sujeto & S \\ \hline
+HU-057 & Re-evaluación de modelos baseline con particionado correcto & M \\ \hline
+HU-058 & Integración del dataset SWEET en el pipeline experimental & M \\ \hline
+HU-059 & Diseño experimental de Federated Transfer Learning & M \\ \hline
+HU-060 & Extensión del flujo federado a escenarios multi-dataset & L \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Sprint 9: Recepción de SWEET y análisis}
+\label{tab:sprint9}
+\begin{tabular}{|l|p{10cm}|c|}
+\hline
+\textbf{ID} & \textbf{Historia de usuario} & \textbf{Tamaño} \\ \hline
+HU-061 & Análisis inicial del dataset SWEET & S \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-001}
+\label{tab:hu001}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-001 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Preprocesamiento local automático en el Edge \\ \hline
+\textbf{Descripción} & 
+Como usuario del sistema, quiero que cada nodo Edge pueda preprocesar mis datos automáticamente (limpieza, normalización y anonimización) para garantizar que la información enviada al servidor federado cumple los requisitos de calidad y privacidad. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} & Módulo de preprocesamiento en nodos Edge; calidad de datos; seguridad y privacidad de la información biomédica. \\ \hline
+\textbf{Dependencias} & - \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-002}
+\label{tab:hu002}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-002 \\ \hline
+\textbf{Tamaño} & L \\ \hline
+\textbf{Nombre} & Incorporación segura de nodos al sistema \\ \hline
+\textbf{Descripción} & 
+Como administrador del sistema, quiero que los nodos Edge y Fog se registren y autentiquen automáticamente mediante certificados o tokens, para poder garantizar que solo dispositivos de confianza participen en el entrenamiento federado. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} & Gestión de registro y autenticación de nodos; seguridad de acceso; fiabilidad operativa frente a nodos maliciosos o no autorizados. \\ \hline
+\textbf{Dependencias} & HU-001 \\ \hline
+\textbf{Estado} & En proceso \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-003}
+\label{tab:hu003}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-003 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Configuración de capacidades Fog \\ \hline
+\textbf{Descripción} & 
+Como operador del sistema, quiero poder activar diferentes capacidades en los nodos Fog (agregación parcial, filtrado, cacheo de modelos, balanceo, adición de ruido) mediante archivos JSON/YAML para adaptar la red federada a diferentes escenarios de carga. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} & Nodos Fog como capa intermedia; configuración modular de agregación y filtrado; mantenibilidad y extensibilidad de la arquitectura. \\ \hline
+\textbf{Dependencias} & HU-002 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-004}
+\label{tab:hu004}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-004 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Distribución del modelo global \\ \hline
+\textbf{Descripción} & 
+Como cliente federado, quiero recibir automáticamente el modelo global actualizado tras cada ronda para poder continuar el entrenamiento con la versión más reciente. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} & Servidor central de orquestación; mecanismo de distribución de modelos; actualización coordinada de modelos locales en clientes y nodos Fog. \\ \hline
+\textbf{Dependencias} & HU-001, HU-002 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-005}
+\label{tab:hu005}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-005 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Selección inteligente de clientes \\ \hline
+\textbf{Descripción} & 
+Como servidor federado, quiero seleccionar automáticamente los clientes más adecuados para cada ronda en función de disponibilidad, reputación, ancho de banda o heterogeneidad para mejorar la calidad del entrenamiento. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} & Algoritmo de selección de clientes; políticas de disponibilidad y reputación; eficiencia del entrenamiento y estabilidad de la convergencia. \\ \hline
+\textbf{Dependencias} & HU-002, HU-004 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-006}
+\label{tab:hu006}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-006 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Monitorización de métricas \\ \hline
+\textbf{Descripción} & 
+Como investigador, quiero ver métricas de entrenamiento en tiempo real (pérdida, latencias, \textit{throughput}, convergencia) para evaluar la estabilidad y rendimiento del sistema. \\ \hline
+\textbf{Prioridad} & Media \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} & Subsistema de monitorización y métricas; panel de observabilidad; análisis de rendimiento del entrenamiento federado. \\ \hline
+\textbf{Dependencias} & HU-004 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-007}
+\label{tab:hu007}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-007 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Modo síncrono/asíncrono configurable \\ \hline
+\textbf{Descripción} & 
+Como administrador del sistema, quiero cambiar entre entrenamiento síncrono y asíncrono sin necesidad de detener los nodos para permitir distintas estrategias de convergencia. \\ \hline
+\textbf{Prioridad} & Media \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} & Módulo de orquestación de rondas; configuración de modos de sincronización; flexibilidad en la gestión del entrenamiento federado. \\ \hline
+\textbf{Dependencias} & HU-004, HU-005 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-008}
+\label{tab:hu008}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-008 \\ \hline
+\textbf{Tamaño} & L \\ \hline
+\textbf{Nombre} & Particionado avanzado de \textit{datasets} \\ \hline
+\textbf{Descripción} & 
+Como investigador, quiero generar particiones no-i.i.d. configurables para simular escenarios realistas de distribución heterogénea en FL. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} & Módulo de particionado de datos; gestión de sujetos y ventanas temporales; soporte explícito para distribuciones no-i.i.d. en entornos federados. \\ \hline
+\textbf{Dependencias} & HU-001 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-009}
+\label{tab:hu009}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-009 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Aprendizaje incremental local \\ \hline
+\textbf{Descripción} & 
+Como usuario, quiero que mi dispositivo siga aprendiendo de nuevos datos aunque no esté participando activamente en rondas federadas, para mantener actualizado el modelo local. \\ \hline
+\textbf{Prioridad} & Media \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} & Módulo de entrenamiento local incremental en el cliente; gestión de datos en tiempo real; coherencia entre modelo local y modelo global federado. \\ \hline
+\textbf{Dependencias} & HU-004 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-010}
+\label{tab:hu010}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-010 \\ \hline
+\textbf{Tamaño} & L \\ \hline
+\textbf{Nombre} & Explicación del modelo federado \\ \hline
+\textbf{Descripción} & 
+Como investigador, quiero obtener reportes automáticos de interpretabilidad del sistema federado (Grad-CAM, SHAP, LIME) para evaluar sesgos y calidad del modelo final. \\ \hline
+\textbf{Prioridad} & Media \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} & Módulo de explicabilidad y auditoría de modelos; generación de informes automáticos; soporte a la validación científica de los resultados. \\ \hline
+\textbf{Dependencias} & HU-004, HU-006 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-011}
+\label{tab:hu011}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-011 \\ \hline
+\textbf{Tamaño} & XL \\ \hline
+\textbf{Nombre} & Seguridad y privacidad reforzada \\ \hline
+\textbf{Descripción} & 
+Como usuario final, quiero que mis datos estén protegidos mediante cifrado y mecanismos de privacidad diferencial para evitar filtraciones o reconstrucción de información sensible. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} & Módulos de cifrado extremo a extremo y preservación de privacidad; cumplimiento de requisitos normativos; protección frente a ataques de reconstrucción. \\ \hline
+\textbf{Dependencias} & HU-001, HU-002 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-012}
+\label{tab:hu012}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-012 \\ \hline
+\textbf{Tamaño} & L \\ \hline
+\textbf{Nombre} & Tolerancia a fallos \\ \hline
+\textbf{Descripción} & 
+Como administrador, quiero que el sistema detecte fallos de nodos y recupere automáticamente la ronda sin pérdida significativa de clientes, para mantener la estabilidad del entrenamiento federado. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} & Gestión de fallos y reconexión de nodos; mecanismos de reequilibrado de carga; robustez operativa del sistema federado. \\ \hline
+\textbf{Dependencias} & HU-005, HU-006 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-013}
+\label{tab:hu013}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-013 \\ \hline
+\textbf{Tamaño} & L \\ \hline
+\textbf{Nombre} & Entrenamiento híbrido \\ \hline
+\textbf{Descripción} & 
+Como investigador, quiero combinar aprendizaje federado horizontal y técnicas de \textit{transfer learning} distribuidas para mejorar la calidad del modelo final en escenarios complejos. \\ \hline
+\textbf{Prioridad} & Media \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} & Configuración de topologías híbridas y flujos avanzados de entrenamiento; soporte a escenarios complejos de datos y dominios. \\ \hline
+\textbf{Dependencias} & HU-004 \\ \hline
+\textbf{Estado} & Pendiente \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-014}
+\label{tab:hu014}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-014 \\ \hline
+\textbf{Tamaño} & L \\ \hline
+\textbf{Nombre} & Ranking de contribución \\ \hline
+\textbf{Descripción} & 
+Como investigador, quiero conocer la contribución de cada cliente (por valores de Shapley u otros) para identificar qué nodos aportan mayor valor durante el entrenamiento. \\ \hline
+\textbf{Prioridad} & Media \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} & Módulo de análisis de contribución de clientes; cálculo de métricas de influencia; generación de rankings persistentes para auditoría y análisis. \\ \hline
+\textbf{Dependencias} & HU-004, HU-006 \\ \hline
+\textbf{Estado} & Pendiente \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-015}
+\label{tab:hu015}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-015 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Gestión de hiperparámetros \\ \hline
+\textbf{Descripción} & 
+Como investigador, quiero poder modificar, versionar y comparar conjuntos de hiperparámetros para estudiar cómo influyen en la convergencia y estabilidad del sistema federado. \\ \hline
+\textbf{Prioridad} & Media \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} & Gestor centralizado de configuraciones de entrenamiento; versionado de hiperparámetros; soporte a experimentación reproducible. \\ \hline
+\textbf{Dependencias} & HU-006 \\ \hline
+\textbf{Estado} & Pendiente \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-016}
+\label{tab:hu016}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-016 \\ \hline
+\textbf{Tamaño} & S \\ \hline
+\textbf{Nombre} & Consolidación de requisitos funcionales \\ \hline
+\textbf{Descripción} & 
+Como equipo de desarrollo, quiero consolidar y formalizar los requisitos funcionales del sistema en forma de historias de usuario trazables, para disponer de un \textit{product backlog} coherente que guíe la planificación de los sprints. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} & Definición y organización del \textit{product backlog}; alineamiento con los objetivos del TFM; trazabilidad entre requisitos, arquitectura e iteraciones de desarrollo. \\ \hline
+\textbf{Dependencias} & HU-003, HU-008 (revisión de capacidades y flujo de datos definidos en la arquitectura preliminar). \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-017}
+\label{tab:hu017}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-017 \\ \hline
+\textbf{Tamaño} & S \\ \hline
+\textbf{Nombre} & Definición de requisitos no funcionales \\ \hline
+\textbf{Descripción} & 
+Como equipo de desarrollo, quiero identificar y formalizar los requisitos no funcionales (seguridad, privacidad, rendimiento, fiabilidad, mantenibilidad, interoperabilidad, calidad de código), para disponer de criterios de calidad objetivos que se apliquen a todas las historias de usuario. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} & Catálogo de requisitos no funcionales; definición de métricas y criterios de verificación; asociación de RNF a las historias de usuario mediante el campo \emph{Alcance}. \\ \hline
+\textbf{Dependencias} & HU-016 (backlog funcional consolidado). \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-018}
+\label{tab:hu018}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-018 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Definición de la arquitectura preliminar Edge--Fog--Cloud \\ \hline
+\textbf{Descripción} & 
+Como equipo de desarrollo, quiero definir una arquitectura preliminar basada en niveles Edge--Fog--Cloud, especificando el flujo de datos y las responsabilidades principales de cada módulo, para asegurar que las historias de usuario se implementan sobre una base técnica consistente y extensible. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} & Modelo arquitectónico del sistema; definición de nodos Edge, Fog y Cloud; flujos de datos y puntos de integración; soporte a futuras decisiones de despliegue en un \textit{computing continuum}. \\ \hline
+\textbf{Dependencias} & HU-016, HU-017 (alineamiento con backlog funcional y requisitos de calidad). \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-019}
+\label{tab:hu019}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-019 \\ \hline
+\textbf{Tamaño} & S \\ \hline
+\textbf{Nombre} & Estandarización automática del código \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero que el código del proyecto se formatee y valide automáticamente siguiendo estándares reconocidos (PEP~8), para garantizar consistencia, legibilidad y calidad desde las primeras fases del desarrollo. \\ \hline
+\textbf{Prioridad} & Media \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} &
+Calidad de código; mantenibilidad; configuración de herramientas de formateo y análisis estático (\texttt{black}, \texttt{flake8}). \\ \hline
+\textbf{Dependencias} & -- \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-020}
+\label{tab:hu020}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-020 \\ \hline
+\textbf{Tamaño} & S \\ \hline
+\textbf{Nombre} & Configuración de integración continua (CI) \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero disponer de una canalización de integración continua que ejecute automáticamente pruebas básicas y verificaciones de calidad en cada cambio del repositorio, para detectar errores de forma temprana y asegurar la estabilidad del proyecto. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Infraestructura CI/CD; ejecución automática de tests; validación de estilo; repositorio GitHub y GitHub Actions. \\ \hline
+\textbf{Dependencias} & HU-019 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-021}
+\label{tab:hu021}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-021 \\ \hline
+\textbf{Tamaño} & S \\ \hline
+\textbf{Nombre} & Configuración del entorno de desarrollo en Python \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero configurar un entorno de desarrollo en Python reproducible (gestión de dependencias, entornos virtuales y scripts de inicialización) para asegurar que todo el equipo trabaja con la misma configuración. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Definición del entorno Python; gestión de dependencias (\texttt{requirements.txt}/\texttt{pyproject.toml}); scripts de setup; documentación de instalación y uso. \\ \hline
+\textbf{Dependencias} & HU-019 \\ \hline
+\textbf{Estado} & Pendiente \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-022}
+\label{tab:hu022}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-022 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Estudio de frameworks de Aprendizaje Federado \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero analizar distintos frameworks de aprendizaje federado disponibles en Python para evaluar su viabilidad técnica y seleccionar la solución más adecuada como base del sistema propuesto. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Evaluación tecnológica de frameworks de FL; definición de criterios de comparación (arquitectura, facilidad de uso, documentación, extensibilidad, comunidad); soporte a la toma de decisiones técnicas del proyecto. \\ \hline
+\textbf{Dependencias} & -- \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-023}
+\label{tab:hu023}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-023 \\ \hline
+\textbf{Tamaño} & S \\ \hline
+\textbf{Nombre} & Estudio de TensorFlow Federated \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero analizar y prototipar un ejemplo básico con la librería TensorFlow Federated para evaluar su idoneidad como framework de aprendizaje federado dentro del proyecto. \\ \hline
+\textbf{Prioridad} & Media \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} &
+Prototipado mínimo con TensorFlow Federated; análisis de compatibilidad con el entorno Python; evaluación de complejidad, documentación y posibilidades de extensión; comparación con otros frameworks FL. \\ \hline
+\textbf{Dependencias} & HU-022 \\ \hline
+\textbf{Estado} & Bloqueada \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-024}
+\label{tab:hu024}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-024 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Revisión bibliográfica de frameworks de Aprendizaje Federado \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero realizar una búsqueda complementaria de literatura reciente y herramientas emergentes de aprendizaje federado para detectar alternativas no contempladas inicialmente y extraer criterios de comparación relevantes que guíen la selección de tecnologías. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Revisión de literatura FL; identificación de frameworks emergentes; extracción de criterios de comparación; soporte a la toma de decisiones tecnológicas. \\ \hline
+\textbf{Dependencias} & HU-022 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-025}
+\label{tab:hu025}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-025 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Análisis del framework FLEX (UGR) \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero analizar el framework FLEX propuesto por un grupo de investigación de la UGR, evaluando su orientación hacia flexibilidad experimental y seguridad/privacidad, para determinar su viabilidad como alternativa complementaria a otros frameworks estudiados. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} &
+Análisis técnico del framework FLEX; evaluación de flexibilidad experimental; capacidades de seguridad y privacidad; comparativa preliminar con otros frameworks FL. \\ \hline
+\textbf{Dependencias} & HU-024 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-026}
+\label{tab:hu026}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-026 \\ \hline
+\textbf{Tamaño} & S \\ \hline
+\textbf{Nombre} & Consolidación de criterios técnicos para evaluación de frameworks \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero consolidar un conjunto inicial de criterios técnicos para evaluar frameworks de FL (curva de aprendizaje, modularidad, extensibilidad, soporte a privacidad/seguridad, documentación y madurez del ecosistema) para estructurar la comparativa de soluciones. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Definición de criterios de evaluación; definición de métricas de comparación; matriz de decisión para frameworks; soporte a la evaluación técnica y trazabilidad. \\ \hline
+\textbf{Dependencias} & HU-024, HU-025 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-027}
+\label{tab:hu027}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-027 \\ \hline
+\textbf{Tamaño} & XS \\ \hline
+\textbf{Nombre} & Contacto y coordinación de reunión técnica con equipo FLEX \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero establecer contacto con los investigadores del framework FLEX (Mario García-Márquez y equipo UGR) y programar una reunión técnica para profundizar en el estado de madurez del framework y su posible aplicabilidad al proyecto TFM. \\ \hline
+\textbf{Prioridad} & Media \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} &
+Contacto con equipo investigador; coordinación de reunión técnica; recopilación de información técnica; evaluación de viabilidad en el contexto del TFM. \\ \hline
+\textbf{Dependencias} & HU-025, HU-026 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-028}
+\label{tab:hu028}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-028 \\ \hline
+\textbf{Tamaño} & S \\ \hline
+\textbf{Nombre} & Documentación de decisiones técnicas y evidencias (Sprint 1) \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero registrar conclusiones y evidencias de la fase exploratoria de frameworks (notas de revisión, enlaces a recursos, resumen de hallazgos) para mantener trazabilidad de las decisiones técnicas en sprints posteriores. \\ \hline
+\textbf{Prioridad} & Media \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} &
+Documentación de decisiones; registro de evidencias de evaluación; trazabilidad de criterios de decisión; repositorio centralizado de hallazgos técnicos. \\ \hline
+\textbf{Dependencias} & HU-024, HU-025, HU-026, HU-027 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-029}
+\label{tab:hu029}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-029 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Estudio del framework FLOWER \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero analizar y prototipar un ejemplo básico con el framework FLOWER para evaluar su viabilidad como base del sistema de aprendizaje federado propuesto. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Ejecución de ejemplos básicos con FLOWER; evaluación de facilidad de integración, flexibilidad arquitectónica y soporte comunitario; comparación con TensorFlow Federated para la toma de decisiones técnicas. \\ \hline
+\textbf{Dependencias} & HU-022 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-030}
+\label{tab:hu030}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-030 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Implementación de modelos baseline sobre ECG5000 \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero implementar y evaluar modelos baseline centralizados sobre el dataset ECG5000 para disponer de una referencia cuantitativa con la que comparar el rendimiento de las configuraciones federadas. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} &
+Implementación de modelos (MLP/CNN) en entrenamiento centralizado; definición de particiones Train/Validation/Test; generación de métricas base (accuracy, loss) para comparación posterior con FedAvg. \\ \hline
+\textbf{Dependencias} & HU-020 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-031}
+\label{tab:hu031}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-031 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Evaluación técnica y decisión sobre viabilidad del framework FLEX \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero celebrar una reunión técnica con Mario García-Márquez para discutir en detalle el estado actual del framework FLEX, su aplicabilidad al TFM y su viabilidad técnica como solución para el entrenamiento federado. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Reunión técnica con investigadores FLEX; evaluación de madurez del framework; análisis de compatibilidad; toma de decisión sobre su incorporación o descarte en el proyecto. \\ \hline
+\textbf{Dependencias} & HU-027 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-032}
+\label{tab:hu032}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-032 \\ \hline
+\textbf{Tamaño} & S \\ \hline
+\textbf{Nombre} & Documentación de decisiones técnicas y conclusiones (Sprint 2) \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero registrar las conclusiones técnicas, recomendaciones y evidencias obtenidas durante el Sprint 2 (incluyendo la reunión con el equipo FLEX) para garantizar la trazabilidad de las decisiones adoptadas y servir de referencia para futuros sprints. \\ \hline
+\textbf{Prioridad} & Media \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} &
+Documentación de conclusiones Sprint 2; registro de recomendaciones técnicas; trazabilidad de decisiones; repositorio centralizado de aprendizajes y hallazgos. \\ \hline
+\textbf{Dependencias} & HU-031 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-033}
+\label{tab:hu033}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-033 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Análisis de asincronía en el framework Flower \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero analizar si Flower permite comportamientos asíncronos o tolerantes a la no disponibilidad de clientes para determinar si es viable implementar la arquitectura Edge--Fog--Cloud sin mecanismos externos. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Evaluación técnica del modelo de ejecución de Flower; sincronía de rondas; requisitos de disponibilidad (RNF-005); impacto sobre diseño jerárquico Edge--Fog--Cloud. \\ \hline
+\textbf{Dependencias} & HU-029 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-034}
+\label{tab:hu034}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-034 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Diseño arquitectónico definiendo tecnologías en cada capa \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero definir una arquitectura Edge--Fog--Cloud asignando tecnologías concretas a cada capa para que el diseño sea implementable y trazable respecto a los requisitos del sistema. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Arquitectura tecnológica del continuum; asignación explícita de comunicación (MQTT) y coordinación FL (Flower); definición de responsabilidades por capa; mantenibilidad y extensibilidad. \\ \hline
+\textbf{Dependencias} & HU-018, HU-033 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-035}
+\label{tab:hu035}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-035 \\ \hline
+\textbf{Tamaño} & S \\ \hline
+\textbf{Nombre} & Estudio y selección de broker MQTT \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero evaluar distintos brokers MQTT para seleccionar uno que permita comunicación asíncrona estable entre Edge y Fog y que sea fácil de desplegar en un entorno contenerizado. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Selección tecnológica del broker MQTT; criterios de evaluación (madurez, facilidad de despliegue, soporte, adecuación Edge--Fog); soporte a la arquitectura híbrida. \\ \hline
+\textbf{Dependencias} & HU-034 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-036}
+\label{tab:hu036}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-036 \\ \hline
+\textbf{Tamaño} & S \\ \hline
+\textbf{Nombre} & Implementación y puesta a punto de broker MQTT contenerizado \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero desplegar un broker MQTT contenerizado y verificar su funcionamiento para habilitar el intercambio asíncrono de actualizaciones entre Edge y Fog dentro del prototipo. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Despliegue con Docker/Docker Compose; exposición de puertos; configuración mínima inicial; pruebas de publicación/suscripción; base para integración Edge--Fog. \\ \hline
+\textbf{Dependencias} & HU-035 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-037}
+\label{tab:hu037}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-037 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Diseño a bajo nivel del prototipo (clases y responsabilidades) \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero definir el diseño a bajo nivel del sistema (principales clases, responsabilidades e interacciones) para preparar la implementación del primer prototipo funcional de la arquitectura híbrida. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Diseño software del prototipo; identificación de módulos (EdgeClient, FogAggregator, MQTTAdapter, FlowerClient/Server, ModelRepository); mantenibilidad; trazabilidad con HU-034. \\ \hline
+\textbf{Dependencias} & HU-034, HU-036 \\ \hline
+\textbf{Estado} & Pendiente \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-038}
+\label{tab:hu038}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-038 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Análisis exploratorio del dataset WESAD \\ \hline
+\textbf{Descripción} &
+Como investigador, quiero analizar la estructura, variables y formato del dataset WESAD para evaluar su idoneidad como base experimental del sistema y estimar la viabilidad de reproducir resultados reportados en la literatura. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} &
+Análisis de dataset; variables fisiológicas; segmentación temporal; preparación de particionado no-i.i.d.; definición de baseline para reproducibilidad. \\ \hline
+\textbf{Dependencias} & HU-001, HU-008 \\ \hline
+\textbf{Estado} & Pendiente \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-039}
+\label{tab:hu039}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-039 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Análisis exploratorio del dataset SWELL \\ \hline
+\textbf{Descripción} &
+Como investigador, quiero analizar la estructura, variables y formato del dataset SWELL para evaluar su adecuación al sistema propuesto y comparar su potencial experimental frente a WESAD. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} &
+Análisis de dataset; variables fisiológicas y contexto; segmentación y etiquetas; estimación de complejidad; criterios de selección del dataset principal del proyecto. \\ \hline
+\textbf{Dependencias} & HU-001, HU-008 \\ \hline
+\textbf{Estado} & Pendiente \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-040}
+\label{tab:hu040}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-040 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Diseño de baseline en WESAD/SWELL \\ \hline
+\textbf{Descripción} &
+Como investigador, quiero implementar un baseline reproducible sobre el dataset seleccionado (WESAD o SWELL) para comprobar si se alcanzan resultados comparables a los reportados y disponer de una referencia sólida para el experimento federado. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Implementación de pipeline de entrenamiento centralizado; métricas y validación; reproducibilidad experimental; base comparativa para posteriores rondas federadas. \\ \hline
+\textbf{Dependencias} & HU-038, HU-039 \\ \hline
+\textbf{Estado} & Pendiente \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-041}
+\label{tab:hu041}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-041 \\ \hline
+\textbf{Tamaño} & S \\ \hline
+\textbf{Nombre} & Planificación del plan de reproducibilidad experimental (baseline) \\ \hline
+\textbf{Descripción} &
+Como investigador, quiero definir un plan de evaluación para reproducir resultados centralizados como condición previa fundamental para la validación del aprendizaje federado posterior, estableciendo las líneas base contra las que comparar el desempeño de la arquitectura distribuida. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Plan de reproducibilidad experimental; definición de datasets base; establecimiento de métricas de referencia centralizadas; protocolo de evaluación reproducible; documentación de metodología. \\ \hline
+\textbf{Dependencias} & HU-030, HU-040 \\ \hline
+\textbf{Estado} & En proceso \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-042}
+\label{tab:hu042}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-042 \\ \hline
+\textbf{Tamaño} & L \\ \hline
+\textbf{Nombre} & Desarrollo de nodos cliente (Edge) \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero implementar una primera versión funcional del nodo cliente en la capa Edge, que permita entrenar un modelo localmente y publicar las actualizaciones del modelo mediante MQTT, con el fin de validar el flujo Edge--Fog dentro de la arquitectura propuesta. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Implementación inicial del nodo Edge (\texttt{FLClientMQTT}); entrenamiento local básico; serialización de pesos del modelo; publicación de actualizaciones vía MQTT; verificación de conectividad con el broker y el nodo Fog. \\ \hline
+\textbf{Dependencias} & HU-034, HU-036, HU-037 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-043}
+\label{tab:hu043}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-043 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Desarrollo del nodo cliente para SWELL \\ \hline
+\textbf{Descripción} &
+Como investigador, quiero adaptar el nodo cliente Edge al dataset SWELL, incorporando su carga de datos, segmentación temporal y preparación de etiquetas, para permitir entrenamientos locales coherentes con el escenario experimental definido. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} &
+Integración del pipeline de datos SWELL en el nodo Edge; segmentación en ventanas temporales; preparación de etiquetas; construcción de estructuras de datos compatibles con el entrenamiento local; alineamiento con el esquema de particionado definido. \\ \hline
+\textbf{Dependencias} & HU-042, HU-039 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-044}
+\label{tab:hu044}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-044 \\ \hline
+\textbf{Tamaño} & L \\ \hline
+\textbf{Nombre} & Desarrollo de nodos Fog (recepción y agregación parcial) \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero implementar un nodo Fog capaz de recibir actualizaciones de múltiples clientes Edge a través de MQTT y realizar una agregación parcial básica, con el objetivo de validar el papel del Fog como capa intermedia en el flujo Edge--Fog--Cloud. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Implementación inicial del nodo Fog (\texttt{BrokerFog}/\texttt{FogClient}); suscripción a tópicos MQTT; almacenamiento temporal de actualizaciones; agregación parcial simple de modelos; publicación del modelo agregado hacia la capa superior. \\ \hline
+\textbf{Dependencias} & HU-034, HU-036, HU-037 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-045}
+\label{tab:hu045}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-045 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Desarrollo de nodos Fog para SWELL \\ \hline
+\textbf{Descripción} &
+Como investigador, quiero adaptar el nodo Fog al flujo experimental basado en el dataset SWELL, garantizando que las actualizaciones generadas por clientes entrenados con SWELL puedan ser recibidas y agregadas de forma coherente. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} &
+Adaptación del nodo Fog al esquema de datos de SWELL; soporte a particiones por sujeto; cálculo de pesos de agregación basados en tamaño muestral; validación funcional del flujo Edge--Fog con datos reales. \\ \hline
+\textbf{Dependencias} & HU-044, HU-043, HU-037 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-046}
+\label{tab:hu046}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-046 \\ \hline
+\textbf{Tamaño} & L \\ \hline
+\textbf{Nombre} & Particionado avanzado de \textit{datasets} \\ \hline
+\textbf{Descripción} &
+Como investigador, quiero implementar el particionado avanzado de \textit{datasets} (no-i.i.d., por sujeto y por ventanas temporales) para ejecutar experimentos federados realistas y reproducibles. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Implementación de particionadores configurables; validación de distribuciones; exportación de splits; integración en el pipeline experimental. \\ \hline
+\textbf{Dependencias} & HU-008, HU-038, HU-039, HU-040 \\ \hline
+\textbf{Estado} & Pendiente \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-047}
+\label{tab:hu047}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-047 \\ \hline
+\textbf{Tamaño} & L \\ \hline
+\textbf{Nombre} & Desarrollo de modelos baseline centralizados \\ \hline
+\textbf{Descripción} &
+Como investigador, quiero implementar y evaluar modelos baseline centralizados clásicos (regresión logística, SVM, Random Forest, XGBoost y MLP) para disponer de referencias cuantitativas con las que comparar posteriormente el rendimiento del aprendizaje federado. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Pipeline de entrenamiento centralizado; definición de métricas (Accuracy y Macro F1); validación cruzada; evaluación en WESAD y SWELL; generación de tablas comparativas para experimentos federados posteriores. \\ \hline
+\textbf{Dependencias} & HU-037, HU-040 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-048}
+\label{tab:hu048}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-048 \\ \hline
+\textbf{Tamaño} & L \\ \hline
+\textbf{Nombre} & Servidor Cloud Flower \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero implementar el servidor central en la capa Cloud usando \textit{Flower} para orquestar rondas federadas y realizar la agregación global del modelo. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Implementación del servidor Flower; configuración de la estrategia de agregación global (FedAvg); gestión de rondas y distribución del modelo global. \\ \hline
+\textbf{Dependencias} & HU-042, HU-043, HU-044, HU-045, HU-037, HU-047 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-049}
+\label{tab:hu049}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-049 \\ \hline
+\textbf{Tamaño} & L \\ \hline
+\textbf{Nombre} & Fog como cliente Flower \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero adaptar los nodos Fog para actuar como clientes federados de \textit{Flower}, permitiendo su participación estable en las rondas coordinadas por el servidor Cloud. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Adaptación de los nodos Fog a la interfaz cliente de Flower; gestión de rondas; envío y recepción de parámetros hacia/desde la capa Cloud. \\ \hline
+\textbf{Dependencias} & HU-044, HU-045, HU-048 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-050}
+\label{tab:hu050}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-050 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Estandarización de pesos/serialización Fog--Cloud \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero estandarizar el formato de los pesos y la serialización de actualizaciones entre Fog y Cloud para asegurar un intercambio de parámetros consistente y reproducible. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} &
+Normalización de estructuras de pesos; definición de formato de intercambio; validación de compatibilidad entre Fog y Cloud. \\ \hline
+\textbf{Dependencias} & HU-048, HU-049 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-051}
+\label{tab:hu051}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-051 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Validación E2E reproducible en SWELL \\ \hline
+\textbf{Descripción} &
+Como investigador, quiero ejecutar y validar un flujo \textit{end-to-end} reproducible sobre el dataset SWELL para confirmar la estabilidad del ciclo Edge--Fog--Cloud. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Configuración del experimento reproducible; ejecución de rondas federadas completas; verificación de métricas y consistencia de resultados. \\ \hline
+\textbf{Dependencias} & HU-042, HU-043, HU-049, HU-050 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-052}
+\label{tab:hu052}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-052 \\ \hline
+\textbf{Tamaño} & S \\ \hline
+\textbf{Nombre} & Observabilidad/trazabilidad \\ \hline
+\textbf{Descripción} &
+Como investigador, quiero instrumentar métricas, logs y trazas del flujo federado para mejorar la observabilidad y la trazabilidad de las rondas de entrenamiento. \\ \hline
+\textbf{Prioridad} & Media \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} &
+Registro de métricas clave; trazabilidad de rondas; logging centralizado para diagnóstico y auditoría. \\ \hline
+\textbf{Dependencias} & HU-048, HU-051 \\ \hline
+\textbf{Estado} & Pendiente \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-053}
+\label{tab:hu053}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-053 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Análisis de viabilidad de Federated Transfer Learning \\ \hline
+\textbf{Descripción} &
+Como investigador, quiero analizar la viabilidad de incorporar Federated Transfer Learning sobre la arquitectura actual e identificar los cambios necesarios para su adopción. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Análisis conceptual del FTL; evaluación de compatibilidad con el flujo Edge--Fog--Cloud; implicaciones a nivel de modelos, datasets y coordinación de rondas y clientes. \\ \hline
+\textbf{Dependencias} &
+HU-042, HU-043, HU-044, HU-045, HU-037, HU-047 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-054}
+\label{tab:hu054}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-054 \\ \hline
+\textbf{Tamaño} & S \\ \hline
+\textbf{Nombre} & Validación metodológica del particionado por sujeto \\ \hline
+\textbf{Descripción} &
+Como investigador, quiero revisar y validar el esquema de particionamiento de los datos (train, validation y test) para identificar y valorar problemas de solapamiento o \textit{data leakage}. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Análisis del particionamiento actual; detección de solapamientos; identificación de \textit{data leakage} y necesidades de corrección. \\ \hline
+\textbf{Dependencias} &
+HU-037, HU-047 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-055}
+\label{tab:hu055}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-055 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Análisis de compatibilidad entre datasets para transferencia \\ \hline
+\textbf{Descripción} &
+Como investigador, quiero analizar la compatibilidad entre distintos datasets fisiológicos mediante modelos baseline centralizados, para evaluar hasta qué punto es viable la transferencia de conocimiento entre dominios.\\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Evaluación sobre baselines con los datasets WESAD y SWELL; análisis de similitud de etiquetas y parámetros; identificación de limitaciones de transferencia.\\ \hline
+\textbf{Dependencias} &
+HU-047, HU-053 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-056}
+\label{tab:hu056}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-056 \\ \hline
+\textbf{Tamaño} & S \\ \hline
+\textbf{Nombre} & Redefinición del particionado experimental por sujeto \\ \hline
+\textbf{Descripción} &
+Como investigador, quiero redefinir el particionado experimental por sujeto para corregir problemas detectados (solapamientos o \textit{data leakage}) y asegurar la validez de los resultados. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Revisión y ajuste de los splits por sujeto; reglas de separación; documentación de cambios y criterios de particionado. \\ \hline
+\textbf{Dependencias} & HU-054 \\ \hline
+\textbf{Estado} & Pendiente \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-057}
+\label{tab:hu057}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-057 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Re-evaluación de modelos baseline con particionado correcto \\ \hline
+\textbf{Descripción} &
+Como investigador, quiero re-evaluar los modelos baseline con el particionado correcto para disponer de referencias comparables antes de los experimentos federados. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Reentrenamiento de baselines; actualización de métricas (Accuracy y Macro F1); comparación con resultados previos. \\ \hline
+\textbf{Dependencias} & HU-047, HU-056 \\ \hline
+\textbf{Estado} & Pendiente \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-058}
+\label{tab:hu058}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-058 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Integración del dataset SWEET en el pipeline experimental \\ \hline
+\textbf{Descripción} &
+Como investigador, quiero integrar el dataset SWEET en el pipeline experimental (carga, preprocesamiento y particionado) para habilitar escenarios multi-dataset y de transferencia. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} &
+Adaptación del loader de SWEET; normalización de señales; definición de etiquetas; integración con particionadores existentes. \\ \hline
+\textbf{Dependencias} & HU-055, HU-056 \\ \hline
+\textbf{Estado} & Pendiente \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-059}
+\label{tab:hu059}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-059 \\ \hline
+\textbf{Tamaño} & M \\ \hline
+\textbf{Nombre} & Diseño experimental de Federated Transfer Learning \\ \hline
+\textbf{Descripción} &
+Como investigador, quiero definir el diseño experimental de Federated Transfer Learning (protocolos, datasets, métricas y criterios de comparación) para ejecutar experimentos reproducibles. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Esencial \\ \hline
+\textbf{Alcance} &
+Definición de escenarios FTL; selección de datasets origen/destino; métricas y protocolos de evaluación; documentación del diseño. \\ \hline
+\textbf{Dependencias} & HU-053, HU-055, HU-058 \\ \hline
+\textbf{Estado} & Pendiente \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-060}
+\label{tab:hu060}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-060 \\ \hline
+\textbf{Tamaño} & L \\ \hline
+\textbf{Nombre} & Extensión del flujo federado a escenarios multi-dataset \\ \hline
+\textbf{Descripción} &
+Como equipo de desarrollo, quiero extender el flujo federado para soportar escenarios multi-dataset y nodos heterogéneos, para evaluar la transferencia de conocimiento en un entorno realista. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} &
+Ajustes en el pipeline federado; soporte de configuraciones multi-dataset; adaptación de clientes y agregadores; validación del flujo completo. \\ \hline
+\textbf{Dependencias} & HU-048, HU-058, HU-059 \\ \hline
+\textbf{Estado} & Pendiente \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\caption{Descripción de la historia de usuario HU-061}
+\label{tab:hu061}
+\begin{tabular}{|l|p{12cm}|}
+\hline
+\textbf{ID} & HU-061 \\ \hline
+\textbf{Tamaño} & S \\ \hline
+\textbf{Nombre} & Análisis inicial del dataset SWEET \\ \hline
+\textbf{Descripción} &
+Como investigador, quiero realizar un análisis exploratorio inicial del dataset SWEET, para comprender su estructura, señales disponibles y potencial encaje en escenarios de aprendizaje federado y transferencia. \\ \hline
+\textbf{Prioridad} & Alta \\ \hline
+\textbf{Necesidad} & Importante \\ \hline
+\textbf{Alcance} &
+Estudio exploratorio del dataset SWEET; identificación de señales y etiquetas; comparación preliminar con WESAD y SWELL; evaluación de viabilidad para integración futura en el pipeline experimental. \\ \hline
+\textbf{Dependencias} & HU-053 \\ \hline
+\textbf{Estado} & Completado \\ \hline
+\end{tabular}
+\end{table}

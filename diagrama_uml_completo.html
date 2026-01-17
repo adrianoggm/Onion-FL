@@ -1,0 +1,1100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diagrama UML - Arquitectura Flower-Basic Federado</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/plantuml-encoder@1.4.0/dist/plantuml-encoder.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 20px;
+        }
+        
+        h1 {
+            color: #333;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #666;
+            font-size: 1.2em;
+        }
+        
+        .diagram-wrapper {
+            margin: 40px 0;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        
+        .diagram-title {
+            color: #667eea;
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 20px;
+            padding-left: 10px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .mermaid {
+            display: flex;
+            justify-content: center;
+        }
+        
+        .legend {
+            margin: 30px 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+            border-left: 5px solid #667eea;
+            border-radius: 8px;
+        }
+        
+        .legend h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+        
+        .legend-items {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+        
+        .legend-item {
+            padding: 10px;
+            background: white;
+            border-radius: 6px;
+            border-left: 3px solid #667eea;
+        }
+        
+        .legend-item strong {
+            color: #333;
+        }
+        
+        .legend-item em {
+            color: #666;
+            display: block;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        
+        .color-legend {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .color-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .color-indicator {
+            width: 30px;
+            height: 30px;
+            border-radius: 4px;
+            border: 2px solid #333;
+        }
+        
+        .explanation {
+            margin: 30px 0;
+            padding: 20px;
+            background: #e8f5e9;
+            border-radius: 8px;
+            border-left: 5px solid #4caf50;
+        }
+        
+        .explanation h3 {
+            color: #2e7d32;
+            margin-bottom: 10px;
+        }
+        
+        .explanation p {
+            color: #333;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+        
+        .code-block {
+            background: #263238;
+            color: #aed581;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            margin: 10px 0;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        th {
+            background: #667eea;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: bold;
+        }
+        
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        tr:hover {
+            background: #f5f5f5;
+        }
+        
+        .layer {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .layer-card {
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border-top: 4px solid;
+        }
+        
+        .edge-layer {
+            border-top-color: #f3e5f5;
+            background: #f3e5f5;
+        }
+        
+        .fog-broker {
+            border-top-color: #fce4ec;
+            background: #fce4ec;
+        }
+        
+        .fog-bridge {
+            border-top-color: #e8f5e9;
+            background: #e8f5e9;
+        }
+        
+        .central-layer {
+            border-top-color: #c8e6c9;
+            background: #c8e6c9;
+        }
+        
+        .layer-card h4 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        
+        .layer-card ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        
+        .layer-card li {
+            padding: 5px 0;
+            color: #555;
+            border-left: 2px solid #667eea;
+            padding-left: 10px;
+        }
+        
+        footer {
+            margin-top: 40px;
+            text-align: center;
+            color: #666;
+            border-top: 1px solid #ddd;
+            padding-top: 20px;
+        }
+        
+        .flow-box {
+            background: #fff3e0;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+            border-left: 4px solid #ff9800;
+        }
+        
+        .flow-box strong {
+            color: #e65100;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Diagrama UML Completo</h1>
+            <p class="subtitle">Arquitectura Flower-Basic: Edge → Fog → Central</p>
+        </header>
+
+        <!-- ============================================================ -->
+        <!-- DIAGRAMA UML CON PLANTUML - NOTACIÓN UML ESTÁNDAR -->
+        <!-- ============================================================ -->
+        <div class="diagram-wrapper">
+            <div class="diagram-title">1️⃣ Diagrama de Clases UML - PlantUML</div>
+            <div class="mermaid">
+@startuml
+!theme plain
+skinparam classBackgroundColor #FEFEFE
+skinparam classBorderColor #333333
+skinparam backgroundColor #FFFBF0
+
+' Interfaces Externas
+interface NumPyClient {
+    + fit(parameters, config)
+    + get_parameters(config)
+    + evaluate(parameters, config)
+}
+
+abstract class FedAvg {
+    + aggregate_fit(rnd, results, failures)
+    + aggregate_evaluate(rnd, results, failures)
+    + evaluate(rnd, parameters)
+}
+
+abstract class NNModule {
+    + forward(x)
+    + state_dict()
+    + load_state_dict(state_dict)
+}
+
+' Base MQTT Component
+abstract class BaseMQTTComponent {
+    - tag: str
+    - mqtt_client: mqtt.Client
+    - subscriptions: List[str]
+    + on_message(client, userdata, msg)*
+    + publish_json(topic, payload)
+    + stop_mqtt()
+}
+
+' Modelos ML
+class SwellMLP {
+    - input_dim: int
+    - hidden_dims: List[int]
+    - layers: ModuleList
+    + forward(x: Tensor): Tensor
+    + state_dict(): dict
+    + load_state_dict(state_dict: dict)
+}
+
+class SweetMLP {
+    - input_dim: int
+    - hidden_dims: List[int]
+    - layers: ModuleList
+    + forward(x: Tensor): Tensor
+    + state_dict(): dict
+    + load_state_dict(state_dict: dict)
+}
+
+' Edge Layer - Clientes Locales
+class SwellFLClientMQTT {
+    - model: SwellMLP
+    - train_loader: DataLoader
+    - region: str
+    - global_model: dict
+    + train_local(): Tuple[dict, int]
+    + publish_update(): void
+    + on_message(client, userdata, msg)
+    + run_rounds(total_rounds): void
+}
+
+class SweetFLClientMQTT {
+    - model: SweetMLP
+    - train_loader: DataLoader
+    - subject_id: str
+    - global_model: dict
+    + train_local(): Tuple[dict, int]
+    + publish_update(): void
+    + on_message(client, userdata, msg)
+    + run_rounds(total_rounds): void
+}
+
+' Fog Layer
+class FogBroker {
+    - buffers: Dict[str, List]
+    - clients_per_region: Dict
+    - K: int = 3
+    - mqtt_client: mqtt.Client
+    + on_update(client, userdata, msg)
+    + weighted_average(updates): dict
+    + publish_partial(): void
+    + main(): void
+}
+
+class FogClientSwell {
+    - model: SwellMLP
+    - server_address: str
+    - region: str
+    - partial_weights: dict
+    + fit(parameters, config): Tuple
+    + get_parameters(config): List
+    + evaluate(parameters, config): Tuple
+    - on_message(client, userdata, msg)
+    - _wait_for_partial(): bool
+}
+
+class FogClientSweet {
+    - model: SweetMLP
+    - server_address: str
+    - region: str
+    - partial_weights: dict
+    + fit(parameters, config): Tuple
+    + get_parameters(config): List
+    + evaluate(parameters, config): Tuple
+    - on_message(client, userdata, msg)
+    - _wait_for_partial(): bool
+}
+
+' Central Server Layer
+class MQTTFedAvgSwell {
+    - model: SwellMLP
+    - mqtt_client: mqtt.Client
+    - eval_data: Tuple
+    - total_rounds: int
+    + configure_fit(rnd, parameters, cm)
+    + aggregate_fit(rnd, results, failures)
+    + evaluate(rnd, parameters)
+    + publish_global_model(weights): void
+}
+
+class MQTTFedAvgSweet {
+    - model: SweetMLP
+    - mqtt_client: mqtt.Client
+    - eval_data: Tuple
+    - total_rounds: int
+    + configure_fit(rnd, parameters, cm)
+    + aggregate_fit(rnd, results, failures)
+    + evaluate(rnd, parameters)
+    + publish_global_model(weights): void
+}
+
+' Relaciones de Herencia
+SwellMLP --|> NNModule
+SweetMLP --|> NNModule
+SwellFLClientMQTT --|> BaseMQTTComponent
+SweetFLClientMQTT --|> BaseMQTTComponent
+FogClientSwell --|> BaseMQTTComponent
+FogClientSweet --|> BaseMQTTComponent
+MQTTFedAvgSwell --|> FedAvg
+MQTTFedAvgSweet --|> FedAvg
+
+' Relaciones de Implementación
+FogClientSwell ..|> NumPyClient
+FogClientSweet ..|> NumPyClient
+
+' Relaciones de Uso/Composición
+SwellFLClientMQTT --> SwellMLP: uses
+SweetFLClientMQTT --> SweetMLP: uses
+FogClientSwell --> SwellMLP: uses
+FogClientSweet --> SweetMLP: uses
+MQTTFedAvgSwell --> SwellMLP: uses
+MQTTFedAvgSweet --> SweetMLP: uses
+
+note right of SwellFLClientMQTT
+  Entrena modelo localmente
+  Publica updates en MQTT fl/updates
+end note
+
+note right of FogBroker
+  Agrega K=3 actualizaciones
+  Usa NumPy weighted_average()
+  Publica partial en MQTT fl/partial
+end note
+
+note right of FogClientSwell
+  Puente MQTT ↔ Flower gRPC
+  Implementa NumPyClient
+  Recibe partial, forwarding a servidor
+end note
+
+note right of MQTTFedAvgSwell
+  Agrega múltiples regiones
+  Extiende FedAvg (Flower)
+  Publica global_model en MQTT
+end note
+
+@enduml
+            </div>
+        </div>
+                <defs>
+                    <marker id="arrowInheritance" markerWidth="20" markerHeight="20" refX="10" refY="10" orient="auto">
+                        <polygon points="0,0 20,10 0,20" fill="white" stroke="black" stroke-width="2"/>
+                    </marker>
+                    <marker id="arrowImplement" markerWidth="20" markerHeight="20" refX="10" refY="10" orient="auto">
+                        <polygon points="0,0 20,10 0,20" fill="white" stroke="black" stroke-width="2"/>
+                    </marker>
+                    <marker id="arrowComposition" markerWidth="20" markerHeight="20" refX="10" refY="10" orient="auto">
+                        <polygon points="0,0 20,10 0,20" fill="black" stroke="black" stroke-width="2"/>
+                    </marker>
+                    <marker id="arrowAssociation" markerWidth="20" markerHeight="20" refX="10" refY="10" orient="auto">
+                        <polygon points="0,0 20,10 0,20" fill="white" stroke="black" stroke-width="2"/>
+                    </marker>
+                </defs>
+                
+                <!-- INTERFACES EXTERNAS (Top) -->
+                
+                <!-- NumPyClient -->
+                <g id="NumPyClient">
+                    <rect x="150" y="50" width="200" height="120" fill="#fff8e1" stroke="#000" stroke-width="2"/>
+                    <line x1="150" y1="80" x2="350" y2="80" stroke="#000" stroke-width="1"/>
+                    <line x1="150" y1="100" x2="350" y2="100" stroke="#000" stroke-width="1"/>
+                    <text x="250" y="72" text-anchor="middle" font-weight="bold" font-size="13">&lt;&lt;interface&gt;&gt;</text>
+                    <text x="250" y="92" text-anchor="middle" font-weight="bold" font-size="13">NumPyClient</text>
+                    <text x="160" y="115" font-family="monospace" font-size="11">+ fit(parameters, config)</text>
+                    <text x="160" y="132" font-family="monospace" font-size="11">+ get_parameters(config)</text>
+                    <text x="160" y="150" font-family="monospace" font-size="11">+ evaluate(parameters, config)</text>
+                </g>
+                
+                <!-- FedAvg -->
+                <g id="FedAvg">
+                    <rect x="500" y="50" width="220" height="120" fill="#fff8e1" stroke="#000" stroke-width="2"/>
+                    <line x1="500" y1="80" x2="720" y2="80" stroke="#000" stroke-width="1"/>
+                    <line x1="500" y1="100" x2="720" y2="100" stroke="#000" stroke-width="1"/>
+                    <text x="610" y="72" text-anchor="middle" font-weight="bold" font-size="13">&lt;&lt;abstract&gt;&gt;</text>
+                    <text x="610" y="92" text-anchor="middle" font-weight="bold" font-size="13">FedAvg</text>
+                    <text x="510" y="115" font-family="monospace" font-size="11">+ aggregate_fit(rnd, results)</text>
+                    <text x="510" y="132" font-family="monospace" font-size="11">+ aggregate_evaluate(rnd, results)</text>
+                    <text x="510" y="150" font-family="monospace" font-size="11">+ evaluate(rnd, parameters)</text>
+                </g>
+                
+                <!-- NNModule (PyTorch) -->
+                <g id="NNModule">
+                    <rect x="900" y="50" width="180" height="120" fill="#fff8e1" stroke="#000" stroke-width="2"/>
+                    <line x1="900" y1="80" x2="1080" y2="80" stroke="#000" stroke-width="1"/>
+                    <line x1="900" y1="100" x2="1080" y2="100" stroke="#000" stroke-width="1"/>
+                    <text x="990" y="72" text-anchor="middle" font-weight="bold" font-size="13">&lt;&lt;pytorch&gt;&gt;</text>
+                    <text x="990" y="92" text-anchor="middle" font-weight="bold" font-size="13">nn.Module</text>
+                    <text x="910" y="115" font-family="monospace" font-size="11">+ forward(x)</text>
+                    <text x="910" y="132" font-family="monospace" font-size="11">+ state_dict()</text>
+                    <text x="910" y="150" font-family="monospace" font-size="11">+ load_state_dict(dict)</text>
+                </g>
+                
+                <!-- MODELOS (2nd Row) -->
+                
+                <!-- SwellMLP -->
+                <g id="SwellMLP">
+                    <rect x="50" y="300" width="250" height="180" fill="#ffecb3" stroke="#000" stroke-width="2"/>
+                    <line x1="50" y1="330" x2="300" y2="330" stroke="#000" stroke-width="1"/>
+                    <line x1="50" y1="380" x2="300" y2="380" stroke="#000" stroke-width="1"/>
+                    <text x="175" y="322" text-anchor="middle" font-weight="bold" font-size="13">SwellMLP</text>
+                    <text x="60" y="352" font-family="monospace" font-size="11">- input_dim: int</text>
+                    <text x="60" y="368" font-family="monospace" font-size="11">- hidden_dims: List[int]</text>
+                    <text x="60" y="384" font-family="monospace" font-size="11">+ forward(x: Tensor)</text>
+                    <text x="60" y="400" font-family="monospace" font-size="11">+ state_dict(): dict</text>
+                    <text x="60" y="416" font-family="monospace" font-size="11">+ load_state_dict(state_dict)</text>
+                </g>
+                
+                <!-- SweetMLP -->
+                <g id="SweetMLP">
+                    <rect x="400" y="300" width="250" height="180" fill="#ffecb3" stroke="#000" stroke-width="2"/>
+                    <line x1="400" y1="330" x2="650" y2="330" stroke="#000" stroke-width="1"/>
+                    <line x1="400" y1="380" x2="650" y2="380" stroke="#000" stroke-width="1"/>
+                    <text x="525" y="322" text-anchor="middle" font-weight="bold" font-size="13">SweetMLP</text>
+                    <text x="410" y="352" font-family="monospace" font-size="11">- input_dim: int</text>
+                    <text x="410" y="368" font-family="monospace" font-size="11">- hidden_dims: List[int]</text>
+                    <text x="410" y="384" font-family="monospace" font-size="11">+ forward(x: Tensor)</text>
+                    <text x="410" y="400" font-family="monospace" font-size="11">+ state_dict(): dict</text>
+                    <text x="410" y="416" font-family="monospace" font-size="11">+ load_state_dict(state_dict)</text>
+                </g>
+                
+                <!-- BaseMQTTComponent -->
+                <g id="BaseMQTTComponent">
+                    <rect x="900" y="300" width="280" height="180" fill="#e1f5ff" stroke="#000" stroke-width="2"/>
+                    <line x1="900" y1="330" x2="1180" y2="330" stroke="#000" stroke-width="1"/>
+                    <line x1="900" y1="380" x2="1180" y2="380" stroke="#000" stroke-width="1"/>
+                    <text x="1040" y="322" text-anchor="middle" font-weight="bold" font-size="13">BaseMQTTComponent</text>
+                    <text x="910" y="352" font-family="monospace" font-size="11">- tag: str</text>
+                    <text x="910" y="368" font-family="monospace" font-size="11">- mqtt_client: mqtt.Client</text>
+                    <text x="910" y="384" font-family="monospace" font-size="11">+ on_message(client, userdata, msg)*</text>
+                    <text x="910" y="400" font-family="monospace" font-size="11">+ publish_json(topic, payload)</text>
+                    <text x="910" y="416" font-family="monospace" font-size="11">+ stop_mqtt()</text>
+                </g>
+                
+                <!-- HERENCIA -->
+                <line x1="175" y1="480" x2="990" y2="170" stroke="#000" stroke-width="2" marker-end="url(#arrowInheritance)"/>
+                <text x="550" y="320" font-size="11" font-style="italic">extends</text>
+                
+                <line x1="525" y1="480" x2="990" y2="170" stroke="#000" stroke-width="2" marker-end="url(#arrowInheritance)"/>
+                <text x="750" y="320" font-size="11" font-style="italic">extends</text>
+                
+                <!-- EDGE LAYER (3rd Row) -->
+                
+                <!-- SwellFLClientMQTT -->
+                <g id="SwellFLClientMQTT">
+                    <rect x="50" y="650" width="320" height="220" fill="#f3e5f5" stroke="#000" stroke-width="2"/>
+                    <line x1="50" y1="685" x2="370" y2="685" stroke="#000" stroke-width="1"/>
+                    <line x1="50" y1="740" x2="370" y2="740" stroke="#000" stroke-width="1"/>
+                    <text x="210" y="677" text-anchor="middle" font-weight="bold" font-size="13">SwellFLClientMQTT</text>
+                    <text x="60" y="705" font-family="monospace" font-size="11">- model: SwellMLP</text>
+                    <text x="60" y="721" font-family="monospace" font-size="11">- train_loader: DataLoader</text>
+                    <text x="60" y="737" font-family="monospace" font-size="11">- region: str</text>
+                    <text x="60" y="756" font-family="monospace" font-size="11">+ train_local(): Tuple[dict, int]</text>
+                    <text x="60" y="772" font-family="monospace" font-size="11">+ publish_update()</text>
+                    <text x="60" y="788" font-family="monospace" font-size="11">+ on_message(client, userdata, msg)</text>
+                    <text x="60" y="804" font-family="monospace" font-size="11">+ run_rounds(total_rounds)</text>
+                </g>
+                
+                <!-- SweetFLClientMQTT -->
+                <g id="SweetFLClientMQTT">
+                    <rect x="430" y="650" width="320" height="220" fill="#f3e5f5" stroke="#000" stroke-width="2"/>
+                    <line x1="430" y1="685" x2="750" y2="685" stroke="#000" stroke-width="1"/>
+                    <line x1="430" y1="740" x2="750" y2="740" stroke="#000" stroke-width="1"/>
+                    <text x="590" y="677" text-anchor="middle" font-weight="bold" font-size="13">SweetFLClientMQTT</text>
+                    <text x="440" y="705" font-family="monospace" font-size="11">- model: SweetMLP</text>
+                    <text x="440" y="721" font-family="monospace" font-size="11">- train_loader: DataLoader</text>
+                    <text x="440" y="737" font-family="monospace" font-size="11">- subject_id: str</text>
+                    <text x="440" y="756" font-family="monospace" font-size="11">+ train_local(): Tuple[dict, int]</text>
+                    <text x="440" y="772" font-family="monospace" font-size="11">+ publish_update()</text>
+                    <text x="440" y="788" font-family="monospace" font-size="11">+ on_message(client, userdata, msg)</text>
+                    <text x="440" y="804" font-family="monospace" font-size="11">+ run_rounds(total_rounds)</text>
+                </g>
+                
+                <!-- fog.py (FogBroker) -->
+                <g id="FogBroker">
+                    <rect x="900" y="650" width="280" height="220" fill="#fff3e0" stroke="#000" stroke-width="2"/>
+                    <line x1="900" y1="685" x2="1180" y2="685" stroke="#000" stroke-width="1"/>
+                    <line x1="900" y1="740" x2="1180" y2="740" stroke="#000" stroke-width="1"/>
+                    <text x="1040" y="677" text-anchor="middle" font-weight="bold" font-size="13">FogBroker</text>
+                    <text x="910" y="705" font-family="monospace" font-size="11">- buffers: Dict[region]</text>
+                    <text x="910" y="721" font-family="monospace" font-size="11">- K: int = 3</text>
+                    <text x="910" y="737" font-family="monospace" font-size="11">- mqtt_client: mqtt.Client</text>
+                    <text x="910" y="756" font-family="monospace" font-size="11">+ on_update(client, userdata, msg)</text>
+                    <text x="910" y="772" font-family="monospace" font-size="11">+ weighted_average(updates): dict</text>
+                    <text x="910" y="788" font-family="monospace" font-size="11">+ publish_partial()</text>
+                    <text x="910" y="804" font-family="monospace" font-size="11">+ main()</text>
+                </g>
+                
+                <!-- FOG BRIDGE LAYER (4th Row) -->
+                
+                <!-- FogClientSwell -->
+                <g id="FogClientSwell">
+                    <rect x="50" y="1050" width="320" height="240" fill="#e8f5e9" stroke="#000" stroke-width="2"/>
+                    <line x1="50" y1="1085" x2="370" y2="1085" stroke="#000" stroke-width="1"/>
+                    <line x1="50" y1="1140" x2="370" y2="1140" stroke="#000" stroke-width="1"/>
+                    <text x="210" y="1077" text-anchor="middle" font-weight="bold" font-size="13">FogClientSwell</text>
+                    <text x="60" y="1105" font-family="monospace" font-size="11">- model: SwellMLP</text>
+                    <text x="60" y="1121" font-family="monospace" font-size="11">- server_address: str</text>
+                    <text x="60" y="1137" font-family="monospace" font-size="11">- region: str</text>
+                    <text x="60" y="1153" font-family="monospace" font-size="11">- partial_weights: dict</text>
+                    <text x="60" y="1169" font-family="monospace" font-size="11">+ fit(parameters, config): Tuple</text>
+                    <text x="60" y="1185" font-family="monospace" font-size="11">+ get_parameters(config): List</text>
+                    <text x="60" y="1201" font-family="monospace" font-size="11">+ evaluate(parameters, config): Tuple</text>
+                    <text x="60" y="1217" font-family="monospace" font-size="11">- on_message(client, userdata, msg)</text>
+                </g>
+                
+                <!-- FogClientSweet -->
+                <g id="FogClientSweet">
+                    <rect x="430" y="1050" width="320" height="240" fill="#e8f5e9" stroke="#000" stroke-width="2"/>
+                    <line x1="430" y1="1085" x2="750" y2="1085" stroke="#000" stroke-width="1"/>
+                    <line x1="430" y1="1140" x2="750" y2="1140" stroke="#000" stroke-width="1"/>
+                    <text x="590" y="1077" text-anchor="middle" font-weight="bold" font-size="13">FogClientSweet</text>
+                    <text x="440" y="1105" font-family="monospace" font-size="11">- model: SweetMLP</text>
+                    <text x="440" y="1121" font-family="monospace" font-size="11">- server_address: str</text>
+                    <text x="440" y="1137" font-family="monospace" font-size="11">- region: str</text>
+                    <text x="440" y="1153" font-family="monospace" font-size="11">- partial_weights: dict</text>
+                    <text x="440" y="1169" font-family="monospace" font-size="11">+ fit(parameters, config): Tuple</text>
+                    <text x="440" y="1185" font-family="monospace" font-size="11">+ get_parameters(config): List</text>
+                    <text x="440" y="1201" font-family="monospace" font-size="11">+ evaluate(parameters, config): Tuple</text>
+                    <text x="440" y="1217" font-family="monospace" font-size="11">- on_message(client, userdata, msg)</text>
+                </g>
+                
+                <!-- CENTRAL SERVER LAYER (5th Row) -->
+                
+                <!-- MQTTFedAvgSwell -->
+                <g id="MQTTFedAvgSwell">
+                    <rect x="50" y="1450" width="320" height="240" fill="#c8e6c9" stroke="#000" stroke-width="2"/>
+                    <line x1="50" y1="1485" x2="370" y2="1485" stroke="#000" stroke-width="1"/>
+                    <line x1="50" y1="1540" x2="370" y2="1540" stroke="#000" stroke-width="1"/>
+                    <text x="210" y="1477" text-anchor="middle" font-weight="bold" font-size="13">MQTTFedAvgSwell</text>
+                    <text x="60" y="1505" font-family="monospace" font-size="11">- model: SwellMLP</text>
+                    <text x="60" y="1521" font-family="monospace" font-size="11">- mqtt_client: mqtt.Client</text>
+                    <text x="60" y="1537" font-family="monospace" font-size="11">- eval_data: Tuple</text>
+                    <text x="60" y="1553" font-family="monospace" font-size="11">+ configure_fit(rnd, params, cm)</text>
+                    <text x="60" y="1569" font-family="monospace" font-size="11">+ aggregate_fit(rnd, results, fail)</text>
+                    <text x="60" y="1585" font-family="monospace" font-size="11">+ evaluate(rnd, parameters)</text>
+                    <text x="60" y="1601" font-family="monospace" font-size="11">+ publish_global_model(weights)</text>
+                </g>
+                
+                <!-- MQTTFedAvgSweet -->
+                <g id="MQTTFedAvgSweet">
+                    <rect x="430" y="1450" width="320" height="240" fill="#c8e6c9" stroke="#000" stroke-width="2"/>
+                    <line x1="430" y1="1485" x2="750" y2="1485" stroke="#000" stroke-width="1"/>
+                    <line x1="430" y1="1540" x2="750" y2="1540" stroke="#000" stroke-width="1"/>
+                    <text x="590" y="1477" text-anchor="middle" font-weight="bold" font-size="13">MQTTFedAvgSweet</text>
+                    <text x="440" y="1505" font-family="monospace" font-size="11">- model: SweetMLP</text>
+                    <text x="440" y="1521" font-family="monospace" font-size="11">- mqtt_client: mqtt.Client</text>
+                    <text x="440" y="1537" font-family="monospace" font-size="11">- eval_data: Tuple</text>
+                    <text x="440" y="1553" font-family="monospace" font-size="11">+ configure_fit(rnd, params, cm)</text>
+                    <text x="440" y="1569" font-family="monospace" font-size="11">+ aggregate_fit(rnd, results, fail)</text>
+                    <text x="440" y="1585" font-family="monospace" font-size="11">+ evaluate(rnd, parameters)</text>
+                    <text x="440" y="1601" font-family="monospace" font-size="11">+ publish_global_model(weights)</text>
+                </g>
+                
+                <!-- RELACIONES DE HERENCIA -->
+                <!-- SwellMLP -> nn.Module -->
+                <line x1="175" y1="480" x2="990" y2="170" stroke="#000" stroke-width="2" marker-end="url(#arrowInheritance)"/>
+                
+                <!-- SweetMLP -> nn.Module -->
+                <line x1="525" y1="480" x2="990" y2="170" stroke="#000" stroke-width="2" marker-end="url(#arrowInheritance)"/>
+                
+                <!-- SwellFLClientMQTT -> BaseMQTTComponent -->
+                <line x1="210" y1="650" x2="1040" y2="480" stroke="#000" stroke-width="2" marker-end="url(#arrowInheritance)"/>
+                
+                <!-- SweetFLClientMQTT -> BaseMQTTComponent -->
+                <line x1="590" y1="650" x2="1040" y2="480" stroke="#000" stroke-width="2" marker-end="url(#arrowInheritance)"/>
+                
+                <!-- FogClientSwell -> BaseMQTTComponent -->
+                <line x1="210" y1="1050" x2="1040" y2="480" stroke="#000" stroke-width="2" marker-end="url(#arrowInheritance)"/>
+                
+                <!-- FogClientSweet -> BaseMQTTComponent -->
+                <line x1="590" y1="1050" x2="1040" y2="480" stroke="#000" stroke-width="2" marker-end="url(#arrowInheritance)"/>
+                
+                <!-- FogClientSwell -> NumPyClient (implements) -->
+                <line x1="210" y1="1050" x2="250" y2="170" stroke="#000" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrowImplement)"/>
+                
+                <!-- FogClientSweet -> NumPyClient (implements) -->
+                <line x1="590" y1="1050" x2="250" y2="170" stroke="#000" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrowImplement)"/>
+                
+                <!-- MQTTFedAvgSwell -> FedAvg -->
+                <line x1="210" y1="1450" x2="610" y2="170" stroke="#000" stroke-width="2" marker-end="url(#arrowInheritance)"/>
+                
+                <!-- MQTTFedAvgSweet -> FedAvg -->
+                <line x1="590" y1="1450" x2="610" y2="170" stroke="#000" stroke-width="2" marker-end="url(#arrowInheritance)"/>
+                
+                <!-- RELACIONES DE USO/COMPOSICIÓN -->
+                <!-- SwellFLClientMQTT -> SwellMLP -->
+                <line x1="150" y1="650" x2="175" y2="480" stroke="#000" stroke-width="1.5" marker-end="url(#arrowAssociation)"/>
+                <text x="100" y="560" font-size="10" font-style="italic">uses</text>
+                
+                <!-- SweetFLClientMQTT -> SweetMLP -->
+                <line x1="530" y1="650" x2="525" y2="480" stroke="#000" stroke-width="1.5" marker-end="url(#arrowAssociation)"/>
+                <text x="480" y="560" font-size="10" font-style="italic">uses</text>
+                
+                <!-- FogClientSwell -> SwellMLP -->
+                <line x1="180" y1="1050" x2="175" y2="480" stroke="#000" stroke-width="1.5" marker-end="url(#arrowAssociation)"/>
+                <text x="100" y="760" font-size="10" font-style="italic">uses</text>
+                
+                <!-- FogClientSweet -> SweetMLP -->
+                <line x1="560" y1="1050" x2="525" y2="480" stroke="#000" stroke-width="1.5" marker-end="url(#arrowAssociation)"/>
+                <text x="480" y="760" font-size="10" font-style="italic">uses</text>
+                
+                <!-- MQTTFedAvgSwell -> SwellMLP -->
+                <line x1="180" y1="1450" x2="175" y2="480" stroke="#000" stroke-width="1.5" marker-end="url(#arrowAssociation)"/>
+                <text x="100" y="960" font-size="10" font-style="italic">uses</text>
+                
+                <!-- MQTTFedAvgSweet -> SweetMLP -->
+                <line x1="560" y1="1450" x2="525" y2="480" stroke="#000" stroke-width="1.5" marker-end="url(#arrowAssociation)"/>
+                <text x="480" y="960" font-size="10" font-style="italic">uses</text>
+                
+                <!-- LEYENDA -->
+                <g id="legend">
+                    <rect x="1400" y="50" width="900" height="400" fill="#f9f9f9" stroke="#999" stroke-width="1" rx="5"/>
+                    <text x="1420" y="80" font-weight="bold" font-size="14">Leyenda UML</text>
+                    
+                    <!-- Herencia -->
+                    <line x1="1420" y1="110" x2="1500" y2="110" stroke="#000" stroke-width="2" marker-end="url(#arrowInheritance)"/>
+                    <text x="1520" y="115" font-size="12">Herencia (Extends)</text>
+                    
+                    <!-- Implementación -->
+                    <line x1="1420" y1="140" x2="1500" y2="140" stroke="#000" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrowImplement)"/>
+                    <text x="1520" y="145" font-size="12">Implementación (Implements)</text>
+                    
+                    <!-- Asociación/Uso -->
+                    <line x1="1420" y1="170" x2="1500" y2="170" stroke="#000" stroke-width="1.5" marker-end="url(#arrowAssociation)"/>
+                    <text x="1520" y="175" font-size="12">Asociación/Uso (Uses)</text>
+                    
+                    <!-- Visibilidad -->
+                    <text x="1420" y="205" font-size="12" font-weight="bold">Visibilidad de Miembros:</text>
+                    <text x="1420" y="230" font-size="11" font-family="monospace">+ Public</text>
+                    <text x="1420" y="250" font-size="11" font-family="monospace">- Private</text>
+                    <text x="1420" y="270" font-size="11" font-family="monospace"># Protected</text>
+                    <text x="1420" y="290" font-size="11" font-family="monospace">~ Package</text>
+                    
+                    <!-- Tipos de clase -->
+                    <text x="1420" y="325" font-size="12" font-weight="bold">Códigos de Clase:</text>
+                    <rect x="1420" y="335" width="15" height="15" fill="#fff8e1" stroke="#000"/>
+                    <text x="1445" y="347" font-size="11">Interfaces/Abstractas</text>
+                    
+                    <rect x="1420" y="360" width="15" height="15" fill="#ffecb3" stroke="#000"/>
+                    <text x="1445" y="372" font-size="11">Modelos (PyTorch)</text>
+                    
+                    <rect x="1420" y="385" width="15" height="15" fill="#f3e5f5" stroke="#000"/>
+                    <text x="1445" y="397" font-size="11">Edge Layer</text>
+                </g>
+            </svg>
+        </div>
+                <tr>
+                    <th>Clase</th>
+                    <th>Capa</th>
+                    <th>Hereda de</th>
+                    <th>Atributos Principales</th>
+                    <th>Métodos Principales</th>
+                </tr>
+                <tr style="background: #e1f5ff;">
+                    <td><strong>BaseMQTTComponent</strong></td>
+                    <td>Base</td>
+                    <td>-</td>
+                    <td><code>tag: str</code><br/><code>mqtt_client</code><br/><code>subscriptions: List</code></td>
+                    <td><code>on_message()</code><br/><code>publish_json(topic, payload)</code><br/><code>stop_mqtt()</code></td>
+                </tr>
+                <tr style="background: #ffecb3;">
+                    <td><strong>SwellMLP</strong></td>
+                    <td>Modelo</td>
+                    <td>nn.Module</td>
+                    <td><code>input_dim: int</code><br/><code>hidden_dims: List</code><br/><code>layers: ModuleList</code></td>
+                    <td><code>forward(x) → Tensor</code><br/><code>state_dict() → Dict</code><br/><code>load_state_dict(dict)</code></td>
+                </tr>
+                <tr style="background: #ffecb3;">
+                    <td><strong>SweetMLP</strong></td>
+                    <td>Modelo</td>
+                    <td>nn.Module</td>
+                    <td><code>input_dim: int</code><br/><code>hidden_dims: List</code><br/><code>layers: ModuleList</code></td>
+                    <td><code>forward(x) → Tensor</code><br/><code>state_dict() → Dict</code><br/><code>load_state_dict(dict)</code></td>
+                </tr>
+                <tr style="background: #f3e5f5;">
+                    <td><strong>SwellFLClientMQTT</strong></td>
+                    <td>Edge</td>
+                    <td>BaseMQTTComponent</td>
+                    <td><code>model: SwellMLP</code><br/><code>train_loader: DataLoader</code><br/><code>region: str</code><br/><code>global_model: dict</code></td>
+                    <td><code>train_local() → Tuple[dict, int]</code><br/><code>publish_update()</code><br/><code>on_message()</code><br/><code>run_rounds(total_rounds)</code></td>
+                </tr>
+                <tr style="background: #f3e5f5;">
+                    <td><strong>SweetFLClientMQTT</strong></td>
+                    <td>Edge</td>
+                    <td>BaseMQTTComponent</td>
+                    <td><code>model: SweetMLP</code><br/><code>train_loader: DataLoader</code><br/><code>subject_id: str</code><br/><code>global_model: dict</code></td>
+                    <td><code>train_local() → Tuple[dict, int]</code><br/><code>publish_update()</code><br/><code>on_message()</code><br/><code>run_rounds(total_rounds)</code></td>
+                </tr>
+                <tr style="background: #fff3e0;">
+                    <td><strong>fog.py<br/>(FogBroker)</strong></td>
+                    <td>Fog Broker</td>
+                    <td>-</td>
+                    <td><code>buffers: Dict</code><br/><code>clients_per_region: Dict</code><br/><code>K: int = 3</code><br/><code>mqtt_client</code></td>
+                    <td><code>on_update(client, userdata, msg)</code><br/><code>weighted_average(updates, weights)</code><br/><code>main()</code></td>
+                </tr>
+                <tr style="background: #e8f5e9;">
+                    <td><strong>FogClientSwell</strong></td>
+                    <td>Fog Bridge</td>
+                    <td>BaseMQTTComponent<br/>+ NumPyClient</td>
+                    <td><code>model: SwellMLP</code><br/><code>server_address: str</code><br/><code>region: str</code><br/><code>partial_weights: dict</code></td>
+                    <td><code>fit(parameters, config) → Tuple</code><br/><code>get_parameters(config) → List</code><br/><code>evaluate(parameters, config) → Tuple</code><br/><code>on_message()</code></td>
+                </tr>
+                <tr style="background: #e8f5e9;">
+                    <td><strong>FogClientSweet</strong></td>
+                    <td>Fog Bridge</td>
+                    <td>BaseMQTTComponent<br/>+ NumPyClient</td>
+                    <td><code>model: SweetMLP</code><br/><code>server_address: str</code><br/><code>region: str</code><br/><code>partial_weights: dict</code></td>
+                    <td><code>fit(parameters, config) → Tuple</code><br/><code>get_parameters(config) → List</code><br/><code>evaluate(parameters, config) → Tuple</code><br/><code>on_message()</code></td>
+                </tr>
+                <tr style="background: #c8e6c9;">
+                    <td><strong>MQTTFedAvgSwell</strong></td>
+                    <td>Central</td>
+                    <td>FedAvg</td>
+                    <td><code>model: SwellMLP</code><br/><code>mqtt_client</code><br/><code>eval_data: Tuple</code><br/><code>total_rounds: int</code></td>
+                    <td><code>configure_fit(rnd, parameters, cm)</code><br/><code>aggregate_fit(rnd, results, failures)</code><br/><code>evaluate(rnd, parameters)</code><br/><code>publish_global_model(weights)</code></td>
+                </tr>
+                <tr style="background: #c8e6c9;">
+                    <td><strong>MQTTFedAvgSweet</strong></td>
+                    <td>Central</td>
+                    <td>FedAvg</td>
+                    <td><code>model: SweetMLP</code><br/><code>mqtt_client</code><br/><code>eval_data: Tuple</code><br/><code>total_rounds: int</code></td>
+                    <td><code>configure_fit(rnd, parameters, cm)</code><br/><code>aggregate_fit(rnd, results, failures)</code><br/><code>evaluate(rnd, parameters)</code><br/><code>publish_global_model(weights)</code></td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- FLUJO DE DATOS -->
+        <!-- ============================================================ -->
+        <div class="diagram-wrapper">
+            <div class="diagram-title">2️⃣ Flujo de Datos por Ronda</div>
+            <div class="mermaid">
+                sequenceDiagram
+                    participant Edge as SwellFLClientMQTT
+                    participant Broker as fog.py<br/>(Broker)
+                    participant Bridge as FogClientSwell<br/>(Bridge)
+                    participant Server as MQTTFedAvgSwell<br/>(Server)
+                    
+                    rect rgb(200, 230, 200)
+                    Note over Edge,Server: RONDA N
+                    end
+                    
+                    activate Edge
+                    Edge->>Edge: train_local()
+                    Edge->>Edge: weights = model(train_data)
+                    Edge->>Broker: publish(fl/updates)<br/>{weights, samples}
+                    deactivate Edge
+                    
+                    activate Broker
+                    Broker->>Broker: buffers[region].append(weights)
+                    Broker->>Broker: if len(buffers) >= K
+                    Broker->>Broker: partial = weighted_avg(buffers)
+                    Broker->>Bridge: publish(fl/partial)<br/>{partial_weights}
+                    deactivate Broker
+                    
+                    activate Bridge
+                    Bridge->>Bridge: on_message() recibe partial
+                    Bridge->>Bridge: self.partial_weights = data
+                    deactivate Bridge
+                    
+                    Note over Server: Flower setup_clients()
+                    
+                    activate Bridge
+                    Bridge->>Server: fit(parameters, config) [gRPC]
+                    deactivate Bridge
+                    
+                    activate Server
+                    Server->>Server: Aggregates partials
+                    Server->>Server: global = FedAvg([partial1, partial2])
+                    Server->>Server: Evaluate on test data
+                    Server->>Edge: publish(fl/global_model)<br/>{global_weights}
+                    deactivate Server
+                    
+                    activate Edge
+                    Edge->>Edge: on_message() recibe global
+                    Edge->>Edge: self.global_model = weights
+                    Edge->>Edge: Próxima ronda usa global como init
+                    deactivate Edge
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- ARQUITECTURA POR CAPAS -->
+        <!-- ============================================================ -->
+        <div class="diagram-wrapper">
+            <div class="diagram-title">3️⃣ Arquitectura de Capas</div>
+            
+            <div class="layer">
+                <div class="layer-card central-layer">
+                    <h4>🌐 Capa Central (Servidor)</h4>
+                    <ul>
+                        <li><strong>MQTTFedAvgSwell</strong> / <strong>MQTTFedAvgSweet</strong></li>
+                        <li>Extiende: FedAvg (Flower)</li>
+                        <li>Agrega partiales de bridges</li>
+                        <li>Publica global model por MQTT</li>
+                        <li>Protocolo: Flower gRPC (entrada), MQTT (salida)</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="layer">
+                <div class="layer-card fog-bridge">
+                    <h4>🌉 Capa Fog Bridge</h4>
+                    <ul>
+                        <li><strong>FogClientSwell</strong> / <strong>FogClientSweet</strong></li>
+                        <li>Implementa: NumPyClient (Flower)</li>
+                        <li>Escucha fl/partial (MQTT)</li>
+                        <li>Forwarding a servidor (gRPC)</li>
+                        <li>1 instancia por región</li>
+                    </ul>
+                </div>
+
+                <div class="layer-card fog-broker">
+                    <h4>🔗 Capa Fog Broker</h4>
+                    <ul>
+                        <li><strong>fog.py</strong> / <strong>sweet_fog.py</strong></li>
+                        <li>Módulos MQTT puros (no clases)</li>
+                        <li>Bufferiza K clientes</li>
+                        <li>Agregación con NumPy (FedAvg)</li>
+                        <li>Publica partiales a bridges</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="layer">
+                <div class="layer-card edge-layer">
+                    <h4>📱 Capa Edge (Clientes Locales)</h4>
+                    <ul>
+                        <li><strong>SwellFLClientMQTT</strong> / <strong>SweetFLClientMQTT</strong></li>
+                        <li>Hereda: BaseMQTTComponent</li>
+                        <li>Entrena localmente</li>
+                        <li>Publica en fl/updates</li>
+                        <li>Escucha fl/global_model</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- LEYENDA -->
+        <!-- ============================================================ -->
+        <div class="legend">
+            <h3>📋 Leyenda</h3>
+            
+            <div class="color-legend">
+                <div class="color-box">
+                    <div class="color-indicator" style="background: #fff3e0; border-color: #ff9800;"></div>
+                    <span>Flower Framework (Interfaces)</span>
+                </div>
+                <div class="color-box">
+                    <div class="color-indicator" style="background: #f3e5f5; border-color: #9c27b0;"></div>
+                    <span>Edge Layer (Clientes Locales)</span>
+                </div>
+                <div class="color-box">
+                    <div class="color-indicator" style="background: #fce4ec; border-color: #e91e63;"></div>
+                    <span>Fog Broker (Agregación)</span>
+                </div>
+                <div class="color-box">
+                    <div class="color-indicator" style="background: #e8f5e9; border-color: #4caf50;"></div>
+                    <span>Fog Bridge (Flower Clients)</span>
+                </div>
+                <div class="color-box">
+                    <div class="color-indicator" style="background: #c8e6c9; border-color: #388e3c;"></div>
+                    <span>Central Server (Agregación Global)</span>
+                </div>
+                <div class="color-box">
+                    <div class="color-indicator" style="background: #ffecb3; border-color: #fbc02d;"></div>
+                    <span>Modelos (PyTorch)</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- EXPLICACIONES DETALLADAS -->
+        <!-- ============================================================ -->
+        <div class="explanation">
+            <h3>📌 Relaciones de Herencia</h3>
+            <p>
+                <strong>BaseMQTTComponent:</strong> Clase base abstracta que proporciona comunicación MQTT. 
+                Define el método hook <code>on_message()</code> que es implementado por subclases.
+            </p>
+            <p>
+                <strong>FogClientSwell/Sweet:</strong> Hereda de <strong>BaseMQTTComponent</strong> (MQTT) 
+                E implementa <strong>NumPyClient</strong> (Flower). Esto permite escuchar MQTT y al mismo tiempo 
+                ser un cliente Flower.
+            </p>
+            <p>
+                <strong>MQTTFedAvgSwell/Sweet:</strong> Extiende <strong>FedAvg</strong> de Flower. 
+                Override de métodos para agregar publicación MQTT del modelo global.
+            </p>
+        </div>
+
+        <div class="explanation">
+            <h3>🔄 Flujo de Comunicación</h3>
+            <div class="flow-box">
+                <strong>Edge → Broker:</strong> MQTT topic <code>fl/updates</code><br/>
+                Clientes publican pesos locales + número de muestras
+            </div>
+            <div class="flow-box">
+                <strong>Broker → Bridge:</strong> MQTT topic <code>fl/partial</code><br/>
+                Broker publica pesos agregados por región (NumPy FedAvg)
+            </div>
+            <div class="flow-box">
+                <strong>Bridge → Server:</strong> Flower gRPC<br/>
+                Bridge cliente implementa NumPyClient.fit() → comunica con servidor Flower
+            </div>
+            <div class="flow-box">
+                <strong>Server → Edge:</strong> MQTT topic <code>fl/global_model</code><br/>
+                Servidor publica modelo global para siguiente ronda
+            </div>
+        </div>
+
+        <div class="explanation">
+            <h3>⚙️ Métodos Clave por Capa</h3>
+            <table>
+                <tr>
+                    <th>Capa</th>
+                    <th>Clase</th>
+                    <th>Método Principal</th>
+                    <th>Descripción</th>
+                </tr>
+                <tr>
+                    <td><strong>Edge</strong></td>
+                    <td>SwellFLClientMQTT</td>
+                    <td><code>train_local()</code></td>
+                    <td>Entrena modelo localmente, retorna pesos</td>
+                </tr>
+                <tr>
+                    <td><strong>Edge</strong></td>
+                    <td>SwellFLClientMQTT</td>
+                    <td><code>publish_update()</code></td>
+                    <td>Publica update en MQTT fl/updates</td>
+                </tr>
+                <tr>
+                    <td><strong>Broker</strong></td>
+                    <td>fog.py</td>
+                    <td><code>on_update()</code></td>
+                    <td>Recibe update, bufferiza, agrega cuando hay K</td>
+                </tr>
+                <tr>
+                    <td><strong>Broker</strong></td>
+                    <td>fog.py</td>
+                    <td><code>weighted_average()</code></td>
+                    <td>Promedio ponderado con NumPy (FedAvg)</td>
+                </tr>
+                <tr>
+                    <td><strong>Bridge</strong></td>
+                    <td>FogClientSwell</td>
+                    <td><code>fit(parameters, config)</code></td>
+                    <td>Forwarding del partial al servidor</td>
+                </tr>
+                <tr>
+                    <td><strong>Bridge</strong></td>
+                    <td>FogClientSwell</td>
+                    <td><code>on_message()</code></td>
+                    <td>Recibe partial del broker en MQTT</td>
+                </tr>
+                <tr>
+                    <td><strong>Central</strong></td>
+                    <td>MQTTFedAvgSwell</td>
+                    <td><code>aggregate_fit()</code></td>
+                    <td>Agrega partiales, crea modelo global</td>
+                </tr>
+                <tr>
+                    <td><strong>Central</strong></td>
+                    <td>MQTTFedAvgSwell</td>
+                    <td><code>publish_global_model()</code></td>
+                    <td>Publica modelo global en MQTT</td>
+                </tr>
+            </table>
+        </div>
+
+        <footer>
+            <p>Diagrama UML - Arquitectura Flower-Basic con MQTT Aggregation | Generado: Enero 2026</p>
+        </footer>
+    </div>
+
+    <script>
+        mermaid.initialize({ startOnLoad: true, theme: 'default' });
+        mermaid.contentLoaded();
+    </script>
+</body>
+</html>
