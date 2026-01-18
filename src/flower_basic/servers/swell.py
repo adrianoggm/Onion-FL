@@ -45,6 +45,7 @@ from flower_basic.prometheus_metrics import (
     FL_GLOBAL_TRAIN_SAMPLES,
     FL_GLOBAL_VAL_SAMPLES,
     FL_GLOBAL_TEST_SAMPLES,
+    FL_CONFUSION_MATRIX,
     get_metrics_port_from_env,
     push_metrics_to_gateway,
 )
@@ -205,7 +206,9 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
                             k: torch.tensor(v) for k, v in state_dict.items()
                         }
                         self.global_model.load_state_dict(torch_state, strict=False)
-                        loss, acc = _evaluate_global(self.global_model, self.eval_data)
+                        loss, acc, cm, labels = _evaluate_global(
+                            self.global_model, self.eval_data
+                        )
 
                         # Store final metrics
                         self.history["round"].append(server_round)
@@ -223,6 +226,13 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
                         # Record Prometheus metrics
                         FL_ACCURACY.labels(server="swell").set(acc)
                         FL_LOSS.labels(server="swell").set(loss)
+                        for i, true_label in enumerate(labels):
+                            for j, pred_label in enumerate(labels):
+                                FL_CONFUSION_MATRIX.labels(
+                                    server="swell",
+                                    true_label=str(true_label),
+                                    pred_label=str(pred_label),
+                                ).set(int(cm[i, j]))
 
                         # Print final evaluation summary
                         self._print_final_evaluation(loss, acc)
@@ -349,7 +359,7 @@ def _load_manifest_split_counts(manifest_path: Path) -> tuple[int, int, int]:
 
 def _evaluate_global(
     model: SwellMLP, data: tuple[np.ndarray, np.ndarray]
-) -> tuple[float, float]:
+) -> tuple[float, float, np.ndarray, list[int]]:
     X, y = data
     device = torch.device("cpu")
     model = model.to(device)
@@ -360,6 +370,8 @@ def _evaluate_global(
     total = 0.0
     correct = 0
     count = 0
+    preds_all = []
+    ys_all = []
     with torch.no_grad():
         for xb, yb in loader:
             xb = xb.to(device)
@@ -370,9 +382,20 @@ def _evaluate_global(
             preds = torch.argmax(logits, dim=1)
             correct += (preds == yb).sum().item()
             count += xb.size(0)
+            preds_all.append(preds.cpu())
+            ys_all.append(yb.cpu())
     loss = total / max(count, 1)
     acc = correct / max(count, 1)
-    return loss, acc
+    y_true = torch.cat(ys_all).numpy() if ys_all else np.array([], dtype=int)
+    y_pred = torch.cat(preds_all).numpy() if preds_all else np.array([], dtype=int)
+    labels = sorted(set(y_true.tolist()) | set(y_pred.tolist()))
+    if not labels:
+        labels = [0, 1]
+    label_index = {label: idx for idx, label in enumerate(labels)}
+    cm = np.zeros((len(labels), len(labels)), dtype=int)
+    for t, p in zip(y_true, y_pred):
+        cm[label_index[t], label_index[p]] += 1
+    return loss, acc, cm, labels
 
 
 def main():

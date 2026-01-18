@@ -176,6 +176,17 @@ FL_GLOBAL_TEST_SAMPLES = (
     else _DummyMetric()
 )
 
+# Confusion matrix (final evaluation)
+FL_CONFUSION_MATRIX = (
+    Gauge(
+        "flower_fl_confusion_matrix",
+        "Confusion matrix counts (true vs predicted)",
+        ["server", "true_label", "pred_label"],
+    )
+    if PROMETHEUS_AVAILABLE
+    else _DummyMetric()
+)
+
 
 # =============================================================================
 # Broker Metrics

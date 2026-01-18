@@ -591,6 +591,8 @@ def build_runtime_plan(
                     and merged_params["batch_size"] is not None
                 ):
                     cmd.extend(["--batch_size", str(merged_params["batch_size"])])
+                if "seed" in merged_params and merged_params["seed"] is not None:
+                    cmd.extend(["--seed", str(merged_params["seed"])])
                 local_epochs = merged_params.get(
                     "local_epochs", merged_params.get("local-epochs")
                 )

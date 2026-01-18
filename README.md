@@ -639,6 +639,7 @@ python scripts/run_architecture_from_config.py \
 - `configs/federated_architecture.example.yaml`
   - `orchestrator.rounds`: number of FL rounds
   - `client_params.local_epochs`: local epochs per round (global default)
+  - `client_params.seed`: deterministic client init/shuffle seed
   - `fog_nodes[*].params.local_epochs`: per-fog override
   - `fog_nodes[*].clients[*].rounds`: keep aligned with `orchestrator.rounds`
   - `fog_nodes[*].k`: updates per region before partial aggregate

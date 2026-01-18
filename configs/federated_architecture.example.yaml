@@ -37,6 +37,7 @@ federated_architecture:
   client_params:
     lr: 0.001
     local_epochs: 14
+    seed: 46
 
   fog_nodes:
     - id: fog_0
@@ -44,6 +45,7 @@ federated_architecture:
       params:
         lr: 0.001
         local_epochs: 14
+        seed: 46
       clients:
         - id: fog0_c1
           dataset: "SWELL"
@@ -59,6 +61,7 @@ federated_architecture:
       params:
         lr: 0.001
         local_epochs: 14
+        seed: 46
       clients:
         - id: fog1_c1
           dataset: "SWELL"
@@ -74,6 +77,7 @@ federated_architecture:
       params:
         lr: 0.001
         local_epochs: 14
+        seed: 46
       clients:
         - id: fog2_c1
           dataset: "SWELL"

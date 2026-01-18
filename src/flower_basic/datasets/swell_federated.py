@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -92,6 +93,12 @@ def _read_config(config_path: str | os.PathLike) -> FederatedConfig:
         raise ValueError("Split percentages must sum to 1.0")
 
     return cfg
+
+
+def _stable_subject_seed(base_seed: int, subject: str) -> int:
+    """Build a stable per-subject seed (no dependence on PYTHONHASHSEED)."""
+    crc = zlib.crc32(subject.encode("utf-8", errors="ignore")) & 0xFFFFFFFF
+    return int((base_seed + crc) % (2**32 - 1))
 
 
 def _split_subjects(
@@ -278,7 +285,7 @@ def _materialize_per_subject_strategy(
             # Same split logic as below, but just for indices
             n_train = max(1, int(round(cfg.split_train * n_subj)))
             # Use same seed+subject for reproducibility
-            subj_rng = np.random.default_rng(cfg.seed + hash(subj) % (2**31))
+            subj_rng = np.random.default_rng(_stable_subject_seed(cfg.seed, subj_str))
             perm = subj_rng.permutation(n_subj)
             train_indices.extend(subj_indices[perm[:n_train]])
 
@@ -349,7 +356,7 @@ def _materialize_per_subject_strategy(
                     n_train -= 1
 
             # Shuffle indices for this subject (reproducible per subject)
-            subj_rng = np.random.default_rng(cfg.seed + hash(subj_str) % (2**31))
+            subj_rng = np.random.default_rng(_stable_subject_seed(cfg.seed, subj_str))
             perm = subj_rng.permutation(n)
 
             idx_train = perm[:n_train]

@@ -12,11 +12,13 @@ import argparse
 import atexit
 import json
 import os
+import random
 import signal
 import threading
 import time
 from pathlib import Path
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -127,12 +129,32 @@ def _init_telemetry():
     )
 
 
+def _set_determinism(seed: int) -> torch.Generator:
+    """Configure deterministic behavior and return a seeded generator."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    if hasattr(torch, "use_deterministic_algorithms"):
+        try:
+            torch.use_deterministic_algorithms(True)
+        except Exception:
+            pass
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    gen = torch.Generator()
+    gen.manual_seed(seed)
+    return gen
+
+
 class SwellFLClientMQTT(BaseMQTTComponent):
     def __init__(
         self,
         node_dir: str,
         region: str,
         client_id: str | None = None,
+        seed: int | None = None,
         local_epochs: int = 1,
         lr: float = 1e-3,
         batch_size: int = 64,
@@ -146,6 +168,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
         self.tag = f"[CLIENT {self.region}]"
         self.client_id = client_id or f"{self.region}_client_{os.getpid() % 10000}"
         self.local_epochs = max(1, int(local_epochs))
+        self.seed = int(seed) if seed is not None else None
         self.topic_updates = topic_updates
         self.topic_global = topic_global
 
@@ -157,6 +180,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
             )
 
         input_dim = X_train.shape[1]
+        gen = _set_determinism(self.seed) if self.seed is not None else None
         self.model = SwellMLP(input_dim=input_dim)
 
         # DataLoaders
@@ -166,6 +190,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
             ),
             batch_size=batch_size,
             shuffle=True,
+            generator=gen,
         )
 
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
@@ -466,6 +491,7 @@ def main():
         "--region", required=True, help="Region name to tag updates (e.g., fog_0)"
     )
     ap.add_argument("--rounds", type=int, default=3)
+    ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--local-epochs", type=int, default=1)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--batch_size", type=int, default=64)
@@ -518,6 +544,7 @@ def main():
         args.node_dir,
         args.region,
         client_id=args.client_id,
+        seed=args.seed,
         local_epochs=args.local_epochs,
         lr=args.lr,
         batch_size=args.batch_size,
