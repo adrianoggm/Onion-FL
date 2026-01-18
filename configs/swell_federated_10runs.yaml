@@ -6,10 +6,10 @@ dataset:
 split:
   train: 0.7      # 70% para entrenamiento
   val: 0.15       # 15% para validación  
-  test: 0.15      # 15% para test
+  test: 0.15      # 15% para test (solo si no hay test_assignments)
   seed: 67
   scaler: global  # Escalado global entre sujetos
-  strategy: per_subject  # Cada sujeto tiene su propio split interno
+  strategy: global  # Sujetos asignados a train/val/test (test = clientes holdout)
 
 federation:
   mode: manual   # Modo manual para control explícito
@@ -20,6 +20,11 @@ federation:
     fog_1: [7, 9, 10, 12, 13, 14, 22, 23]
     # Nodo Fog 2: 7 sujetos
     fog_2: [15, 16, 17, 18, 21, 24, 25]
+  # Sujetos reservados para evaluación final (no entrenan)
+  test_assignments:
+    fog_0: [19, 20]
+    fog_1: [23]
+    fog_2: [24, 25]
   
   output_dir: federated_runs/swell
   run_name: 10_executions_physiology

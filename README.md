@@ -513,6 +513,7 @@ The architecture simulates a real fog computing environment for federated learni
 -   **Real Conditions**: N/T/I/R stress conditions from actual work
 -   **Complex Features**: 178 features across 4 modalities
 -   **Workplace Applicability**: Real office environment data
+-   **Federated Result (global holdout)**: 646 test samples, loss 0.5162, accuracy 88.54% (12 rounds, 58.99s)
 
 #### 🔬 Federated vs Centralized
 -   **Subject Privacy**: Personal data never leaves local nodes
@@ -740,6 +741,7 @@ pytest tests/test_mqtt_components.py -v
 -   **Data Integration**: 4 modalities successfully merged
 -   **Real Conditions**: N/T/I/R stress levels
 -   **Subject Alignment**: Cross-modal participant matching
+-   **Federated Result (global holdout)**: 646 test samples, loss 0.5162, accuracy 88.54% (12 rounds, 58.99s)
 
 #### 🚀 System Performance
 -   **Training Time**: ~50 seconds for 3 rounds
