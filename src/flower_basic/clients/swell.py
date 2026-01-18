@@ -132,6 +132,8 @@ class SwellFLClientMQTT(BaseMQTTComponent):
         self,
         node_dir: str,
         region: str,
+        client_id: str | None = None,
+        local_epochs: int = 1,
         lr: float = 1e-3,
         batch_size: int = 64,
         mqtt_broker: str = MQTT_BROKER,
@@ -142,6 +144,8 @@ class SwellFLClientMQTT(BaseMQTTComponent):
         self.node_dir = Path(node_dir)
         self.region = region
         self.tag = f"[CLIENT {self.region}]"
+        self.client_id = client_id or f"{self.region}_client_{os.getpid() % 10000}"
+        self.local_epochs = max(1, int(local_epochs))
         self.topic_updates = topic_updates
         self.topic_global = topic_global
 
@@ -267,15 +271,16 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                 total = 0.0
                 n = 0
                 batch_count = 0
-                for X, y in self.train_loader:
-                    self.optimizer.zero_grad()
-                    logits = self.model(X)
-                    loss = self.criterion(logits, y)
-                    loss.backward()
-                    self.optimizer.step()
-                    total += loss.item() * X.size(0)
-                    n += X.size(0)
-                    batch_count += 1
+                for _ in range(self.local_epochs):
+                    for X, y in self.train_loader:
+                        self.optimizer.zero_grad()
+                        logits = self.model(X)
+                        loss = self.criterion(logits, y)
+                        loss.backward()
+                        self.optimizer.step()
+                        total += loss.item() * X.size(0)
+                        n += X.size(0)
+                        batch_count += 1
                 avg_loss = total / max(n, 1)
 
             # Record metrics (OTEL)
@@ -293,17 +298,18 @@ class SwellFLClientMQTT(BaseMQTTComponent):
             record_metric(GAUGE_TRAIN_SAMPLES, n, {"region": self.region})
 
             # Record Prometheus metrics
-            client_id = f"{self.region}_client_{os.getpid() % 10000}"
-            CLIENT_TRAINING_ROUNDS.labels(client_id=client_id, region=self.region).inc()
+            CLIENT_TRAINING_ROUNDS.labels(
+                client_id=self.client_id, region=self.region
+            ).inc()
             CLIENT_TRAINING_DURATION.labels(
-                client_id=client_id, region=self.region
+                client_id=self.client_id, region=self.region
             ).observe(training_duration)
-            CLIENT_LOCAL_LOSS.labels(client_id=client_id, region=self.region).set(
+            CLIENT_LOCAL_LOSS.labels(client_id=self.client_id, region=self.region).set(
                 avg_loss
             )
 
         print(
-            f"{self.tag} Train loss: {avg_loss:.4f} | samples: {n} | batches: {batch_count}"
+            f"{self.tag} Train loss: {avg_loss:.4f} | samples: {n} | batches: {batch_count} | epochs: {self.local_epochs}"
         )
         return avg_loss
 
@@ -332,8 +338,9 @@ class SwellFLClientMQTT(BaseMQTTComponent):
         val_acc = correct / count
 
         # Record Prometheus validation accuracy
-        client_id = f"{self.region}_client_{os.getpid() % 10000}"
-        CLIENT_LOCAL_ACCURACY.labels(client_id=client_id, region=self.region).set(
+        CLIENT_LOCAL_ACCURACY.labels(
+            client_id=self.client_id, region=self.region
+        ).set(
             val_acc
         )
 
@@ -351,11 +358,8 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                     k: v.detach().cpu().numpy().tolist() for k, v in state.items()
                 }
 
-            # Use consistent client_id based on region and process id
-            client_id = f"{self.region}_client_{os.getpid() % 10000}"
-
             payload = {
-                "client_id": client_id,
+                "client_id": self.client_id,
                 "region": self.region,
                 "weights": weights,
                 "num_samples": self.num_samples,
@@ -367,7 +371,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
             record_metric(
                 COUNTER_UPDATES_PUBLISHED,
                 1,
-                {"region": self.region, "client_id": client_id},
+                {"region": self.region, "client_id": self.client_id},
             )
         print(
             f"{self.tag} Local update published ({self.num_samples} samples) to {self.topic_updates}"
@@ -375,21 +379,25 @@ class SwellFLClientMQTT(BaseMQTTComponent):
 
     def wait_for_global(self, timeout_s: float = 30.0) -> bool:
         waited = 0.0
-        self._got_global = False
         interval = 0.5
-        while not self._got_global and waited < timeout_s:
+        with self._lock:
+            if self._pending_global_state is not None:
+                return True
+            self._got_global = False
+
+        while waited < timeout_s:
+            with self._lock:
+                if self._pending_global_state is not None or self._got_global:
+                    return True
             time.sleep(interval)
             waited += interval
-        if not self._got_global:
-            print(f"{self.tag} Timeout waiting for global model. Proceeding.")
-        return self._got_global
+        print(f"{self.tag} Timeout waiting for global model. Proceeding.")
+        return False
 
     def run(self, rounds: int = 3, delay: float = 2.0) -> None:
         print(f"{self.tag} Starting {rounds} federated rounds (region={self.region})")
 
         # Client ID for metrics
-        client_id = f"{self.region}_client_{os.getpid() % 10000}"
-
         # Register dataset distribution metrics once at start (OTEL)
         record_metric(GAUGE_TRAIN_SAMPLES, self.num_samples, {"region": self.region})
         record_metric(GAUGE_VAL_SAMPLES, self.num_val_samples, {"region": self.region})
@@ -398,13 +406,19 @@ class SwellFLClientMQTT(BaseMQTTComponent):
         )
 
         # Register Prometheus metrics
-        CLIENT_TRAIN_SAMPLES.labels(client_id=client_id, region=self.region).set(
+        CLIENT_TRAIN_SAMPLES.labels(
+            client_id=self.client_id, region=self.region
+        ).set(
             self.num_samples
         )
-        CLIENT_VAL_SAMPLES.labels(client_id=client_id, region=self.region).set(
+        CLIENT_VAL_SAMPLES.labels(
+            client_id=self.client_id, region=self.region
+        ).set(
             self.num_val_samples
         )
-        CLIENT_TEST_SAMPLES.labels(client_id=client_id, region=self.region).set(
+        CLIENT_TEST_SAMPLES.labels(
+            client_id=self.client_id, region=self.region
+        ).set(
             self.num_test_samples
         )
 
@@ -433,6 +447,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                     current.update(self._pending_global_state)
                     self.model.load_state_dict(current, strict=False)
                     self._pending_global_state = None
+                    self._got_global = False
                     print(f"{self.tag} Global model applied")
             if r < rounds:
                 time.sleep(delay)
@@ -451,6 +466,7 @@ def main():
         "--region", required=True, help="Region name to tag updates (e.g., fog_0)"
     )
     ap.add_argument("--rounds", type=int, default=3)
+    ap.add_argument("--local-epochs", type=int, default=1)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--batch_size", type=int, default=64)
     ap.add_argument("--mqtt-broker", default=MQTT_BROKER)
@@ -462,6 +478,11 @@ def main():
         type=int,
         default=-1,
         help="Client index for metrics port (0-99). If -1, uses PID-based port.",
+    )
+    ap.add_argument(
+        "--client-id",
+        default=None,
+        help="Stable client identifier (defaults to region+pid).",
     )
     args = ap.parse_args()
 
@@ -496,6 +517,8 @@ def main():
     client = SwellFLClientMQTT(
         args.node_dir,
         args.region,
+        client_id=args.client_id,
+        local_epochs=args.local_epochs,
         lr=args.lr,
         batch_size=args.batch_size,
         mqtt_broker=args.mqtt_broker,

@@ -109,7 +109,7 @@ services:
     depends_on:
       - mosquitto
 
-  client_fog0_c1:
+  client_fog0_c1: &client_fog0_c1
     build:
       context: ..
     working_dir: /app
@@ -165,7 +165,7 @@ services:
       - --topic-global
       - fl/global_model
 
-  client_fog1_c1:
+  client_fog1_c1: &client_fog1_c1
     <<: *client_fog0_c1
     environment:
       PYTHONPATH: /app/src
