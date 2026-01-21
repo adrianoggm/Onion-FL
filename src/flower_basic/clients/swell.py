@@ -25,6 +25,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from flower_basic.clients.baseclient import BaseMQTTComponent
 from flower_basic.datasets.swell_federated import load_node_split
 from flower_basic.swell_model import SwellMLP
+from flower_basic.logging_utils import enable_timestamped_print
 
 # Telemetry (optional)
 from flower_basic.telemetry import (
@@ -472,6 +473,8 @@ class SwellFLClientMQTT(BaseMQTTComponent):
 
 
 def main():
+    enable_timestamped_print()
+
     # Parse arguments first to get client index for metrics port
     ap = argparse.ArgumentParser(description="SWELL MQTT federated local client")
     ap.add_argument(

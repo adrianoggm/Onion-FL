@@ -325,7 +325,7 @@ Additional: 8 unnamed physiological measures
 
 - **Subjects**: 10 respondents with minute-level physiological aggregates plus self-reported stress (`MAXIMUM_STRESS`).
 - **Script**: `python scripts/evaluate_sweet_sample_baseline.py --output-dir baseline_results/sweet_samples`.
-- **Split Policy**: 60% train, 20% validation, 20% test at subject granularity (strictly disjoint) as mandated in `Context.md`.
+- **Split Policy**: 60% train, 20% validation, 20% test at subject granularity (strictly disjoint) as mandated in `docs/Context.md`.
 - **Labels**: Binary by default (`stress >= 2` -> elevated). Switch to ordinal with `--label-strategy ordinal` to keep levels 1-5.
 - **Threshold**: Level 1 se mapea a `0` (bajo); niveles >=2 quedan como `1`. Ajusta con `--sweet-threshold` si necesitas otro corte.
 - **Scope**: Operates on the curated subset located at `data/SWEET/sample_subjects`; ideal for smoke tests before full SWEET ingestion.
@@ -635,6 +635,17 @@ python scripts/run_architecture_from_config.py \
   --delay 0.1
 ```
 
+Recommended demo flow (physiology-only):
+```bash
+python scripts/prepare_swell_federated.py --config configs/swell_federated_10runs.yaml
+
+python scripts/run_architecture_from_config.py \
+  --config configs/federated_architecture.example.yaml \
+  --manifest federated_runs/swell/10_executions_physiology/manifest.json \
+  --launch \
+  --delay 0.1
+```
+
 5) Tune rounds and per-region K:
 - `configs/federated_architecture.example.yaml`
   - `orchestrator.rounds`: number of FL rounds
@@ -675,39 +686,24 @@ make security
 ## 📁 Modern Project Structure
 
 ```
-├── � src/flower_basic/           # Main package (PEP 420)
-│   ├── __init__.py               # Package initialization
-│   ├── __main__.py               # CLI entry point
-│   ├── server.py                 # Central Flower server
-│   ├── client.py                 # Local client
-│   ├── fog_flower_client.py      # Fog bridge
-│   ├── broker_fog.py             # Fog broker
-│   ├── model.py                  # 1D CNN model
-│   ├── utils.py                  # Utilities
-│   ├── compare_models.py         # Comparison framework
-│   └── baseline_model.py         # Centralized model
-├── 🧪 tests/                     # Test suite
-│   ├── __init__.py
-│   ├── test_model.py
-│   ├── test_server.py
-│   └── ...
-├── 📋 pyproject.toml             # Modern project config (PEP 621)
-├── 📖 README.md                  # This file
-├── 📝 CHANGELOG.md               # Version history
-├── 🔒 SECURITY.md                # Security policy
-├── 🐳 Dockerfile                 # Container definition
-├── � docker-compose.yml         # Multi-service orchestration
-├── 🔧 Makefile                   # Build automation
-├── ⚙️ .pre-commit-config.yaml    # Code quality hooks
-├── � .vscode/                   # VS Code configuration
-│   ├── settings.json
-│   ├── tasks.json
-│   ├── launch.json
-│   └── extensions.json
-├── 🐳 .devcontainer/             # Dev container config
-├── 📊 comparison_results/        # Model outputs
-├── 📈 baseline_test/            # Baseline results
-└── 🔧 scripts/                   # Automation scripts
+├── 📁 src/flower_basic/           # Main package (PEP 420)
+├── 🧪 tests/                      # Test suite
+├── 📋 pyproject.toml              # Modern project config (PEP 621)
+├── 📖 README.md                   # This file
+├── 📁 docs/                       # Guides, rules, and changelog
+│   ├── CHANGELOG.md
+│   ├── Context.md
+│   ├── EXECUTION_GUIDE.md
+│   ├── RULES.md
+│   └── SWEET_*.md
+├── 📁 diagrams/                   # PlantUML + rendered diagrams
+├── 🔒 .github/SECURITY.md         # Security policy
+├── 🐳 Dockerfile                  # Container definition
+├── 🐳 docker-compose.yml          # Multi-service orchestration
+├── 🔧 Makefile                    # Build automation
+├── ⚙️ .pre-commit-config.yaml     # Code quality hooks
+├── 🧰 scripts/                    # Automation scripts
+└── 🧩 configs/                    # Run configurations
 ```
 
 ## 🧪 Testing
@@ -800,7 +796,7 @@ make test
 3. **Tests**: Add tests for new functionality
 4. **Documentation**: Update documentation for API changes
 5. **Type Hints**: Add proper type annotations
-6. **Changelog**: Update CHANGELOG.md for user-facing changes
+6. **Changelog**: Update docs/CHANGELOG.md for user-facing changes
 
 ### Commit Convention
 
@@ -860,9 +856,7 @@ refactor: improve code structure
 
 ### 📊 Reports & Analysis
 
--   **[Modernization Report](MODERNIZATION_REPORT.md)**: Complete modernization summary
--   **[Implementation Report](IMPLEMENTATION_REPORT.md)**: Technical implementation details
--   **[Changelog](CHANGELOG.md)**: Version history and changes
+-   **[Changelog](docs/CHANGELOG.md)**: Version history and changes
 -   **[Security Policy](.github/SECURITY.md)**: Security reporting guidelines
 
 ### 🎯 Related Projects

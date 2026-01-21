@@ -202,7 +202,7 @@ class ECG5000DeprecationChecker:
                 "3. Use subject-based data partitioning",
                 "4. Implement proper cross-validation",
                 "",
-                "Documentation: See RULES.md for complete migration guide",
+                "Documentation: See docs/RULES.md for complete migration guide",
                 "",
             ]
         )

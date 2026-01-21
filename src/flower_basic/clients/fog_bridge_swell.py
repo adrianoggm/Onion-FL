@@ -17,6 +17,7 @@ import flwr as fl
 import numpy as np
 
 from flower_basic.clients.baseclient import BaseMQTTComponent
+from flower_basic.logging_utils import enable_timestamped_print
 from flower_basic.swell_model import SwellMLP, get_parameters, set_parameters
 from flower_basic.telemetry import (
     create_counter,
@@ -173,6 +174,8 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
 
 
 def main():
+    enable_timestamped_print()
+
     # Initialize telemetry for this service
     _init_telemetry()
 

@@ -81,7 +81,7 @@ def main() -> None:
             print(f"  ... and {len(violations) - 20} more")
 
         print("\nMigration required: Replace ECG5000 with WESAD/SWELL datasets")
-        print("See RULES.md for complete migration guide")
+        print("See docs/RULES.md for complete migration guide")
         sys.exit(1)
 
 

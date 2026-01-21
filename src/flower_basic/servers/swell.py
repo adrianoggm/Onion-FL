@@ -49,6 +49,7 @@ from flower_basic.prometheus_metrics import (
     get_metrics_port_from_env,
     push_metrics_to_gateway,
 )
+from flower_basic.logging_utils import enable_timestamped_print
 
 MODEL_TOPIC = os.getenv("MQTT_TOPIC_GLOBAL", "fl/global_model")
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
@@ -400,6 +401,8 @@ def _evaluate_global(
 
 def main():
     global MQTT_BROKER, MODEL_TOPIC
+
+    enable_timestamped_print()
 
     # Initialize telemetry for this service
     _init_telemetry()

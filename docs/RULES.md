@@ -523,31 +523,34 @@ def load_config() -> Config:
 flower-basic/
 ├── 📋 pyproject.toml              # Modern project configuration (PEP 621)
 ├── 📄 README.md                   # Project documentation
-├── 📋 RULES.md                    # This file - development standards
-├── 📝 CHANGELOG.md                # Version history
-├── 🔒 SECURITY.md                 # Security policy
+├── 📁 docs/                       # Guides, rules, and changelog
+│   ├── RULES.md                   # This file - development standards
+│   ├── CHANGELOG.md               # Version history
+│   └── Context.md                 # Dataset and split policy
+├── 📁 diagrams/                   # PlantUML + rendered diagrams
+├── 🔒 .github/SECURITY.md          # Security policy
 ├── 📄 LICENSE                     # MIT License
 ├── 🔧 Makefile                    # Cross-platform automation
 ├── 🐳 Dockerfile                  # Container definition
 ├── 🐳 docker-compose.yml          # Multi-service orchestration
 ├── ⚙️ .pre-commit-config.yaml     # Code quality hooks
 ├── 📁 src/flower_basic/           # Source code (PEP 420)
-│   ├── __init__.py               # Package exports
-│   ├── __main__.py               # CLI entry point
-│   ├── model.py                  # ML models
-│   ├── server.py                 # Flower server
-│   ├── client.py                 # Federated clients
-│   ├── utils.py                  # Utility functions
-│   └── datasets/                 # Dataset loaders
+│   ├── __init__.py                # Package exports
+│   ├── __main__.py                # CLI entry point
+│   ├── model.py                   # ML models
+│   ├── server.py                  # Flower server
+│   ├── client.py                  # Federated clients
+│   ├── utils.py                   # Utility functions
+│   └── datasets/                  # Dataset loaders
 │       ├── __init__.py
-│       ├── ecg5000.py           # ECG5000 loader
-│       ├── wesad.py             # WESAD loader
-│       └── swell.py             # SWELL loader
-├── 🧪 tests/                     # Test suite
+│       ├── ecg5000.py             # ECG5000 loader
+│       ├── wesad.py               # WESAD loader
+│       └── swell.py               # SWELL loader
+├── 🧪 tests/                      # Test suite
 │   ├── __init__.py
-│   ├── test_model.py            # Model tests
-│   ├── test_datasets.py         # Dataset tests
-│   ├── integration/             # Integration tests
+│   ├── test_model.py              # Model tests
+│   ├── test_datasets.py           # Dataset tests
+│   ├── integration/               # Integration tests
 │   └── fixtures/                # Test fixtures
 ├── 📖 docs/                      # Documentation
 │   ├── api/                     # API reference

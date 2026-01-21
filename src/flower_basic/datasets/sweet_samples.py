@@ -9,7 +9,7 @@ This module focuses on the curated subset stored under
 We align self-reports to the closest feature window by flooring timestamps
 to the minute. The resulting samples are grouped by subject so that downstream
 evaluations can enforce subject-disjoint splits (as required by the project
-guidelines documented in ``Context.md``).
+guidelines documented in ``docs/Context.md``).
 """
 
 from __future__ import annotations

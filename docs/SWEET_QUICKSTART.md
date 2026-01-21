@@ -215,7 +215,6 @@ graph TD
 ## 📚 Más Información
 
 - **Guía completa**: `SWEET_TRANSFER_LEARNING_README.md`
-- **Resumen de implementación**: `SWEET_IMPLEMENTATION_SUMMARY.md`
 - **Configuración YAML**: `configs/sweet_architecture_5nodes.yaml`
 
 ## ⏱️ Tiempo Estimado

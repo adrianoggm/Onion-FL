@@ -323,11 +323,6 @@ flower-basic/
 - `scripts/hyperparameter_tuning.py`: Búsqueda de hiperparámetros
 - `scripts/advanced_ml_comparison.py`: Comparación de modelos ML
 
-### Reportes
-- `SWEET_ANALYSIS_REPORT.md`: Análisis completo del dataset
-- `IMPLEMENTATION_REPORT.md`: Detalles de implementación
-- `MULTI_DATASET_DEMO_SUMMARY.md`: Comparación multi-dataset
-
 ## 🤝 Inspiración
 
 Este sistema está inspirado en la implementación existente de SWELL:

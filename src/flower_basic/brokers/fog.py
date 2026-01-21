@@ -27,6 +27,7 @@ from typing import Any
 import numpy as np
 import paho.mqtt.client as mqtt
 
+from flower_basic.logging_utils import enable_timestamped_print
 from flower_basic.telemetry import (
     create_counter,
     create_gauge,
@@ -369,6 +370,8 @@ def on_update(client, userdata, msg):
 def main():
     """Start fog broker MQTT loop."""
     global K, MQTT_BROKER, MQTT_PORT, UPDATE_TOPIC, PARTIAL_TOPIC, GLOBAL_TOPIC
+
+    enable_timestamped_print()
 
     # Initialize telemetry for this service
     _init_telemetry()

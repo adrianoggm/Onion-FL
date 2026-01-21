@@ -2,7 +2,7 @@
 """
 SWELL PURE REAL DATA - NO SYNTHETIC SUBJECTS
 ============================================
-Following the RULES.md: ONLY REAL DATA, NO SYNTHETIC GENERATION
+Following the docs/RULES.md: ONLY REAL DATA, NO SYNTHETIC GENERATION
 """
 
 import numpy as np
@@ -20,7 +20,7 @@ def swell_pure_real_evaluation():
 
     print("🧬 SWELL DATASET - PURE REAL DATA EVALUATION")
     print("=" * 50)
-    print("Following RULES.md: NO synthetic data generation allowed")
+    print("Following docs/RULES.md: NO synthetic data generation allowed")
     print()
 
     # Load ONLY computer interaction data (most reliable modality)
@@ -172,7 +172,7 @@ def swell_pure_real_evaluation():
     print(f"   - REAL participants: {len(unique_participants)} subjects")
     print(f"   - Subject-based splitting prevents data leakage")
     print(f"   - Results represent realistic federated learning scenarios")
-    print(f"   - NO synthetic data generation (following RULES.md)")
+    print(f"   - NO synthetic data generation (following docs/RULES.md)")
 
     # Comparison warning
     if best_model[1]["test_accuracy"] < 0.9:
