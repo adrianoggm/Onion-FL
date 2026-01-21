@@ -45,12 +45,15 @@ try:
     import matplotlib.pyplot as plt
     import seaborn as sns
     from scipy import signal
+
     VISUALIZATIONS_AVAILABLE = True
-    plt.style.use('default')
+    plt.style.use("default")
     sns.set_palette("husl")
 except ImportError:
     VISUALIZATIONS_AVAILABLE = False
-    print("⚠️  Visualization libraries (matplotlib, seaborn, scipy) not available. Skipping plots.")
+    print(
+        "⚠️  Visualization libraries (matplotlib, seaborn, scipy) not available. Skipping plots."
+    )
 
 
 class SWELLBaselineEvaluator:
@@ -510,7 +513,14 @@ class SWELLBaselineEvaluator:
 
         # Subject information
         subject_col = None
-        for possible_col in ["participant", "subject", "participantno", "participant_id", "id", "pp"]:
+        for possible_col in [
+            "participant",
+            "subject",
+            "participantno",
+            "participant_id",
+            "id",
+            "pp",
+        ]:
             if possible_col in df.columns:
                 subject_col = possible_col
                 break
@@ -530,23 +540,45 @@ class SWELLBaselineEvaluator:
             print(f"\nCondition (Stress Levels) Analysis:")
             print(f"  Unique conditions: {df['condition'].nunique()}")
             print(f"  Condition distribution:")
-            condition_counts = df['condition'].value_counts()
+            condition_counts = df["condition"].value_counts()
             for cond, count in condition_counts.items():
                 print(f"    '{cond}': {count} samples ({count/len(df)*100:.1f}%)")
 
             # Mapped stress levels
             condition_mapping = {
-                "N": 0, "n": 0, "T": 1, "t": 1, "I": 1, "i": 1, "R": 1, "r": 1,
-                "normal": 0, "baseline": 0, "control": 0, "no stress": 0,
-                "time pressure": 1, "interruption": 1, "interruptions": 1, "combined": 1, "stress": 1,
+                "N": 0,
+                "n": 0,
+                "T": 1,
+                "t": 1,
+                "I": 1,
+                "i": 1,
+                "R": 1,
+                "r": 1,
+                "normal": 0,
+                "baseline": 0,
+                "control": 0,
+                "no stress": 0,
+                "time pressure": 1,
+                "interruption": 1,
+                "interruptions": 1,
+                "combined": 1,
+                "stress": 1,
             }
             stress_labels = []
-            for cond in df['condition'].astype(str).str.lower().str.strip():
+            for cond in df["condition"].astype(str).str.lower().str.strip():
                 if cond in condition_mapping:
-                    stress_labels.append("No Stress" if condition_mapping[cond] == 0 else "Stress")
-                elif any(word in cond for word in ["stress", "pressure", "interrupt", "high", "load"]):
+                    stress_labels.append(
+                        "No Stress" if condition_mapping[cond] == 0 else "Stress"
+                    )
+                elif any(
+                    word in cond
+                    for word in ["stress", "pressure", "interrupt", "high", "load"]
+                ):
                     stress_labels.append("Stress")
-                elif any(word in cond for word in ["baseline", "control", "normal", "rest", "low"]):
+                elif any(
+                    word in cond
+                    for word in ["baseline", "control", "normal", "rest", "low"]
+                ):
                     stress_labels.append("No Stress")
                 else:
                     stress_labels.append("Unknown")
@@ -557,12 +589,26 @@ class SWELLBaselineEvaluator:
                 print(f"    {label}: {count} samples ({count/len(df)*100:.1f}%)")
 
         # Feature columns analysis
-        non_feature_cols = [subject_col, "condition", "timestamp", "timestamp_1", "timestamp_2", "timestamp_3", "blok", "pp", "c"]
+        non_feature_cols = [
+            subject_col,
+            "condition",
+            "timestamp",
+            "timestamp_1",
+            "timestamp_2",
+            "timestamp_3",
+            "blok",
+            "pp",
+            "c",
+        ]
         feature_cols = [col for col in df.columns if col not in non_feature_cols]
 
         print(f"\nFeature Columns ({len(feature_cols)}):")
-        print(f"  Numeric features: {len([col for col in feature_cols if df[col].dtype in ['int64', 'float64']])}")
-        print(f"  Non-numeric features: {len([col for col in feature_cols if df[col].dtype not in ['int64', 'float64']])}")
+        print(
+            f"  Numeric features: {len([col for col in feature_cols if df[col].dtype in ['int64', 'float64']])}"
+        )
+        print(
+            f"  Non-numeric features: {len([col for col in feature_cols if df[col].dtype not in ['int64', 'float64']])}"
+        )
 
         # Descriptive statistics for numeric features
         numeric_cols = df.select_dtypes(include=[np.number]).columns
@@ -604,28 +650,49 @@ class SWELLBaselineEvaluator:
             "subject_info": {
                 "subject_column": subject_col,
                 "unique_subjects": df[subject_col].nunique() if subject_col else None,
-                "samples_per_subject": df[subject_col].value_counts().to_dict() if subject_col else None,
+                "samples_per_subject": (
+                    df[subject_col].value_counts().to_dict() if subject_col else None
+                ),
             },
             "condition_analysis": {
-                "unique_conditions": df['condition'].nunique() if 'condition' in df.columns else None,
-                "condition_distribution": df['condition'].value_counts().to_dict() if 'condition' in df.columns else None,
-                "stress_distribution": stress_counts.to_dict() if 'condition' in df.columns else None,
+                "unique_conditions": (
+                    df["condition"].nunique() if "condition" in df.columns else None
+                ),
+                "condition_distribution": (
+                    df["condition"].value_counts().to_dict()
+                    if "condition" in df.columns
+                    else None
+                ),
+                "stress_distribution": (
+                    stress_counts.to_dict() if "condition" in df.columns else None
+                ),
             },
             "feature_info": {
                 "total_features": len(feature_cols),
-                "numeric_features": len([col for col in feature_cols if df[col].dtype in ['int64', 'float64']]),
+                "numeric_features": len(
+                    [
+                        col
+                        for col in feature_cols
+                        if df[col].dtype in ["int64", "float64"]
+                    ]
+                ),
                 "modalities": {mod: len(cols) for mod, cols in modalities.items()},
             },
-            "descriptive_stats": df[numeric_cols].describe().to_dict() if len(numeric_cols) > 0 else None,
+            "descriptive_stats": (
+                df[numeric_cols].describe().to_dict() if len(numeric_cols) > 0 else None
+            ),
         }
 
         import json
+
         with open("swell_dataset_analysis.json", "w") as f:
             json.dump(analysis_data, f, indent=2, default=str)
 
         print(f"\n💾 Dataset analysis saved to: swell_dataset_analysis.json")
 
-    def create_visualizations(self, df: pd.DataFrame, X: np.ndarray, y: np.ndarray, results: Dict) -> None:
+    def create_visualizations(
+        self, df: pd.DataFrame, X: np.ndarray, y: np.ndarray, results: Dict
+    ) -> None:
         """Create comprehensive visualizations for dataset analysis."""
         if not VISUALIZATIONS_AVAILABLE:
             return
@@ -668,24 +735,42 @@ class SWELLBaselineEvaluator:
         corr_matrix = df[numeric_cols].corr()
 
         plt.figure(figsize=(12, 10))
-        sns.heatmap(corr_matrix, annot=False, cmap='coolwarm', center=0,
-                   square=True, linewidths=0.5)
-        plt.title('SWELL Dataset - Correlation Matrix (Numeric Features)')
+        sns.heatmap(
+            corr_matrix,
+            annot=False,
+            cmap="coolwarm",
+            center=0,
+            square=True,
+            linewidths=0.5,
+        )
+        plt.title("SWELL Dataset - Correlation Matrix (Numeric Features)")
         plt.tight_layout()
-        plt.savefig(plots_dir / 'correlation_matrix.png', dpi=300, bbox_inches='tight')
+        plt.savefig(plots_dir / "correlation_matrix.png", dpi=300, bbox_inches="tight")
         plt.close()
 
         # Save correlation values
-        corr_matrix.to_csv(plots_dir / 'correlation_matrix.csv')
+        corr_matrix.to_csv(plots_dir / "correlation_matrix.csv")
 
     def plot_feature_distributions(self, df: pd.DataFrame, plots_dir: Path) -> None:
         """Plot distributions of key features."""
         # Select key features from different modalities
         key_features = {
-            'HRV': ['physiology_hr', 'physiology_rmssd', 'physiology_scl'],
-            'Computer': ['computer_snmouseact', 'computer_snkeystrokes', 'computer_snchars'],
-            'Facial': ['facial_svalence', 'facial_sau01_innerbrowraiser', 'facial_sau12_lipcornerpuller'],
-            'Posture': ['posture_leanangle(avg)', 'posture_leftshoulderangle(avg)', 'posture_rightshoulderangle(avg)']
+            "HRV": ["physiology_hr", "physiology_rmssd", "physiology_scl"],
+            "Computer": [
+                "computer_snmouseact",
+                "computer_snkeystrokes",
+                "computer_snchars",
+            ],
+            "Facial": [
+                "facial_svalence",
+                "facial_sau01_innerbrowraiser",
+                "facial_sau12_lipcornerpuller",
+            ],
+            "Posture": [
+                "posture_leanangle(avg)",
+                "posture_leftshoulderangle(avg)",
+                "posture_rightshoulderangle(avg)",
+            ],
         }
 
         for modality, features in key_features.items():
@@ -693,117 +778,170 @@ class SWELLBaselineEvaluator:
             if not available_features:
                 continue
 
-            fig, axes = plt.subplots(1, len(available_features), figsize=(5*len(available_features), 4))
+            fig, axes = plt.subplots(
+                1, len(available_features), figsize=(5 * len(available_features), 4)
+            )
 
             if len(available_features) == 1:
                 axes = [axes]
 
             for i, feature in enumerate(available_features):
                 # Convert to numeric if needed
-                data = pd.to_numeric(df[feature], errors='coerce').dropna()
+                data = pd.to_numeric(df[feature], errors="coerce").dropna()
 
                 if len(data) > 0:
-                    axes[i].hist(data, bins=50, alpha=0.7, edgecolor='black')
-                    axes[i].set_title(f'{feature}')
-                    axes[i].set_xlabel('Value')
-                    axes[i].set_ylabel('Frequency')
+                    axes[i].hist(data, bins=50, alpha=0.7, edgecolor="black")
+                    axes[i].set_title(f"{feature}")
+                    axes[i].set_xlabel("Value")
+                    axes[i].set_ylabel("Frequency")
                     axes[i].grid(True, alpha=0.3)
 
-            plt.suptitle(f'Distributions - {modality} Modality')
+            plt.suptitle(f"Distributions - {modality} Modality")
             plt.tight_layout()
-            plt.savefig(plots_dir / f'distributions_{modality.lower()}.png', dpi=300, bbox_inches='tight')
+            plt.savefig(
+                plots_dir / f"distributions_{modality.lower()}.png",
+                dpi=300,
+                bbox_inches="tight",
+            )
             plt.close()
 
     def plot_class_distribution(self, df: pd.DataFrame, plots_dir: Path) -> None:
         """Plot class distribution and condition analysis."""
-        if 'condition' not in df.columns:
+        if "condition" not in df.columns:
             return
 
         # Map conditions to stress levels
         condition_mapping = {
-            "N": "No Stress", "n": "No Stress", "T": "Stress", "t": "Stress",
-            "I": "Stress", "i": "Stress", "R": "Stress", "r": "Stress",
-            "normal": "No Stress", "baseline": "No Stress", "control": "No Stress",
-            "time pressure": "Stress", "interruption": "Stress", "interruptions": "Stress",
-            "combined": "Stress", "stress": "Stress",
+            "N": "No Stress",
+            "n": "No Stress",
+            "T": "Stress",
+            "t": "Stress",
+            "I": "Stress",
+            "i": "Stress",
+            "R": "Stress",
+            "r": "Stress",
+            "normal": "No Stress",
+            "baseline": "No Stress",
+            "control": "No Stress",
+            "time pressure": "Stress",
+            "interruption": "Stress",
+            "interruptions": "Stress",
+            "combined": "Stress",
+            "stress": "Stress",
         }
 
         df_plot = df.copy()
-        df_plot['stress_level'] = df_plot['condition'].astype(str).str.lower().str.strip().map(condition_mapping)
+        df_plot["stress_level"] = (
+            df_plot["condition"]
+            .astype(str)
+            .str.lower()
+            .str.strip()
+            .map(condition_mapping)
+        )
 
         # Condition distribution
         plt.figure(figsize=(10, 6))
-        condition_counts = df_plot['condition'].value_counts()
-        condition_counts.plot(kind='bar', color='skyblue', edgecolor='black')
-        plt.title('SWELL Dataset - Condition Distribution')
-        plt.xlabel('Condition')
-        plt.ylabel('Number of Samples')
+        condition_counts = df_plot["condition"].value_counts()
+        condition_counts.plot(kind="bar", color="skyblue", edgecolor="black")
+        plt.title("SWELL Dataset - Condition Distribution")
+        plt.xlabel("Condition")
+        plt.ylabel("Number of Samples")
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
-        plt.savefig(plots_dir / 'condition_distribution.png', dpi=300, bbox_inches='tight')
+        plt.savefig(
+            plots_dir / "condition_distribution.png", dpi=300, bbox_inches="tight"
+        )
         plt.close()
 
         # Stress level distribution
         plt.figure(figsize=(8, 6))
-        stress_counts = df_plot['stress_level'].value_counts()
-        stress_counts.plot(kind='pie', autopct='%1.1f%%', colors=['lightcoral', 'lightgreen'])
-        plt.title('SWELL Dataset - Stress Level Distribution')
-        plt.ylabel('')
+        stress_counts = df_plot["stress_level"].value_counts()
+        stress_counts.plot(
+            kind="pie", autopct="%1.1f%%", colors=["lightcoral", "lightgreen"]
+        )
+        plt.title("SWELL Dataset - Stress Level Distribution")
+        plt.ylabel("")
         plt.tight_layout()
-        plt.savefig(plots_dir / 'stress_distribution.png', dpi=300, bbox_inches='tight')
+        plt.savefig(plots_dir / "stress_distribution.png", dpi=300, bbox_inches="tight")
         plt.close()
 
     def plot_cross_correlations(self, df: pd.DataFrame, plots_dir: Path) -> None:
         """Plot cross-correlations between key features with lag k=3."""
         # Select key features for cross-correlation
-        key_features = ['physiology_hr', 'physiology_rmssd', 'physiology_scl',
-                       'computer_snmouseact', 'facial_svalence', 'posture_leanangle(avg)']
+        key_features = [
+            "physiology_hr",
+            "physiology_rmssd",
+            "physiology_scl",
+            "computer_snmouseact",
+            "facial_svalence",
+            "posture_leanangle(avg)",
+        ]
 
         available_features = [f for f in key_features if f in df.columns]
         if len(available_features) < 2:
             return
 
         # Convert to numeric and handle NaN
-        data_numeric = df[available_features].apply(pd.to_numeric, errors='coerce').fillna(method='ffill').fillna(0)
+        data_numeric = (
+            df[available_features]
+            .apply(pd.to_numeric, errors="coerce")
+            .fillna(method="ffill")
+            .fillna(0)
+        )
 
         # Calculate cross-correlations with lag k=3
         max_lag = 3
-        fig, axes = plt.subplots(len(available_features), len(available_features),
-                                figsize=(15, 15))
+        fig, axes = plt.subplots(
+            len(available_features), len(available_features), figsize=(15, 15)
+        )
 
         for i, feat1 in enumerate(available_features):
             for j, feat2 in enumerate(available_features):
                 if i == j:
                     # Auto-correlation
-                    corr = self.cross_correlation(data_numeric[feat1], data_numeric[feat1], max_lag)
-                    axes[i, j].plot(range(-max_lag, max_lag+1), corr, 'b-o', markersize=3)
-                    axes[i, j].axvline(x=0, color='r', linestyle='--', alpha=0.7)
-                    axes[i, j].set_title(f'{feat1[:15]}...', fontsize=8)
+                    corr = self.cross_correlation(
+                        data_numeric[feat1], data_numeric[feat1], max_lag
+                    )
+                    axes[i, j].plot(
+                        range(-max_lag, max_lag + 1), corr, "b-o", markersize=3
+                    )
+                    axes[i, j].axvline(x=0, color="r", linestyle="--", alpha=0.7)
+                    axes[i, j].set_title(f"{feat1[:15]}...", fontsize=8)
                 else:
                     # Cross-correlation
-                    corr = self.cross_correlation(data_numeric[feat1], data_numeric[feat2], max_lag)
-                    axes[i, j].plot(range(-max_lag, max_lag+1), corr, 'g-o', markersize=3)
-                    axes[i, j].axvline(x=0, color='r', linestyle='--', alpha=0.7)
+                    corr = self.cross_correlation(
+                        data_numeric[feat1], data_numeric[feat2], max_lag
+                    )
+                    axes[i, j].plot(
+                        range(-max_lag, max_lag + 1), corr, "g-o", markersize=3
+                    )
+                    axes[i, j].axvline(x=0, color="r", linestyle="--", alpha=0.7)
 
-                if i == len(available_features)-1:
-                    axes[i, j].set_xlabel('Lag')
+                if i == len(available_features) - 1:
+                    axes[i, j].set_xlabel("Lag")
                 if j == 0:
-                    axes[i, j].set_ylabel('Correlation')
+                    axes[i, j].set_ylabel("Correlation")
 
-        plt.suptitle('SWELL Dataset - Cross-Correlation Analysis (k=3)', fontsize=16)
+        plt.suptitle("SWELL Dataset - Cross-Correlation Analysis (k=3)", fontsize=16)
         plt.tight_layout()
-        plt.savefig(plots_dir / 'cross_correlations_k3.png', dpi=300, bbox_inches='tight')
+        plt.savefig(
+            plots_dir / "cross_correlations_k3.png", dpi=300, bbox_inches="tight"
+        )
         plt.close()
 
         # Save cross-correlation values
         corr_matrix = np.zeros((len(available_features), len(available_features)))
         for i, feat1 in enumerate(available_features):
             for j, feat2 in enumerate(available_features):
-                corr = self.cross_correlation(data_numeric[feat1], data_numeric[feat2], max_lag)
+                corr = self.cross_correlation(
+                    data_numeric[feat1], data_numeric[feat2], max_lag
+                )
                 corr_matrix[i, j] = corr[max_lag]  # Zero-lag correlation
 
-        corr_df = pd.DataFrame(corr_matrix, index=available_features, columns=available_features)
-        corr_df.to_csv(plots_dir / 'cross_correlations_k3.csv')
+        corr_df = pd.DataFrame(
+            corr_matrix, index=available_features, columns=available_features
+        )
+        corr_df.to_csv(plots_dir / "cross_correlations_k3.csv")
 
     def cross_correlation(self, x: pd.Series, y: pd.Series, max_lag: int) -> np.ndarray:
         """Calculate cross-correlation with lags from -max_lag to +max_lag."""
@@ -822,14 +960,26 @@ class SWELLBaselineEvaluator:
 
         return np.array(correlations)
 
-    def plot_feature_importance(self, df: pd.DataFrame, X: np.ndarray, y: np.ndarray, plots_dir: Path) -> None:
+    def plot_feature_importance(
+        self, df: pd.DataFrame, X: np.ndarray, y: np.ndarray, plots_dir: Path
+    ) -> None:
         """Plot feature importance using Random Forest."""
         try:
             # Get feature names
-            non_feature_cols = ['pp', 'condition', 'timestamp', 'timestamp_1', 'timestamp_2', 'timestamp_3',
-                              'blok', 'c']
+            non_feature_cols = [
+                "pp",
+                "condition",
+                "timestamp",
+                "timestamp_1",
+                "timestamp_2",
+                "timestamp_3",
+                "blok",
+                "c",
+            ]
             feature_cols = [col for col in df.columns if col not in non_feature_cols]
-            numeric_cols = df[feature_cols].select_dtypes(include=[np.number]).columns.tolist()
+            numeric_cols = (
+                df[feature_cols].select_dtypes(include=[np.number]).columns.tolist()
+            )
 
             if len(numeric_cols) > 50:  # Limit features for importance
                 # Select most variable features
@@ -846,21 +996,25 @@ class SWELLBaselineEvaluator:
             indices = np.argsort(importance)[::-1][:20]  # Top 20
 
             plt.figure(figsize=(12, 8))
-            plt.barh(range(len(indices)), importance[indices], align='center')
+            plt.barh(range(len(indices)), importance[indices], align="center")
             plt.yticks(range(len(indices)), [numeric_cols[i] for i in indices])
-            plt.xlabel('Importance')
-            plt.title('SWELL Dataset - Top 20 Feature Importance (Random Forest)')
+            plt.xlabel("Importance")
+            plt.title("SWELL Dataset - Top 20 Feature Importance (Random Forest)")
             plt.gca().invert_yaxis()
             plt.tight_layout()
-            plt.savefig(plots_dir / 'feature_importance.png', dpi=300, bbox_inches='tight')
+            plt.savefig(
+                plots_dir / "feature_importance.png", dpi=300, bbox_inches="tight"
+            )
             plt.close()
 
             # Save importance values
-            importance_df = pd.DataFrame({
-                'feature': [numeric_cols[i] for i in indices],
-                'importance': importance[indices]
-            })
-            importance_df.to_csv(plots_dir / 'feature_importance.csv', index=False)
+            importance_df = pd.DataFrame(
+                {
+                    "feature": [numeric_cols[i] for i in indices],
+                    "importance": importance[indices],
+                }
+            )
+            importance_df.to_csv(plots_dir / "feature_importance.csv", index=False)
 
         except Exception as e:
             print(f"⚠️  Could not create feature importance plot: {e}")
@@ -870,23 +1024,37 @@ class SWELLBaselineEvaluator:
         fig, axes = plt.subplots(2, 2, figsize=(12, 10))
         axes = axes.ravel()
 
-        model_names = ["Logistic Regression", "Random Forest", "SVM", "Multimodal Network"]
+        model_names = [
+            "Logistic Regression",
+            "Random Forest",
+            "SVM",
+            "Multimodal Network",
+        ]
 
         for i, model_name in enumerate(model_names):
             if model_name in results and "confusion_matrix" in results[model_name]:
                 cm = results[model_name]["confusion_matrix"]
-                disp = ConfusionMatrixDisplay(confusion_matrix=cm,
-                                            display_labels=["No Stress", "Stress"])
-                disp.plot(ax=axes[i], cmap='Blues', colorbar=False)
-                axes[i].set_title(f'{model_name}\nAccuracy: {results[model_name]["test"]["accuracy"]:.3f}')
+                disp = ConfusionMatrixDisplay(
+                    confusion_matrix=cm, display_labels=["No Stress", "Stress"]
+                )
+                disp.plot(ax=axes[i], cmap="Blues", colorbar=False)
+                axes[i].set_title(
+                    f'{model_name}\nAccuracy: {results[model_name]["test"]["accuracy"]:.3f}'
+                )
             else:
-                axes[i].text(0.5, 0.5, f'{model_name}\nNo CM available',
-                           ha='center', va='center', transform=axes[i].transAxes)
+                axes[i].text(
+                    0.5,
+                    0.5,
+                    f"{model_name}\nNo CM available",
+                    ha="center",
+                    va="center",
+                    transform=axes[i].transAxes,
+                )
                 axes[i].set_title(model_name)
 
-        plt.suptitle('SWELL Dataset - Confusion Matrices (Test Set)', fontsize=16)
+        plt.suptitle("SWELL Dataset - Confusion Matrices (Test Set)", fontsize=16)
         plt.tight_layout()
-        plt.savefig(plots_dir / 'confusion_matrices.png', dpi=300, bbox_inches='tight')
+        plt.savefig(plots_dir / "confusion_matrices.png", dpi=300, bbox_inches="tight")
         plt.close()
 
         # Save individual confusion matrices
@@ -894,13 +1062,20 @@ class SWELLBaselineEvaluator:
             if model_name in results and "confusion_matrix" in results[model_name]:
                 cm = results[model_name]["confusion_matrix"]
                 plt.figure(figsize=(6, 5))
-                disp = ConfusionMatrixDisplay(confusion_matrix=cm,
-                                            display_labels=["No Stress", "Stress"])
-                disp.plot(cmap='Blues')
-                plt.title(f'{model_name} - Confusion Matrix\nAccuracy: {results[model_name]["test"]["accuracy"]:.3f}')
+                disp = ConfusionMatrixDisplay(
+                    confusion_matrix=cm, display_labels=["No Stress", "Stress"]
+                )
+                disp.plot(cmap="Blues")
+                plt.title(
+                    f'{model_name} - Confusion Matrix\nAccuracy: {results[model_name]["test"]["accuracy"]:.3f}'
+                )
                 plt.tight_layout()
-                plt.savefig(plots_dir / f'confusion_matrix_{model_name.lower().replace(" ", "_")}.png',
-                           dpi=300, bbox_inches='tight')
+                plt.savefig(
+                    plots_dir
+                    / f'confusion_matrix_{model_name.lower().replace(" ", "_")}.png',
+                    dpi=300,
+                    bbox_inches="tight",
+                )
                 plt.close()
 
     # STRICT RULES ENFORCEMENT:
@@ -971,7 +1146,7 @@ class SWELLBaselineEvaluator:
         models = {
             "Logistic Regression": LogisticRegression(random_state=42, max_iter=1000),
             "Random Forest": RandomForestClassifier(random_state=42, n_estimators=100),
-            "SVM": SVC(random_state=42, kernel='linear', C=1.0, probability=False),
+            "SVM": SVC(random_state=42, kernel="linear", C=1.0, probability=False),
         }
 
         results = {}
@@ -981,10 +1156,13 @@ class SWELLBaselineEvaluator:
 
             # Cross-validation
             cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-            cv_scores = cross_val_score(model, X_train_val, y_train_val, cv=cv,
-                                      scoring='accuracy')
+            cv_scores = cross_val_score(
+                model, X_train_val, y_train_val, cv=cv, scoring="accuracy"
+            )
 
-            print(f"    Cross-Validation Accuracy: {cv_scores.mean():.3f} (+/- {cv_scores.std() * 2:.3f})")
+            print(
+                f"    Cross-Validation Accuracy: {cv_scores.mean():.3f} (+/- {cv_scores.std() * 2:.3f})"
+            )
 
             # Train final model on full training + validation data
             model.fit(X_train_val, y_train_val)
@@ -1247,14 +1425,21 @@ class SWELLBaselineEvaluator:
                 print(f"    {cm[1]}  (Stress)")
 
         # Best model
-        best_model = max(results.items(), key=lambda x: x[1]["test"]["accuracy"] if x[0] != "Multimodal Network" else 0)
+        best_model = max(
+            results.items(),
+            key=lambda x: (
+                x[1]["test"]["accuracy"] if x[0] != "Multimodal Network" else 0
+            ),
+        )
         print(f"\n🏆 Best Model: {best_model[0]}")
         print(f"   Test Accuracy: {best_model[1]['test']['accuracy']:.3f}")
 
         print(f"\n💡 Key Insights:")
         print(f"   - Cross-validation provides robust performance estimates")
         print(f"   - Confusion matrices show prediction patterns")
-        print(f"   - Multimodal approach leverages computer + facial + posture + physiology")
+        print(
+            f"   - Multimodal approach leverages computer + facial + posture + physiology"
+        )
         print(f"   - Subject-based splitting prevents data leakage")
         print(f"   - Results represent realistic federated learning scenarios")
         print(f"   - Can compare with 3-node federated learning performance")

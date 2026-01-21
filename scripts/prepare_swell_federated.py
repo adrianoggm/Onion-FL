@@ -33,24 +33,25 @@ def ensure_swell_features() -> bool:
         "C - Body posture features (Kinect C (position - per minute))- Sheet_1.csv",
         "D - Physiology features (HR_HRV_SCL - final).csv",
     ]
-    
+
     # Check if all files exist
     if all((data_dir / f).exists() for f in required_files):
         print("✅ SWELL feature files found")
         return True
-    
+
     # Check if RRI data exists
     rri_dir = data_dir / "data" / "raw" / "rri"
     if rri_dir.exists() and any(rri_dir.glob("p*.txt")):
         print("🔄 SWELL feature files missing, processing RRI data...")
         try:
             import subprocess
+
             result = subprocess.run(
                 [sys.executable, str(repo_root / "process_swell_rri.py")],
                 cwd=repo_root,
                 capture_output=True,
                 text=True,
-                timeout=300
+                timeout=300,
             )
             if result.returncode == 0:
                 print(result.stdout)
@@ -61,7 +62,7 @@ def ensure_swell_features() -> bool:
         except Exception as e:
             print(f"⚠️  Could not process RRI data: {e}")
             return False
-    
+
     return False
 
 

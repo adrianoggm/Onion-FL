@@ -363,9 +363,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
         val_acc = correct / count
 
         # Record Prometheus validation accuracy
-        CLIENT_LOCAL_ACCURACY.labels(
-            client_id=self.client_id, region=self.region
-        ).set(
+        CLIENT_LOCAL_ACCURACY.labels(client_id=self.client_id, region=self.region).set(
             val_acc
         )
 
@@ -431,19 +429,13 @@ class SwellFLClientMQTT(BaseMQTTComponent):
         )
 
         # Register Prometheus metrics
-        CLIENT_TRAIN_SAMPLES.labels(
-            client_id=self.client_id, region=self.region
-        ).set(
+        CLIENT_TRAIN_SAMPLES.labels(client_id=self.client_id, region=self.region).set(
             self.num_samples
         )
-        CLIENT_VAL_SAMPLES.labels(
-            client_id=self.client_id, region=self.region
-        ).set(
+        CLIENT_VAL_SAMPLES.labels(client_id=self.client_id, region=self.region).set(
             self.num_val_samples
         )
-        CLIENT_TEST_SAMPLES.labels(
-            client_id=self.client_id, region=self.region
-        ).set(
+        CLIENT_TEST_SAMPLES.labels(client_id=self.client_id, region=self.region).set(
             self.num_test_samples
         )
 

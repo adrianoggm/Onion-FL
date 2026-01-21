@@ -56,7 +56,8 @@ def check_swell_dataset() -> Tuple[bool, List[str]]:
         from flower_basic.datasets.swell import load_swell_dataset
 
         X_train, X_test, y_train, y_test, info = load_swell_dataset(
-            data_dir=str(swell_dir), modalities=["computer", "facial", "posture", "physiology"]
+            data_dir=str(swell_dir),
+            modalities=["computer", "facial", "posture", "physiology"],
         )
         n_subjects = len(np.unique(info["subject_ids"]))
         n_samples = len(X_train) + len(X_test)
@@ -142,9 +143,7 @@ def check_config_file(config_path: str | Path) -> Tuple[bool, List[str]]:
             messages.append(f"   ✅ Federation config found")
             if "manual_assignments" in fed:
                 num_nodes = len(fed["manual_assignments"])
-                total_subjects = sum(
-                    len(v) for v in fed["manual_assignments"].values()
-                )
+                total_subjects = sum(len(v) for v in fed["manual_assignments"].values())
                 messages.append(
                     f"      - {num_nodes} Fog nodes with {total_subjects} subjects total"
                 )
@@ -226,9 +225,7 @@ def main() -> None:
     # 6. Check Mosquitto availability
     print("\n[6/6] Checking Mosquitto availability...")
     try:
-        result = subprocess.run(
-            ["which", "mosquitto"], capture_output=True, timeout=5
-        )
+        result = subprocess.run(["which", "mosquitto"], capture_output=True, timeout=5)
         if result.returncode == 0:
             print(f"      ✅ Mosquitto command available")
             checks.append(True)
@@ -248,7 +245,9 @@ def main() -> None:
     if all(critical_checks):
         print("✅ All critical checks passed!")
         print("\nYou can now run:")
-        print(f"  python run_swell_10_executions.py --config configs/swell_federated_10runs.yaml")
+        print(
+            f"  python run_swell_10_executions.py --config configs/swell_federated_10runs.yaml"
+        )
         return 0
     else:
         print("❌ Some critical checks failed!")

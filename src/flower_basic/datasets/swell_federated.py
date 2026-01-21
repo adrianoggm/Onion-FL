@@ -279,7 +279,8 @@ def _materialize_per_subject_strategy(
         # Collect indices of train samples from all subjects
         train_indices = []
         for subj in uniq_subjects:
-            subj_mask = subjects_all == subj
+            subj_str = str(subj)
+            subj_mask = subjects_all == subj_str
             subj_indices = np.where(subj_mask)[0]
             n_subj = len(subj_indices)
             # Same split logic as below, but just for indices
@@ -481,9 +482,7 @@ def _materialize_global_strategy(
         test_subjects = sorted(set(test_subjects))
         missing = [s for s in test_subjects if s not in uniq_subjects]
         if missing:
-            raise SWELLDatasetError(
-                f"Test subjects not found in dataset: {missing}"
-            )
+            raise SWELLDatasetError(f"Test subjects not found in dataset: {missing}")
         # Ensure test subjects are assigned to some node
         assigned = set()
         for subs in node_map.values():

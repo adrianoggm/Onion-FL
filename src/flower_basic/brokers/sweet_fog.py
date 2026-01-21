@@ -234,10 +234,14 @@ def on_update(client, userdata, msg):
             # Record metrics (OTEL)
             if COUNTER_UPDATES_RECEIVED:
                 record_metric(
-                    COUNTER_UPDATES_RECEIVED, 1, {"region": region, "client_id": client_id}
+                    COUNTER_UPDATES_RECEIVED,
+                    1,
+                    {"region": region, "client_id": client_id},
                 )
             if GAUGE_BUFFER_SIZE:
-                record_metric(GAUGE_BUFFER_SIZE, len(buffers[region]), {"region": region})
+                record_metric(
+                    GAUGE_BUFFER_SIZE, len(buffers[region]), {"region": region}
+                )
             if GAUGE_CLIENT_CONTRIBUTION:
                 record_metric(
                     GAUGE_CLIENT_CONTRIBUTION,
@@ -375,7 +379,9 @@ def main():
     metrics_port = get_metrics_port_from_env(default=8001, component="SWEET_BROKER")
     start_metrics_server(port=metrics_port)
 
-    parser = argparse.ArgumentParser(description="SWEET Fog broker (regional aggregator)")
+    parser = argparse.ArgumentParser(
+        description="SWEET Fog broker (regional aggregator)"
+    )
     parser.add_argument(
         "--k",
         type=int,
@@ -436,7 +442,9 @@ def main():
     mqttc.on_connect = lambda c, u, f, rc, p=None: c.subscribe(UPDATE_TOPIC)
     mqttc.on_message = on_update
     mqttc.connect(MQTT_BROKER, MQTT_PORT)
-    print(f"[SWEET_FOG_BROKER] Broker fog iniciado. Escuchando actualizaciones en {UPDATE_TOPIC}")
+    print(
+        f"[SWEET_FOG_BROKER] Broker fog iniciado. Escuchando actualizaciones en {UPDATE_TOPIC}"
+    )
     print(
         f"[SWEET_FOG_BROKER] Agregando K={K} actualizaciones por región antes de enviar al servidor central"
     )

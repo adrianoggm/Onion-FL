@@ -40,9 +40,9 @@ def main():
     print("=" * 80)
     print("SWEET Selection2 Federated Splits Preparation (Transfer Learning)")
     print("=" * 80)
-    
+
     config_path = "configs/sweet_federated_transfer.yaml"
-    
+
     print(f"\n[INFO] Reading configuration from: {config_path}")
     print("[INFO] This will:")
     print("  1. Load SWEET selection2 (140 subjects)")
@@ -50,26 +50,31 @@ def main():
     print("  3. Distribute subjects across 3 fog nodes")
     print("  4. Materialize NPZ files for federated training")
     print("  5. Copy pre-trained model and scaler from baseline")
-    
+
     try:
         manifest = plan_and_materialize_sweet_federated(config_path)
-        
+
         print("\n" + "=" * 80)
         print("✅ SWEET Selection2 Federated Splits Ready!")
         print(f"   Output: {manifest['output_dir']}")
         print(f"   Nodes: {len(manifest['nodes'])}")
         print(f"   Ready for federated fine-tuning")
         print("=" * 80)
-        
+
     except FileNotFoundError as e:
         print(f"\n❌ Error: {e}")
         print("\nPlease ensure:")
-        print("  1. selection2 data extracted: python scripts/extract_sweet_selection2.py")
-        print("  2. Baseline model trained: python scripts/train_sweet_baseline_selection1.py")
+        print(
+            "  1. selection2 data extracted: python scripts/extract_sweet_selection2.py"
+        )
+        print(
+            "  2. Baseline model trained: python scripts/train_sweet_baseline_selection1.py"
+        )
         sys.exit(1)
     except Exception as e:
         print(f"\n❌ Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 

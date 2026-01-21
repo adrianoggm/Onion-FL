@@ -9,9 +9,9 @@ import torch.nn as nn
 
 class SweetMLP(nn.Module):
     """Simple MLP for SWEET tabular features (binary/ordinal stress classification).
-    
+
     Compatible with the same infrastructure as SwellMLP.
-    
+
     Args:
         input_dim: Number of input features
         hidden_dims: Hidden layer sizes
@@ -19,10 +19,7 @@ class SweetMLP(nn.Module):
     """
 
     def __init__(
-        self, 
-        input_dim: int, 
-        hidden_dims: list[int] | None = None, 
-        num_classes: int = 2
+        self, input_dim: int, hidden_dims: list[int] | None = None, num_classes: int = 2
     ) -> None:
         super().__init__()
         if hidden_dims is None:

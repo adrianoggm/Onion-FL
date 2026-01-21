@@ -14,13 +14,13 @@ print(f"Found {len(user_zips)} user zip files in selection2")
 for user_zip in user_zips:
     user_name = user_zip.stem  # e.g., "user0085"
     user_dir = users_output_dir / user_name
-    
+
     if user_dir.exists() and list(user_dir.glob("*.csv")):
         print(f"✓ {user_name} already extracted")
         continue
-    
+
     print(f"Extracting {user_name}...", end=" ")
-    with zipfile.ZipFile(user_zip, 'r') as zip_ref:
+    with zipfile.ZipFile(user_zip, "r") as zip_ref:
         zip_ref.extractall(user_dir)
     print("done")
 

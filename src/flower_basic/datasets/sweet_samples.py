@@ -80,7 +80,7 @@ def load_sweet_sample_dataset(
 
     Args:
         data_dir: Base directory containing per-subject folders.
-        label_strategy: 
+        label_strategy:
             - ``"binary"``: maps MAXIMUM_STRESS >= threshold to 1, else 0
             - ``"ordinal"``: uses raw 1-5 stress values
             - ``"ordinal_3class"``: maps to 3 classes (1->0 low, 2->1 medium, 3/4/5->2 high)
@@ -279,8 +279,7 @@ def _load_single_subject(
         # Map to 3 classes: 1->0 (low), 2->1 (medium), 3/4/5->2 (high)
         stress_values = merged["MAXIMUM_STRESS"].round().astype(np.int64)
         merged["label"] = np.where(
-            stress_values == 1, 0,
-            np.where(stress_values == 2, 1, 2)
+            stress_values == 1, 0, np.where(stress_values == 2, 1, 2)
         )
     else:
         raise SWEETSampleLoaderError(

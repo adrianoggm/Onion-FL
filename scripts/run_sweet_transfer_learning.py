@@ -32,13 +32,13 @@ def run_command(cmd: list[str], description: str) -> bool:
     print(description)
     print(f"{'=' * 80}")
     print(f"Command: {' '.join(cmd)}\n")
-    
+
     result = subprocess.run(cmd)
-    
+
     if result.returncode != 0:
         print(f"\n❌ Failed: {description}")
         return False
-    
+
     print(f"\n✅ Success: {description}")
     return True
 
@@ -47,17 +47,17 @@ def check_prerequisites() -> bool:
     """Check if required data directories exist."""
     selection1_dir = Path("data/SWEET/selection1/users")
     selection2_dir = Path("data/SWEET/selection2/users")
-    
+
     if not selection1_dir.exists():
         print(f"❌ Missing selection1 data: {selection1_dir}")
         print("   Please extract selection1 first")
         return False
-    
+
     if not selection2_dir.exists():
         print(f"❌ Missing selection2 data: {selection2_dir}")
         print("   Run: python scripts/extract_sweet_selection2.py")
         return False
-    
+
     print("✅ Data directories found")
     return True
 
@@ -103,30 +103,30 @@ def main():
         action="store_true",
         help="Enable Prometheus metrics",
     )
-    
+
     args = parser.parse_args()
-    
+
     print("\n" + "=" * 80)
     print("SWEET Transfer Learning Workflow")
     print("=" * 80)
     print("\nPhase 1: Pre-training on selection1 (102 subjects)")
     print("Phase 2: Federated fine-tuning on selection2 (140 subjects)")
     print("=" * 80)
-    
+
     # Check prerequisites
     if not check_prerequisites():
         sys.exit(1)
-    
+
     # Phase 1: Train baseline model on selection1
     if not args.skip_baseline:
         baseline_model_path = Path("baseline_models/sweet/xgboost_tuned_model.json")
         if baseline_model_path.exists():
             print(f"\n⚠️  Baseline model already exists: {baseline_model_path}")
             response = input("Retrain? [y/N]: ").strip().lower()
-            if response != 'y':
+            if response != "y":
                 print("Skipping baseline training")
                 args.skip_baseline = True
-        
+
         if not args.skip_baseline:
             cmd = [sys.executable, "scripts/train_sweet_baseline_selection1.py"]
             if not run_command(cmd, "Phase 1: Train Baseline Model (selection1)"):
@@ -138,17 +138,17 @@ def main():
             print(f"❌ Baseline model not found: {baseline_model_path}")
             print("   Remove --skip-baseline to train it")
             sys.exit(1)
-    
+
     # Phase 2: Prepare federated splits from selection2
     if not args.skip_prep:
         run_dir = Path("federated_runs/sweet/transfer_selection2")
         if run_dir.exists():
             print(f"\n⚠️  Federated run directory already exists: {run_dir}")
             response = input("Recreate splits? [y/N]: ").strip().lower()
-            if response != 'y':
+            if response != "y":
                 print("Skipping data preparation")
                 args.skip_prep = True
-        
+
         if not args.skip_prep:
             cmd = [sys.executable, "scripts/prepare_sweet_federated_transfer.py"]
             if not run_command(cmd, "Phase 2: Prepare Federated Splits (selection2)"):
@@ -160,7 +160,7 @@ def main():
             print(f"❌ Manifest not found: {manifest_path}")
             print("   Remove --skip-prep to prepare splits")
             sys.exit(1)
-    
+
     # Phase 3: Run federated fine-tuning
     print("\n" + "=" * 80)
     print("Phase 3: Federated Fine-Tuning (selection2)")
@@ -169,17 +169,17 @@ def main():
     print(f"MQTT broker: {args.mqtt_broker}:{args.mqtt_port}")
     print(f"Telemetry: {'enabled' if args.enable_telemetry else 'disabled'}")
     print(f"Prometheus: {'enabled' if args.enable_prometheus else 'disabled'}")
-    
+
     print("\n⚠️  Important: Make sure MQTT broker is running!")
     print("   Example: mosquitto -c mosquitto.conf")
     print("\nStarting in 5 seconds... (Ctrl+C to cancel)")
-    
+
     try:
         time.sleep(5)
     except KeyboardInterrupt:
         print("\n\nCancelled by user")
         sys.exit(0)
-    
+
     # Run federated demo
     cmd = [
         sys.executable,
@@ -193,15 +193,15 @@ def main():
         "--mqtt-port",
         str(args.mqtt_port),
     ]
-    
+
     if args.enable_telemetry:
         cmd.append("--enable-telemetry")
     if args.enable_prometheus:
         cmd.append("--enable-prometheus")
-    
+
     if not run_command(cmd, "Phase 3: Federated Fine-Tuning"):
         sys.exit(1)
-    
+
     # Success summary
     print("\n" + "=" * 80)
     print("✅ SWEET Transfer Learning Complete!")

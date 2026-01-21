@@ -128,7 +128,7 @@ class SweetFLClientMQTT(BaseMQTTComponent):
         topic_global: str = TOPIC_GLOBAL_MODEL,
     ):
         """SWEET FL client using MQTT.
-        
+
         Args:
             node_dir: Path to fog node directory (e.g., federated_runs/sweet/auto_5nodes/fog_0)
             region: Node identifier (e.g., 'fog_0')
@@ -147,7 +147,9 @@ class SweetFLClientMQTT(BaseMQTTComponent):
         self.node_dir = Path(node_dir)
         self.region = region
         self.subject_id = subject_id
-        self.tag = f"[CLIENT {self.region}{'_' + self.subject_id if self.subject_id else ''}]"
+        self.tag = (
+            f"[CLIENT {self.region}{'_' + self.subject_id if self.subject_id else ''}]"
+        )
         self.topic_updates = topic_updates
         self.topic_global = topic_global
         self.local_epochs = local_epochs
@@ -163,9 +165,7 @@ class SweetFLClientMQTT(BaseMQTTComponent):
             train_file = self.node_dir / "train.npz"
             val_file = self.node_dir / "val.npz"
             test_file = self.node_dir / "test.npz"
-        
-        from flower_basic.datasets.sweet_federated import load_node_split
-        
+
         X_train, y_train, _ = load_node_split(train_file)
         if X_train.size == 0:
             raise RuntimeError(
@@ -176,19 +176,22 @@ class SweetFLClientMQTT(BaseMQTTComponent):
         self.model = SweetMLP(
             input_dim=input_dim, hidden_dims=hidden_dims, num_classes=num_classes
         )
-        
+
         # Load pre-trained model if available (transfer learning)
         pretrained_path = self.node_dir.parent / "pretrained_model.json"
         if pretrained_path.exists():
             try:
                 import json
-                with open(pretrained_path, 'r') as f:
+
+                with open(pretrained_path, "r") as f:
                     pretrained_data = json.load(f)
-                
+
                 # Convert XGBoost weights to PyTorch (if needed)
                 # For now, just log that pre-trained model exists
                 print(f"{self.tag} Pre-trained model found at {pretrained_path}")
-                print(f"{self.tag} Note: Transfer learning from XGBoost to PyTorch requires weight conversion")
+                print(
+                    f"{self.tag} Note: Transfer learning from XGBoost to PyTorch requires weight conversion"
+                )
                 # TODO: Implement XGBoost → PyTorch weight transfer
             except Exception as e:
                 print(f"{self.tag} Warning: Could not load pre-trained model: {e}")
@@ -291,7 +294,7 @@ class SweetFLClientMQTT(BaseMQTTComponent):
                 total_loss = 0.0
                 n = 0
                 batch_count = 0
-                
+
                 # Multiple local epochs
                 for epoch in range(self.local_epochs):
                     epoch_loss = 0.0
@@ -305,7 +308,7 @@ class SweetFLClientMQTT(BaseMQTTComponent):
                         epoch_loss += loss.item() * X.size(0)
                         epoch_samples += X.size(0)
                         batch_count += 1
-                    
+
                     total_loss += epoch_loss
                     n += epoch_samples
 
@@ -316,9 +319,13 @@ class SweetFLClientMQTT(BaseMQTTComponent):
             if COUNTER_TRAINING_ROUNDS:
                 record_metric(COUNTER_TRAINING_ROUNDS, 1, {"region": self.region})
             if COUNTER_BATCHES_PROCESSED:
-                record_metric(COUNTER_BATCHES_PROCESSED, batch_count, {"region": self.region})
+                record_metric(
+                    COUNTER_BATCHES_PROCESSED, batch_count, {"region": self.region}
+                )
             if HIST_TRAINING_DURATION:
-                HIST_TRAINING_DURATION.record(training_duration, {"region": self.region})
+                HIST_TRAINING_DURATION.record(
+                    training_duration, {"region": self.region}
+                )
             if HIST_TRAINING_LOSS:
                 HIST_TRAINING_LOSS.record(avg_loss, {"region": self.region})
             if GAUGE_TRAIN_SAMPLES:
@@ -330,7 +337,9 @@ class SweetFLClientMQTT(BaseMQTTComponent):
             CLIENT_TRAINING_DURATION.labels(
                 client_id=client_id, region=self.region
             ).observe(training_duration)
-            CLIENT_LOCAL_LOSS.labels(client_id=client_id, region=self.region).set(avg_loss)
+            CLIENT_LOCAL_LOSS.labels(client_id=client_id, region=self.region).set(
+                avg_loss
+            )
 
         print(
             f"{self.tag} Train loss: {avg_loss:.4f} | samples: {n} | batches: {batch_count} | epochs: {self.local_epochs}"
@@ -364,7 +373,9 @@ class SweetFLClientMQTT(BaseMQTTComponent):
 
         # Prometheus validation accuracy
         client_id = f"{self.region}_client_{os.getpid() % 10000}"
-        CLIENT_LOCAL_ACCURACY.labels(client_id=client_id, region=self.region).set(val_acc)
+        CLIENT_LOCAL_ACCURACY.labels(client_id=client_id, region=self.region).set(
+            val_acc
+        )
 
         print(f"{self.tag} Val loss: {val_loss:.4f} | Val acc: {val_acc:.3f}")
         return {"val_loss": val_loss, "val_acc": val_acc}
@@ -376,7 +387,9 @@ class SweetFLClientMQTT(BaseMQTTComponent):
         ) as (span, trace_ctx):
             with self._lock:
                 state = self.model.state_dict()
-                weights = {k: v.detach().cpu().numpy().tolist() for k, v in state.items()}
+                weights = {
+                    k: v.detach().cpu().numpy().tolist() for k, v in state.items()
+                }
 
             client_id = f"{self.region}_client_{os.getpid() % 10000}"
 
@@ -420,11 +433,17 @@ class SweetFLClientMQTT(BaseMQTTComponent):
 
         # Register dataset metrics
         if GAUGE_TRAIN_SAMPLES:
-            record_metric(GAUGE_TRAIN_SAMPLES, self.num_samples, {"region": self.region})
+            record_metric(
+                GAUGE_TRAIN_SAMPLES, self.num_samples, {"region": self.region}
+            )
         if GAUGE_VAL_SAMPLES:
-            record_metric(GAUGE_VAL_SAMPLES, self.num_val_samples, {"region": self.region})
+            record_metric(
+                GAUGE_VAL_SAMPLES, self.num_val_samples, {"region": self.region}
+            )
         if GAUGE_TEST_SAMPLES:
-            record_metric(GAUGE_TEST_SAMPLES, self.num_test_samples, {"region": self.region})
+            record_metric(
+                GAUGE_TEST_SAMPLES, self.num_test_samples, {"region": self.region}
+            )
 
         # Prometheus metrics
         CLIENT_TRAIN_SAMPLES.labels(client_id=client_id, region=self.region).set(
@@ -444,7 +463,9 @@ class SweetFLClientMQTT(BaseMQTTComponent):
             if self.wait_for_global(timeout_s=60.0):
                 with self._lock:
                     if self._pending_global_state:
-                        self.model.load_state_dict(self._pending_global_state, strict=False)
+                        self.model.load_state_dict(
+                            self._pending_global_state, strict=False
+                        )
                         self._pending_global_state = None
 
             # Train

@@ -78,7 +78,9 @@ class FogClientSweet(BaseMQTTComponent, fl.client.NumPyClient):
         partial_topic: str = PARTIAL_TOPIC,
     ):
         self.server_address = server_address
-        self.model = SweetMLP(input_dim=input_dim, hidden_dims=hidden_dims, num_classes=num_classes)
+        self.model = SweetMLP(
+            input_dim=input_dim, hidden_dims=hidden_dims, num_classes=num_classes
+        )
         self.param_names = list(self.model.state_dict().keys())
         self.partial_weights = None
         self.partial_trace_context = None  # Store trace context from partial
@@ -179,7 +181,11 @@ def main():
         "--input-dim", type=int, required=True, help="Feature dimension (from manifest)"
     )
     ap.add_argument(
-        "--hidden-dims", type=int, nargs="+", default=[64, 32], help="Hidden layer dimensions"
+        "--hidden-dims",
+        type=int,
+        nargs="+",
+        default=[64, 32],
+        help="Hidden layer dimensions",
     )
     ap.add_argument(
         "--num-classes", type=int, default=3, help="Number of output classes"

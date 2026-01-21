@@ -43,17 +43,17 @@ def load_config(config_path: str) -> dict[str, Any]:
 
 def dispatch_config(config: dict[str, Any]) -> Path:
     """Generate federated splits from configuration.
-    
+
     Returns:
         Path to generated manifest.json
     """
     print("\n" + "=" * 80)
     print("STEP 1: Dispatch Configuration & Generate Federated Splits")
     print("=" * 80)
-    
+
     arch = config["federated_architecture"]
     dataset_cfg = arch["dataset"]
-    
+
     # Create temporary YAML config for sweet_federated module
     fed_config = {
         "dataset": {
@@ -65,49 +65,60 @@ def dispatch_config(config: dict[str, Any]) -> Path:
         "split": dataset_cfg["split"],
         "federation": dataset_cfg["federation"],
     }
-    
+
     # Add pretrained model if configured
     if arch.get("pretrained", {}).get("enabled"):
         fed_config["transfer_learning"] = {
             "pretrained_model_path": arch["pretrained"].get("model_path"),
             "pretrained_scaler_path": arch["pretrained"].get("scaler_path"),
-            "freeze_initial_weights": arch["pretrained"].get("freeze_initial_weights", False),
-            "fine_tune_lr_multiplier": arch["pretrained"].get("fine_tune_lr_multiplier", 0.1),
+            "freeze_initial_weights": arch["pretrained"].get(
+                "freeze_initial_weights", False
+            ),
+            "fine_tune_lr_multiplier": arch["pretrained"].get(
+                "fine_tune_lr_multiplier", 0.1
+            ),
         }
-    
+
     # Write temporary config
     temp_config_path = Path("configs/.temp_sweet_federated.yaml")
     with open(temp_config_path, "w") as f:
         yaml.dump(fed_config, f, default_flow_style=False)
-    
+
     print(f"[INFO] Temporary config written to: {temp_config_path}")
-    print(f"[INFO] Generating federated splits for {dataset_cfg['federation']['num_fog_nodes']} fog nodes...")
-    
+    print(
+        f"[INFO] Generating federated splits for {dataset_cfg['federation']['num_fog_nodes']} fog nodes..."
+    )
+
     # Import and run materialization
-    from flower_basic.datasets.sweet_federated import plan_and_materialize_sweet_federated
-    
+    from flower_basic.datasets.sweet_federated import (
+        plan_and_materialize_sweet_federated,
+    )
+
     try:
         manifest = plan_and_materialize_sweet_federated(str(temp_config_path))
         manifest_path = Path(manifest["output_dir"]) / "manifest.json"
-        
+
         print(f"\n[SUCCESS] Manifest generated: {manifest_path}")
         print(f"  Nodes: {len(manifest['nodes'])}")
         print(f"  Features: {manifest['meta']['n_features']}")
         print(f"  Total subjects: {manifest['meta']['n_subjects']}")
-        print(f"  Total clients: {sum(len(clients) for clients in manifest['clients'].values())}")
-        
-        for node_id in manifest['nodes'].keys():
-            num_clients = len(manifest['clients'][node_id])
+        print(
+            f"  Total clients: {sum(len(clients) for clients in manifest['clients'].values())}"
+        )
+
+        for node_id in manifest["nodes"].keys():
+            num_clients = len(manifest["clients"][node_id])
             print(f"    {node_id}: {num_clients} clients")
-        
+
         # Clean up temp config
         temp_config_path.unlink()
-        
+
         return manifest_path
-        
+
     except Exception as e:
         print(f"\n[ERROR] Failed to generate federated splits: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
@@ -118,35 +129,35 @@ def launch_federated_system(
     mqtt_check: bool = True,
 ) -> list[subprocess.Popen]:
     """Launch SWEET federated system with 3-layer hierarchical architecture.
-    
+
     Architecture (following SWELL pattern):
         1. Central Server (Flower) - Aggregates from fog bridges
         2. Fog Brokers (5) - Regional aggregators, one per fog node
         3. Fog Bridges (5) - Flower clients connecting brokers to server
         4. SWEET Clients (5) - Local training, publish to fog brokers
-    
+
     Returns:
         List of running processes.
     """
     print("\n" + "=" * 80)
     print("STEP 2: Launch Federated System (3-Layer Architecture)")
     print("=" * 80)
-    
+
     arch = config["federated_architecture"]
     orchestrator = arch["orchestrator"]
     mqtt_cfg = orchestrator["mqtt"]
     model_cfg = arch["model"]
-    
+
     # Load manifest
     with open(manifest_path, "r") as f:
         manifest = json.load(f)
-    
+
     run_dir = Path(manifest["output_dir"])
     input_dim = manifest["meta"]["n_features"]
     num_classes = model_cfg.get("num_classes", 3)
     hidden_dims = model_cfg.get("hidden_dims", [64, 32])
     rounds = orchestrator.get("rounds", 10)
-    
+
     # Check MQTT broker
     if mqtt_check:
         print(f"\n[CHECK] MQTT Broker: {mqtt_cfg['broker']}:{mqtt_cfg['port']}")
@@ -154,20 +165,20 @@ def launch_federated_system(
         print("  Start mosquitto with:")
         print("    docker run -d -p 1883:1883 eclipse-mosquitto")
         print("\n  Waiting 5 seconds before starting... (Ctrl+C to cancel)")
-        
+
         try:
             time.sleep(5)
         except KeyboardInterrupt:
             print("\n\n[CANCELLED] Startup cancelled by user")
             sys.exit(0)
-    
+
     procs = []
-    
+
     # ========================================================================
     # LAYER 1: Central Server (Flower)
     # ========================================================================
     print(f"\n[LAUNCH] Layer 1: Starting SWEET Central Server...")
-    
+
     server_cmd = [
         sys.executable,
         "-m",
@@ -189,30 +200,30 @@ def launch_federated_system(
         "--server-addr",
         "0.0.0.0:8080",
     ]
-    
+
     # Add hidden dims
     server_cmd.extend(["--hidden-dims"] + [str(d) for d in hidden_dims])
-    
+
     print(f"  Server address: 0.0.0.0:8080")
     print(f"  Min fog bridges: {len(manifest['nodes'])}")
     server_proc = subprocess.Popen(server_cmd)
     procs.append(server_proc)
     time.sleep(3)
-    
+
     # ========================================================================
     # LAYER 2A: Fog Brokers (Regional Aggregators)
     # ========================================================================
     print(f"\n[LAUNCH] Layer 2A: Starting {len(manifest['nodes'])} Fog Brokers...")
-    
+
     # Calculate K per fog node based on number of clients (subjects) in each node
     k_map = {}
     total_clients = 0
     for node_id, clients_dict in manifest["clients"].items():
         k_map[node_id] = len(clients_dict)
         total_clients += len(clients_dict)
-    
+
     k_map_json = json.dumps(k_map)
-    
+
     broker_cmd = [
         sys.executable,
         "-m",
@@ -226,19 +237,19 @@ def launch_federated_system(
         "--k-map",
         k_map_json,  # Per-region K values
     ]
-    
+
     print(f"  Broker K map: {k_map}")
     print(f"  Total clients: {total_clients}")
     print(f"  Topics: fl/updates (in), fl/partial (out)")
     broker_proc = subprocess.Popen(broker_cmd)
     procs.append(broker_proc)
     time.sleep(2)
-    
+
     # ========================================================================
     # LAYER 2B: Fog Bridges (Flower Clients → Server)
     # ========================================================================
     print(f"\n[LAUNCH] Layer 2B: Starting {len(manifest['nodes'])} Fog Bridges...")
-    
+
     for node_id in manifest["nodes"].keys():
         bridge_cmd = [
             sys.executable,
@@ -257,25 +268,27 @@ def launch_federated_system(
             "--mqtt-port",
             str(mqtt_cfg["port"]),
         ]
-        
+
         # Add hidden dims
         bridge_cmd.extend(["--hidden-dims"] + [str(d) for d in hidden_dims])
-        
+
         print(f"  Starting fog bridge for {node_id}...")
         bridge_proc = subprocess.Popen(bridge_cmd)
         procs.append(bridge_proc)
         time.sleep(0.5)
-    
+
     time.sleep(2)  # Give bridges time to connect to server
-    
+
     # ========================================================================
     # LAYER 3: SWEET Clients (Local Training - Per Subject)
     # ========================================================================
-    print(f"\n[LAUNCH] Layer 3: Starting {total_clients} SWEET Clients (per subject)...")
-    
+    print(
+        f"\n[LAUNCH] Layer 3: Starting {total_clients} SWEET Clients (per subject)..."
+    )
+
     for node_id, clients_dict in manifest["clients"].items():
         node_dir = run_dir / node_id
-        
+
         for client_id, subject_id in clients_dict.items():
             client_cmd = [
                 sys.executable,
@@ -304,23 +317,25 @@ def launch_federated_system(
                 "--mqtt-port",
                 str(mqtt_cfg["port"]),
             ]
-            
+
             # Add hidden dims
             client_cmd.extend(["--hidden-dims"] + [str(d) for d in hidden_dims])
-            
+
             print(f"  Starting client {client_id} (subject {subject_id})...")
             client_proc = subprocess.Popen(client_cmd)
             procs.append(client_proc)
             time.sleep(0.2)  # Reduced delay for many clients
-    
+
     print(f"\n[RUNNING] Federated system running with {len(procs)} processes:")
     print(f"  - 1 Central Server")
     print(f"  - 1 Fog Broker (aggregates {len(manifest['nodes'])} regions)")
     print(f"  - {len(manifest['nodes'])} Fog Bridges")
     print(f"  - {total_clients} SWEET Clients (per subject)")
-    print(f"\n  Architecture: {total_clients} Clients → Fog Broker → {len(manifest['nodes'])} Bridges → Central Server")
+    print(
+        f"\n  Architecture: {total_clients} Clients → Fog Broker → {len(manifest['nodes'])} Bridges → Central Server"
+    )
     print("  Press Ctrl+C to stop all processes")
-    
+
     return procs
 
 
@@ -352,24 +367,24 @@ def main():
         action="store_true",
         help="Skip MQTT broker check",
     )
-    
+
     args = parser.parse_args()
-    
+
     print("=" * 80)
     print("SWEET Federated Learning - Architecture-based Execution")
     print("=" * 80)
-    
+
     # Load configuration
     config = load_config(args.config)
     print(f"\n[CONFIG] Loaded: {args.config}")
-    
+
     arch = config["federated_architecture"]
     print(f"  Workflow: {arch['workflow']}")
     print(f"  Fog nodes: {arch['dataset']['federation']['num_fog_nodes']}")
     print(f"  Rounds: {arch['orchestrator']['rounds']}")
-    
+
     manifest_path = None
-    
+
     # Step 1: Dispatch configuration (generate splits)
     if args.dispatch_config:
         manifest_path = dispatch_config(config)
@@ -386,26 +401,30 @@ def main():
         run_name = fed_cfg.get("run_name", "auto_5nodes")
         output_dir = fed_cfg.get("output_dir", "federated_runs/sweet")
         manifest_path = Path(output_dir) / run_name / "manifest.json"
-        
+
         if not manifest_path.exists():
             print(f"\n[ERROR] No manifest found at {manifest_path}")
-            print("  Use --dispatch-config to generate splits or --manifest to specify path")
+            print(
+                "  Use --dispatch-config to generate splits or --manifest to specify path"
+            )
             sys.exit(1)
-        
+
         print(f"\n[INFO] Using manifest: {manifest_path}")
-    
+
     # Step 2: Launch federated system
     if args.launch:
         if manifest_path is None:
-            print("\n[ERROR] Cannot launch without manifest. Use --dispatch-config or --manifest")
+            print(
+                "\n[ERROR] Cannot launch without manifest. Use --dispatch-config or --manifest"
+            )
             sys.exit(1)
-        
+
         procs = launch_federated_system(
             config,
             manifest_path,
             mqtt_check=not args.skip_mqtt_check,
         )
-        
+
         # Wait for processes
         try:
             while True:
@@ -413,7 +432,9 @@ def main():
                 # Check if any process died
                 for p in procs:
                     if p.poll() is not None:
-                        print(f"\n[WARNING] Process {p.pid} exited with code {p.returncode}")
+                        print(
+                            f"\n[WARNING] Process {p.pid} exited with code {p.returncode}"
+                        )
         except KeyboardInterrupt:
             print("\n\n[SHUTDOWN] Stopping all processes...")
             for p in procs:
@@ -424,7 +445,7 @@ def main():
                 except Exception:
                     pass
             print("[SHUTDOWN] All processes stopped")
-    
+
     print("\n" + "=" * 80)
     print("✅ Done")
     print("=" * 80)

@@ -58,13 +58,13 @@ def main():
         action="store_true",
         help="Enable Prometheus metrics",
     )
-    
+
     args = parser.parse_args()
-    
+
     print("=" * 80)
     print("SWEET Federated Learning Demo")
     print("=" * 80)
-    
+
     # Step 1: Prepare data splits
     print("\n[1/4] Preparing federated data splits...")
     prep_cmd = [
@@ -73,45 +73,48 @@ def main():
         "--config",
         args.config,
     ]
-    
+
     result = subprocess.run(prep_cmd, capture_output=False)
     if result.returncode != 0:
         print("❌ Failed to prepare data splits")
         sys.exit(1)
-    
+
     # Load manifest to get run directory
     config_path = Path(args.config)
     if config_path.suffix.lower() in {".yaml", ".yml"}:
         import yaml
+
         config_data = yaml.safe_load(config_path.read_text())
     else:
         config_data = json.loads(config_path.read_text())
-    
+
     federation = config_data.get("federation", {})
     output_dir = federation.get("output_dir", "federated_runs/sweet")
-    run_name = federation.get("run_name", f"run_{config_data.get('split', {}).get('seed', 42)}")
+    run_name = federation.get(
+        "run_name", f"run_{config_data.get('split', {}).get('seed', 42)}"
+    )
     run_dir = Path(output_dir) / run_name
-    
+
     manifest_path = run_dir / "manifest.json"
     if not manifest_path.exists():
         print(f"❌ Manifest not found: {manifest_path}")
         sys.exit(1)
-    
+
     manifest = json.loads(manifest_path.read_text())
     input_dim = manifest["num_features"]
-    
+
     # Step 2: Start MQTT broker check
     print("\n[2/4] Checking MQTT broker...")
     print(f"  Expected broker: {args.mqtt_broker}:{args.mqtt_port}")
     print("  Make sure MQTT broker is running (e.g., mosquitto)")
     time.sleep(2)
-    
+
     # Step 3: Start server
     print("\n[3/4] Starting SWEET federated server...")
-    
+
     # Use first node for test evaluation
     first_node = list(manifest["nodes"].keys())[0]
-    
+
     server_cmd = [
         sys.executable,
         "-m",
@@ -129,20 +132,20 @@ def main():
         "--min-clients",
         str(len(manifest["nodes"])),
     ]
-    
+
     if args.enable_telemetry:
         server_cmd.append("--enable-telemetry")
     if args.enable_prometheus:
         server_cmd.append("--enable-prometheus")
-    
+
     print(f"  Command: {' '.join(server_cmd)}")
     server_proc = subprocess.Popen(server_cmd)
     time.sleep(3)
-    
+
     # Step 4: Start clients
     print("\n[4/4] Starting SWEET federated clients...")
     client_procs = []
-    
+
     for node_id in manifest["nodes"].keys():
         client_cmd = [
             sys.executable,
@@ -161,17 +164,17 @@ def main():
             "--mqtt-port",
             str(args.mqtt_port),
         ]
-        
+
         if args.enable_telemetry:
             client_cmd.append("--enable-telemetry")
         if args.enable_prometheus:
             client_cmd.append("--enable-prometheus")
-        
+
         print(f"  Starting client for {node_id}...")
         proc = subprocess.Popen(client_cmd)
         client_procs.append(proc)
         time.sleep(1)
-    
+
     print("\n" + "=" * 80)
     print("✓ SWEET Federated Learning Demo Running")
     print("=" * 80)
@@ -180,7 +183,7 @@ def main():
     print(f"  Features: {input_dim}")
     print(f"  Target rounds: {args.num_rounds}")
     print("\nPress Ctrl+C to stop...")
-    
+
     try:
         # Wait for completion
         server_proc.wait()
@@ -189,13 +192,13 @@ def main():
         server_proc.terminate()
         for proc in client_procs:
             proc.terminate()
-        
+
         time.sleep(2)
-        
+
         server_proc.kill()
         for proc in client_procs:
             proc.kill()
-        
+
         print("✓ All processes stopped")
 
 

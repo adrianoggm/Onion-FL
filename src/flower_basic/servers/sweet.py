@@ -139,7 +139,9 @@ class MQTTFedAvgSweet(fl.server.strategy.FedAvg):
 
         # Record number of active clients
         if GAUGE_ACTIVE_CLIENTS:
-            record_metric(GAUGE_ACTIVE_CLIENTS, len(results), {"round": str(server_round)})
+            record_metric(
+                GAUGE_ACTIVE_CLIENTS, len(results), {"round": str(server_round)}
+            )
 
         # Use SERVER span to show this service handles incoming requests from fog-bridge
         with start_server_span(
