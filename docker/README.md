@@ -172,7 +172,10 @@ cd docker
 
 docker compose -f docker-compose.otel.yml up -d```bash
 
-
+ pkill -f flower_basic.servers.swell
+ pkill -f flower_basic.clients.swell
+ pkill -f flower_basic.brokers.fog
+ pkill -f flower_basic.clients.fog_bridge_swell
 
 # Then run your Python FL components locallycd docker- `INPUT_DIM` (default 113)
 

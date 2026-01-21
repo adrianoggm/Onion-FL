@@ -441,6 +441,18 @@ class SwellFLClientMQTT(BaseMQTTComponent):
         )
 
         for r in range(1, rounds + 1):
+            if r > 1:
+                self.wait_for_global()
+                # Apply pending global safely between rounds
+                with self._lock:
+                    if self._pending_global_state is not None:
+                        current = self.model.state_dict()
+                        current.update(self._pending_global_state)
+                        self.model.load_state_dict(current, strict=False)
+                        self._pending_global_state = None
+                        self._got_global = False
+                        print(f"{self.tag} Global model applied")
+
             print(f"\n=== Round {r}/{rounds} ===")
             avg_loss = self.train_one_round()
             # Validate before publishing update
@@ -457,16 +469,6 @@ class SwellFLClientMQTT(BaseMQTTComponent):
             except Exception:
                 pass
             self.publish_update(avg_loss, val_acc)  # Include validation accuracy
-            self.wait_for_global()
-            # Apply pending global safely between rounds
-            with self._lock:
-                if self._pending_global_state is not None:
-                    current = self.model.state_dict()
-                    current.update(self._pending_global_state)
-                    self.model.load_state_dict(current, strict=False)
-                    self._pending_global_state = None
-                    self._got_global = False
-                    print(f"{self.tag} Global model applied")
             if r < rounds:
                 time.sleep(delay)
         self.stop_mqtt()
