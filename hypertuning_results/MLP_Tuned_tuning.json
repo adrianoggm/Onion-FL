@@ -1,0 +1,19 @@
+{
+  "model_name": "MLP_Tuned",
+  "best_params": {
+    "validation_fraction": 0.1,
+    "solver": "adam",
+    "max_iter": 500,
+    "learning_rate_init": 0.1,
+    "learning_rate": "constant",
+    "hidden_layer_sizes": [
+      64,
+      64
+    ],
+    "early_stopping": true,
+    "alpha": 0.01,
+    "activation": "relu"
+  },
+  "best_score": 0.5530250247638673,
+  "tuning_time": 20.479435443878174
+}

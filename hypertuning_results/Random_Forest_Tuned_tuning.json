@@ -1,0 +1,13 @@
+{
+  "model_name": "Random_Forest_Tuned",
+  "best_params": {
+    "n_estimators": 200,
+    "min_samples_split": 2,
+    "min_samples_leaf": 1,
+    "max_features": "log2",
+    "max_depth": 10,
+    "bootstrap": true
+  },
+  "best_score": 0.5509739959852202,
+  "tuning_time": 302.8998918533325
+}

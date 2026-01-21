@@ -85,6 +85,7 @@ class FogNodeSpec:
     address: str | None = None
     k: int = 1
     clients: list[ClientSpec] = field(default_factory=list)
+    params: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -102,6 +103,7 @@ class FederatedArchitecture:
     model: ModelConfig = field(default_factory=ModelConfig)
     dataset: DatasetConfig | None = None
     workflow: str | None = None
+    client_params: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -216,16 +218,19 @@ def load_architecture_config(config_path: str | os.PathLike) -> FederatedArchite
                 address=node_raw.get("address"),
                 k=int(node_raw.get("k", node_raw.get("K", 1))),
                 clients=clients,
+                params=node_raw.get("params", {}) or {},
             )
         )
 
     workflow = _normalize_workflow(root.get("workflow"))
+    client_params = root.get("client_params", {}) or {}
     arch = FederatedArchitecture(
         orchestrator=orchestrator,
         fog_nodes=fog_nodes,
         model=model,
         dataset=dataset,
         workflow=workflow,
+        client_params=client_params,
     )
     _validate_architecture(arch)
     return arch
@@ -539,6 +544,10 @@ def build_runtime_plan(
     for fog in arch.fog_nodes:
         for client in fog.clients:
             workflow = _normalize_workflow(client.workflow or client.dataset) or primary
+            merged_params: dict[str, Any] = {}
+            merged_params.update(arch.client_params or {})
+            merged_params.update(fog.params or {})
+            merged_params.update(client.params or {})
             env_client = {
                 "MQTT_BROKER": mqtt.broker,
                 "MQTT_PORT": str(mqtt.port),
@@ -572,7 +581,23 @@ def build_runtime_plan(
                     topics.global_model,
                     "--client-index",
                     str(client_index),
+                    "--client-id",
+                    client.id,
                 ]
+                if "lr" in merged_params and merged_params["lr"] is not None:
+                    cmd.extend(["--lr", str(merged_params["lr"])])
+                if (
+                    "batch_size" in merged_params
+                    and merged_params["batch_size"] is not None
+                ):
+                    cmd.extend(["--batch_size", str(merged_params["batch_size"])])
+                if "seed" in merged_params and merged_params["seed"] is not None:
+                    cmd.extend(["--seed", str(merged_params["seed"])])
+                local_epochs = merged_params.get(
+                    "local_epochs", merged_params.get("local-epochs")
+                )
+                if local_epochs is not None:
+                    cmd.extend(["--local-epochs", str(local_epochs)])
                 commands.append(
                     RuntimeCommand(
                         role=f"client_{client.id}",

@@ -120,7 +120,8 @@ def _apply_manifest_paths(arch: FederatedArchitecture, manifest_path: Path) -> N
             )
 
         fog.clients = new_clients
-        fog.k = len(new_clients)  # Wait for ALL clients in this fog
+        if not fog.k or fog.k <= 0:
+            fog.k = len(new_clients)  # Default: wait for all clients in this fog
         print(
             f"[MANIFEST] {fog.id}: {len(new_clients)} clientes con training data (K={fog.k})"
         )

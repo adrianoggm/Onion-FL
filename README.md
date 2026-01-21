@@ -513,6 +513,7 @@ The architecture simulates a real fog computing environment for federated learni
 -   **Real Conditions**: N/T/I/R stress conditions from actual work
 -   **Complex Features**: 178 features across 4 modalities
 -   **Workplace Applicability**: Real office environment data
+-   **Federated Result (global holdout)**: 646 test samples, loss 0.5162, accuracy 88.54% (12 rounds, 58.99s)
 
 #### 🔬 Federated vs Centralized
 -   **Subject Privacy**: Personal data never leaves local nodes
@@ -585,6 +586,72 @@ python -m flower_basic.client --client_id 1 --dataset wesad
 python -m flower_basic.client --client_id 2 --dataset swell
 python -m flower_basic.client --client_id 3 --dataset multimodal
 ```
+
+### SWELL Federated Demo (MQTT + Grafana + Jaeger + Prometheus)
+
+This flow runs the full SWELL hierarchy (server, broker, fog bridges, clients)
+with the observability stack. It assumes Linux with `docker-compose` v1.
+
+1) Start observability stack (MQTT + Jaeger + Prometheus + Grafana):
+```bash
+cd docker
+docker-compose -f docker-compose.otel.yml up -d
+```
+
+2) (Optional) Clear persisted metrics in Pushgateway:
+```bash
+curl -X DELETE http://localhost:9091/metrics/job/flower-client
+curl -X DELETE http://localhost:9091/metrics/job/flower-broker
+curl -X DELETE http://localhost:9091/metrics/job/flower-server
+```
+
+3) Prepare SWELL federated splits (choose one):
+```bash
+# Full modalities (computer + facial + posture + physiology)
+python scripts/prepare_swell_federated.py --config configs/swell_federated.example.yaml
+
+# Physiology-only (lighter; matches 10_executions_physiology)
+python scripts/prepare_swell_federated.py --config configs/swell_federated_10runs.yaml
+```
+
+4) Launch the federated system using the manifest:
+```bash
+export MQTT_BROKER=localhost MQTT_PORT=1883
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4320
+export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4320
+
+# Full modalities manifest
+python scripts/run_architecture_from_config.py \
+  --config configs/federated_architecture.example.yaml \
+  --manifest federated_runs/swell/example_manual/manifest.json \
+  --launch \
+  --delay 0.1
+
+# Physiology-only manifest
+python scripts/run_architecture_from_config.py \
+  --config configs/federated_architecture.example.yaml \
+  --manifest federated_runs/swell/10_executions_physiology/manifest.json \
+  --launch \
+  --delay 0.1
+```
+
+5) Tune rounds and per-region K:
+- `configs/federated_architecture.example.yaml`
+  - `orchestrator.rounds`: number of FL rounds
+  - `client_params.local_epochs`: local epochs per round (global default)
+  - `client_params.seed`: deterministic client init/shuffle seed
+  - `fog_nodes[*].params.local_epochs`: per-fog override
+  - `fog_nodes[*].clients[*].rounds`: keep aligned with `orchestrator.rounds`
+  - `fog_nodes[*].k`: updates per region before partial aggregate
+
+6) Observability UIs:
+- Grafana: http://localhost:3000 (admin/admin)
+- Jaeger: http://localhost:16686
+- Prometheus: http://localhost:9090
+
+Notes:
+- If `prepare_swell_federated.py` is killed, stop heavy processes (Docker/FL) and retry.
+- If you see `Address already in use`, kill old processes before relaunching.
 
 ### Quality Assurance
 
@@ -675,6 +742,7 @@ pytest tests/test_mqtt_components.py -v
 -   **Data Integration**: 4 modalities successfully merged
 -   **Real Conditions**: N/T/I/R stress levels
 -   **Subject Alignment**: Cross-modal participant matching
+-   **Federated Result (global holdout)**: 646 test samples, loss 0.5162, accuracy 88.54% (12 rounds, 58.99s)
 
 #### 🚀 System Performance
 -   **Training Time**: ~50 seconds for 3 rounds

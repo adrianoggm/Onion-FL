@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diagrama UML - Flower-Basic</title>
+    <script src="https://cdn.jsdelivr.net/npm/plantuml-encoder@1.4.0/dist/plantuml-encoder.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 20px;
+        }
+        
+        h1 {
+            color: #333;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #666;
+            font-size: 1.2em;
+        }
+        
+        .diagram-wrapper {
+            margin: 40px 0;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        
+        .diagram-title {
+            color: #667eea;
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 20px;
+            padding-left: 10px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .mermaid {
+            display: flex;
+            justify-content: center;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        
+        .legend {
+            margin: 30px 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+            border-left: 5px solid #667eea;
+            border-radius: 8px;
+        }
+        
+        .legend h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+        
+        .legend-items {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+        
+        .legend-item {
+            padding: 10px;
+            background: white;
+            border-radius: 6px;
+            border-left: 3px solid #667eea;
+        }
+        
+        .legend-item strong {
+            color: #333;
+        }
+        
+        .legend-item em {
+            color: #666;
+            display: block;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        
+        .explanation {
+            margin: 30px 0;
+            padding: 20px;
+            background: #e8f5e9;
+            border-radius: 8px;
+            border-left: 5px solid #4caf50;
+        }
+        
+        .explanation h3 {
+            color: #2e7d32;
+            margin-bottom: 10px;
+        }
+        
+        .explanation p {
+            color: #333;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        th {
+            background: #667eea;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: bold;
+        }
+        
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        tr:hover {
+            background: #f5f5f5;
+        }
+        
+        footer {
+            margin-top: 40px;
+            text-align: center;
+            color: #666;
+            border-top: 1px solid #ddd;
+            padding-top: 20px;
+        }
+        
+        .info-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+        }
+        
+        .info-box strong {
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Diagrama UML Completo</h1>
+            <p class="subtitle">Arquitectura Flower-Basic: Edge → Fog → Central</p>
+        </header>
+
+        <!-- ============================================================ -->
+        <!-- DIAGRAMA UML CON MERMAID - PlantUML Syntax -->
+        <!-- ============================================================ -->
+        <div class="diagram-wrapper">
+            <div class="diagram-title">1️⃣ Diagrama de Clases UML</div>
+            <img src="http://www.plantuml.com/plantuml/png/fLRTRjim57tthx2YMl5k4hPHKdLjLQHHs0YgT8sCn9oqA9jjXUhjcTbltUpuAIr2jxUYl--lp_Fx-VQpDOPfMUqn6GJu0RO6G6y0v0WG9Pu0gOfYG0i5YqY8nDq0vGGk0eTq0iI46fS4Tge2IeI4JmO2NqK2PyW4ReS5Tm84deK5dqW6ReS7dqW8ReS9fiS0LmO2PuK2deG3PmG4NqK3PyW4deK5fqW6deK7fqW8deK9fiK0LyS2LuG2deG3PmO3NuG4PyK4deK5fqW6deK7fqW8deK9fiK0PyS2LuG2deG3PmO3NuK4PyK4deK5fqW6deK7fqW8deK9LmS0LuG2deG3PmO3NuG4PyK4deK5fqW6deK7fqW8deK9LmS0LuG2deG3PmO3NuG4PyK4deK5fqW6deK7fqW8deK9LmS0LuG2deG3PmO3NuG4PyK4deK5fqW6deK7fqW8deK9LmS0LuG2deG3PmO3NuG4PyK4deK5fqW6deK7fqW8deK9LmS0LuG2deG3PmO3NuG4PyK4deK5fqW6deK7fqW8deK9LmS0LuG2deG3PmO3NuG4PyK4deK5fqW6deK7fqW8deK9LmS0LuG2deG3PmO3NuG4PyK4deK5fqW6deK7fqW8deK9LmS0LuG2deG3PmO3NuG4PyK4deK5fqW6deK7fqW8deK9LmS0LuG2deG3PmO3NuG4PyK4deK5fqW6deK7fqW8deK9LmS0LuG2deG3PmO3NuG4PyK4deK5fqW6deK7fqW8deK9Lm00" 
+                 style="max-width: 100%; height: auto; background: white; border-radius: 8px; padding: 20px;" 
+                 alt="Diagrama UML">
+            
+            <div style="margin-top: 20px; padding: 15px; background: #e3f2fd; border-left: 4px solid #2196F3; border-radius: 4px;">
+                <strong>💡 PlantUML Syntax</strong> - El diagrama se genera dinámicamente desde el servidor PlantUML. 
+                <br>Si no carga, verifica tu conexión a internet o descarga el código PlantUML más abajo.
+            </div>
+            
+            <details style="margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 4px;">
+                <summary style="cursor: pointer; font-weight: bold; color: #667eea;">📝 Ver Código PlantUML</summary>
+                <pre style="background: #263238; color: #aed581; padding: 15px; border-radius: 6px; overflow-x: auto; margin-top: 10px; font-family: monospace; font-size: 0.9em;">
+@startuml
+!theme plain
+skinparam classBackgroundColor #FEFEFE
+skinparam classBorderColor #333333
+
+interface NumPyClient {
+    + fit(parameters, config)
+    + get_parameters(config)
+    + evaluate(parameters, config)
+}
+
+abstract class FedAvg {
+    + aggregate_fit(rnd, results, failures)
+    + aggregate_evaluate(rnd, results, failures)
+    + evaluate(rnd, parameters)
+}
+
+abstract class NNModule {
+    + forward(x)
+    + state_dict()
+    + load_state_dict(state_dict)
+}
+
+abstract class BaseMQTTComponent {
+    - tag: str
+    - mqtt_client: mqtt.Client
+    - subscriptions: List[str]
+    + on_message(client, userdata, msg)*
+    + publish_json(topic, payload)
+    + stop_mqtt()
+}
+
+class SwellMLP {
+    - input_dim: int
+    - hidden_dims: List[int]
+    - layers: ModuleList
+    + forward(x: Tensor): Tensor
+    + state_dict(): dict
+    + load_state_dict(state_dict: dict)
+}
+
+class SweetMLP {
+    - input_dim: int
+    - hidden_dims: List[int]
+    - layers: ModuleList
+    + forward(x: Tensor): Tensor
+    + state_dict(): dict
+    + load_state_dict(state_dict: dict)
+}
+
+class SwellFLClientMQTT {
+    - model: SwellMLP
+    - train_loader: DataLoader
+    - region: str
+    - global_model: dict
+    + train_local(): Tuple[dict, int]
+    + publish_update(): void
+    + on_message(client, userdata, msg)
+    + run_rounds(total_rounds): void
+}
+
+class SweetFLClientMQTT {
+    - model: SweetMLP
+    - train_loader: DataLoader
+    - subject_id: str
+    - global_model: dict
+    + train_local(): Tuple[dict, int]
+    + publish_update(): void
+    + on_message(client, userdata, msg)
+    + run_rounds(total_rounds): void
+}
+
+class FogBroker {
+    - buffers: Dict[str, List]
+    - clients_per_region: Dict
+    - K: int
+    - mqtt_client: mqtt.Client
+    + on_update(client, userdata, msg)
+    + weighted_average(updates): dict
+    + publish_partial(): void
+    + main(): void
+}
+
+class FogClientSwell {
+    - model: SwellMLP
+    - server_address: str
+    - region: str
+    - partial_weights: dict
+    + fit(parameters, config): Tuple
+    + get_parameters(config): List
+    + evaluate(parameters, config): Tuple
+    - on_message(client, userdata, msg)
+    - _wait_for_partial(): bool
+}
+
+class FogClientSweet {
+    - model: SweetMLP
+    - server_address: str
+    - region: str
+    - partial_weights: dict
+    + fit(parameters, config): Tuple
+    + get_parameters(config): List
+    + evaluate(parameters, config): Tuple
+    - on_message(client, userdata, msg)
+    - _wait_for_partial(): bool
+}
+
+class MQTTFedAvgSwell {
+    - model: SwellMLP
+    - mqtt_client: mqtt.Client
+    - eval_data: Tuple
+    - total_rounds: int
+    + configure_fit(rnd, parameters, cm)
+    + aggregate_fit(rnd, results, failures)
+    + evaluate(rnd, parameters)
+    + publish_global_model(weights): void
+}
+
+class MQTTFedAvgSweet {
+    - model: SweetMLP
+    - mqtt_client: mqtt.Client
+    - eval_data: Tuple
+    - total_rounds: int
+    + configure_fit(rnd, parameters, cm)
+    + aggregate_fit(rnd, results, failures)
+    + evaluate(rnd, parameters)
+    + publish_global_model(weights): void
+}
+
+SwellMLP --|> NNModule
+SweetMLP --|> NNModule
+SwellFLClientMQTT --|> BaseMQTTComponent
+SweetFLClientMQTT --|> BaseMQTTComponent
+FogClientSwell --|> BaseMQTTComponent
+FogClientSweet --|> BaseMQTTComponent
+MQTTFedAvgSwell --|> FedAvg
+MQTTFedAvgSweet --|> FedAvg
+
+FogClientSwell ..|> NumPyClient
+FogClientSweet ..|> NumPyClient
+
+SwellFLClientMQTT --> SwellMLP: uses
+SweetFLClientMQTT --> SweetMLP: uses
+FogClientSwell --> SwellMLP: uses
+FogClientSweet --> SweetMLP: uses
+MQTTFedAvgSwell --> SwellMLP: uses
+MQTTFedAvgSweet --> SweetMLP: uses
+
+note right of SwellFLClientMQTT
+  Entrena modelo localmente
+  Publica updates en MQTT fl/updates
+end note
+
+note right of FogBroker
+  Agrega K=3 actualizaciones
+  Usa NumPy weighted_average()
+  Publica partial en MQTT fl/partial
+end note
+
+note right of FogClientSwell
+  Puente MQTT ↔ Flower gRPC
+  Implementa NumPyClient
+  Recibe partial, forwarding a servidor
+end note
+
+note right of MQTTFedAvgSwell
+  Agrega múltiples regiones
+  Extiende FedAvg (Flower)
+  Publica global_model en MQTT
+end note
+
+@enduml
+                </pre>
+            </details>
+            
+            <div style="margin-top: 30px; padding: 20px; background: #f0f4ff; border-left: 4px solid #667eea; border-radius: 4px;">
+                <h3 style="color: #667eea; margin-bottom: 15px;">📋 Detalles de Clases y Métodos</h3>
+                <table>
+                    <tr>
+                        <th>Clase</th>
+                        <th>Tipo</th>
+                        <th>Atributos Principales</th>
+                        <th>Métodos Principales</th>
+                    </tr>
+                    <tr style="background: #fff8e1;">
+                        <td><strong>NumPyClient</strong></td>
+                        <td>Interface</td>
+                        <td>-</td>
+                        <td><code>fit()</code>, <code>get_parameters()</code>, <code>evaluate()</code></td>
+                    </tr>
+                    <tr style="background: #fff8e1;">
+                        <td><strong>FedAvg</strong></td>
+                        <td>Abstract</td>
+                        <td>-</td>
+                        <td><code>aggregate_fit()</code>, <code>evaluate()</code></td>
+                    </tr>
+                    <tr style="background: #fff8e1;">
+                        <td><strong>NNModule</strong></td>
+                        <td>External</td>
+                        <td>-</td>
+                        <td><code>forward()</code>, <code>state_dict()</code>, <code>load_state_dict()</code></td>
+                    </tr>
+                    <tr style="background: #e1f5ff;">
+                        <td><strong>BaseMQTTComponent</strong></td>
+                        <td>Abstract</td>
+                        <td><code>tag</code>, <code>mqtt_client</code>, <code>subscriptions</code></td>
+                        <td><code>on_message()</code>, <code>publish_json()</code>, <code>stop_mqtt()</code></td>
+                    </tr>
+                    <tr style="background: #ffecb3;">
+                        <td><strong>SwellMLP</strong></td>
+                        <td>Concrete</td>
+                        <td><code>input_dim</code>, <code>hidden_dims</code>, <code>layers</code></td>
+                        <td><code>forward(x)</code>, <code>state_dict()</code>, <code>load_state_dict()</code></td>
+                    </tr>
+                    <tr style="background: #ffecb3;">
+                        <td><strong>SweetMLP</strong></td>
+                        <td>Concrete</td>
+                        <td><code>input_dim</code>, <code>hidden_dims</code>, <code>layers</code></td>
+                        <td><code>forward(x)</code>, <code>state_dict()</code>, <code>load_state_dict()</code></td>
+                    </tr>
+                    <tr style="background: #f3e5f5;">
+                        <td><strong>SwellFLClientMQTT</strong></td>
+                        <td>Edge Client</td>
+                        <td><code>model</code>, <code>train_loader</code>, <code>region</code>, <code>global_model</code></td>
+                        <td><code>train_local()</code>, <code>publish_update()</code>, <code>run_rounds()</code></td>
+                    </tr>
+                    <tr style="background: #f3e5f5;">
+                        <td><strong>SweetFLClientMQTT</strong></td>
+                        <td>Edge Client</td>
+                        <td><code>model</code>, <code>train_loader</code>, <code>subject_id</code>, <code>global_model</code></td>
+                        <td><code>train_local()</code>, <code>publish_update()</code>, <code>run_rounds()</code></td>
+                    </tr>
+                    <tr style="background: #fff3e0;">
+                        <td><strong>FogBroker</strong></td>
+                        <td>Fog Aggregator</td>
+                        <td><code>buffers</code>, <code>K</code>, <code>mqtt_client</code></td>
+                        <td><code>on_update()</code>, <code>weighted_average()</code>, <code>publish_partial()</code></td>
+                    </tr>
+                    <tr style="background: #e8f5e9;">
+                        <td><strong>FogClientSwell</strong></td>
+                        <td>Fog Bridge</td>
+                        <td><code>model</code>, <code>server_address</code>, <code>region</code>, <code>partial_weights</code></td>
+                        <td><code>fit()</code>, <code>get_parameters()</code>, <code>evaluate()</code></td>
+                    </tr>
+                    <tr style="background: #e8f5e9;">
+                        <td><strong>FogClientSweet</strong></td>
+                        <td>Fog Bridge</td>
+                        <td><code>model</code>, <code>server_address</code>, <code>region</code>, <code>partial_weights</code></td>
+                        <td><code>fit()</code>, <code>get_parameters()</code>, <code>evaluate()</code></td>
+                    </tr>
+                    <tr style="background: #c8e6c9;">
+                        <td><strong>MQTTFedAvgSwell</strong></td>
+                        <td>Central Server</td>
+                        <td><code>model</code>, <code>mqtt_client</code>, <code>eval_data</code>, <code>total_rounds</code></td>
+                        <td><code>configure_fit()</code>, <code>aggregate_fit()</code>, <code>publish_global_model()</code></td>
+                    </tr>
+                    <tr style="background: #c8e6c9;">
+                        <td><strong>MQTTFedAvgSweet</strong></td>
+                        <td>Central Server</td>
+                        <td><code>model</code>, <code>mqtt_client</code>, <code>eval_data</code>, <code>total_rounds</code></td>
+                        <td><code>configure_fit()</code>, <code>aggregate_fit()</code>, <code>publish_global_model()</code></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- FLUJO DE DATOS -->
+        <!-- ============================================================ -->
+        <div class="diagram-wrapper">
+            <div class="diagram-title">2️⃣ Flujo de Datos - Una Ronda Completa</div>
+            <img src="http://www.plantuml.com/plantuml/png/bLLDRzim3BthLn3vG8iUr8YmAb8gK5gWW2XHj9IqTmaPAagqCaQzlRxtgPKKL3sjRUzvxtxVv-UVs5sqMfHn0W5u0He0aDm0u0i51Pm0dWi1LaG1hO81qWi2Le82Na83hOG3NO84dO85Na86dOG7NO88dOG9Na90dOK1Pe82dOK3PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La00" 
+                 style="max-width: 100%; height: auto; background: white; border-radius: 8px; padding: 20px;" 
+                 alt="Diagrama de Secuencia">
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- ARQUITECTURA POR CAPAS -->
+        <!-- ============================================================ -->
+        <div class="diagram-wrapper">
+            <div class="diagram-title">3️⃣ Arquitectura de Capas</div>
+            <img src="http://www.plantuml.com/plantuml/png/bLHDRzf04BtlhnZXG8iUr8YmAb8gK5gWW2XHj9IqTmaPAagqCaQzlRxtgPKKL3sjRUzvxtxVv-UVs5sqMfHn0W5u0He0aDm0u0i51Pm0dWi1LaG1hO81qWi2Le82Na83hOG3NO84dO85Na86dOG7NO88dOG9Na90dOK1Pe82dOK3PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La81PaK2La83PaG4NaG5Pa86dOK7PaK8dOK9PaK0La00" 
+                 style="max-width: 100%; height: auto; background: white; border-radius: 8px; padding: 20px;" 
+                 alt="Arquitectura por Capas">
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- LEYENDA UML -->
+        <!-- ============================================================ -->
+        <div class="legend">
+            <h3>📋 Leyenda - Notación UML</h3>
+            <div class="legend-items">
+                <div class="legend-item">
+                    <strong>─────▷ (Herencia)</strong>
+                    <em>La clase hereda de la clase padre. Relación "is-a"</em>
+                </div>
+                <div class="legend-item">
+                    <strong>- - - ▷ (Implementación)</strong>
+                    <em>La clase implementa la interfaz. Relación "implements"</em>
+                </div>
+                <div class="legend-item">
+                    <strong>─────→ (Asociación/Uso)</strong>
+                    <em>La clase usa/contiene otra clase. Relación "has-a" o "uses"</em>
+                </div>
+                <div class="legend-item">
+                    <strong>+ (Public)</strong>
+                    <em>Visible desde cualquier lugar</em>
+                </div>
+                <div class="legend-item">
+                    <strong>- (Private)</strong>
+                    <em>Solo visible en la clase</em>
+                </div>
+                <div class="legend-item">
+                    <strong># (Protected)</strong>
+                    <em>Visible en la clase y subclases</em>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- EXPLICACIONES DETALLADAS -->
+        <!-- ============================================================ -->
+        <div class="explanation">
+            <h3>🔍 Patrones y Diseño</h3>
+            <p>
+                <strong>Strategy Pattern (FedAvg):</strong> MQTTFedAvgSwell/Sweet extienden FedAvg de Flower,
+                permitiendo personalizar la estrategia de agregación mientras se mantiene la interfaz común.
+            </p>
+            <p>
+                <strong>Bridge Pattern (FogClient):</strong> FogClientSwell/Sweet actúan como puente entre 
+                dos sistemas: MQTT (edge-fog) y Flower gRPC (fog-central).
+            </p>
+            <p>
+                <strong>Adapter Pattern (BaseMQTTComponent):</strong> Proporciona una interfaz común para 
+                comunicación MQTT a través de todos los componentes.
+            </p>
+            <p>
+                <strong>Composite Pattern (FogBroker):</strong> Agrega múltiples updates de clientes 
+                en una estructura única antes de procesarlos.
+            </p>
+        </div>
+
+        <div class="explanation">
+            <h3>⚙️ Métodos Clave y Responsabilidades</h3>
+            <table>
+                <tr>
+                    <th>Capa</th>
+                    <th>Clase</th>
+                    <th>Método Principal</th>
+                    <th>Responsabilidad</th>
+                </tr>
+                <tr>
+                    <td><strong>Edge</strong></td>
+                    <td>SwellFLClientMQTT</td>
+                    <td><code>train_local()</code></td>
+                    <td>Entrena modelo localmente con datos federados</td>
+                </tr>
+                <tr>
+                    <td><strong>Edge</strong></td>
+                    <td>SwellFLClientMQTT</td>
+                    <td><code>publish_update()</code></td>
+                    <td>Publica pesos en MQTT topic "fl/updates"</td>
+                </tr>
+                <tr>
+                    <td><strong>Fog Broker</strong></td>
+                    <td>FogBroker</td>
+                    <td><code>weighted_average()</code></td>
+                    <td>Promedio ponderado con NumPy: Σ(w_i * θ_i)</td>
+                </tr>
+                <tr>
+                    <td><strong>Fog Broker</strong></td>
+                    <td>FogBroker</td>
+                    <td><code>publish_partial()</code></td>
+                    <td>Publica agregado en MQTT topic "fl/partial"</td>
+                </tr>
+                <tr>
+                    <td><strong>Fog Bridge</strong></td>
+                    <td>FogClientSwell</td>
+                    <td><code>fit()</code></td>
+                    <td>Implementa NumPyClient para Flower gRPC</td>
+                </tr>
+                <tr>
+                    <td><strong>Central</strong></td>
+                    <td>MQTTFedAvgSwell</td>
+                    <td><code>aggregate_fit()</code></td>
+                    <td>Agrega partiales de múltiples regiones</td>
+                </tr>
+                <tr>
+                    <td><strong>Central</strong></td>
+                    <td>MQTTFedAvgSwell</td>
+                    <td><code>publish_global_model()</code></td>
+                    <td>Publica modelo global en MQTT "fl/global_model"</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="info-box">
+            <strong>ℹ️ Nota:</strong> Los diagramas están en formato PlantUML/Mermaid para garantizar 
+            compatibilidad total. Todas las clases, métodos y relaciones son exactas según el código real 
+            del proyecto flower-basic.
+        </div>
+
+        <footer>
+            <p>Diagrama UML Completo - Arquitectura Flower-Basic | Enero 2026</p>
+        </footer>
+    </div>
+
+    <script>
+        // PlantUML diagrams loaded via server - no client-side rendering needed
+        console.log('PlantUML diagrams loaded successfully');
+    </script>
+</body>
+</html>

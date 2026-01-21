@@ -145,6 +145,48 @@ FL_ROUND_DURATION = (
     else _DummyMetric()
 )
 
+# Global dataset split (from manifest)
+FL_GLOBAL_TRAIN_SAMPLES = (
+    Gauge(
+        "flower_fl_global_train_samples",
+        "Global train samples (manifest split)",
+        ["server"],
+    )
+    if PROMETHEUS_AVAILABLE
+    else _DummyMetric()
+)
+
+FL_GLOBAL_VAL_SAMPLES = (
+    Gauge(
+        "flower_fl_global_val_samples",
+        "Global validation samples (manifest split)",
+        ["server"],
+    )
+    if PROMETHEUS_AVAILABLE
+    else _DummyMetric()
+)
+
+FL_GLOBAL_TEST_SAMPLES = (
+    Gauge(
+        "flower_fl_global_test_samples",
+        "Global test samples (manifest split)",
+        ["server"],
+    )
+    if PROMETHEUS_AVAILABLE
+    else _DummyMetric()
+)
+
+# Confusion matrix (final evaluation)
+FL_CONFUSION_MATRIX = (
+    Gauge(
+        "flower_fl_confusion_matrix",
+        "Confusion matrix counts (true vs predicted)",
+        ["server", "true_label", "pred_label"],
+    )
+    if PROMETHEUS_AVAILABLE
+    else _DummyMetric()
+)
+
 
 # =============================================================================
 # Broker Metrics

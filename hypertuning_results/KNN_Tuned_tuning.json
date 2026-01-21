@@ -1,0 +1,12 @@
+{
+  "model_name": "KNN_Tuned",
+  "best_params": {
+    "algorithm": "auto",
+    "metric": "minkowski",
+    "n_neighbors": 51,
+    "p": 3,
+    "weights": "uniform"
+  },
+  "best_score": 0.5411406026249708,
+  "tuning_time": 34.75676155090332
+}

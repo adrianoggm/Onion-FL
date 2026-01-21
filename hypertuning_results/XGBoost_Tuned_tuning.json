@@ -1,0 +1,16 @@
+{
+  "model_name": "XGBoost_Tuned",
+  "best_params": {
+    "subsample": 0.6,
+    "reg_lambda": 2,
+    "reg_alpha": 1.0,
+    "n_estimators": 300,
+    "min_child_weight": 1,
+    "max_depth": 4,
+    "learning_rate": 0.01,
+    "gamma": 0.3,
+    "colsample_bytree": 0.6
+  },
+  "best_score": 0.5544295457227145,
+  "tuning_time": 96.26853156089783
+}

@@ -232,7 +232,7 @@ def load_swell_dataset(
         ],
     }
 
-    dataframes: list[pd.DataFrame] = []
+    merged_df: pd.DataFrame | None = None
     feature_info: dict[str, dict[str, object]] = {}
 
     for modality in modalities:
@@ -295,35 +295,37 @@ def load_swell_dataset(
                 ],
             }
 
-            dataframes.append(df)
+            if merged_df is None:
+                merged_df = df
+            else:
+                merge_cols: list[str] = []
+                for key in ["participant", "condition", "blok", "block", "trial", "c"]:
+                    if key in df.columns and key in merged_df.columns:
+                        merge_cols.append(key)
+
+                if not merge_cols:
+                    warnings.warn(
+                        "Could not determine common merge keys for a modality; skipping this modality.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                    continue
+
+                # Ensure matching dtypes for merge keys
+                for key in merge_cols:
+                    if key in merged_df.columns:
+                        merged_df[key] = merged_df[key].astype(str)
+                    if key in df.columns:
+                        df[key] = df[key].astype(str)
+
+                merged_df = pd.merge(merged_df, df, on=merge_cols, how="inner")
 
         except Exception as exc:  # pragma: no cover
             raise SWELLDatasetError(
                 f"Error loading {modality} features: {exc}"
             ) from exc
-
-    merged_df = dataframes[0]
-    for df in dataframes[1:]:
-        merge_cols: list[str] = []
-        for key in ["participant", "condition", "blok", "block", "trial", "c"]:
-            if key in df.columns and key in merged_df.columns:
-                merge_cols.append(key)
-
-        if not merge_cols:
-            warnings.warn(
-                "Could not determine common merge keys for a modality; skipping this modality.",
-                UserWarning,
-                stacklevel=2,
-            )
-            continue
-
-        # Ensure matching dtypes for merge keys
-        for key in merge_cols:
-            if key in merged_df.columns:
-                merged_df[key] = merged_df[key].astype(str)
-            if key in df.columns:
-                df[key] = df[key].astype(str)
-        merged_df = pd.merge(merged_df, df, on=merge_cols, how="inner")
+    if merged_df is None:
+        raise SWELLDatasetError("No SWELL modalities could be loaded")
 
     subject_col = "participant" if "participant" in merged_df.columns else "subject"
     merged_df[subject_col] = _normalize_subject_series(merged_df[subject_col])
@@ -687,7 +689,7 @@ def load_swell_all_samples(
         ],
     }
 
-    dataframes: list[pd.DataFrame] = []
+    merged_df: pd.DataFrame | None = None
     feature_info: dict[str, dict[str, object]] = {}
 
     for modality in modalities:
@@ -754,36 +756,37 @@ def load_swell_all_samples(
                 ],
             }
 
-            dataframes.append(df)
+            if merged_df is None:
+                merged_df = df
+            else:
+                merge_cols: list[str] = []
+                for key in ["participant", "condition", "blok", "block", "trial", "c"]:
+                    if key in df.columns and key in merged_df.columns:
+                        merge_cols.append(key)
+
+                if not merge_cols:
+                    warnings.warn(
+                        "Could not determine common merge keys for a modality; skipping this modality.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                    continue
+
+                # Ensure matching dtypes for merge keys
+                for key in merge_cols:
+                    if key in merged_df.columns:
+                        merged_df[key] = merged_df[key].astype(str)
+                    if key in df.columns:
+                        df[key] = df[key].astype(str)
+
+                merged_df = pd.merge(merged_df, df, on=merge_cols, how="inner")
 
         except Exception as exc:  # pragma: no cover
             raise SWELLDatasetError(
                 f"Error loading {modality} features: {exc}"
             ) from exc
-
-    merged_df = dataframes[0]
-    for df in dataframes[1:]:
-        merge_cols: list[str] = []
-        for key in ["participant", "condition", "blok", "block", "trial", "c"]:
-            if key in df.columns and key in merged_df.columns:
-                merge_cols.append(key)
-
-        if not merge_cols:
-            warnings.warn(
-                "Could not determine common merge keys for a modality; skipping this modality.",
-                UserWarning,
-                stacklevel=2,
-            )
-            continue
-
-        # Ensure matching dtypes for merge keys
-        for key in merge_cols:
-            if key in merged_df.columns:
-                merged_df[key] = merged_df[key].astype(str)
-            if key in df.columns:
-                df[key] = df[key].astype(str)
-
-        merged_df = pd.merge(merged_df, df, on=merge_cols, how="inner")
+    if merged_df is None:
+        raise SWELLDatasetError("No SWELL modalities could be loaded")
 
     subject_col = "participant" if "participant" in merged_df.columns else "subject"
     merged_df[subject_col] = _normalize_subject_series(merged_df[subject_col])

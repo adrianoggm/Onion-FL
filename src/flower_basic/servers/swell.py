@@ -42,6 +42,10 @@ from flower_basic.prometheus_metrics import (
     FL_ACTIVE_CLIENTS,
     FL_AGGREGATIONS,
     FL_ROUND_DURATION,
+    FL_GLOBAL_TRAIN_SAMPLES,
+    FL_GLOBAL_VAL_SAMPLES,
+    FL_GLOBAL_TEST_SAMPLES,
+    FL_CONFUSION_MATRIX,
     get_metrics_port_from_env,
     push_metrics_to_gateway,
 )
@@ -202,7 +206,9 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
                             k: torch.tensor(v) for k, v in state_dict.items()
                         }
                         self.global_model.load_state_dict(torch_state, strict=False)
-                        loss, acc = _evaluate_global(self.global_model, self.eval_data)
+                        loss, acc, cm, labels = _evaluate_global(
+                            self.global_model, self.eval_data
+                        )
 
                         # Store final metrics
                         self.history["round"].append(server_round)
@@ -220,6 +226,13 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
                         # Record Prometheus metrics
                         FL_ACCURACY.labels(server="swell").set(acc)
                         FL_LOSS.labels(server="swell").set(loss)
+                        for i, true_label in enumerate(labels):
+                            for j, pred_label in enumerate(labels):
+                                FL_CONFUSION_MATRIX.labels(
+                                    server="swell",
+                                    true_label=str(true_label),
+                                    pred_label=str(pred_label),
+                                ).set(int(cm[i, j]))
 
                         # Print final evaluation summary
                         self._print_final_evaluation(loss, acc)
@@ -328,9 +341,25 @@ def _load_eval_data(manifest_path: Path) -> tuple[np.ndarray, np.ndarray] | None
     return total_X, total_y
 
 
+def _load_manifest_split_counts(manifest_path: Path) -> tuple[int, int, int]:
+    """Load total train/val/test sample counts from aggregated node splits."""
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    nodes = manifest.get("nodes", {})
+    base = manifest_path.parent
+    totals = {"train": 0, "val": 0, "test": 0}
+    for node_id in nodes.keys():
+        for split_name in ("train", "val", "test"):
+            split_path = base / node_id / f"{split_name}.npz"
+            if not split_path.exists():
+                continue
+            X, _, _ = load_node_split(split_path)
+            totals[split_name] += int(X.shape[0])
+    return totals["train"], totals["val"], totals["test"]
+
+
 def _evaluate_global(
     model: SwellMLP, data: tuple[np.ndarray, np.ndarray]
-) -> tuple[float, float]:
+) -> tuple[float, float, np.ndarray, list[int]]:
     X, y = data
     device = torch.device("cpu")
     model = model.to(device)
@@ -341,6 +370,8 @@ def _evaluate_global(
     total = 0.0
     correct = 0
     count = 0
+    preds_all = []
+    ys_all = []
     with torch.no_grad():
         for xb, yb in loader:
             xb = xb.to(device)
@@ -351,9 +382,20 @@ def _evaluate_global(
             preds = torch.argmax(logits, dim=1)
             correct += (preds == yb).sum().item()
             count += xb.size(0)
+            preds_all.append(preds.cpu())
+            ys_all.append(yb.cpu())
     loss = total / max(count, 1)
     acc = correct / max(count, 1)
-    return loss, acc
+    y_true = torch.cat(ys_all).numpy() if ys_all else np.array([], dtype=int)
+    y_pred = torch.cat(preds_all).numpy() if preds_all else np.array([], dtype=int)
+    labels = sorted(set(y_true.tolist()) | set(y_pred.tolist()))
+    if not labels:
+        labels = [0, 1]
+    label_index = {label: idx for idx, label in enumerate(labels)}
+    cm = np.zeros((len(labels), len(labels)), dtype=int)
+    for t, p in zip(y_true, y_pred):
+        cm[label_index[t], label_index[p]] += 1
+    return loss, acc, cm, labels
 
 
 def main():
@@ -381,6 +423,14 @@ def main():
     args = ap.parse_args()
 
     model = SwellMLP(input_dim=args.input_dim)
+    if args.manifest:
+        train_n, val_n, test_n = _load_manifest_split_counts(Path(args.manifest))
+        FL_GLOBAL_TRAIN_SAMPLES.labels(server="swell").set(train_n)
+        FL_GLOBAL_VAL_SAMPLES.labels(server="swell").set(val_n)
+        FL_GLOBAL_TEST_SAMPLES.labels(server="swell").set(test_n)
+        print(
+            f"{TAG} Manifest split totals: train={train_n}, val={val_n}, test={test_n}"
+        )
     eval_data = _load_eval_data(Path(args.manifest)) if args.manifest else None
     if eval_data is None and args.manifest:
         print(f"{TAG} No test data found for central eval")

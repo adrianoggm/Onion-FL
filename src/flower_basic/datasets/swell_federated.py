@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -41,6 +42,7 @@ class FederatedConfig:
     output_dir: str = "federated_runs/swell"
     run_name: str | None = None
     ensure_min_train_per_node: bool = True
+    test_assignments: dict[str, list[int]] | None = None
 
 
 def _read_config(config_path: str | os.PathLike) -> FederatedConfig:
@@ -83,6 +85,7 @@ def _read_config(config_path: str | os.PathLike) -> FederatedConfig:
         ensure_min_train_per_node=bool(
             federation.get("ensure_min_train_per_node", True)
         ),
+        test_assignments=federation.get("test_assignments"),
     )
 
     total = cfg.split_train + cfg.split_val + cfg.split_test
@@ -90,6 +93,12 @@ def _read_config(config_path: str | os.PathLike) -> FederatedConfig:
         raise ValueError("Split percentages must sum to 1.0")
 
     return cfg
+
+
+def _stable_subject_seed(base_seed: int, subject: str) -> int:
+    """Build a stable per-subject seed (no dependence on PYTHONHASHSEED)."""
+    crc = zlib.crc32(subject.encode("utf-8", errors="ignore")) & 0xFFFFFFFF
+    return int((base_seed + crc) % (2**32 - 1))
 
 
 def _split_subjects(
@@ -117,6 +126,37 @@ def _split_subjects(
     val_ids = uniq[n_train : n_train + n_val].tolist()
     test_ids = uniq[n_train + n_val :].tolist()
     return train_ids, val_ids, test_ids
+
+
+def _split_subjects_with_test(
+    subjects: list[str],
+    train: float,
+    val: float,
+    seed: int,
+    test_subjects: list[str],
+) -> tuple[list[str], list[str], list[str]]:
+    test_set = set(test_subjects)
+    remaining = [s for s in subjects if s not in test_set]
+    if not remaining:
+        raise SWELLDatasetError("No remaining subjects after test holdout")
+
+    rng = np.random.default_rng(seed)
+    rng.shuffle(remaining)
+
+    denom = train + val
+    train_ratio = train / denom if denom > 0 else 1.0
+    n = len(remaining)
+    if val > 0 and n > 1:
+        n_train = max(1, int(round(train_ratio * n)))
+        if n_train >= n:
+            n_train = n - 1
+    else:
+        n_train = n
+    n_val = n - n_train
+
+    train_ids = remaining[:n_train]
+    val_ids = remaining[n_train:]
+    return train_ids, val_ids, sorted(test_set)
 
 
 def _auto_assign_nodes(
@@ -239,13 +279,14 @@ def _materialize_per_subject_strategy(
         # Collect indices of train samples from all subjects
         train_indices = []
         for subj in uniq_subjects:
-            subj_mask = subjects_all == subj
+            subj_str = str(subj)
+            subj_mask = subjects_all == subj_str
             subj_indices = np.where(subj_mask)[0]
             n_subj = len(subj_indices)
             # Same split logic as below, but just for indices
             n_train = max(1, int(round(cfg.split_train * n_subj)))
             # Use same seed+subject for reproducibility
-            subj_rng = np.random.default_rng(cfg.seed + hash(subj) % (2**31))
+            subj_rng = np.random.default_rng(_stable_subject_seed(cfg.seed, subj_str))
             perm = subj_rng.permutation(n_subj)
             train_indices.extend(subj_indices[perm[:n_train]])
 
@@ -316,7 +357,7 @@ def _materialize_per_subject_strategy(
                     n_train -= 1
 
             # Shuffle indices for this subject (reproducible per subject)
-            subj_rng = np.random.default_rng(cfg.seed + hash(subj_str) % (2**31))
+            subj_rng = np.random.default_rng(_stable_subject_seed(cfg.seed, subj_str))
             perm = subj_rng.permutation(n)
 
             idx_train = perm[:n_train]
@@ -431,10 +472,36 @@ def _materialize_global_strategy(
 
     This means a subject in 'train' has ALL its data in train, none in val/test.
     """
+    test_subjects: list[str] | None = None
+    if cfg.test_assignments:
+        test_subjects = []
+        for node, subs in cfg.test_assignments.items():
+            if subs is None:
+                continue
+            test_subjects.extend([str(s) for s in subs])
+        test_subjects = sorted(set(test_subjects))
+        missing = [s for s in test_subjects if s not in uniq_subjects]
+        if missing:
+            raise SWELLDatasetError(f"Test subjects not found in dataset: {missing}")
+        # Ensure test subjects are assigned to some node
+        assigned = set()
+        for subs in node_map.values():
+            assigned.update([str(s) for s in subs])
+        unassigned = [s for s in test_subjects if s not in assigned]
+        if unassigned:
+            raise SWELLDatasetError(
+                f"Test subjects not present in any node assignment: {unassigned}"
+            )
+
     # Global subject-based split
-    tr_subj, va_subj, te_subj = _split_subjects(
-        uniq_subjects, cfg.split_train, cfg.split_val, cfg.split_test, cfg.seed
-    )
+    if test_subjects:
+        tr_subj, va_subj, te_subj = _split_subjects_with_test(
+            uniq_subjects, cfg.split_train, cfg.split_val, cfg.seed, test_subjects
+        )
+    else:
+        tr_subj, va_subj, te_subj = _split_subjects(
+            uniq_subjects, cfg.split_train, cfg.split_val, cfg.split_test, cfg.seed
+        )
 
     # Ensure each node has at least one train subject (legacy behavior)
     if cfg.ensure_min_train_per_node:
@@ -560,6 +627,7 @@ def _materialize_global_strategy(
             "mode": cfg.mode,
             "num_fog_nodes": cfg.num_fog_nodes,
             "per_node_percentages": cfg.per_node_percentages,
+            "test_assignments": cfg.test_assignments,
         },
         "global_subjects": {
             "train": tr_subj,

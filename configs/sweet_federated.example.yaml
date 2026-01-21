@@ -1,0 +1,50 @@
+# SWEET Federated Learning Configuration Example
+# Distribution: 60% train, 20% validation, 20% test
+
+dataset:
+  data_dir: "data/SWEET/sample_subjects"
+  label_strategy: "binary"  # "binary" or "ordinal"
+  elevated_threshold: 2.0    # For binary classification
+  min_samples_per_subject: 5
+
+split:
+  seed: 42
+  train: 0.6    # 60% training data
+  val: 0.2      # 20% validation data
+  test: 0.2     # 20% test data
+  scaler: "global"  # "global" or "none"
+  strategy: "per_subject"  # "per_subject" or "global"
+
+federation:
+  mode: "manual"  # "manual" or "auto"
+  num_fog_nodes: 3
+  
+  # Manual assignment: specify which subjects go to which fog node
+  manual_assignments:
+    fog_0: ["user0001", "user0002"]
+    fog_1: ["user0003", "user0004"]
+    fog_2: ["user0005", "user0006"]
+  
+  # Auto assignment (used if mode: "auto")
+  # per_node_percentages: [0.4, 0.3, 0.3]  # Must sum to 1.0
+  
+  output_dir: "federated_runs/sweet"
+  run_name: "demo_3nodes"
+  ensure_min_train_per_node: true
+
+# Notes:
+# 1. label_strategy:
+#    - "binary": MAXIMUM_STRESS >= elevated_threshold → 1 (stress), else 0
+#    - "ordinal": Use raw MAXIMUM_STRESS values
+#
+# 2. scaler:
+#    - "global": Fit scaler on all training data, apply to all splits
+#    - "none": No scaling (not recommended for neural networks)
+#
+# 3. strategy:
+#    - "per_subject": Each subject has own train/val/test split (FL realistic)
+#    - "global": Subjects assigned to single split (less realistic)
+#
+# 4. federation mode:
+#    - "manual": Use manual_assignments to specify subject→node mapping
+#    - "auto": Automatically distribute subjects using per_node_percentages

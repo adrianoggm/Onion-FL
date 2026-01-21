@@ -1,0 +1,76 @@
+@startuml
+!theme plain
+skinparam backgroundColor #FFFFFF
+
+package "CAPA EDGE - Clientes Locales" #F3E5F5 {
+    [SwellFLClientMQTT] as EC1
+    [SweetFLClientMQTT] as EC2
+    
+    note right of EC1
+        - Entrena modelo localmente
+        - Publica en fl/updates
+        - Escucha fl/global_model
+    end note
+}
+
+package "CAPA FOG - Agregación Regional" #FFF3E0 {
+    [FogBroker\nfog.py / sweet_fog.py] as Broker
+    
+    note right of Broker
+        - Bufferiza K clientes
+        - weighted_average() con NumPy
+        - Publica fl/partial
+    end note
+}
+
+package "CAPA FOG - Bridge a Flower" #E8F5E9 {
+    [FogClientSwell] as FC1
+    [FogClientSweet] as FC2
+    
+    note right of FC1
+        - Implementa NumPyClient
+        - Recibe fl/partial (MQTT)
+        - Comunica con servidor (gRPC)
+    end note
+}
+
+package "CAPA CENTRAL - Servidor" #C8E6C9 {
+    [MQTTFedAvgSwell] as Server1
+    [MQTTFedAvgSweet] as Server2
+    
+    note right of Server1
+        - Extiende FedAvg (Flower)
+        - Agrega múltiples regiones
+        - Publica fl/global_model
+    end note
+}
+
+cloud "Infraestructura" #E1F5FF {
+    [MQTT Broker\nlocalhost:1883] as MQTT
+    [Flower Server\nlocalhost:8080] as FlowerServer
+}
+
+' Flujo de datos
+EC1 -down-> MQTT: MQTT:\nfl/updates
+EC2 -down-> MQTT: MQTT:\nfl/updates
+
+MQTT -down-> Broker: Subscribe:\nfl/updates
+
+Broker -down-> MQTT: MQTT:\nfl/partial
+
+MQTT -down-> FC1: Subscribe:\nfl/partial
+MQTT -down-> FC2: Subscribe:\nfl/partial
+
+FC1 -down-> FlowerServer: gRPC:\nfit()
+FC2 -down-> FlowerServer: gRPC:\nfit()
+
+FlowerServer -down-> Server1: Flower\nProtocol
+FlowerServer -down-> Server2: Flower\nProtocol
+
+Server1 -up-> MQTT: MQTT:\nfl/global_model
+Server2 -up-> MQTT: MQTT:\nfl/global_model
+
+MQTT -up-> EC1: Subscribe:\nfl/global_model
+MQTT -up-> EC2: Subscribe:\nfl/global_model
+
+@enduml

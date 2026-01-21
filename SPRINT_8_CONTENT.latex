@@ -1,0 +1,221 @@
+\section{Sprint 8}
+
+El \textit{Sprint 8} tuvo una duración inferior a la inicialmente planificada debido al disfrute de un periodo vacacional durante la última semana de octubre. No obstante, el sprint mantuvo un \textbf{objetivo claramente definido}, directamente derivado de las conclusiones obtenidas en el Sprint 7.
+
+En dicho sprint previo se identificó un \textbf{riesgo experimental crítico} asociado al esquema de particionado de los datos, especialmente relevante en escenarios federados basados en datos fisiológicos. Como consecuencia, el objetivo principal del Sprint 8 fue el \textbf{diseño e integración de un distribuidor de dataset a nivel de sujeto}, que garantizase un particionado correcto, reproducible y configurable del conjunto de datos entre clientes.
+
+Desde el punto de vista del backlog, este sprint supuso una \textbf{reformulación parcial de la HU-008}, originalmente definida de forma más general, para adaptarla explícitamente al escenario de partición por sujeto. Dado el tamaño y alcance de esta historia, se optó por su \textbf{descomposición en historias más manejables}, dando lugar a las HU-056, HU-057 y HU-058.
+
+Adicionalmente, durante el análisis del sistema se observó que esta redefinición arquitectónica permitía abordar también los objetivos planteados en la \textbf{HU-015}, definida en el Sprint 0, relativa a la configuración flexible del sistema. En concreto, la introducción de ficheros de configuración global (\texttt{YAML}/\texttt{JSON}) no solo permitió controlar el particionado de datos, sino también sentar las bases para la definición de parámetros de modelo y la activación selectiva de capas del sistema (Edge, Fog y Server) desde una única fuente de configuración.
+
+Las historias de usuario abordadas durante este sprint se resumen en la Tabla~\ref{tab:sprint8}.
+\begin{table}[H]
+\centering
+\footnotesize
+\caption{Sprint 8: Diseño e integración del distribuidor de dataset por sujeto}
+\label{tab:sprint8}
+\renewcommand{\arraystretch}{1.2}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{|l|p{4.8cm}|c|p{5.6cm}|}
+\hline
+\textbf{ID} & \textbf{Historia de usuario} & \textbf{Tamaño} & \textbf{Tareas principales (resumen)} \\ \hline
+
+HU-008 &
+Particionado avanzado de \textit{datasets} &
+XL &
+\begin{itemize}\setlength\itemsep{0.15em}
+  \item Revisar la definición original de la historia a la luz del riesgo experimental identificado.
+  \item Refinar el alcance para contemplar explícitamente la partición estricta por sujeto.
+  \item Descomponer la historia en unidades funcionales más manejables (HU-056, HU-057, HU-058).
+\end{itemize}
+\\ \hline
+
+HU-056 &
+Redefinición del particionado experimental a nivel de sujeto &
+S &
+\begin{itemize}\setlength\itemsep{0.15em}
+  \item Analizar el esquema de particionado previo y sus limitaciones metodológicas.
+  \item Definir formalmente la unidad sujeto como criterio mínimo de partición.
+  \item Establecer la asignación de sujetos a clientes federados sin solapamiento.
+\end{itemize}
+\\ \hline
+
+HU-057 &
+Distribuidor de dataset configurable mediante \texttt{YAML}/\texttt{JSON} &
+M &
+\begin{itemize}\setlength\itemsep{0.15em}
+  \item Diseñar el formato de configuración externa para la distribución de sujetos.
+  \item Implementar el módulo de lectura y validación de configuraciones.
+  \item Desarrollar el mecanismo de reparto de datos conforme a la configuración definida.
+\end{itemize}
+\\ \hline
+
+HU-058 &
+Adaptación de los componentes al nuevo esquema de distribución &
+M &
+\begin{itemize}\setlength\itemsep{0.15em}
+  \item Integrar el distribuidor de dataset en los nodos Edge, Fog y Server.
+  \item Ajustar los flujos de entrenamiento y evaluación al nuevo particionado.
+  \item Verificar el funcionamiento extremo a extremo del sistema federado.
+\end{itemize}
+\\ \hline
+
+HU-015 &
+Gestión de hiperparámetros &
+M &
+\begin{itemize}\setlength\itemsep{0.15em}
+  \item Introducir una configuración global del sistema mediante ficheros \texttt{YAML}/\texttt{JSON}.
+  \item Centralizar parámetros relevantes de entrenamiento y arquitectura.
+  \item Sentar las bases para el versionado y comparación de configuraciones experimentales.
+\end{itemize}
+\\ \hline
+
+HU-060 &
+Testing del sistema de particionado y arquitectura &
+S &
+\begin{itemize}\setlength\itemsep{0.15em}
+  \item Desarrollar tests unitarios para validación de configuraciones.
+  \item Verificar la carga y materialización de arquitecturas federadas.
+  \item Asegurar el correcto funcionamiento del plan de ejecución.
+\end{itemize}
+\\ \hline
+
+\end{tabular}
+\end{table}
+
+
+\subsection{Desarrollo del Sprint 8}
+
+El desarrollo del Sprint 8 se estructuró como una respuesta directa al riesgo experimental identificado en el Sprint 7, centrado en el esquema de particionado de los datos. En particular, se observó que la asignación incorrecta de muestras pertenecientes a un mismo sujeto a distintos clientes federados podía introducir fugas de información y sesgos significativos en la evaluación del sistema.
+
+Como punto de partida, se llevó a cabo un refinamiento conceptual de la historia de usuario HU-008, originalmente definida de forma general como un particionado avanzado de datasets. Este refinamiento permitió concretar el problema en términos metodológicos, estableciendo la necesidad de adoptar una partición estricta a nivel de sujeto como requisito imprescindible para garantizar la validez de los experimentos federados.
+
+\vspace{0.25em}
+\paragraph{HU-056: Redefinición del particionado experimental a nivel de sujeto.}
+
+A partir del análisis del Sprint 7, se redefinió formalmente el esquema de particionado, estableciendo el sujeto como la \textbf{unidad mínima de asignación} a clientes federados. Este cambio asegura que todas las muestras asociadas a un mismo individuo se encuentren siempre en un único cliente, eliminando posibles solapamientos entre conjuntos de entrenamiento, validación y prueba.
+
+La implementación se materializó en el módulo \texttt{swell\_federated.py}, donde se definió la clase \texttt{FederatedConfig} como estructura central de configuración. Esta dataclass encapsula todos los parámetros relevantes del particionado: directorio de datos, modalidades, identificadores de sujetos, semilla aleatoria, proporciones de split (train/val/test), tipo de escalador, y la estrategia de particionado.
+
+El parámetro \texttt{split\_strategy} define dos modalidades de particionado:
+\begin{itemize}
+    \item \texttt{"global"}: Cada sujeto pertenece exclusivamente a un único split (train O val O test).
+    \item \texttt{"per\_subject"}: Cada sujeto tiene su propio split interno train/val/test, manteniendo la disjunción a nivel de cliente federado.
+\end{itemize}
+
+La función \texttt{\_split\_subjects} implementa la asignación determinista de sujetos a splits mediante una semilla aleatoria configurable, garantizando reproducibilidad entre ejecuciones.
+
+\vspace{0.25em}
+\paragraph{HU-056: Redefinición del particionado experimental a nivel de sujeto.}
+
+A partir del análisis del Sprint 7, se redefinió formalmente el esquema de particionado, estableciendo el sujeto como la \textbf{unidad mínima de asignación} a clientes federados. Este cambio asegura que todas las muestras asociadas a un mismo individuo se encuentren siempre en un único cliente, eliminando posibles solapamientos entre conjuntos de entrenamiento, validación y prueba.
+
+La implementación se materializó en el módulo \texttt{swell\_federated.py}, donde se definió la clase \texttt{FederatedConfig} como estructura central de configuración. Esta dataclass encapsula todos los parámetros relevantes del particionado: directorio de datos, modalidades, identificadores de sujetos, semilla aleatoria, proporciones de split (train/val/test), tipo de escalador, y la estrategia de particionado.
+
+El parámetro \texttt{split\_strategy} define dos modalidades de particionado:
+\begin{itemize}
+    \item \texttt{"global"}: Cada sujeto pertenece exclusivamente a un único split (train O val O test).
+    \item \texttt{"per\_subject"}: Cada sujeto tiene su propio split interno train/val/test, manteniendo la disjunción a nivel de cliente federado.
+\end{itemize}
+
+La función \texttt{\_split\_subjects} implementa la asignación determinista de sujetos a splits mediante una semilla aleatoria configurable, garantizando reproducibilidad entre ejecuciones.
+
+\vspace{0.25em}
+\paragraph{HU-057: Implementación del distribuidor de dataset configurable.}
+
+Una vez definido el nuevo esquema de particionado, se procedió a la implementación de un \textbf{distribuidor de dataset} capaz de materializar dicha partición de forma flexible y reproducible. Para ello, se diseñó un mecanismo de configuración externa basado en ficheros \texttt{YAML} o \texttt{JSON}, en los que se especifica explícitamente la asignación de sujetos a nodos Fog.
+
+La función \texttt{\_read\_config} procesa ambos formatos de configuración, extrayendo las secciones \texttt{dataset}, \texttt{split} y \texttt{federation} con valores por defecto para cada parámetro no especificado.
+
+La función principal \texttt{plan\_and\_materialize\_swell\_federated} orquesta todo el proceso de materialización. Dependiendo del modo configurado (\texttt{manual} o \texttt{auto}), determina la asignación de sujetos a nodos Fog y delega en las funciones \texttt{\_materialize\_per\_subject\_strategy} o \texttt{\_materialize\_global\_strategy} según la estrategia seleccionada.
+
+La estructura de salida generada sigue una jerarquía clara con un directorio por nodo Fog, conteniendo los splits agregados (\texttt{train.npz}, \texttt{val.npz}, \texttt{test.npz}) y subdirectorios por sujeto. Un archivo \texttt{manifest.json} documenta la configuración completa y el mapeo de sujetos a nodos.
+
+Este enfoque de configuración declarativa se inspira en los principios de \textit{Infrastructure as Code}, donde la infraestructura y el despliegue del sistema se definen mediante descripciones declarativas versionables, permitiendo tratar la configuración como un artefacto reproducible del sistema \cite{Morris2016IaC}.
+
+\vspace{0.25em}
+\paragraph{HU-058: Adaptación de los componentes del sistema.}
+
+Con el distribuidor de dataset implementado, se adaptaron los distintos componentes del sistema (Edge, Fog y Server) para integrarse con el nuevo mecanismo de distribución. Estas modificaciones garantizan que cada nodo federado reciba exclusivamente los datos correspondientes a los sujetos asignados en la configuración.
+
+El cliente Edge \texttt{SwellFLClientMQTT} fue modificado para cargar datos desde los splits materializados mediante la función \texttt{load\_node\_split}, que lee los archivos \texttt{.npz} generados previamente. El cliente infiere automáticamente la dimensión de entrada del modelo a partir de los datos cargados.
+
+El módulo \texttt{federated\_architecture.py} proporciona una capa de abstracción adicional mediante dataclasses tipados que representan la arquitectura completa del sistema: \texttt{OrchestratorSpec} para la configuración del servidor central, \texttt{FogNodeSpec} para los nodos intermedios, \texttt{ClientSpec} para los clientes Edge, y \texttt{FederatedArchitecture} como contenedor principal.
+
+El broker Fog (\texttt{brokers/fog.py}) se adaptó para trabajar con buffers regionales parametrizables, donde el parámetro \texttt{K} (configurable por región mediante \texttt{K\_MAP}) determina cuántas actualizaciones locales agregar antes de publicar un agregado parcial.
+
+\vspace{0.25em}
+\paragraph{HU-015:Gestión de hiperparámetros .}
+De forma adicional, la introducción del sistema de configuración global permitió cubrir los objetivos de gestión de hiperparámetros. Se centralizó la definición de parámetros relevantes del entrenamiento en las clases \texttt{DatasetConfig} y \texttt{ModelConfig}, que encapsulan respectivamente la configuración del dataset (nombre, directorio, modalidades, proporciones de split) y del modelo (tipo, dimensión de entrada).
+
+La función \texttt{load\_architecture\_config} carga y valida la configuración completa desde un archivo YAML o JSON, incluyendo verificaciones de consistencia como la suma de proporciones de split igual a 1.0 y la existencia de al menos un cliente por nodo Fog.
+
+\vspace{0.25em}
+\paragraph{HU-060: Testing del sistema de particionado y arquitectura.}
+
+Paralelamente al desarrollo de los componentes funcionales, se implementó un conjunto de tests unitarios e integración para validar el correcto funcionamiento del sistema de configuración y particionado. Estos tests se organizaron en el módulo \texttt{test\_federated\_architecture.py}.
+
+Los tests principales cubren los siguientes escenarios:
+\begin{itemize}
+    \item \textbf{Carga de configuraciones}: Verificación de que \texttt{load\_architecture\_config} procesa correctamente archivos JSON y YAML, extrayendo los parámetros del orquestador, nodos Fog y clientes.
+    \item \textbf{Inferencia de workflow}: Validación de que \texttt{infer\_primary\_workflow} identifica correctamente el dataset principal (SWELL, SWEET, WESAD) a partir de la configuración.
+    \item \textbf{Plan de ejecución}: Comprobación de que \texttt{build\_runtime\_plan} genera los comandos correctos para cada rol (server, broker, fog\_bridge, clients) incluyendo las variables de entorno necesarias como \texttt{FOG\_K\_MAP}.
+\end{itemize}
+
+Adicionalmente, el módulo \texttt{test\_datasets.py} incluye tests para las funciones de particionado por sujetos, verificando la validación de parámetros y el manejo de errores cuando se solicitan más clientes que sujetos disponibles.
+
+\subsubsection{Resultados del Sprint 8}
+
+El Sprint 8 culminó con el establecimiento de una \textbf{base experimental sólida y científicamente válida} para el análisis del aprendizaje federado. Los resultados se presentan organizados por historia de usuario.
+
+\vspace{0.25em}
+\paragraph{HU-056: Redefinición del particionado experimental a nivel de sujeto.}
+La historia quedó \textbf{completada}. Se formalizó e implementó un esquema de particionado estrictamente disjunto por sujeto mediante la clase \texttt{FederatedConfig} y la función \texttt{\_split\_subjects}. El sistema soporta dos estrategias (\texttt{per\_subject} y \texttt{global}), permitiendo flexibilidad según los requisitos experimentales.
+
+\vspace{0.25em}
+\paragraph{HU-057: Implementación del distribuidor de dataset configurable.}
+La historia quedó \textbf{completada}. Se implementó el módulo \texttt{swell\_federated.py} con la función \texttt{plan\_and\_materialize\_swell\_federated} que procesa configuraciones YAML/JSON y genera artefactos materializados. Un ejemplo de configuración ilustra la estructura declarativa:
+
+\begin{lstlisting}[language=yaml, basicstyle=\scriptsize\ttfamily]
+dataset:
+  data_dir: data/SWELL
+  modalities: [computer, facial, posture, physiology]
+split:
+  train: 0.7
+  val: 0.15
+  test: 0.15
+  strategy: per_subject
+federation:
+  mode: manual
+  manual_assignments:
+    fog_0: [1, 2, 3, 4, 5, 6]
+    fog_1: [7, 8, 9, 10, 11, 12]
+\end{lstlisting}
+
+La estructura de salida generada organiza los datos por nodo Fog y sujeto:
+\begin{verbatim}
+federated_runs/swell/run_42/
+├── manifest.json
+├── fog_0/
+│   ├── train.npz, val.npz, test.npz
+│   └── subject_1/, subject_2/, ...
+\end{verbatim}
+
+
+\vspace{0.25em}
+\paragraph{HU-058: Adaptación de los componentes del sistema.}
+La historia quedó \textbf{completada}. Los componentes Edge (\texttt{SwellFLClientMQTT}), Fog (\texttt{BrokerFog}) y la capa de orquestación (\texttt{federated\_architecture.py}) fueron adaptados para trabajar con el nuevo sistema de configuración.
+
+\vspace{0.25em}
+\paragraph{HU-059: Gestión centralizada de hiperparámetros.}
+La historia quedó \textbf{completada}. Se definieron las dataclasses \texttt{DatasetConfig}, \texttt{ModelConfig} y \texttt{FederatedArchitecture} que centralizan todos los parámetros de configuración. La función \texttt{load\_architecture\_config} proporciona validación automática de consistencia.
+
+\vspace{0.25em}
+\paragraph{HU-060: Testing del sistema de particionado y arquitectura.}
+La historia quedó \textbf{completada}. Se implementaron tests unitarios en \texttt{test\_federated\_architecture.py} que validan la carga de configuraciones JSON/YAML, la inferencia del workflow principal y la generación del plan de ejecución. Los tests verifican que el sistema genera correctamente los comandos para cada componente (server, broker, fog\_bridge, clients) con sus variables de entorno correspondientes.
+
+De esta forma, la herramienta gana una potencia significativamente mayor, ya que permite \textbf{describir, versionar y materializar} entornos experimentales con arquitecturas cambiantes de manera declarativa. Esto implica que la arquitectura federada deja de ser una decisión rígida embebida en el código y pasa a definirse como un \emph{despliegue lógico} especificado en un fichero de configuración.
+
+En la práctica, el sistema puede instanciar escenarios heterogéneos con \textbf{diferentes nodos Fog} y \textbf{distinto número de clientes Edge por nodo}, incorporando además parámetros específicos por capa (p.ej., tamaños de agregación regional, estrategias de particionado, selección de modalidades o hiperparámetros del modelo) sin necesidad de reimplementar componentes. Como consecuencia, la herramienta soportaría de forma natural la comparación entre configuraciones (\emph{architecture-as-configuration}), permitiendo evaluar el impacto de decisiones estructurales (topología, granularidad de agregación o reparto de sujetos) bajo condiciones controladas y reproducibles.
+
+Este enfoque es especialmente relevante en aprendizaje federado, donde el rendimiento y la estabilidad del sistema dependen no solo del modelo, sino también de la \textbf{topología de comunicación} y del \textbf{grado de heterogeneidad} entre clientes. Al externalizar estas decisiones en configuraciones versionables, se mejora la trazabilidad experimental y se reduce el riesgo de inconsistencias metodológicas entre ejecuciones.
