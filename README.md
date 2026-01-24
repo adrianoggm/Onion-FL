@@ -890,5 +890,7 @@ Special thanks to:
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
-
+ export MQTT_BROKER=localhost MQTT_PORT=1883
+ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4320
+ export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4320
 **Built with ❤️ using modern Python standards and best practices**

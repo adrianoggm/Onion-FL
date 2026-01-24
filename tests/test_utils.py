@@ -5,8 +5,15 @@ import pytest
 import torch
 
 from flower_basic.utils import (
+    _interpret_effect_size,
+    cross_validate_models,
+    detect_data_leakage,
+    load_ecg5000_cross_validation,
+    load_ecg5000_subject_based,
+    load_wesad_dataset,
     numpy_to_state_dict,
     state_dict_to_numpy,
+    statistical_significance_test,
 )
 
 
@@ -136,3 +143,112 @@ class TestStateDictConversion:
         except (TypeError, AttributeError):
             # Expected for invalid input
             pass
+
+
+def test_detect_data_leakage_flags_duplicates() -> None:
+    np.random.seed(0)
+    X_train = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+    X_test = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+
+    stats = detect_data_leakage(X_train, X_test, threshold=0.9)
+    assert bool(stats["leakage_detected"]) is True
+    assert stats["potential_duplicates"] >= 1
+
+
+def test_detect_data_leakage_no_duplicates() -> None:
+    np.random.seed(1)
+    X_train = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+    X_test = np.array([[-1.0, 0.0], [0.0, -1.0]], dtype=np.float32)
+
+    stats = detect_data_leakage(X_train, X_test, threshold=0.9)
+    assert bool(stats["leakage_detected"]) is False
+
+
+def test_statistical_significance_and_effect_size() -> None:
+    results_a = [0.8, 0.81, 0.79, 0.8]
+    results_b = [0.8, 0.81, 0.79, 0.8]
+
+    stats = statistical_significance_test(results_a, results_b, alpha=0.05)
+    assert bool(stats["significant"]) is False
+    assert stats["effect_size_interpretation"] == "negligible"
+
+
+def test_interpret_effect_size_boundaries() -> None:
+    assert _interpret_effect_size(0.1) == "negligible"
+    assert _interpret_effect_size(0.3) == "small"
+    assert _interpret_effect_size(0.6) == "medium"
+    assert _interpret_effect_size(1.0) == "large"
+
+
+def test_cross_validate_models() -> None:
+    X = np.random.randn(20, 4).astype(np.float32)
+    y = np.array([0, 1] * 10, dtype=np.int64)
+
+    class DummyModel:
+        def __init__(self, y_test):
+            self._y_test = y_test
+
+        def predict(self, _X):
+            return self._y_test
+
+    def model_fn(_X_train, _y_train, X_test, y_test, **_kwargs):
+        return DummyModel(y_test)
+
+    results = cross_validate_models(model_fn, X, y, n_splits=2, random_state=1)
+    assert results["n_splits"] == 2
+    assert len(results["fold_results"]["accuracy"]) == 2
+    assert results["summary"]["accuracy"]["mean"] == 1.0
+
+
+def test_load_wesad_dataset_mocked(monkeypatch) -> None:
+    X = np.arange(20, dtype=np.float32).reshape(10, 2)
+    y = np.array([1] * 5 + [2] * 5, dtype=np.int64)
+
+    monkeypatch.setattr(
+        "flower_basic.utils.fetch_openml",
+        lambda *args, **kwargs: {"data": X, "target": y},
+    )
+
+    X_train, X_test, y_train, y_test = load_wesad_dataset(
+        test_size=0.2, random_state=0, stratified=True
+    )
+    assert X_train.shape[1] == 2
+    assert X_test.shape[1] == 2
+    assert set(np.unique(y_train)) <= {0, 1}
+    assert set(np.unique(y_test)) <= {0, 1}
+
+
+def test_load_ecg5000_subject_based_mocked(monkeypatch) -> None:
+    X = np.arange(20, dtype=np.float32).reshape(10, 2)
+    y = np.array([1] * 5 + [2] * 5, dtype=np.int64)
+
+    monkeypatch.setattr(
+        "flower_basic.utils.fetch_openml",
+        lambda *args, **kwargs: {"data": X, "target": y},
+    )
+
+    X_train, X_test, y_train, y_test = load_ecg5000_subject_based(
+        test_size=0.2, random_state=0, num_subjects=2, stratified=True
+    )
+    assert X_train.shape[1] == 2
+    assert X_test.shape[1] == 2
+    assert y_train.dtype == np.int64
+    assert y_test.dtype == np.int64
+
+
+def test_load_ecg5000_cross_validation_mocked(monkeypatch) -> None:
+    X = np.arange(40, dtype=np.float32).reshape(20, 2)
+    y = np.array([1] * 10 + [2] * 10, dtype=np.int64)
+
+    monkeypatch.setattr(
+        "flower_basic.utils.fetch_openml",
+        lambda *args, **kwargs: {"data": X, "target": y},
+    )
+
+    splits = load_ecg5000_cross_validation(n_splits=2, random_state=0, num_subjects=2)
+    assert len(splits) == 2
+    for X_train, X_test, y_train, y_test in splits:
+        assert X_train.shape[1] == 2
+        assert X_test.shape[1] == 2
+        assert y_train.dtype == np.int64
+        assert y_test.dtype == np.int64

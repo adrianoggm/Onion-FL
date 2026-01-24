@@ -1,0 +1,142 @@
+\begin{figure}[H]
+\centering
+\footnotesize
+
+\begin{tikzpicture}[
+  node distance=8mm and 10mm,
+  box/.style={draw, rounded corners, align=left, inner sep=6pt, text width=6.2cm},
+  smallbox/.style={draw, rounded corners, align=left, inner sep=6pt, text width=6.2cm},
+  arrow/.style={-{Stealth[length=2mm]}, thick},
+  execbox/.style={draw, rounded corners, align=left, inner sep=6pt, text width=7cm, fill=blue!10}
+]
+
+% --- Entrada
+\node[box] (cfg) {
+  \textbf{Entrada: configuración declarativa (YAML/JSON)}\\
+  \vspace{0.15em}
+  \textbf{Objetivo:} \textbf{reproducibilidad} y \textbf{automatización} de escenarios federados.
+};
+
+% --- Bloques de secciones
+\node[smallbox, below=of cfg] (sections) {
+  \textbf{Secciones principales del fichero:}
+  \begin{itemize}\setlength\itemsep{0.15em}
+    \item \textbf{Dataset}: \textit{data\_dir}, modalidades, sujetos, etiquetado.
+    \item \textbf{Split}: \textit{train/val/test}, \textit{seed}, \textit{scaler}, estrategia (global/per-subject).
+    \item \textbf{Federation}: modo (manual/auto), nº Fog, asignaciones, porcentajes auto.
+  \end{itemize}
+};
+
+% --- Validaciones
+\node[box, below=of sections] (checks) {
+  \textbf{Validaciones de consistencia (pre-ejecución)}\\
+  \vspace{0.15em}
+  Comprobaciones automáticas de \textbf{coherencia}:
+  \begin{itemize}\setlength\itemsep{0.15em}
+    \item claves obligatorias y tipos (YAML/JSON),
+    \item rangos y sumas de splits,
+    \item sujetos disponibles y no solapados,
+    \item asignaciones Fog/Edge válidas.
+  \end{itemize}
+};
+
+% --- Generador
+\node[box, below=of checks] (gen) {
+  \textbf{Generador de manifiesto}\\
+  \vspace{0.15em}
+  Script: \texttt{prepare\_swell\_federated.py --config <yaml>}\\
+  Procesa la configuración y \textbf{materializa} el experimento.
+};
+
+% --- Salida manifiesto
+\node[box, below=of gen] (manifest) {
+  \textbf{Salida: \texttt{manifest.json} + directorio de particiones}\\
+  \vspace{0.15em}
+  Contiene:
+  \begin{itemize}\setlength\itemsep{0.15em}
+    \item configuración completa del experimento,
+    \item splits globales (train/val/test),
+    \item mapeo \textbf{sujetos $\rightarrow$ Fog},
+    \item mapeo \textbf{clientes Edge por Fog},
+    \item metadatos (nº sujetos, features, muestras).
+  \end{itemize}
+};
+
+% --- Lanzador de arquitectura
+\node[execbox, below=of manifest] (launcher) {
+  \textbf{Lanzador: \texttt{run\_architecture\_from\_config.py}}\\
+  \vspace{0.15em}
+  Opciones:
+  \begin{itemize}\setlength\itemsep{0.15em}
+    \item \texttt{--config <yaml>} : carga configuración.
+    \item \texttt{--manifest <json>} : aplica manifiesto (opcional).
+    \item \texttt{--plan-only} : genera y muestra plan de ejecución.
+    \item \texttt{--launch} : lanza procesos federados.
+    \item \texttt{--dispatch-config} : envía plan por MQTT.
+    \item \texttt{--prepare-splits} : materializa particiones si no hay manifiesto.
+  \end{itemize}
+};
+
+% --- Plan de ejecución
+\node[execbox, below=of launcher] (plan) {
+  \textbf{Plan de ejecución generado}\\
+  \vspace{0.15em}
+  Lista de comandos para:
+  \begin{itemize}\setlength\itemsep{0.15em}
+    \item Servidor central (Flower).
+    \item Nodos Fog (brokers MQTT + agregadores).
+    \item Clientes Edge (entrenamiento local).
+  \end{itemize}
+  Incluye variables de entorno (OTEL, MQTT).
+};
+
+% --- Ejecución federada
+\node[execbox, below=of plan] (exec) {
+  \textbf{Ejecución del ciclo federado}\\
+  \vspace{0.15em}
+  Proceso iterativo:
+  \begin{itemize}\setlength\itemsep{0.15em}
+    \item \textbf{Rondas}: servidor $\rightarrow$ fog $\rightarrow$ edge (entrenamiento local) $\rightarrow$ fog (agregación) $\rightarrow$ servidor (FedAvg).
+    \item Comunicación vía MQTT.
+    \item Monitoreo con OpenTelemetry.
+  \end{itemize}
+};
+
+% --- Resultados
+\node[box, below=of exec] (results) {
+  \textbf{Resultados y métricas}\\
+  \vspace{0.15em}
+  Accuracy, precision, recall, F1 en test set. Logs, trazas OTEL, matrices de confusión.
+};
+
+% --- Flechas principales
+\draw[arrow] (cfg) -- (sections);
+\draw[arrow] (sections) -- (checks);
+\draw[arrow] (checks) -- node[right]{\textbf{OK}} (gen);
+\draw[arrow] (gen) -- (manifest);
+\draw[arrow] (manifest) -- (launcher);
+\draw[arrow] (launcher) -- (plan);
+\draw[arrow] (plan) -- node[right]{\textbf{si --launch}} (exec);
+\draw[arrow] (exec) -- (results);
+
+% --- Rama de error
+\node[smallbox, right=of checks, text width=5.8cm] (error) {
+  \textbf{Si falla una validación:}\\
+  se aborta la generación y se reportan
+  \textbf{errores accionables} (clave faltante, split inválido, sujeto no existente, etc.).
+};
+\draw[arrow] (checks) -- node[above]{\textbf{ERROR}} (error);
+
+% --- Rama plan-only
+\node[smallbox, right=of plan, text width=5cm] (planonly) {
+  \textbf{Modo --plan-only:}\\
+  muestra plan en consola, no ejecuta.
+};
+\draw[arrow] (plan) -- node[above]{\textbf{si --plan-only}} (planonly);
+
+\end{tikzpicture}
+
+\caption{\textbf{Flujo completo HU-059 + ejecución: configuración $\rightarrow$ validación $\rightarrow$ manifiesto $\rightarrow$ planificación $\rightarrow$ lanzamiento $\rightarrow$ ciclo federado.}
+Integra la generación del manifiesto reproducible con el script de lanzamiento \texttt{run\_architecture\_from\_config.py}, culminando en la ejecución del aprendizaje federado Edge--Fog--Cloud.}
+\label{fig:complete_flow_hu059_execution}
+\end{figure}

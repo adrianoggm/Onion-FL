@@ -1,0 +1,37 @@
+@startuml Configuración Avanzada Arquitectura Federada (swell_federated_10runs.yaml)
+
+node "Servidor Central" as Server {
+    component [Servidor FL] as FL_Server
+}
+
+node "Nodo Fog 0" as Fog0 {
+    component [Broker MQTT Regional] as Broker0
+    note right : 8 Clientes (Sujetos: 1,2,3,4,5,6,19,20)
+}
+
+node "Nodo Fog 1" as Fog1 {
+    component [Broker MQTT Regional] as Broker1
+    note right : 8 Clientes (Sujetos: 7,9,10,12,13,14,22,23)
+}
+
+node "Nodo Fog 2" as Fog2 {
+    component [Broker MQTT Regional] as Broker2
+    note right : 7 Clientes (Sujetos: 15,16,17,18,21,24,25)
+}
+
+' Conexiones
+Server --> Fog0 : MQTT (agregación)
+Server --> Fog1 : MQTT (agregación)
+Server --> Fog2 : MQTT (agregación)
+
+Broker0 --> Server : envía actualizaciones agregadas
+Broker1 --> Server : envía actualizaciones agregadas
+Broker2 --> Server : envía actualizaciones agregadas
+
+note right of Server
+  Servidor central que coordina
+  el aprendizaje federado.
+  Recibe actualizaciones de nodos Fog.
+end note
+
+@enduml

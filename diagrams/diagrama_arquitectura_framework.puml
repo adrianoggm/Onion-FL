@@ -1,0 +1,293 @@
+@startuml Arquitectura_Federada_SWELL
+
+!theme plain
+skinparam backgroundColor white
+skinparam linetype ortho
+
+skinparam class {
+    BackgroundColor #FAFAFA
+    BorderColor #424242
+    FontSize 9
+    AttributeFontSize 8
+}
+
+skinparam package {
+    BackgroundColor<<cloud>> #FCE4EC
+    BackgroundColor<<fog>> #E3F2FD
+    BackgroundColor<<edge>> #E8F5E9
+    BackgroundColor<<data>> #FFF8E1
+    BorderColor #757575
+    FontStyle bold
+    FontSize 10
+}
+
+skinparam nodesep 20
+skinparam ranksep 30
+
+' ============================================================================
+' CONTROL / ORQUESTACION - CONFIGURACION Y PLAN DE EJECUCION
+' ============================================================================
+package "CONTROL - Orquestación" <<cloud>> #FCE4EC {
+
+    class RunArchitectureFromConfig {
+        +main()
+        +_apply_manifest_paths()
+        +_print_plan()
+        +_launch()
+    }
+
+    class FederatedArchitectureUtils {
+        +load_architecture_config()
+        +build_runtime_plan()
+        +materialize_swell_partitions()
+        +distribute_architecture()
+    }
+
+    class FederatedArchitecture {
+        -orchestrator: OrchestratorSpec
+        -model: ModelConfig
+        -dataset: DatasetConfig
+        -fog_nodes: List[FogNodeSpec]
+    }
+
+    class OrchestratorSpec {
+        -rounds: int
+        -mqtt: MQTTConfig
+    }
+
+    class MQTTConfig {
+        -broker: str
+        -port: int
+        -topics: MQTTTopics
+    }
+
+    class MQTTTopics {
+        -updates: str
+        -partial: str
+        -global_model: str
+    }
+
+    class FogNodeSpec {
+        -id: str
+        -k: int
+        -clients: List[ClientSpec]
+    }
+
+    class ClientSpec {
+        -id: str
+        -data_dir: str
+        -workflow: str
+    }
+
+    class DatasetConfig {
+        -data_dir: str
+        -split_train: float
+        -split_val: float
+        -split_test: float
+    }
+
+    class ModelConfig {
+        -type: str
+        -input_dim: int
+    }
+
+    RunArchitectureFromConfig ..> FederatedArchitectureUtils
+    FederatedArchitectureUtils ..> FederatedArchitecture
+
+    FederatedArchitecture o-- OrchestratorSpec
+    OrchestratorSpec o-- MQTTConfig
+    MQTTConfig o-- MQTTTopics
+    FederatedArchitecture o-- ModelConfig
+    FederatedArchitecture o-- DatasetConfig
+    FederatedArchitecture o-- "*" FogNodeSpec
+    FogNodeSpec o-- "*" ClientSpec
+}
+
+' ============================================================================
+' CAPA CLOUD - SERVIDOR CENTRAL
+' ============================================================================
+package "CLOUD - Servidor Federado" <<cloud>> #FCE4EC {
+
+    abstract class "fl.server.strategy.FedAvg" as FlowerFedAvg <<Flower>>
+
+    class MQTTFedAvgSwell {
+        -global_model: SwellMLP
+        -mqtt: mqtt.Client
+        -param_names: List[str]
+        -eval_data: Tuple[ndarray, ndarray]
+        +__init__(model, mqtt_client, eval_data)
+        +aggregate_fit(server_round, results, failures): Parameters
+    }
+
+    class SwellServer {
+        -model: SwellMLP
+        -mqtt_client: mqtt.Client
+        -strategy: MQTTFedAvgSwell
+        +main()
+        +_load_eval_data(manifest_path): Tuple
+        +_evaluate_global(model, data): Tuple
+        ..Flower gRPC..
+        fl.server.start_server()
+    }
+
+    MQTTFedAvgSwell --|> FlowerFedAvg
+    SwellServer ..> MQTTFedAvgSwell
+}
+
+' ============================================================================
+' CAPA FOG - AGREGACIÓN REGIONAL
+' ============================================================================
+package "FOG - Agregación Regional" <<fog>> #E3F2FD {
+
+    abstract class "fl.client.NumPyClient" as FlowerClient <<Flower>>
+
+    class FogBroker {
+        -buffers: Dict[str, List]
+        -K: int
+        -K_MAP: Dict[str, int]
+        +on_update(client, userdata, msg)
+        +weighted_average(updates, weights): Dict
+        +main()
+        ..Topics..
+        UPDATE_TOPIC = "fl/updates"
+        PARTIAL_TOPIC = "fl/partial"
+        GLOBAL_TOPIC = "fl/global_model"
+    }
+
+    class FogClientSwell {
+        -model: SwellMLP
+        -server_address: str
+        -partial_weights: Dict
+        -partial_topic: str
+        -region: str
+        +__init__(server_address, input_dim, region)
+        +on_message(client, userdata, msg)
+        +get_parameters(config): List[ndarray]
+        +fit(parameters, config): Tuple
+        +evaluate(parameters, config): Tuple
+    }
+
+    FogClientSwell ..|> FlowerClient
+}
+
+' ============================================================================
+' CAPA EDGE - CLIENTES LOCALES
+' ============================================================================
+package "EDGE - Clientes Locales" <<edge>> #E8F5E9 {
+
+    class BaseMQTTComponent {
+        -tag: str
+        -mqtt: mqtt.Client
+        -_subscriptions: List[str]
+        +__init__(tag, mqtt_broker, mqtt_port, subscriptions)
+        +on_message(client, userdata, msg)
+        +publish_json(topic, payload)
+        +stop_mqtt()
+    }
+
+    class SwellFLClientMQTT {
+        -model: SwellMLP
+        -train_loader: DataLoader
+        -val_loader: DataLoader
+        -optimizer: Adam
+        -criterion: CrossEntropyLoss
+        -region: str
+        -topic_updates: str
+        -topic_global: str
+        +__init__(node_dir, region, lr, batch_size)
+        +on_message(client, userdata, msg)
+        +train_one_round(): float
+        +publish_update()
+        +wait_for_global(timeout): bool
+        +evaluate_val(): Dict
+    }
+
+    SwellFLClientMQTT --|> BaseMQTTComponent
+    FogClientSwell --|> BaseMQTTComponent
+}
+
+' ============================================================================
+' CAPA DE DATOS Y MODELO
+' ============================================================================
+package "DATOS - Modelo y Dataset" <<data>> #FFF8E1 {
+
+    class SwellMLP {
+        -net: Sequential
+        +__init__(input_dim, hidden_dims, num_classes)
+        +forward(x: Tensor): Tensor
+    }
+
+    abstract class "torch.nn.Module" as NNModule <<PyTorch>>
+
+    class SwellDataset {
+        +load_swell_dataset()
+        +partition_swell_by_subjects()
+        +get_swell_info()
+    }
+
+    class SwellFederatedDataset {
+        +plan_and_materialize_swell_federated()
+        +load_node_split(path)
+    }
+
+    SwellMLP --|> NNModule
+}
+
+' ============================================================================
+' OBSERVABILIDAD - TELEMETRÍA
+' ============================================================================
+package "OBSERVABILIDAD - Telemetría" <<data>> #FFF8E1 {
+
+    class Telemetry {
+        +init_otel(service_name)
+        +start_span(name)
+        +start_linked_producer_span()
+        +start_linked_consumer_span()
+        +inject_trace_context()
+        +extract_trace_context()
+        +shutdown_telemetry()
+    }
+}
+
+' ============================================================================
+' RELACIONES CON DATOS Y ORQUESTACIÓN
+' ============================================================================
+RunArchitectureFromConfig ..> FederatedArchitectureUtils : genera plan
+FederatedArchitectureUtils ..> SwellFederatedDataset : materializa splits
+
+SwellFLClientMQTT ..> SwellMLP : usa
+SwellFLClientMQTT ..> SwellFederatedDataset : carga datos
+FogClientSwell ..> SwellMLP : usa
+SwellServer ..> SwellMLP : usa
+SwellServer ..> SwellFederatedDataset : evalúa
+
+' ============================================================================
+' TELEMETRÍA (CROSS-CUTTING)
+' ============================================================================
+SwellFLClientMQTT ..> Telemetry
+FogClientSwell ..> Telemetry
+MQTTFedAvgSwell ..> Telemetry
+FogBroker ..> Telemetry
+
+' ============================================================================
+' FLUJO DE COMUNICACIÓN FEDERADO
+' ============================================================================
+SwellFLClientMQTT -[#2196F3,bold]-> FogBroker : ① MQTT fl/updates
+FogBroker -[#9C27B0,bold]-> FogClientSwell : ② MQTT fl/partial
+FogClientSwell -[#4CAF50,bold]-> SwellServer : ③ Flower gRPC fit()
+
+SwellServer -[#FF5722,bold]-> FogBroker : ④ MQTT fl/global_model
+FogBroker -[#FF5722,bold]-> SwellFLClientMQTT : ⑤ MQTT fl/global_model
+
+' ============================================================================
+' LEYENDA
+' ============================================================================
+legend bottom
+  |= Protocolo |= Descripción |
+  | MQTT (azul/naranja/morado) | Mensajería ligera |
+  | Flower gRPC (verde) | Agregación FL |
+
+  Flujo: Cliente entrena - Fog agrega K updates - Bridge envía parcial gRPC - Servidor difunde global MQTT
+endlegend
+
+@enduml

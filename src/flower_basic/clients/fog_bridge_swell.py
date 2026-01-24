@@ -102,13 +102,13 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
     def on_message(self, client, userdata, msg):
         try:
             data = json.loads(msg.payload.decode())
+            region = data.get("region", "unknown")
+            if region != self.region:
+                return
             self.partial_weights = data.get("partial_weights")
             self.partial_trace_context = data.get(
                 "trace_context", {}
             )  # Extract trace context
-            region = data.get("region", "unknown")
-            if region != self.region:
-                return
             # Use linked CONSUMER span to continue trace from fog-broker
             with start_linked_consumer_span(
                 TRACER,

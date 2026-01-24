@@ -1,0 +1,50 @@
+@startuml Complete Flow HU-059 + Execution
+
+start
+
+:Entrada: configuración declarativa (YAML/JSON)\nObjetivo: reproducibilidad y automatización;
+
+:Secciones principales del fichero:\n- Dataset: data_dir, modalidades, sujetos\n- Split: train/val/test, seed, scaler\n- Federation: modo, nº Fog, asignaciones;
+
+:Validaciones de consistencia (pre-ejecución)\n- Claves obligatorias y tipos\n- Rangos y sumas de splits\n- Sujetos disponibles y no solapados\n- Asignaciones Fog/Edge válidas;
+
+if (Validaciones OK?) then (Sí)
+
+:Generador de manifiesto\nScript: prepare_swell_federated.py --config <yaml>\nProcesa y materializa el experimento;
+
+:Salida: manifest.json + particiones\n(Config, splits, mapeos, metadatos);
+
+:Lanzador: run_architecture_from_config.py\nOpciones: config, manifest, plan-only, launch, etc.;
+
+:Plan de ejecución generado\nComandos para servidor, fog, edge\nVariables OTEL, MQTT;
+
+if (Modo --launch?) then (Sí)
+
+repeat
+:Servidor envía modelo global a Fog vía MQTT;
+:Fog reenvía modelo a clientes Edge;
+:Clientes Edge entrenan localmente (sin compartir datos);
+:Edge envían updates de parámetros a Fog;
+:Fog agrega updates (FedAvg local);
+:Fog envía agregado global a Servidor;
+:Servidor actualiza modelo global;
+repeat while (más rondas?)
+
+:Fin rondas: evaluación final;
+:Resultados y métricas\nAccuracy, precision, etc. en test set;
+
+else (No)
+
+:Modo --plan-only\nMuestra plan en consola, no ejecuta;
+
+endif
+
+else (No)
+
+:Error en validaciones\nAborta generación, reporta errores accionables\n(clave faltante, split inválido, etc.);
+
+endif
+
+stop
+
+@enduml

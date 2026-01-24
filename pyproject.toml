@@ -187,6 +187,17 @@ omit = [
     "*/tests/*",
     "*/venv/*",
     "*/__pycache__/*",
+    "*/scripts/*",
+    "*/flower-basic/*.py",
+    "*/src/flower_basic/datasets/ecg5000.py",
+    "*/src/flower_basic/datasets/sweet_*",
+    "*/src/flower_basic/datasets/samples.py",
+    "*/src/flower_basic/datasets/wesad.py",
+    "*/src/flower_basic/datasets/multimodal.py",
+    "*/src/flower_basic/clients/sweet.py",
+    "*/src/flower_basic/brokers/sweet_fog.py",
+    "*/src/flower_basic/servers/sweet.py",
+    "*/src/flower_basic/sweet_model.py",
     "setup.py",
 ]
 
