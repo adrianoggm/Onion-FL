@@ -122,7 +122,7 @@ jobs:
           ls -la *.tar.gz
 
       - name: Upload deployment artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: flower-fog-deployment
           path: dist/flower-fog-deployment-${{ github.sha }}.tar.gz
