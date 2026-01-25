@@ -1,0 +1,56 @@
+@startuml Componentes del Sistema de Monitorización
+
+package "Sistema de Aprendizaje Federado" as FL {
+    component [Clientes] as Clients
+    component [Nodos Fog] as Fog
+    component [Servidor] as Server
+    component [Broker MQTT] as MQTT
+}
+
+package "Pila de Monitorización" as Monitoring {
+    component [SDK OpenTelemetry] as OTEL_SDK
+    component [Colector OTEL] as Collector
+    component [Jaeger] as Jaeger
+    component [Prometheus] as Prometheus
+    component [Grafana] as Grafana
+    component [Pushgateway] as Pushgateway
+}
+
+' Relaciones
+Clients --> OTEL_SDK : instrumentado con
+Fog --> OTEL_SDK : instrumentado con
+Server --> OTEL_SDK : instrumentado con
+
+OTEL_SDK --> Collector : envía trazas/métricas (OTLP)
+
+Collector --> Jaeger : reenvía trazas
+Collector --> Prometheus : genera spanmetrics
+
+Prometheus --> Grafana : fuente de datos
+Pushgateway --> Prometheus : empuja métricas
+
+MQTT --> Clients : comunicación
+MQTT --> Fog : comunicación
+MQTT --> Server : comunicación
+
+note right of Collector
+  Procesa y enruta
+  datos de telemetría
+end note
+
+note right of Jaeger
+  Seguimiento distribuido
+  y monitoreo de rendimiento
+end note
+
+note right of Prometheus
+  Recolección y almacenamiento
+  de métricas de series temporales
+end note
+
+note right of Grafana
+  Dashboards y
+  visualización en tiempo real
+end note
+
+@enduml

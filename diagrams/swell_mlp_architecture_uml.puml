@@ -1,0 +1,47 @@
+@startuml Arquitectura de Capas de SwellMLP
+
+!pragma layout smetana
+
+rectangle "Entrada\n(input_dim features)" as Input #lightblue
+
+rectangle "Capa Lineal\n(input_dim → 128)" as Linear1 #lightgreen
+rectangle "ReLU" as ReLU1 #lightyellow
+rectangle "Dropout(0.2)" as Dropout1 #lightcoral
+
+rectangle "Capa Lineal\n(128 → 64)" as Linear2 #lightgreen
+rectangle "ReLU" as ReLU2 #lightyellow
+rectangle "Dropout(0.2)" as Dropout2 #lightcoral
+
+rectangle "Capa Lineal\n(64 → num_classes)" as Output #lightblue
+
+Input -down-> Linear1 : flujo de datos
+Linear1 -down-> ReLU1
+ReLU1 -down-> Dropout1
+Dropout1 -down-> Linear2
+Linear2 -down-> ReLU2
+ReLU2 -down-> Dropout2
+Dropout2 -down-> Output
+
+note right of Input
+  Datos de entrada: características fisiológicas tabulares
+  (ej. 16 features para SWELL)
+end note
+
+note right of Output
+  Salida: probabilidades para clasificación binaria
+  (estrés vs no estrés)
+end note
+
+note right of Linear1
+  Pesos entrenables para transformación lineal
+end note
+
+note right of ReLU1
+  Activación no lineal: max(0, x)
+end note
+
+note right of Dropout1
+  Regularización: apaga 20% de neuronas aleatoriamente
+end note
+
+@enduml

@@ -20,9 +20,9 @@ federation:
   mode: manual   # manual | auto
   # manual_assignments tiene prioridad cuando mode=manual
   manual_assignments:
-    fog_0: [1, 2, 3, 4, 5, 6, 19, 20, 21]
-    fog_1: [7, 8, 9, 10, 11, 12, 22, 23]
-    fog_2: [13, 14, 15, 16, 17, 18, 24, 25]
+    fog_0: [1, 2, 3, 4, 5, 6, 19, 20, 21] # 9 sujetos
+    fog_1: [7, 8, 9, 10, 11, 12, 22, 23] # 8 sujetos
+    fog_2: [13, 14, 15, 16, 17, 18, 24, 25] # 8 sujetos
   # si mode=auto, usar num_fog_nodes y per_node_percentages
   num_fog_nodes: 3
   per_node_percentages: [0.34, 0.33, 0.33]
