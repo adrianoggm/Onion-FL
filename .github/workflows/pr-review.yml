@@ -107,7 +107,7 @@ jobs:
             });
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: pr-test-results-${{ github.event.number }}
           path: pr-results/
