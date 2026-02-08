@@ -1,0 +1,14 @@
+@startuml SweetMLP
+!theme plain
+skinparam linetype ortho
+
+class SweetMLP {
+    - input_dim: int
+    - hidden_dims: List[int]
+    - layers: ModuleList
+    + forward(x: Tensor): Tensor
+    + state_dict(): dict
+    + load_state_dict(state_dict: dict)
+}
+
+@enduml

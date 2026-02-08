@@ -1,0 +1,56 @@
+@startuml EDGE_ClientesLocales
+
+!theme plain
+skinparam backgroundColor white
+skinparam linetype ortho
+
+skinparam class {
+    BackgroundColor #FAFAFA
+    BorderColor #424242
+    FontSize 9
+    AttributeFontSize 8
+}
+
+skinparam package {
+    BackgroundColor<<edge>> #E8F5E9
+    BorderColor #757575
+    FontStyle bold
+    FontSize 10
+}
+
+skinparam nodesep 20
+skinparam ranksep 30
+
+package "EDGE - Clientes Locales" <<edge>> #E8F5E9 {
+
+    class BaseMQTTComponent {
+        -tag: str
+        -mqtt: mqtt.Client
+        -_subscriptions: List[str]
+        +__init__(tag, mqtt_broker, mqtt_port, subscriptions)
+        +on_message(client, userdata, msg)
+        +publish_json(topic, payload)
+        +stop_mqtt()
+    }
+
+    class SwellFLClientMQTT {
+        -model: SwellMLP
+        -train_loader: DataLoader
+        -val_loader: DataLoader
+        -optimizer: Adam
+        -criterion: CrossEntropyLoss
+        -region: str
+        -topic_updates: str
+        -topic_global: str
+        +__init__(node_dir, region, lr, batch_size)
+        +on_message(client, userdata, msg)
+        +train_one_round(): float
+        +publish_update()
+        +wait_for_global(timeout): bool
+        +evaluate_val(): Dict
+    }
+
+    SwellFLClientMQTT --|> BaseMQTTComponent
+}
+
+@enduml

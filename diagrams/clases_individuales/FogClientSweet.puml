@@ -1,0 +1,17 @@
+@startuml FogClientSweet
+!theme plain
+skinparam linetype ortho
+
+class FogClientSweet {
+    - model: SweetMLP
+    - server_address: str
+    - region: str
+    - partial_weights: dict
+    + fit(parameters, config): Tuple
+    + get_parameters(config): List
+    + evaluate(parameters, config): Tuple
+    - on_message(client, userdata, msg)
+    - _wait_for_partial(): bool
+}
+
+@enduml

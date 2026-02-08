@@ -1,0 +1,11 @@
+@startuml NNModule
+!theme plain
+skinparam linetype ortho
+
+abstract class NNModule {
+    + forward(x)
+    + state_dict()
+    + load_state_dict(state_dict)
+}
+
+@enduml

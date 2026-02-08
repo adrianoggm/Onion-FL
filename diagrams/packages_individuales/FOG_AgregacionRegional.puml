@@ -1,0 +1,57 @@
+@startuml FOG_AgregacionRegional
+
+!theme plain
+skinparam backgroundColor white
+skinparam linetype ortho
+
+skinparam class {
+    BackgroundColor #FAFAFA
+    BorderColor #424242
+    FontSize 9
+    AttributeFontSize 8
+}
+
+skinparam package {
+    BackgroundColor<<fog>> #E3F2FD
+    BorderColor #757575
+    FontStyle bold
+    FontSize 10
+}
+
+skinparam nodesep 20
+skinparam ranksep 30
+
+package "FOG - Agregación Regional" <<fog>> #E3F2FD {
+
+    abstract class "fl.client.NumPyClient" as FlowerClient <<Flower>>
+
+    class FogBroker {
+        -buffers: Dict[str, List]
+        -K: int
+        -K_MAP: Dict[str, int]
+        +on_update(client, userdata, msg)
+        +weighted_average(updates, weights): Dict
+        +main()
+        ..Topics..
+        UPDATE_TOPIC = "fl/updates"
+        PARTIAL_TOPIC = "fl/partial"
+        GLOBAL_TOPIC = "fl/global_model"
+    }
+
+    class FogClientSwell {
+        -model: SwellMLP
+        -server_address: str
+        -partial_weights: Dict
+        -partial_topic: str
+        -region: str
+        +__init__(server_address, input_dim, region)
+        +on_message(client, userdata, msg)
+        +get_parameters(config): List[ndarray]
+        +fit(parameters, config): Tuple
+        +evaluate(parameters, config): Tuple
+    }
+
+    FogClientSwell ..|> FlowerClient
+}
+
+@enduml

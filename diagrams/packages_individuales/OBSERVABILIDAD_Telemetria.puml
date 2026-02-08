@@ -1,0 +1,37 @@
+@startuml OBSERVABILIDAD_Telemetria
+
+!theme plain
+skinparam backgroundColor white
+skinparam linetype ortho
+
+skinparam class {
+    BackgroundColor #FAFAFA
+    BorderColor #424242
+    FontSize 9
+    AttributeFontSize 8
+}
+
+skinparam package {
+    BackgroundColor<<data>> #FFF8E1
+    BorderColor #757575
+    FontStyle bold
+    FontSize 10
+}
+
+skinparam nodesep 20
+skinparam ranksep 30
+
+package "OBSERVABILIDAD - Telemetría" <<data>> #FFF8E1 {
+
+    class Telemetry {
+        +init_otel(service_name)
+        +start_span(name)
+        +start_linked_producer_span()
+        +start_linked_consumer_span()
+        +inject_trace_context()
+        +extract_trace_context()
+        +shutdown_telemetry()
+    }
+}
+
+@enduml

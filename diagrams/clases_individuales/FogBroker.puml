@@ -1,0 +1,16 @@
+@startuml FogBroker
+!theme plain
+skinparam linetype ortho
+
+class FogBroker {
+    - buffers: Dict[str, List]
+    - clients_per_region: Dict
+    - K: int
+    - mqtt_client: mqtt.Client
+    + on_update(client, userdata, msg)
+    + weighted_average(updates): dict
+    + publish_partial(): void
+    + main(): void
+}
+
+@enduml

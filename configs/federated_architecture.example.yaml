@@ -41,7 +41,7 @@ federated_architecture:
 
   fog_nodes:
     - id: fog_0
-      k: 4
+      k: 3
       params:
         lr: 0.001
         local_epochs: 14
@@ -57,7 +57,7 @@ federated_architecture:
           data_dir: "federated_runs/swell/example_manual/fog_0"
 
     - id: fog_1
-      k: 4
+      k: 3
       params:
         lr: 0.001
         local_epochs: 14
@@ -73,7 +73,7 @@ federated_architecture:
           data_dir: "federated_runs/swell/example_manual/fog_1"
 
     - id: fog_2
-      k: 4
+      k: 3
       params:
         lr: 0.001
         local_epochs: 14

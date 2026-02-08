@@ -1,0 +1,52 @@
+@startuml CLOUD_ServidorFederado
+
+!theme plain
+skinparam backgroundColor white
+skinparam linetype ortho
+
+skinparam class {
+    BackgroundColor #FAFAFA
+    BorderColor #424242
+    FontSize 9
+    AttributeFontSize 8
+}
+
+skinparam package {
+    BackgroundColor<<cloud>> #FCE4EC
+    BorderColor #757575
+    FontStyle bold
+    FontSize 10
+}
+
+skinparam nodesep 20
+skinparam ranksep 30
+
+package "CLOUD - Servidor Federado" <<cloud>> #FCE4EC {
+
+    abstract class "fl.server.strategy.FedAvg" as FlowerFedAvg <<Flower>>
+
+    class MQTTFedAvgSwell {
+        -global_model: SwellMLP
+        -mqtt: mqtt.Client
+        -param_names: List[str]
+        -eval_data: Tuple[ndarray, ndarray]
+        +__init__(model, mqtt_client, eval_data)
+        +aggregate_fit(server_round, results, failures): Parameters
+    }
+
+    class SwellServer {
+        -model: SwellMLP
+        -mqtt_client: mqtt.Client
+        -strategy: MQTTFedAvgSwell
+        +main()
+        +_load_eval_data(manifest_path): Tuple
+        +_evaluate_global(model, data): Tuple
+        ..Flower gRPC..
+        fl.server.start_server()
+    }
+
+    MQTTFedAvgSwell --|> FlowerFedAvg
+    SwellServer ..> MQTTFedAvgSwell
+}
+
+@enduml

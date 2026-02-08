@@ -1,0 +1,48 @@
+@startuml DATOS_ModeloDataset
+
+!theme plain
+skinparam backgroundColor white
+skinparam linetype ortho
+
+skinparam class {
+    BackgroundColor #FAFAFA
+    BorderColor #424242
+    FontSize 9
+    AttributeFontSize 8
+}
+
+skinparam package {
+    BackgroundColor<<data>> #FFF8E1
+    BorderColor #757575
+    FontStyle bold
+    FontSize 10
+}
+
+skinparam nodesep 20
+skinparam ranksep 30
+
+package "DATOS - Modelo y Dataset" <<data>> #FFF8E1 {
+
+    class SwellMLP {
+        -net: Sequential
+        +__init__(input_dim, hidden_dims, num_classes)
+        +forward(x: Tensor): Tensor
+    }
+
+    abstract class "torch.nn.Module" as NNModule <<PyTorch>>
+
+    class SwellDataset {
+        +load_swell_dataset()
+        +partition_swell_by_subjects()
+        +get_swell_info()
+    }
+
+    class SwellFederatedDataset {
+        +plan_and_materialize_swell_federated()
+        +load_node_split(path)
+    }
+
+    SwellMLP --|> NNModule
+}
+
+@enduml
