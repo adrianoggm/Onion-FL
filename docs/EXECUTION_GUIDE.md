@@ -36,25 +36,25 @@ Si prefieres usar la línea de comandos:
 **Terminal 1 - Servidor Central:**
 
 ```bash
-.venv\Scripts\python.exe server.py
+.venv\Scripts\python.exe -m flower_basic.server
 ```
 
 **Terminal 2 - Fog Broker:**
 
 ```bash
-.venv\Scripts\python.exe broker_fog.py
+.venv\Scripts\python.exe -m flower_basic.brokers.fog --k 3
 ```
 
 **Terminal 3 - Fog Client:**
 
 ```bash
-.venv\Scripts\python.exe fog_flower_client.py
+.venv\Scripts\python.exe -m flower_basic.fog_flower_client
 ```
 
 **Terminal 4+ - Clientes Locales:**
 
 ```bash
-.venv\Scripts\python.exe client.py
+.venv\Scripts\python.exe -m flower_basic.client --region region_0
 ```
 
 **Terminal Opcional - Debug:**
@@ -73,7 +73,7 @@ Si prefieres usar la línea de comandos:
 [SERVER] Ready to aggregate...
 ```
 
-### 2. Fog Broker (`broker_fog.py`)
+### 2. Fog Broker (`flower_basic.brokers.fog`)
 
 ```
 [MQTT] Connected to test.mosquitto.org (rc=0)
@@ -81,7 +81,7 @@ Si prefieres usar la línea de comandos:
 [BROKER] Region 'region_0' has 3/3 updates, computing partial...
 ```
 
-### 3. Fog Client (`fog_flower_client.py`)
+### 3. Fog Client (`flower_basic.fog_flower_client`)
 
 ```
 [FOG CLIENT] Connected to Flower server at localhost:8080
@@ -89,7 +89,7 @@ Si prefieres usar la línea de comandos:
 [FOG CLIENT] Sending partial aggregate to central server...
 ```
 
-### 4. Clientes Locales (`client.py`)
+### 4. Clientes Locales (`flower_basic.client`)
 
 ```
 [CLIENT] Training locally on ECG5000 data...
@@ -152,10 +152,16 @@ Típicamente verás convergencia en **3-5 rondas** con mejora progresiva de la p
 
 ### Cambiar Número de Agregación Fog (K)
 
-En `broker_fog.py`, línea 20:
+Usa el parámetro de arranque:
 
-```python
-K = 3  # Cambiar a número deseado
+```bash
+python -m flower_basic.brokers.fog --k 5
+```
+
+Para distintos valores por región:
+
+```bash
+python -m flower_basic.brokers.fog --k-map "{\"fog_0\": 2, \"fog_1\": 3}"
 ```
 
 ### Cambiar Broker MQTT

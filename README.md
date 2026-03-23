@@ -111,12 +111,12 @@ flowchart TD
   C --> F2[fog_1 node_dir]
 
   subgraph Region_fog_0
-    F1 --> G1[Clients fog_0 (swell_client)]
+    F1 --> G1[Clients fog_0 (flower_basic.clients.swell)]
     G1 -->|MQTT fl/updates| H((Fog Broker))
   end
 
   subgraph Region_fog_1
-    F2 --> G2[Clients fog_1 (swell_client)]
+    F2 --> G2[Clients fog_1 (flower_basic.clients.swell)]
     G2 -->|MQTT fl/updates| H
   end
 
@@ -126,6 +126,7 @@ flowchart TD
   E -->|Flower gRPC| S
   S -->|MQTT fl/global_model| G1
   S -->|MQTT fl/global_model| G2
+```
 
 #### Tracing por capas (con colores)
 
@@ -136,14 +137,14 @@ flowchart LR
   classDef broker fill:#2ca02c,stroke:#145014,color:#fff;
   classDef client fill:#ff7f0e,stroke:#8a4107,color:#fff;
 
-  srv([🖥️ Servidor Central<br/>server_swell.py]):::central
-  fb0([🌫️ Bridge fog_0<br/>fog_flower_client_swell.py]):::bridge
-  fb1([🌫️ Bridge fog_1<br/>fog_flower_client_swell.py]):::bridge
-  brk([🤖 Broker Fog<br/>broker_fog.py]):::broker
-  c0a([🔬 Cliente fog_0_a<br/>swell_client.py]):::client
-  c0b([🔬 Cliente fog_0_b<br/>swell_client.py]):::client
-  c1a([🔬 Cliente fog_1_a<br/>swell_client.py]):::client
-  c1b([🔬 Cliente fog_1_b<br/>swell_client.py]):::client
+  srv([🖥️ Servidor Central<br/>flower_basic.servers.swell]):::central
+  fb0([🌫️ Bridge fog_0<br/>flower_basic.clients.fog_bridge_swell]):::bridge
+  fb1([🌫️ Bridge fog_1<br/>flower_basic.clients.fog_bridge_swell]):::bridge
+  brk([🤖 Broker Fog<br/>flower_basic.brokers.fog]):::broker
+  c0a([🔬 Cliente fog_0_a<br/>flower_basic.clients.swell]):::client
+  c0b([🔬 Cliente fog_0_b<br/>flower_basic.clients.swell]):::client
+  c1a([🔬 Cliente fog_1_a<br/>flower_basic.clients.swell]):::client
+  c1b([🔬 Cliente fog_1_b<br/>flower_basic.clients.swell]):::client
 
   c0a -- fl/updates --> brk
   c0b -- fl/updates --> brk
@@ -162,7 +163,6 @@ flowchart LR
   fb0 -- fl/global_model --> c0b
   fb1 -- fl/global_model --> c1a
   fb1 -- fl/global_model --> c1b
-```
 ```
 
 **Modern Python Federated Learning Framework** following current PEP standards with comprehensive type hints, automated testing, and production-ready architecture.
@@ -390,7 +390,7 @@ The architecture simulates a real fog computing environment for federated learni
                                       │
                     ┌─────────────────▼───────────────────────┐
                     │       🌫️ NODO FOG (PUENTE)             │
-                    │    (fog_flower_client.py)              │
+                    │ (flower_basic.fog_flower_client)       │
                     │                                         │
                     │ 🔄 PASO 4: Recibe parcial vía MQTT     │
                     │ 🚀 PASO 5: Reenvía al servidor central │
@@ -403,7 +403,7 @@ The architecture simulates a real fog computing environment for federated learni
                                       │
                     ┌─────────────────▼───────────────────────┐
                     │        🤖 BROKER FOG                    │
-                    │       (broker_fog.py)                  │
+                    │   (flower_basic.brokers.fog)           │
                     │                                         │
                     │ 📥 PASO 2: Recibe de 3 clientes        │
                     │ 🧮 PASO 3: weighted_average(K=3)       │
@@ -418,7 +418,8 @@ The architecture simulates a real fog computing environment for federated learni
         ▼                 ▼               ▼                 │
 ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
 │ 🔬 CLIENTE 1│  │ 🔬 CLIENTE 2│  │ 🔬 CLIENTE 3│          │
-│(client.py)  │  │(client.py)  │  │(client.py)  │          │
+│(flower_basic│  │(flower_basic│  │(flower_basic│          │
+│ .client)    │  │ .client)    │  │ .client)    │          │
 │             │  │             │  │             │          │
 │📚 PASO 1:   │  │📚 PASO 1:   │  │📚 PASO 1:   │          │
 │Entrena CNN  │  │Entrena CNN  │  │Entrena CNN  │          │
@@ -457,7 +458,7 @@ The architecture simulates a real fog computing environment for federated learni
     -   Publishes updated global model via MQTT (`fl/global_model`)
 -   **Port**: `localhost:8080` (Flower gRPC)
 
-### 🌫️ **Fog Node** (`fog_flower_client.py`)
+### 🌫️ **Fog Node** (`flower_basic.fog_flower_client`)
 
 -   **Purpose**: Bridge between fog layers (MQTT) and central (Flower)
 -   **Technology**: Flower Client + MQTT Client
@@ -466,7 +467,7 @@ The architecture simulates a real fog computing environment for federated learni
     -   Forwards them to central server using Flower gRPC protocol
     -   Enables transparent integration fog computing ↔ Flower framework
 
-### 🤖 **Fog Broker** (`broker_fog.py`)
+### 🤖 **Fog Broker** (`flower_basic.brokers.fog`)
 
 -   **Purpose**: Regional aggregator for local updates
 -   **Technology**: MQTT Broker with aggregation logic
@@ -569,11 +570,11 @@ python scripts/evaluate_swell_baseline.py
 python scripts/evaluate_multimodal_baseline.py
 ```
 
-### Run Complete Federated Demo
+### Run Generic Federated Demo
 
 ```bash
-# Start MQTT broker
-python -m flower_basic.broker_fog
+# Start MQTT broker / regional aggregator (K=3 updates before partial aggregate)
+python -m flower_basic.brokers.fog --k 3
 
 # Start central server (new terminal)  
 python -m flower_basic.server
@@ -581,11 +582,15 @@ python -m flower_basic.server
 # Start fog bridge (new terminal)
 python -m flower_basic.fog_flower_client
 
-# Start clients with multi-dataset support (3 new terminals)
-python -m flower_basic.client --client_id 1 --dataset wesad
-python -m flower_basic.client --client_id 2 --dataset swell
-python -m flower_basic.client --client_id 3 --dataset multimodal
+# Start 3 local clients in the same fog region (3 new terminals)
+python -m flower_basic.client --region region_0
+python -m flower_basic.client --region region_0
+python -m flower_basic.client --region region_0
 ```
+
+Notes:
+- This generic path is the legacy ECG/WESAD-style MQTT demo.
+- For the full hierarchical SWELL setup, use `scripts/run_architecture_from_config.py`.
 
 ### SWELL Federated Demo (MQTT + Grafana + Jaeger + Prometheus)
 

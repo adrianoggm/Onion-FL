@@ -245,19 +245,19 @@ training:
   - Agregación final de updates fog-level
   - Puerto: localhost:8080 (Flower gRPC)
 
-🌫️ Capa Fog - Broker Regional (broker_fog.py):
+🌫️ Capa Fog - Broker Regional (flower_basic.brokers.fog):
   - Agregación local de K=3 clientes por región
   - Weighted averaging antes de enviar al servidor
   - Buffer management y sincronización de rondas
   - Reduce tráfico: 3 cliente→fog se convierte en 1 fog→servidor
 
-🌫️ Capa Fog - Puente (fog_flower_client.py):
+🌫️ Capa Fog - Puente (flower_basic.fog_flower_client):
   - Bridge MQTT ↔ Flower gRPC protocol
   - Conversión automática de formatos de mensaje
   - Timeout handling (30s) para agregados parciales
   - Integración transparente con framework Flower
 
-📱 Clientes Edge (client.py):
+📱 Clientes Edge (flower_basic.client):
   - Entrenamiento local CNN 1D para ECG5000
   - MQTT client para comunicación asíncrona
   - Particionado automático de datos por cliente
@@ -282,7 +282,7 @@ training:
 ```python
 # Doble agregación implementada:
 1. Agregación Fog-Level:
-   - broker_fog.py agrega 3 clientes → 1 update fog
+   - flower_basic.brokers.fog agrega 3 clientes → 1 update fog
    - Servidor NO ve updates individuales de clientes
    - Metadata de origen eliminado en agregación
 

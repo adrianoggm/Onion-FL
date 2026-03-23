@@ -104,31 +104,17 @@ python scripts/run_sweet_federated_demo.py \
 ### 4. Ejecución Manual (más control)
 
 ```bash
-# Terminal 1: Servidor
-python -m flower_basic.servers.sweet \
-    --run-dir federated_runs/sweet/demo_3nodes \
-    --test-node-id fog_0 \
-    --input-dim 50 \
-    --min-clients 3
+# Preparar manifest + splits y lanzar toda la arquitectura
+python scripts/run_sweet_architecture.py \
+    --config configs/sweet_architecture_5nodes.yaml \
+    --dispatch-config \
+    --launch
 
-# Terminal 2-4: Clientes
-python -m flower_basic.clients.sweet \
-    --client-id client_fog_0 \
-    --run-dir federated_runs/sweet/demo_3nodes \
-    --node-id fog_0 \
-    --input-dim 50
-
-python -m flower_basic.clients.sweet \
-    --client-id client_fog_1 \
-    --run-dir federated_runs/sweet/demo_3nodes \
-    --node-id fog_1 \
-    --input-dim 50
-
-python -m flower_basic.clients.sweet \
-    --client-id client_fog_2 \
-    --run-dir federated_runs/sweet/demo_3nodes \
-    --node-id fog_2 \
-    --input-dim 50
+# Si ya existe manifest, reutilizarlo
+python scripts/run_sweet_architecture.py \
+    --config configs/sweet_architecture_5nodes.yaml \
+    --manifest federated_runs/sweet/auto_5nodes/manifest.json \
+    --launch
 ```
 
 ## ⚙️ Configuración
@@ -192,7 +178,7 @@ Ambos sistemas comparten:
 | Aggregation | ✅ FedAvg | ✅ FedAvg |
 | Split strategy | ✅ Subject-based | ✅ Subject-based |
 
-**Servidor y Fog pueden manejar ambos tipos de clientes simultáneamente** si se configura correctamente el topic routing.
+**La infraestructura reutiliza el mismo patrón MQTT/Flower que SWELL**, pero cada ejecución debe usar un único workflow por run.
 
 ## 📊 Métricas
 
@@ -218,8 +204,8 @@ Traces completos de:
 # Verificar imports
 python -c "from flower_basic.datasets import plan_and_materialize_sweet_federated"
 python -c "from flower_basic.sweet_model import SweetMLP"
-python -c "from flower_basic.clients.sweet import SweetFederatedClient"
-python -c "from flower_basic.servers.sweet import SweetFederatedServer"
+python -c "from flower_basic.clients.sweet import SweetFLClientMQTT"
+python -c "from flower_basic.servers.sweet import MQTTFedAvgSweet"
 
 # Test preparación
 python scripts/prepare_sweet_federated.py \
