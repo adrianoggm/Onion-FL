@@ -5,11 +5,12 @@ SWELL Dataset Comprehensive Visualization
 Creates professional visualizations of the SWELL stress detection dataset
 """
 
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from pathlib import Path
 
 # Configure matplotlib for better visuals
 plt.style.use("seaborn-v0_8-darkgrid")
@@ -215,7 +216,7 @@ def create_comprehensive_visualization():
     )
     stats_text += f"Train: {(df['split']=='Train').sum():,}\n"
     stats_text += f"Test: {(df['split']=='Test').sum():,}\n\n"
-    stats_text += f"Class Balance:\n"
+    stats_text += "Class Balance:\n"
     stats_text += (
         f"{'Balanced' if abs(df['label'].mean() - 0.5) < 0.1 else 'Imbalanced'}"
     )
@@ -228,7 +229,7 @@ def create_comprehensive_visualization():
         fontsize=10,
         verticalalignment="center",
         fontfamily="monospace",
-        bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
+        bbox={"boxstyle": "round", "facecolor": "wheat", "alpha": 0.5},
     )
     ax12.axis("off")
 
@@ -390,23 +391,23 @@ def create_comprehensive_visualization():
     print("\n" + "=" * 60)
     print("📊 SWELL Dataset Summary Statistics")
     print("=" * 60)
-    print(f"\n📈 Dataset Overview:")
+    print("\n📈 Dataset Overview:")
     print(f"  Total Samples: {len(df):,}")
     print(f"  Total Features: {len(features_cols)}")
     print(f"  Train Samples: {(df['split'] == 'Train').sum():,}")
     print(f"  Test Samples: {(df['split'] == 'Test').sum():,}")
 
-    print(f"\n⚖️ Binary Classification:")
+    print("\n⚖️ Binary Classification:")
     for label, count in df["Stress_Label"].value_counts().items():
         percentage = (count / len(df)) * 100
         print(f"  {label}: {count:,} samples ({percentage:.1f}%)")
 
-    print(f"\n📊 Feature Statistics (Top 5 by variance):")
+    print("\n📊 Feature Statistics (Top 5 by variance):")
     for feature, var_val in feature_variances.head(5).items():
         mean_val = df[feature].mean()
         print(f"  {feature}: mean={mean_val:.2f}, var={var_val:.2f}")
 
-    print(f"\n🔗 Top 5 Features Correlated with Stress:")
+    print("\n🔗 Top 5 Features Correlated with Stress:")
     correlations = (
         df[features_cols]
         .corrwith(df["label"])

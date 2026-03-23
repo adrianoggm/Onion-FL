@@ -12,16 +12,15 @@ Checks:
 
 from __future__ import annotations
 
-import sys
-import subprocess
 import json
+import subprocess
+import sys
 from pathlib import Path
-from typing import List, Tuple
 
 import numpy as np
 
 
-def check_file_exists(path: str | Path, description: str) -> Tuple[bool, str]:
+def check_file_exists(path: str | Path, description: str) -> tuple[bool, str]:
     """Check if a file exists."""
     p = Path(path)
     if p.exists():
@@ -29,7 +28,7 @@ def check_file_exists(path: str | Path, description: str) -> Tuple[bool, str]:
     return False, f"❌ {description}: NOT FOUND - {p}"
 
 
-def check_directory_exists(path: str | Path, description: str) -> Tuple[bool, str]:
+def check_directory_exists(path: str | Path, description: str) -> tuple[bool, str]:
     """Check if a directory exists."""
     p = Path(path)
     if p.is_dir():
@@ -37,7 +36,7 @@ def check_directory_exists(path: str | Path, description: str) -> Tuple[bool, st
     return False, f"❌ {description}: NOT FOUND - {p}"
 
 
-def check_swell_dataset() -> Tuple[bool, List[str]]:
+def check_swell_dataset() -> tuple[bool, list[str]]:
     """Check if SWELL dataset is accessible."""
     messages = []
     repo_root = Path(__file__).resolve().parent
@@ -61,7 +60,7 @@ def check_swell_dataset() -> Tuple[bool, List[str]]:
         )
         n_subjects = len(np.unique(info["subject_ids"]))
         n_samples = len(X_train) + len(X_test)
-        messages.append(f"✅ SWELL dataset loaded successfully")
+        messages.append("✅ SWELL dataset loaded successfully")
         messages.append(f"   - Subjects: {n_subjects}")
         messages.append(f"   - Total samples: {n_samples}")
         messages.append(f"   - Feature dimension: {X_train.shape[1]}")
@@ -72,7 +71,7 @@ def check_swell_dataset() -> Tuple[bool, List[str]]:
         return False, messages
 
 
-def check_mqtt_broker(broker: str = "localhost", port: int = 1883) -> Tuple[bool, str]:
+def check_mqtt_broker(broker: str = "localhost", port: int = 1883) -> tuple[bool, str]:
     """Check if MQTT broker is running."""
     try:
         import paho.mqtt.client as mqtt
@@ -91,7 +90,7 @@ def check_mqtt_broker(broker: str = "localhost", port: int = 1883) -> Tuple[bool
         )
 
 
-def check_python_modules() -> Tuple[bool, List[str]]:
+def check_python_modules() -> tuple[bool, list[str]]:
     """Check if required Python modules are available."""
     messages = []
     modules = [
@@ -114,7 +113,7 @@ def check_python_modules() -> Tuple[bool, List[str]]:
     return True, messages
 
 
-def check_config_file(config_path: str | Path) -> Tuple[bool, List[str]]:
+def check_config_file(config_path: str | Path) -> tuple[bool, list[str]]:
     """Validate configuration file."""
     messages = []
     p = Path(config_path)
@@ -135,12 +134,12 @@ def check_config_file(config_path: str | Path) -> Tuple[bool, List[str]]:
 
         # Check key sections
         if "dataset" in config:
-            messages.append(f"   ✅ Dataset config found")
+            messages.append("   ✅ Dataset config found")
         if "split" in config:
-            messages.append(f"   ✅ Split config found")
+            messages.append("   ✅ Split config found")
         if "federation" in config:
             fed = config["federation"]
-            messages.append(f"   ✅ Federation config found")
+            messages.append("   ✅ Federation config found")
             if "manual_assignments" in fed:
                 num_nodes = len(fed["manual_assignments"])
                 total_subjects = sum(len(v) for v in fed["manual_assignments"].values())
@@ -155,7 +154,7 @@ def check_config_file(config_path: str | Path) -> Tuple[bool, List[str]]:
         return False, messages
 
 
-def check_scripts_exist(repo_root: Path) -> Tuple[bool, List[str]]:
+def check_scripts_exist(repo_root: Path) -> tuple[bool, list[str]]:
     """Check if required scripts exist."""
     messages = []
     scripts = [
@@ -227,10 +226,10 @@ def main() -> None:
     try:
         result = subprocess.run(["which", "mosquitto"], capture_output=True, timeout=5)
         if result.returncode == 0:
-            print(f"      ✅ Mosquitto command available")
+            print("      ✅ Mosquitto command available")
             checks.append(True)
         else:
-            print(f"      ⚠️  Mosquitto command not in PATH (may still work if running)")
+            print("      ⚠️  Mosquitto command not in PATH (may still work if running)")
             checks.append(True)  # Not critical
     except Exception as e:
         print(f"      ⚠️  Could not check Mosquitto: {e}")
@@ -246,7 +245,7 @@ def main() -> None:
         print("✅ All critical checks passed!")
         print("\nYou can now run:")
         print(
-            f"  python run_swell_10_executions.py --config configs/swell_federated_10runs.yaml"
+            "  python run_swell_10_executions.py --config configs/swell_federated_10runs.yaml"
         )
         return 0
     else:

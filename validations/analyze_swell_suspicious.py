@@ -4,14 +4,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
 
 import pandas as pd
 
 DATA_PATH = Path("data/SWELL")
 
 
-def _find_candidate_files() -> List[Path]:
+def _find_candidate_files() -> list[Path]:
     """Return CSV files that contain SWELL features."""
     patterns = [
         "*Computer*.csv",
@@ -19,7 +18,7 @@ def _find_candidate_files() -> List[Path]:
         "*Posture*.csv",
         "*Physiology*.csv",
     ]
-    files: List[Path] = []
+    files: list[Path] = []
     for pattern in patterns:
         files.extend(DATA_PATH.rglob(pattern))
     return sorted(files)
