@@ -11,9 +11,8 @@ import torch.nn as nn
 import torch.optim as optim
 from sklearn.metrics import (
     accuracy_score,
-    f1_score,
-    classification_report,
     confusion_matrix,
+    f1_score,
 )
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
@@ -44,7 +43,9 @@ def create_subject_level_cv_splits(data_dict, n_folds=5, seed=42):
     subject_class_counts = {}
     for subj in subjects:
         subj_labels = [
-            l for s, l in zip(data_dict["subjects"], data_dict["labels"]) if s == subj
+            label
+            for s, label in zip(data_dict["subjects"], data_dict["labels"])
+            if s == subj
         ]
         subject_class_counts[subj] = Counter(subj_labels).most_common(1)[0][0]
 
@@ -55,7 +56,7 @@ def create_subject_level_cv_splits(data_dict, n_folds=5, seed=42):
         class_subjects[cls].append(subj)
 
     folds = [[] for _ in range(n_folds)]
-    for cls, cls_subjects in class_subjects.items():
+    for cls_subjects in class_subjects.values():
         rng.shuffle(cls_subjects)
         for i, subj in enumerate(cls_subjects):
             folds[i % n_folds].append(subj)
@@ -89,7 +90,7 @@ class UltraDeepMLP(nn.Module):
 
         # Deep residual blocks
         self.blocks = nn.ModuleList()
-        for i in range(depth):
+        for _ in range(depth):
             block = nn.Sequential(
                 nn.Linear(hidden_dim, hidden_dim),
                 nn.BatchNorm1d(hidden_dim),
@@ -140,15 +141,18 @@ class VeryWideDeepMLP(nn.Module):
         self,
         input_dim,
         num_classes=3,
-        hidden_dims=[1024, 1024, 512, 512, 256, 256, 128, 128],
+        hidden_dims=None,
         dropout=0.4,
     ):
         super().__init__()
 
+        if hidden_dims is None:
+            hidden_dims = [1024, 1024, 512, 512, 256, 256, 128, 128]
+
         layers = []
         prev_dim = input_dim
 
-        for i, hidden_dim in enumerate(hidden_dims):
+        for hidden_dim in hidden_dims:
             layers.append(nn.Linear(prev_dim, hidden_dim))
             layers.append(nn.BatchNorm1d(hidden_dim))
             layers.append(nn.ReLU())
@@ -216,7 +220,7 @@ class PyramidMLP(nn.Module):
             )
 
         # Compression phase
-        for i in range(depth // 2):
+        for _ in range(depth // 2):
             in_dim = dims[-1]
             out_dim = max(min_width, in_dim // 2)
             dims.append(out_dim)
@@ -251,7 +255,7 @@ def train_pytorch_model(
     best_val_acc = 0
     patience_counter = 0
 
-    for epoch in range(epochs):
+    for _epoch in range(epochs):
         model.train()
         for X_batch, y_batch in train_loader:
             X_batch, y_batch = X_batch.to(device), y_batch.to(device)

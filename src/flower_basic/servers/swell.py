@@ -19,6 +19,22 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from flower_basic.datasets.swell_federated import load_node_split
+from flower_basic.logging_utils import enable_timestamped_print
+from flower_basic.prometheus_metrics import (
+    FL_ACCURACY,
+    FL_ACTIVE_CLIENTS,
+    FL_AGGREGATIONS,
+    FL_CONFUSION_MATRIX,
+    FL_GLOBAL_TEST_SAMPLES,
+    FL_GLOBAL_TRAIN_SAMPLES,
+    FL_GLOBAL_VAL_SAMPLES,
+    FL_LOSS,
+    FL_ROUND_DURATION,
+    FL_ROUNDS,
+    get_metrics_port_from_env,
+    push_metrics_to_gateway,
+    start_metrics_server,
+)
 from flower_basic.swell_model import SwellMLP
 from flower_basic.telemetry import (
     create_counter,
@@ -27,29 +43,9 @@ from flower_basic.telemetry import (
     init_otel,
     record_metric,
     shutdown_telemetry,
-    start_span,
-    start_server_span,
-    start_producer_span,
     start_linked_producer_span,
-    inject_trace_context,
-    SpanKind,
+    start_server_span,
 )
-from flower_basic.prometheus_metrics import (
-    start_metrics_server,
-    FL_ROUNDS,
-    FL_ACCURACY,
-    FL_LOSS,
-    FL_ACTIVE_CLIENTS,
-    FL_AGGREGATIONS,
-    FL_ROUND_DURATION,
-    FL_GLOBAL_TRAIN_SAMPLES,
-    FL_GLOBAL_VAL_SAMPLES,
-    FL_GLOBAL_TEST_SAMPLES,
-    FL_CONFUSION_MATRIX,
-    get_metrics_port_from_env,
-    push_metrics_to_gateway,
-)
-from flower_basic.logging_utils import enable_timestamped_print
 
 MODEL_TOPIC = os.getenv("MQTT_TOPIC_GLOBAL", "fl/global_model")
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")

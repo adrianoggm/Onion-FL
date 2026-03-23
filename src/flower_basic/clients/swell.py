@@ -24,8 +24,20 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from flower_basic.clients.baseclient import BaseMQTTComponent
 from flower_basic.datasets.swell_federated import load_node_split
-from flower_basic.swell_model import SwellMLP
 from flower_basic.logging_utils import enable_timestamped_print
+from flower_basic.prometheus_metrics import (
+    CLIENT_LOCAL_ACCURACY,
+    CLIENT_LOCAL_LOSS,
+    CLIENT_TEST_SAMPLES,
+    CLIENT_TRAIN_SAMPLES,
+    CLIENT_TRAINING_DURATION,
+    CLIENT_TRAINING_ROUNDS,
+    CLIENT_VAL_SAMPLES,
+    get_metrics_port_from_env,
+    push_metrics_to_gateway,
+    start_metrics_server,
+)
+from flower_basic.swell_model import SwellMLP
 
 # Telemetry (optional)
 from flower_basic.telemetry import (
@@ -35,28 +47,9 @@ from flower_basic.telemetry import (
     init_otel,
     record_metric,
     shutdown_telemetry,
-    start_span,
-    start_client_span,
-    start_server_span,
-    start_consumer_span,
-    start_producer_span,
-    start_linked_producer_span,
     start_linked_consumer_span,
-    inject_trace_context,
-    extract_trace_context,
-    SpanKind,
-)
-from flower_basic.prometheus_metrics import (
-    start_metrics_server,
-    get_metrics_port_from_env,
-    push_metrics_to_gateway,
-    CLIENT_TRAIN_SAMPLES,
-    CLIENT_VAL_SAMPLES,
-    CLIENT_TEST_SAMPLES,
-    CLIENT_TRAINING_ROUNDS,
-    CLIENT_TRAINING_DURATION,
-    CLIENT_LOCAL_LOSS,
-    CLIENT_LOCAL_ACCURACY,
+    start_linked_producer_span,
+    start_span,
 )
 
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")

@@ -36,17 +36,14 @@ from __future__ import annotations
 
 import warnings
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
-    classification_report,
     confusion_matrix,
     f1_score,
     precision_score,
@@ -72,7 +69,7 @@ class WESADBaselineEvaluator:
     # 3. ABSOLUTELY NO mock data generation - REAL DATA ONLY
     # 4. Mock data generation is PROHIBITED for ML/AI evaluation
 
-    def load_wesad_data(self) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+    def load_wesad_data(self) -> tuple[np.ndarray, np.ndarray, list[str]]:
         """Load COMPLETE WESAD dataset - MANDATORY for evaluations."""
         print("Loading COMPLETE WESAD dataset...")
 
@@ -269,7 +266,7 @@ class WESADBaselineEvaluator:
                         f"    Class distribution: {dict(zip(*np.unique(subject_labels, return_counts=True)))}"
                     )
                 else:
-                    print(f"    ✗ No valid windows extracted")
+                    print("    ✗ No valid windows extracted")
 
             except Exception as e:
                 print(f"  ✗ Error loading {subject_id}: {e}")
@@ -294,8 +291,8 @@ class WESADBaselineEvaluator:
         return X, y, all_subjects
 
     def split_by_subjects(
-        self, X: np.ndarray, y: np.ndarray, subjects: List[str]
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        self, X: np.ndarray, y: np.ndarray, subjects: list[str]
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Split data by subjects to prevent data leakage."""
         unique_subjects = list(set(subjects))
         n_subjects = len(unique_subjects)
@@ -309,11 +306,9 @@ class WESADBaselineEvaluator:
             )
             n_train = max(1, int(0.7 * n_subjects))  # 70% for training
             n_val = 0  # No validation set
-            n_test = n_subjects - n_train  # Remaining for test
         else:
             n_train = int(0.5 * n_subjects)  # 50% for training
             n_val = int(0.2 * n_subjects)  # 20% for validation
-            n_test = n_subjects - n_train - n_val  # Remaining for test
 
         # Shuffle subjects
         np.random.seed(42)
@@ -346,7 +341,7 @@ class WESADBaselineEvaluator:
         y_train: np.ndarray,
         y_val: np.ndarray,
         y_test: np.ndarray,
-    ) -> Dict:
+    ) -> dict:
         """Train classical ML models and evaluate performance."""
         print("\nTraining classical models...")
 
@@ -397,7 +392,7 @@ class WESADBaselineEvaluator:
         y_train: np.ndarray,
         y_val: np.ndarray,
         y_test: np.ndarray,
-    ) -> Dict:
+    ) -> dict:
         """Train neural network model."""
         print("\nTraining Neural Network...")
 
@@ -413,7 +408,6 @@ class WESADBaselineEvaluator:
         X_val_tensor = torch.FloatTensor(X_val_scaled)
         y_val_tensor = torch.LongTensor(y_val)
         X_test_tensor = torch.FloatTensor(X_test_scaled)
-        y_test_tensor = torch.LongTensor(y_test)
 
         # Define neural network
         class WESADNet(nn.Module):
@@ -498,7 +492,7 @@ class WESADBaselineEvaluator:
 
     def calculate_metrics(
         self, y_true: np.ndarray, y_pred: np.ndarray, split_name: str
-    ) -> Dict:
+    ) -> dict:
         """Calculate comprehensive metrics."""
         return {
             "accuracy": accuracy_score(y_true, y_pred),
@@ -510,7 +504,7 @@ class WESADBaselineEvaluator:
             "confusion_matrix": confusion_matrix(y_true, y_pred).tolist(),
         }
 
-    def run_evaluation(self) -> Dict:
+    def run_evaluation(self) -> dict:
         """Run complete baseline evaluation."""
         print("🧬 WESAD Dataset Baseline Performance Evaluation")
         print("=" * 60)
@@ -523,7 +517,7 @@ class WESADBaselineEvaluator:
             X, y, subjects
         )
 
-        print(f"\nFinal split sizes:")
+        print("\nFinal split sizes:")
         print(f"  Training: {len(X_train)} samples")
         print(f"  Validation: {len(X_val)} samples")
         print(f"  Test: {len(X_test)} samples")
@@ -546,7 +540,7 @@ class WESADBaselineEvaluator:
 
         return all_results
 
-    def print_summary(self, results: Dict) -> None:
+    def print_summary(self, results: dict) -> None:
         """Print evaluation summary."""
         print("\n" + "=" * 60)
         print("📊 WESAD BASELINE PERFORMANCE SUMMARY")
@@ -568,10 +562,10 @@ class WESADBaselineEvaluator:
         print(f"\n🏆 Best Model: {best_model[0]}")
         print(f"   Test Accuracy: {best_model[1]['test']['accuracy']:.3f}")
 
-        print(f"\n💡 Key Insights:")
-        print(f"   - Subject-based splitting prevents data leakage")
-        print(f"   - Results represent realistic federated learning scenarios")
-        print(f"   - Can compare with 3-node federated learning performance")
+        print("\n💡 Key Insights:")
+        print("   - Subject-based splitting prevents data leakage")
+        print("   - Results represent realistic federated learning scenarios")
+        print("   - Can compare with 3-node federated learning performance")
 
 
 def main():

@@ -27,27 +27,27 @@ from .brokers.fog import weighted_average
 from .compare_models import ModelComparator
 from .datasets import load_swell_dataset, load_wesad_dataset
 from .model import ECGModel, get_parameters, set_parameters
+
+# Telemetry exports
+from .telemetry import (
+    OTEL_AVAILABLE,
+    SpanKind,
+    create_counter,
+    create_gauge,
+    create_histogram,
+    init_otel,
+    record_metric,
+    shutdown_telemetry,
+    start_client_span,
+    start_consumer_span,
+    start_producer_span,
+    start_server_span,
+    start_span,
+)
 from .utils import (
     detect_data_leakage,
     state_dict_to_numpy,
     statistical_significance_test,
-)
-
-# Telemetry exports
-from .telemetry import (
-    init_otel,
-    start_span,
-    start_client_span,
-    start_server_span,
-    start_producer_span,
-    start_consumer_span,
-    shutdown_telemetry,
-    create_counter,
-    create_histogram,
-    create_gauge,
-    record_metric,
-    OTEL_AVAILABLE,
-    SpanKind,
 )
 
 try:

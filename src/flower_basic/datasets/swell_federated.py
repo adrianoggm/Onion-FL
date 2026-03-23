@@ -152,7 +152,6 @@ def _split_subjects_with_test(
             n_train = n - 1
     else:
         n_train = n
-    n_val = n - n_train
 
     train_ids = remaining[:n_train]
     val_ids = remaining[n_train:]
@@ -270,8 +269,6 @@ def _materialize_per_subject_strategy(
     - Each client (subject) can train AND validate AND test locally
     - Global test is aggregated from all subjects' test splits
     """
-    rng = np.random.default_rng(cfg.seed)
-
     # First pass: compute global scaler on ALL training data (from all subjects)
     # We need to know which samples will be train to fit scaler
     scaler_payload = None
@@ -447,7 +444,7 @@ def _materialize_per_subject_strategy(
             json.dumps(scaler_payload, indent=2), encoding="utf-8"
         )
 
-    print(f"[MATERIALIZE] Strategy: per_subject")
+    print("[MATERIALIZE] Strategy: per_subject")
     print(
         f"[MATERIALIZE] All {len(uniq_subjects)} subjects have internal train/val/test splits"
     )
@@ -475,7 +472,7 @@ def _materialize_global_strategy(
     test_subjects: list[str] | None = None
     if cfg.test_assignments:
         test_subjects = []
-        for node, subs in cfg.test_assignments.items():
+        for subs in cfg.test_assignments.values():
             if subs is None:
                 continue
             test_subjects.extend([str(s) for s in subs])
@@ -652,7 +649,7 @@ def _materialize_global_strategy(
             json.dumps(scaler_payload, indent=2), encoding="utf-8"
         )
 
-    print(f"[MATERIALIZE] Strategy: global (subject-level split)")
+    print("[MATERIALIZE] Strategy: global (subject-level split)")
     print(
         f"[MATERIALIZE] Train subjects: {len(tr_subj)}, Val subjects: {len(va_subj)}, Test subjects: {len(te_subj)}"
     )

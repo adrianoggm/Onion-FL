@@ -20,6 +20,17 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from flower_basic.datasets.sweet_federated import load_node_split
+from flower_basic.prometheus_metrics import (
+    FL_ACCURACY,
+    FL_ACTIVE_CLIENTS,
+    FL_AGGREGATIONS,
+    FL_LOSS,
+    FL_ROUND_DURATION,
+    FL_ROUNDS,
+    get_metrics_port_from_env,
+    push_metrics_to_gateway,
+    start_metrics_server,
+)
 from flower_basic.sweet_model import SweetMLP
 from flower_basic.telemetry import (
     create_counter,
@@ -28,19 +39,8 @@ from flower_basic.telemetry import (
     init_otel,
     record_metric,
     shutdown_telemetry,
-    start_server_span,
     start_linked_producer_span,
-)
-from flower_basic.prometheus_metrics import (
-    start_metrics_server,
-    FL_ROUNDS,
-    FL_ACCURACY,
-    FL_LOSS,
-    FL_ACTIVE_CLIENTS,
-    FL_AGGREGATIONS,
-    FL_ROUND_DURATION,
-    get_metrics_port_from_env,
-    push_metrics_to_gateway,
+    start_server_span,
 )
 
 MODEL_TOPIC = os.getenv("MQTT_TOPIC_GLOBAL", "fl/global_model")

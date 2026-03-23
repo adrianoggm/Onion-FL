@@ -95,7 +95,6 @@ def plot_class_distribution(data_dir: str, label_strategy: str = "ordinal"):
 
     # 2. Training set distribution (pie chart)
     ax2 = axes[0, 1]
-    train_percentages = [count / sum(train_data) * 100 for count in train_data]
     wedges, texts, autotexts = ax2.pie(
         train_data,
         labels=[
@@ -128,7 +127,7 @@ def plot_class_distribution(data_dir: str, label_strategy: str = "ordinal"):
     ax3.grid(axis="y", alpha=0.3)
 
     # Add value labels
-    for i, bar in enumerate(bars):
+    for bar in bars:
         height = bar.get_height()
         ax3.text(
             bar.get_x() + bar.get_width() / 2.0,

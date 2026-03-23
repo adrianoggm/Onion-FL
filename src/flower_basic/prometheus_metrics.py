@@ -21,18 +21,17 @@ from __future__ import annotations
 
 import os
 import threading
-from typing import Optional
 
 # Try to import prometheus_client, gracefully degrade if not available
 try:
     from prometheus_client import (
+        REGISTRY,
+        CollectorRegistry,
         Counter,
         Gauge,
         Histogram,
-        start_http_server,
-        REGISTRY,
-        CollectorRegistry,
         push_to_gateway,
+        start_http_server,
     )
 
     PROMETHEUS_AVAILABLE = True
@@ -465,7 +464,7 @@ def start_metrics_server(port: int = 8000) -> bool:
 
     with _metrics_lock:
         if _metrics_server_started:
-            print(f"[METRICS] Server already running")
+            print("[METRICS] Server already running")
             return True
 
         try:

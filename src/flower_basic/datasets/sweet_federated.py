@@ -20,8 +20,6 @@ except Exception:  # pragma: no cover
 
 from sklearn.preprocessing import StandardScaler
 
-from .sweet_samples import load_sweet_sample_dataset, SWEETSampleLoaderError
-
 ScalerMode = Literal["global", "none"]
 SplitStrategy = Literal["global", "per_subject"]
 
@@ -183,8 +181,8 @@ def plan_and_materialize_sweet_federated(config_path: str) -> dict:
     cfg = _read_config(config_path)
 
     # Load full SWEET dataset (selection2 for federated fine-tuning)
+
     from .sweet_samples import load_sweet_sample_full
-    from sklearn.model_selection import train_test_split
 
     X, y, subject_ids, feature_names = load_sweet_sample_full(
         data_dir=cfg.data_dir,
@@ -194,7 +192,7 @@ def plan_and_materialize_sweet_federated(config_path: str) -> dict:
     )
 
     # Get unique subjects
-    all_subjects = sorted(list(set(subject_ids.tolist())))
+    all_subjects = sorted(set(subject_ids.tolist()))
 
     # Check which strategy to use
     if cfg.split_strategy == "global":
@@ -417,7 +415,7 @@ def _materialize_global_strategy_sweet(
     manifest_path.write_text(json.dumps(manifest, indent=2))
 
     print(f"\n✓ SWEET federated splits materialized at: {run_dir}")
-    print(f"  Strategy: global (each subject in ONE split only)")
+    print("  Strategy: global (each subject in ONE split only)")
     print(f"  Nodes: {len(node_map)}")
     print(f"  Features: {len(feature_names)}")
     print(
@@ -450,7 +448,7 @@ def _materialize_per_subject_strategy_sweet(
     """
 
     # Get unique subjects
-    all_subjects = sorted(list(set(subject_ids.tolist())))
+    all_subjects = sorted(set(subject_ids.tolist()))
 
     # Node subject mapping (distribute ALL subjects across fog nodes)
     if cfg.mode == "manual":
@@ -663,7 +661,7 @@ def _materialize_per_subject_strategy_sweet(
     manifest_path.write_text(json.dumps(manifest, indent=2))
 
     print(f"\n✓ SWEET federated splits materialized at: {run_dir}")
-    print(f"  Strategy: per_subject (each subject has internal train/val/test)")
+    print("  Strategy: per_subject (each subject has internal train/val/test)")
     print(f"  Nodes: {len(node_map)}")
     print(f"  Features: {len(feature_names)}")
     print(f"  Total subjects: {len(all_subjects)}")

@@ -12,9 +12,9 @@ Environment variables (loaded from .env if available):
 
 import os
 from contextlib import contextmanager
+from enum import Enum
 from pathlib import Path
 from typing import Any
-from enum import Enum
 
 # Load environment variables from .env file (docker/.env or project root .env)
 _env_loaded = False
@@ -46,13 +46,13 @@ try:
         OTLPMetricExporter,
     )
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    from opentelemetry.propagate import extract, inject
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
-    from opentelemetry.trace import SpanKind, Status, StatusCode
-    from opentelemetry.propagate import inject, extract
+    from opentelemetry.trace import SpanKind
     from opentelemetry.trace.propagation.tracecontext import (
         TraceContextTextMapPropagator,
     )
