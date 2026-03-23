@@ -9,7 +9,6 @@ Usage:
 """
 
 import argparse
-import json
 import os
 import signal
 import subprocess
@@ -23,6 +22,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from flower_basic.federated_architecture import (  # noqa: E402
     FederatedArchitecture,
+    apply_manifest_paths,
     build_runtime_plan,
     distribute_architecture,
     infer_primary_workflow,
@@ -32,99 +32,8 @@ from flower_basic.federated_architecture import (  # noqa: E402
 
 
 def _apply_manifest_paths(arch: FederatedArchitecture, manifest_path: Path) -> None:
-    """Fill/regenerate SWELL clients from manifest, 1 client per subject.
-
-    Behavior depends on split strategy in manifest:
-    - per_subject: All subjects have train data (internal split)
-    - global: Only subjects in global train split have train data
-    """
-    from flower_basic.federated_architecture import ClientSpec
-
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    nodes = manifest.get("nodes", {})
-    clients_map = manifest.get("clients", {})  # fog_id -> {client_id: subject_id}
-    global_subjects = manifest.get("global_subjects", {})
-    config = manifest.get("config", {})
-    split_config = config.get("split", {})
-    split_strategy = split_config.get(
-        "strategy", "global"
-    )  # Default to global for backward compat
-
-    # Determine which subjects have train data based on strategy
-    if split_strategy == "per_subject":
-        # All subjects have their own internal train split
-        train_subjects = set(global_subjects.get("all", []))
-        print(
-            f"[MANIFEST] Strategy: per_subject - all {len(train_subjects)} subjects have train data"
-        )
-    else:
-        # Only subjects in global train split have train data
-        train_subjects = set(global_subjects.get("train", []))
-        print(
-            f"[MANIFEST] Strategy: global - only {len(train_subjects)} subjects in train split"
-        )
-
-    base = manifest_path.parent
-    meta = manifest.get("meta", {})
-    n_features = meta.get("n_features")
-    if n_features is not None:
-        arch.model.input_dim = int(n_features)
-
-    for fog in arch.fog_nodes:
-        if fog.id not in nodes:
-            continue
-
-        # Get clients for this fog from manifest
-        fog_clients = clients_map.get(fog.id, {})
-        if not fog_clients:
-            continue
-
-        # Regenerate clients list from manifest (1 per subject with training data)
-        new_clients = []
-        for client_id, subject_id in fog_clients.items():
-            # Skip subjects without training data
-            if subject_id not in train_subjects:
-                print(
-                    f"[MANIFEST] Skipping {client_id} (subject {subject_id} has no train data)"
-                )
-                continue
-
-            # Verify train.npz exists and has data
-            subject_dir = base / fog.id / f"subject_{subject_id}"
-            train_file = subject_dir / "train.npz"
-            if train_file.exists():
-                import numpy as np
-
-                try:
-                    arr = np.load(train_file)
-                    if arr["X"].shape[0] == 0:
-                        print(f"[MANIFEST] Skipping {client_id} (train.npz is empty)")
-                        continue
-                except Exception as e:
-                    print(
-                        f"[MANIFEST] Skipping {client_id} (error reading train.npz: {e})"
-                    )
-                    continue
-            else:
-                print(f"[MANIFEST] Skipping {client_id} (train.npz not found)")
-                continue
-
-            new_clients.append(
-                ClientSpec(
-                    id=client_id,
-                    dataset="swell",
-                    workflow="swell",
-                    rounds=arch.orchestrator.rounds,
-                    data_dir=str(subject_dir),
-                )
-            )
-
-        fog.clients = new_clients
-        if not fog.k or fog.k <= 0:
-            fog.k = len(new_clients)  # Default: wait for all clients in this fog
-        print(
-            f"[MANIFEST] {fog.id}: {len(new_clients)} clientes con training data (K={fog.k})"
-        )
+    """Backwards-compatible wrapper used by tests and the CLI script."""
+    apply_manifest_paths(arch, manifest_path)
 
 
 def _print_plan(commands) -> None:

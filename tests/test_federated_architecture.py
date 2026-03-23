@@ -70,6 +70,31 @@ def test_load_architecture_config_from_json(tmp_path: Path):
     assert infer_primary_workflow(arch) == "swell"
 
 
+def test_load_architecture_config_reads_split_strategy(tmp_path: Path):
+    cfg = {"federated_architecture": _make_config()}
+    cfg["federated_architecture"]["dataset"] = {
+        "name": "SWELL",
+        "data_dir": "data/SWELL",
+        "split": {
+            "train": 0.7,
+            "val": 0.15,
+            "test": 0.15,
+            "seed": 67,
+            "scaler": "global",
+            "strategy": "global",
+        },
+        "test_assignments": {"fog_0": [19, 20]},
+    }
+    cfg_path = tmp_path / "arch.json"
+    cfg_path.write_text(json.dumps(cfg), encoding="utf-8")
+
+    arch = load_architecture_config(cfg_path)
+
+    assert arch.dataset is not None
+    assert arch.dataset.split_strategy == "global"
+    assert arch.dataset.test_assignments == {"fog_0": [19, 20]}
+
+
 def test_runtime_plan_includes_k_map(tmp_path: Path):
     cfg = {"federated_architecture": _make_config()}
     cfg_path = tmp_path / "arch.json"
