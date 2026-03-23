@@ -6,7 +6,6 @@ This script verifies that the SWEET federated infrastructure is working correctl
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -17,7 +16,6 @@ if SRC_PATH.exists() and str(SRC_PATH) not in sys.path:
 
 from flower_basic.datasets.sweet_federated import (
     FederatedConfigSWEET,
-    plan_and_materialize_sweet_federated,
 )
 from flower_basic.datasets.sweet_samples import load_sweet_sample_dataset
 
@@ -48,7 +46,7 @@ def test_sweet_loading():
             len(dataset.train.y) + len(dataset.val.y) + len(dataset.test.y)
         )
 
-        print(f"✓ Dataset loaded successfully")
+        print("✓ Dataset loaded successfully")
         print(
             f"  Train: {len(dataset.train_subjects)} subjects, {len(dataset.train.y)} samples ({train_pct:.1%})"
         )
@@ -75,7 +73,7 @@ def test_federated_config():
 
     config = FederatedConfigSWEET()
 
-    print(f"✓ Default configuration:")
+    print("✓ Default configuration:")
     print(f"  Data directory: {config.data_dir}")
     print(f"  Split train: {config.split_train} (70%)")
     print(f"  Split val: {config.split_val} (20%)")
@@ -86,7 +84,7 @@ def test_federated_config():
 
     total = config.split_train + config.split_val + config.split_test
     if abs(total - 1.0) < 1e-6:
-        print(f"✓ Split percentages sum to 1.0")
+        print("✓ Split percentages sum to 1.0")
         return True
     else:
         print(f"❌ Split percentages sum to {total}, expected 1.0")
@@ -114,16 +112,16 @@ def test_config_file():
         val = split_config.get("val", 0.0)
         test = split_config.get("test", 0.0)
 
-        print(f"✓ Config file loaded:")
+        print("✓ Config file loaded:")
         print(f"  Train: {train} (70%)")
         print(f"  Val: {val} (20%)")
         print(f"  Test: {test} (10%)")
 
         if abs(train - 0.7) < 1e-6 and abs(val - 0.2) < 1e-6 and abs(test - 0.1) < 1e-6:
-            print(f"✓ Config file has correct 70/20/10 split")
+            print("✓ Config file has correct 70/20/10 split")
             return True
         else:
-            print(f"❌ Config file split does not match 70/20/10")
+            print("❌ Config file split does not match 70/20/10")
             return False
 
     except Exception as e:

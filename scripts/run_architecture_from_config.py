@@ -10,12 +10,10 @@ Usage:
 
 import argparse
 import os
-import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import List
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
@@ -44,7 +42,7 @@ def _print_plan(commands) -> None:
 
 
 def _launch(commands, delay: float = 1.0) -> None:
-    procs: List[subprocess.Popen] = []
+    procs: list[subprocess.Popen] = []
 
     # Load .env file to ensure OTEL variables are available
     env_file = REPO_ROOT / ".env"

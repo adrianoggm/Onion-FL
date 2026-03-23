@@ -63,7 +63,7 @@ def extract_user_zips(source_dir: Path, target_dir: Path, force: bool = False):
             print(f"❌ Error: {e}")
 
     print("=" * 60)
-    print(f"✓ Extraction complete")
+    print("✓ Extraction complete")
     print(f"  Extracted: {extracted_count} users")
     print(f"  Skipped: {skipped_count} users (already existed)")
     print(f"  Target: {target_dir}")

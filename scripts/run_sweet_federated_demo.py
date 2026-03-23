@@ -144,9 +144,7 @@ def build_launch_plan(
     ]
     commands.append(LaunchSpec(role="server", cmd=server_cmd))
 
-    k_map = {
-        node_id: len(subject_ids) for node_id, subject_ids in active_nodes.items()
-    }
+    k_map = {node_id: len(subject_ids) for node_id, subject_ids in active_nodes.items()}
     broker_cmd = [
         python_exec,
         "-m",

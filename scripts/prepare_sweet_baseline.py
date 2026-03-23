@@ -32,7 +32,7 @@ if SRC_PATH.exists() and str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
 from flower_basic.datasets.sweet_samples import load_sweet_sample_dataset
-from flower_basic.sweet_model import SweetMLP, get_parameters
+from flower_basic.sweet_model import SweetMLP
 
 
 def train_baseline(
@@ -201,7 +201,7 @@ def main():
     print(f"Data directory: {args.data_dir}")
     print(f"Output directory: {args.output_dir}")
     print(f"Label strategy: {args.label_strategy}")
-    print(f"Split: 60% train, 20% val, 20% test")
+    print("Split: 60% train, 20% val, 20% test")
 
     # Set random seed
     torch.manual_seed(args.seed)
@@ -225,7 +225,7 @@ def main():
         print("\nTip: If memory error, reduce batch size or use fewer subjects")
         sys.exit(1)
 
-    print(f"✓ Dataset loaded successfully")
+    print("✓ Dataset loaded successfully")
     print(
         f"  Train subjects: {len(dataset.train_subjects)} ({len(dataset.train.y)} samples)"
     )

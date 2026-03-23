@@ -19,7 +19,6 @@ Options:
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
 import sys
 import time
@@ -207,9 +206,9 @@ def main():
     print("✅ SWEET Transfer Learning Complete!")
     print("=" * 80)
     print("\nResults:")
-    print(f"  Baseline model: baseline_models/sweet/xgboost_tuned_model.json")
-    print(f"  Federated run: federated_runs/sweet/transfer_selection2/")
-    print(f"  Manifest: federated_runs/sweet/transfer_selection2/manifest.json")
+    print("  Baseline model: baseline_models/sweet/xgboost_tuned_model.json")
+    print("  Federated run: federated_runs/sweet/transfer_selection2/")
+    print("  Manifest: federated_runs/sweet/transfer_selection2/manifest.json")
     print("\nNext steps:")
     print("  - Check federated_runs/sweet/transfer_selection2/ for results")
     print("  - Compare selection1 baseline vs selection2 fine-tuned performance")

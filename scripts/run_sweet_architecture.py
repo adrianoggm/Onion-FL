@@ -21,8 +21,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import signal
 import subprocess
 import sys
 import time
@@ -37,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 def load_config(config_path: str) -> dict[str, Any]:
     """Load YAML configuration file."""
-    with open(config_path, "r", encoding="utf-8") as f:
+    with open(config_path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -81,7 +79,7 @@ def dispatch_config(config: dict[str, Any]) -> Path:
 
     # Write temporary config
     temp_config_path = Path("configs/.temp_sweet_federated.yaml")
-    with open(temp_config_path, "w") as f:
+    with open(temp_config_path, "w", encoding="utf-8") as f:
         yaml.dump(fed_config, f, default_flow_style=False)
 
     print(f"[INFO] Temporary config written to: {temp_config_path}")
@@ -155,7 +153,7 @@ def launch_federated_system(
         server_connect_addr = server_bind_addr
 
     # Load manifest
-    with open(manifest_path, "r") as f:
+    with open(manifest_path) as f:
         manifest = json.load(f)
 
     run_dir = Path(manifest["output_dir"])
@@ -191,7 +189,7 @@ def launch_federated_system(
     # ========================================================================
     # LAYER 1: Central Server (Flower)
     # ========================================================================
-    print(f"\n[LAUNCH] Layer 1: Starting SWEET Central Server...")
+    print("\n[LAUNCH] Layer 1: Starting SWEET Central Server...")
 
     server_cmd = [
         sys.executable,
@@ -228,7 +226,9 @@ def launch_federated_system(
     # ========================================================================
     # LAYER 2A: Fog Brokers (Regional Aggregators)
     # ========================================================================
-    print(f"\n[LAUNCH] Layer 2A: Starting broker for {len(active_nodes)} active regions...")
+    print(
+        f"\n[LAUNCH] Layer 2A: Starting broker for {len(active_nodes)} active regions..."
+    )
 
     # Calculate K per fog node based on number of clients (subjects) in each node
     k_map = {}
@@ -255,7 +255,7 @@ def launch_federated_system(
 
     print(f"  Broker K map: {k_map}")
     print(f"  Total clients: {total_clients}")
-    print(f"  Topics: fl/updates (in), fl/partial (out)")
+    print("  Topics: fl/updates (in), fl/partial (out)")
     broker_proc = subprocess.Popen(broker_cmd)
     procs.append(broker_proc)
     time.sleep(2)
@@ -342,7 +342,7 @@ def launch_federated_system(
             time.sleep(0.2)  # Reduced delay for many clients
 
     print(f"\n[RUNNING] Federated system running with {len(procs)} processes:")
-    print(f"  - 1 Central Server")
+    print("  - 1 Central Server")
     print(f"  - 1 Fog Broker (aggregates {len(active_nodes)} regions)")
     print(f"  - {len(active_nodes)} Fog Bridges")
     print(f"  - {total_clients} SWEET Clients (per subject)")

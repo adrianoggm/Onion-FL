@@ -9,11 +9,11 @@ This script:
 4. Creates CSV files in the format expected by the SWELL loader
 """
 
+import warnings
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from scipy import signal
-import warnings
 
 warnings.filterwarnings("ignore")
 
@@ -127,9 +127,6 @@ def generate_features_from_rri():
         time_vals, rri_vals = load_rri_file(rri_file)
         if time_vals is None:
             continue
-
-        # Get HR/HRV features
-        hr_features = extract_heart_rate_features(rri_vals)
 
         # Resample to minute-level features (assuming data spans ~60 minutes)
         n_minutes = max(1, int(len(rri_vals) / 30))  # Roughly 30 RRI samples per minute

@@ -10,16 +10,11 @@ import json
 import sys
 import warnings
 from pathlib import Path
-from typing import Any
 
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -249,7 +244,7 @@ def train_pytorch_model(
     best_val_acc = 0.0
     patience_counter = 0
 
-    for epoch in range(num_epochs):
+    for _epoch in range(num_epochs):
         # Training
         model.train()
         train_loss = 0.0
@@ -275,7 +270,6 @@ def train_pytorch_model(
             train_total += len(y_batch)
 
         train_loss /= train_total
-        train_acc = train_correct / train_total
 
         # Validation
         model.eval()
@@ -419,7 +413,7 @@ def train_and_evaluate_deep_models(
             # Train model
             model = model_factory().to(device)
 
-            best_val_acc = train_pytorch_model(
+            train_pytorch_model(
                 model,
                 train_loader,
                 test_loader,
