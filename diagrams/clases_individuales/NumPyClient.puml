@@ -1,0 +1,11 @@
+@startuml NumPyClient
+!theme plain
+skinparam linetype ortho
+
+interface NumPyClient {
+    + fit(parameters, config)
+    + get_parameters(config)
+    + evaluate(parameters, config)
+}
+
+@enduml

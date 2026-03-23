@@ -1,0 +1,11 @@
+@startuml FedAvg
+!theme plain
+skinparam linetype ortho
+
+abstract class FedAvg {
+    + aggregate_fit(rnd, results, failures)
+    + aggregate_evaluate(rnd, results, failures)
+    + evaluate(rnd, parameters)
+}
+
+@enduml

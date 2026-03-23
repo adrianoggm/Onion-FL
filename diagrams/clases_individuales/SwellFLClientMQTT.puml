@@ -1,0 +1,16 @@
+@startuml SwellFLClientMQTT
+!theme plain
+skinparam linetype ortho
+
+class SwellFLClientMQTT {
+    - model: SwellMLP
+    - train_loader: DataLoader
+    - region: str
+    - global_model: dict
+    + train_local(): Tuple[dict, int]
+    + publish_update(): void
+    + on_message(client, userdata, msg)
+    + run_rounds(total_rounds): void
+}
+
+@enduml

@@ -1,0 +1,14 @@
+@startuml BaseMQTTComponent
+!theme plain
+skinparam linetype ortho
+
+abstract class BaseMQTTComponent {
+    - tag: str
+    - mqtt_client: mqtt.Client
+    - subscriptions: List[str]
+    + on_message(client, userdata, msg)*
+    + publish_json(topic, payload)
+    + stop_mqtt()
+}
+
+@enduml

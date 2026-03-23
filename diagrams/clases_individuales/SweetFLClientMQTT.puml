@@ -1,0 +1,16 @@
+@startuml SweetFLClientMQTT
+!theme plain
+skinparam linetype ortho
+
+class SweetFLClientMQTT {
+    - model: SweetMLP
+    - train_loader: DataLoader
+    - subject_id: str
+    - global_model: dict
+    + train_local(): Tuple[dict, int]
+    + publish_update(): void
+    + on_message(client, userdata, msg)
+    + run_rounds(total_rounds): void
+}
+
+@enduml

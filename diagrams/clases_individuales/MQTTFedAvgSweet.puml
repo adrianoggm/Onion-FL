@@ -1,0 +1,16 @@
+@startuml MQTTFedAvgSweet
+!theme plain
+skinparam linetype ortho
+
+class MQTTFedAvgSweet {
+    - model: SweetMLP
+    - mqtt_client: mqtt.Client
+    - eval_data: Tuple
+    - total_rounds: int
+    + configure_fit(rnd, parameters, cm)
+    + aggregate_fit(rnd, results, failures)
+    + evaluate(rnd, parameters)
+    + publish_global_model(weights): void
+}
+
+@enduml

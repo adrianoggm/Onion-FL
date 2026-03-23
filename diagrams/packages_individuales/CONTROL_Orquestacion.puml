@@ -1,0 +1,100 @@
+@startuml CONTROL_Orquestacion
+
+!theme plain
+skinparam backgroundColor white
+skinparam linetype ortho
+
+skinparam class {
+    BackgroundColor #FAFAFA
+    BorderColor #424242
+    FontSize 9
+    AttributeFontSize 8
+}
+
+skinparam package {
+    BackgroundColor<<cloud>> #FCE4EC
+    BorderColor #757575
+    FontStyle bold
+    FontSize 10
+}
+
+skinparam nodesep 20
+skinparam ranksep 30
+
+package "CONTROL - Orquestación" <<cloud>> #FCE4EC {
+
+    class RunArchitectureFromConfig {
+        +main()
+        +_apply_manifest_paths()
+        +_print_plan()
+        +_launch()
+    }
+
+    class FederatedArchitectureUtils {
+        +load_architecture_config()
+        +build_runtime_plan()
+        +materialize_swell_partitions()
+        +distribute_architecture()
+    }
+
+    class FederatedArchitecture {
+        -orchestrator: OrchestratorSpec
+        -model: ModelConfig
+        -dataset: DatasetConfig
+        -fog_nodes: List[FogNodeSpec]
+    }
+
+    class OrchestratorSpec {
+        -rounds: int
+        -mqtt: MQTTConfig
+    }
+
+    class MQTTConfig {
+        -broker: str
+        -port: int
+        -topics: MQTTTopics
+    }
+
+    class MQTTTopics {
+        -updates: str
+        -partial: str
+        -global_model: str
+    }
+
+    class FogNodeSpec {
+        -id: str
+        -k: int
+        -clients: List[ClientSpec]
+    }
+
+    class ClientSpec {
+        -id: str
+        -data_dir: str
+        -workflow: str
+    }
+
+    class DatasetConfig {
+        -data_dir: str
+        -split_train: float
+        -split_val: float
+        -split_test: float
+    }
+
+    class ModelConfig {
+        -type: str
+        -input_dim: int
+    }
+
+    RunArchitectureFromConfig ..> FederatedArchitectureUtils
+    FederatedArchitectureUtils ..> FederatedArchitecture
+
+    FederatedArchitecture o-- OrchestratorSpec
+    OrchestratorSpec o-- MQTTConfig
+    MQTTConfig o-- MQTTTopics
+    FederatedArchitecture o-- ModelConfig
+    FederatedArchitecture o-- DatasetConfig
+    FederatedArchitecture o-- "*" FogNodeSpec
+    FogNodeSpec o-- "*" ClientSpec
+}
+
+@enduml

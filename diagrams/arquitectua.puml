@@ -1,0 +1,54 @@
+@startuml
+title Onion-FL — Topología regional jerárquica desbalanceada (Edge–Fog–Cloud)
+left to right direction
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam rectangle {
+  RoundCorner 12
+}
+
+rectangle "Cloud\n(Coordinador global)" as CLOUD
+
+package "Región A (desbalance: 4 Edge)" as RA {
+  rectangle "Fog A\n(Agregador regional)" as FOGA
+  rectangle "Edge A1" as EA1
+  rectangle "Edge A2" as EA2
+  rectangle "Edge A3" as EA3
+  rectangle "Edge A4" as EA4
+  EA1 --> FOGA : update
+  EA2 --> FOGA : update
+  EA3 --> FOGA : update
+  EA4 --> FOGA : update
+}
+
+package "Región B (desbalance: 2 Edge)" as RB {
+  rectangle "Fog B\n(Agregador regional)" as FOGB
+  rectangle "Edge B1" as EB1
+  rectangle "Edge B2" as EB2
+  EB1 --> FOGB : update
+  EB2 --> FOGB : update
+}
+
+package "Región C (desbalance: 5 Edge)" as RC {
+  rectangle "Fog C\n(Agregador regional)" as FOGC
+  rectangle "Edge C1" as EC1
+  rectangle "Edge C2" as EC2
+  rectangle "Edge C3" as EC3
+  rectangle "Edge C4" as EC4
+  rectangle "Edge C5" as EC5
+  EC1 --> FOGC : update
+  EC2 --> FOGC : update
+  EC3 --> FOGC : update
+  EC4 --> FOGC : update
+  EC5 --> FOGC : update
+}
+
+FOGA --> CLOUD : modelo regional
+FOGB --> CLOUD : modelo regional
+FOGC --> CLOUD : modelo regional
+
+CLOUD --> FOGA : modelo global
+CLOUD --> FOGB : modelo global
+CLOUD --> FOGC : modelo global
+@enduml
