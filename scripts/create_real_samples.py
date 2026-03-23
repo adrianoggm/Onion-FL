@@ -13,7 +13,6 @@ import json
 import pickle
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 
@@ -223,7 +222,7 @@ def create_dataset_samples():
     # Create WESAD sample
     try:
         wesad_sample = create_wesad_sample()
-        print(f"✅ WESAD real sample created")
+        print("✅ WESAD real sample created")
     except Exception as e:
         print(f"❌ WESAD sample failed: {e}")
         wesad_sample = None
@@ -233,7 +232,7 @@ def create_dataset_samples():
     # Create SWELL sample
     try:
         swell_sample = create_swell_sample()
-        print(f"✅ SWELL real sample created")
+        print("✅ SWELL real sample created")
     except Exception as e:
         print(f"❌ SWELL sample failed: {e}")
         swell_sample = None

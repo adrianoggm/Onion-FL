@@ -7,7 +7,6 @@ and CI/CD pipelines without Unicode encoding issues.
 
 from __future__ import annotations
 
-import os
 import re
 import sys
 from pathlib import Path
@@ -35,7 +34,7 @@ def check_ecg5000_usage(project_root: Path) -> tuple[int, list[str]]:
 
         for py_file in src_path.rglob("*.py"):
             try:
-                with open(py_file, "r", encoding="utf-8") as f:
+                with open(py_file, encoding="utf-8") as f:
                     lines = f.readlines()
 
                 for line_num, line in enumerate(lines, 1):

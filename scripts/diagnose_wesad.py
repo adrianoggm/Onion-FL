@@ -4,7 +4,6 @@ WESAD Dataset Diagnostic Tool
 Analyzes WESAD data structure to understand why few windows are extracted
 """
 
-import os
 import pickle
 from pathlib import Path
 
@@ -76,7 +75,7 @@ def diagnose_wesad_subject(subject_path):
             if "BVP" in signals:
                 bvp_len = len(signals["BVP"])
                 label_len = len(labels)
-                print(f"\nSignal-Label alignment:")
+                print("\nSignal-Label alignment:")
                 print(f"  BVP length: {bvp_len:,}")
                 print(f"  Label length: {label_len:,}")
                 print(f"  Length match: {bvp_len == label_len}")

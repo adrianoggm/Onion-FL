@@ -12,7 +12,6 @@ if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
 import json
-from typing import Dict, Tuple
 
 import numpy as np
 from sklearn.base import clone
@@ -28,7 +27,7 @@ from flower_basic.evaluation import group_cross_validation
 OUTPUT_PATH = Path("multimodal_baseline_results.json")
 
 
-def _compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
+def _compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
     """Return a standard metric dictionary."""
     return {
         "accuracy": float(accuracy_score(y_true, y_pred)),
@@ -40,7 +39,7 @@ def _compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]
 
 def _split_by_subject(
     subject_ids: np.ndarray, test_size: float = 0.2, random_state: int = 42
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Create boolean masks for subject-based splitting."""
 
     unique_subjects = np.unique(subject_ids)
@@ -68,7 +67,7 @@ def _train_model(
     y_train: np.ndarray,
     X_eval: np.ndarray,
     y_eval: np.ndarray,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Fit the model and evaluate on the provided split."""
     model.fit(X_train, y_train)
     predictions = model.predict(X_eval)
@@ -94,14 +93,13 @@ def main() -> None:
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_val_scaled = scaler.transform(X_val)
-    X_test_scaled = scaler.transform(combined.X_test)
 
     models = {
         "logistic_regression": LogisticRegression(max_iter=2000),
         "random_forest": RandomForestClassifier(n_estimators=300, random_state=42),
     }
 
-    results: Dict[str, Dict[str, Dict[str, float]]] = {}
+    results: dict[str, dict[str, dict[str, float]]] = {}
 
     for name, model in models.items():
         val_model = clone(model)
