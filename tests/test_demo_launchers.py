@@ -28,7 +28,7 @@ def _write_npz(path: Path, n_samples: int, n_features: int, subject: str) -> Non
 
 def test_run_swell_demo_builds_current_module_plan(tmp_path: Path) -> None:
     _add_scripts_to_path()
-    import run_swell_federated_demo as swell_demo  # noqa: WPS433
+    import run_swell_federated_demo as swell_demo
 
     base = tmp_path / "swell_run"
     fog0_subj1 = base / "fog_0" / "subject_1"
@@ -84,7 +84,9 @@ def test_run_swell_demo_builds_current_module_plan(tmp_path: Path) -> None:
     assert broker_cmd[:3] == ["python", "-m", "flower_basic.brokers.fog"]
     assert "--k-map" in broker_cmd
 
-    client_cmd = next(cmd.cmd for cmd in commands if cmd.role == "client_fog_0_client_1")
+    client_cmd = next(
+        cmd.cmd for cmd in commands if cmd.role == "client_fog_0_client_1"
+    )
     assert client_cmd[:3] == ["python", "-m", "flower_basic.clients.swell"]
     assert str(fog0_subj1) in client_cmd
     assert "fog_0_client_1" in client_cmd
@@ -92,7 +94,7 @@ def test_run_swell_demo_builds_current_module_plan(tmp_path: Path) -> None:
 
 def test_run_sweet_demo_builds_current_module_plan(tmp_path: Path) -> None:
     _add_scripts_to_path()
-    import run_sweet_federated_demo as sweet_demo  # noqa: WPS433
+    import run_sweet_federated_demo as sweet_demo
 
     base = tmp_path / "sweet_run"
     fog0_subj1 = base / "fog_0" / "subject_user0001"
@@ -100,12 +102,8 @@ def test_run_sweet_demo_builds_current_module_plan(tmp_path: Path) -> None:
     for path in (fog0_subj1, fog1_subj2):
         path.mkdir(parents=True)
 
-    _write_npz(
-        fog0_subj1 / "train.npz", n_samples=5, n_features=7, subject="user0001"
-    )
-    _write_npz(
-        fog1_subj2 / "train.npz", n_samples=0, n_features=7, subject="user0002"
-    )
+    _write_npz(fog0_subj1 / "train.npz", n_samples=5, n_features=7, subject="user0001")
+    _write_npz(fog1_subj2 / "train.npz", n_samples=0, n_features=7, subject="user0002")
 
     manifest = {
         "clients": {
@@ -149,7 +147,9 @@ def test_run_sweet_demo_builds_current_module_plan(tmp_path: Path) -> None:
     broker_cmd = commands[1].cmd
     assert broker_cmd[:3] == ["python", "-m", "flower_basic.brokers.sweet_fog"]
 
-    client_cmd = next(cmd.cmd for cmd in commands if cmd.role == "client_fog_0_user0001")
+    client_cmd = next(
+        cmd.cmd for cmd in commands if cmd.role == "client_fog_0_user0001"
+    )
     assert client_cmd[:3] == ["python", "-m", "flower_basic.clients.sweet"]
     assert "--enable-telemetry" in client_cmd
     assert "--enable-prometheus" in client_cmd
@@ -157,7 +157,7 @@ def test_run_sweet_demo_builds_current_module_plan(tmp_path: Path) -> None:
 
 def test_run_sweet_architecture_skips_empty_nodes(tmp_path: Path, monkeypatch) -> None:
     _add_scripts_to_path()
-    import run_sweet_architecture as sweet_arch  # noqa: WPS433
+    import run_sweet_architecture as sweet_arch
 
     manifest = {
         "nodes": {"fog_0": ["user0001"], "fog_1": ["user0002"]},
@@ -214,8 +214,16 @@ def test_run_sweet_architecture_skips_empty_nodes(tmp_path: Path, monkeypatch) -
     assert len(procs) == 4
     assert popen_calls[0][:3] == [sys.executable, "-m", "flower_basic.servers.sweet"]
     assert popen_calls[0][popen_calls[0].index("--server-addr") + 1] == "0.0.0.0:9090"
-    assert popen_calls[1][:3] == [sys.executable, "-m", "flower_basic.brokers.sweet_fog"]
-    assert popen_calls[2][:3] == [sys.executable, "-m", "flower_basic.clients.fog_bridge_sweet"]
+    assert popen_calls[1][:3] == [
+        sys.executable,
+        "-m",
+        "flower_basic.brokers.sweet_fog",
+    ]
+    assert popen_calls[2][:3] == [
+        sys.executable,
+        "-m",
+        "flower_basic.clients.fog_bridge_sweet",
+    ]
     assert popen_calls[2][popen_calls[2].index("--server") + 1] == "localhost:9090"
     assert "fog_0" in popen_calls[2]
     assert popen_calls[3][:3] == [sys.executable, "-m", "flower_basic.clients.sweet"]

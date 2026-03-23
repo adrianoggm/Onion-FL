@@ -82,7 +82,9 @@ def test_split_subjects_with_test_holdout() -> None:
 
 def test_auto_assign_nodes_percentages() -> None:
     subjects = ["1", "2", "3", "4"]
-    mapping = _auto_assign_nodes(subjects, num_nodes=2, percentages=[0.75, 0.25], seed=1)
+    mapping = _auto_assign_nodes(
+        subjects, num_nodes=2, percentages=[0.75, 0.25], seed=1
+    )
 
     assert len(mapping["fog_0"]) == 3
     assert len(mapping["fog_1"]) == 1

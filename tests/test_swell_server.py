@@ -137,10 +137,10 @@ def test_mqtt_fedavg_swell_accepts_tuple_parameters() -> None:
     fl_params = fl.common.ndarrays_to_parameters(params)
     payload = (fl_params, {"extra": True})
 
-    with patch.object(
-        fl.server.strategy.FedAvg, "aggregate_fit", return_value=payload
-    ):
-        result = strategy.aggregate_fit(server_round=1, results=[(Mock(), Mock())], failures=[])
+    with patch.object(fl.server.strategy.FedAvg, "aggregate_fit", return_value=payload):
+        result = strategy.aggregate_fit(
+            server_round=1, results=[(Mock(), Mock())], failures=[]
+        )
 
     assert result is not None
     assert mqtt_client.publish.called

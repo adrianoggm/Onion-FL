@@ -75,7 +75,7 @@ def _make_arch(k: int = 0) -> FederatedArchitecture:
 
 def test_apply_manifest_paths_global_strategy(tmp_path: Path) -> None:
     _add_scripts_to_path()
-    import run_architecture_from_config as rac  # noqa: WPS433
+    import run_architecture_from_config as rac
 
     base = tmp_path / "run"
     subject_1 = base / "fog_0" / "subject_1"
@@ -108,7 +108,7 @@ def test_apply_manifest_paths_global_strategy(tmp_path: Path) -> None:
 
 def test_apply_manifest_paths_per_subject_strategy(tmp_path: Path) -> None:
     _add_scripts_to_path()
-    import run_architecture_from_config as rac  # noqa: WPS433
+    import run_architecture_from_config as rac
 
     base = tmp_path / "run"
     subject_1 = base / "fog_0" / "subject_1"
@@ -140,7 +140,7 @@ def test_apply_manifest_paths_per_subject_strategy(tmp_path: Path) -> None:
 
 def test_apply_manifest_paths_clamps_k_to_spawned_clients(tmp_path: Path) -> None:
     _add_scripts_to_path()
-    import run_architecture_from_config as rac  # noqa: WPS433
+    import run_architecture_from_config as rac
 
     base = tmp_path / "run"
     subject_1 = base / "fog_0" / "subject_1"

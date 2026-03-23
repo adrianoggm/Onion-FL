@@ -14,9 +14,7 @@ from flower_basic.datasets.swell import (
 
 
 def test_normalize_subject_series() -> None:
-    series = pd.Series(
-        ["P01", "participant_2", "subject003", "id004", "05", "abc"]
-    )
+    series = pd.Series(["P01", "participant_2", "subject003", "id004", "05", "abc"])
     normalized = _normalize_subject_series(series)
     assert normalized.tolist() == ["1", "2", "3", "4", "5", "abc"]
 

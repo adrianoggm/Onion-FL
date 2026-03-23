@@ -194,9 +194,10 @@ def test_start_linked_spans_with_custom_trace_context(monkeypatch) -> None:
     monkeypatch.setattr(telemetry, "inject_trace_context", lambda *a, **k: {"t": "1"})
     monkeypatch.setattr(telemetry, "extract_trace_context", lambda *_: "ctx")
 
-    with telemetry.start_linked_producer_span(
-        tracer, "op", "target"
-    ) as (_span, trace_ctx):
+    with telemetry.start_linked_producer_span(tracer, "op", "target") as (
+        _span,
+        trace_ctx,
+    ):
         assert trace_ctx == {"t": "1"}
 
     with telemetry.start_linked_consumer_span(

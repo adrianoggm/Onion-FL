@@ -132,7 +132,9 @@ def test_on_message_sets_pending_global(tmp_path: Path, monkeypatch) -> None:
     weights["extra"] = [1, 2, 3]
 
     payload = {"round": 1, "global_weights": weights, "trace_context": {}}
-    msg = SimpleNamespace(payload=json.dumps(payload).encode("utf-8"), topic=client.topic_global)
+    msg = SimpleNamespace(
+        payload=json.dumps(payload).encode("utf-8"), topic=client.topic_global
+    )
 
     client.on_message(None, None, msg)
     assert client._pending_global_state is not None
@@ -214,9 +216,7 @@ def test_run_applies_pending_state(tmp_path: Path, monkeypatch) -> None:
     _write_split(node_dir / "val.npz", n_samples=2, n_features=2)
 
     client = SwellFLClientMQTT(node_dir=str(node_dir), region="fog_0")
-    pending = {
-        k: torch.zeros_like(v) for k, v in client.model.state_dict().items()
-    }
+    pending = {k: torch.zeros_like(v) for k, v in client.model.state_dict().items()}
     client._pending_global_state = pending
     client._got_global = True
 
