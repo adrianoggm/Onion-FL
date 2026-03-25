@@ -95,6 +95,7 @@ class OrchestratorSpec:
     address: str = "0.0.0.0:8080"
     protocol: str = "MQTT"
     rounds: int = 3
+    stale_update_policy: str = "accept"
     mqtt: MQTTConfig = field(default_factory=MQTTConfig)
 
 
@@ -157,6 +158,9 @@ def load_architecture_config(config_path: str | os.PathLike) -> FederatedArchite
         address=str(orchestrator_raw.get("address", "0.0.0.0:8080")),
         protocol=str(orchestrator_raw.get("protocol", "MQTT")),
         rounds=int(orchestrator_raw.get("rounds", 3)),
+        stale_update_policy=str(
+            orchestrator_raw.get("stale_update_policy", "accept")
+        ).lower(),
         mqtt=MQTTConfig(
             broker=str(mqtt_raw.get("broker", "localhost")),
             port=int(mqtt_raw.get("port", 1883)),
@@ -257,6 +261,10 @@ def _validate_architecture(arch: FederatedArchitecture) -> None:
             raise ValueError(
                 "Las proporciones de split (train/val/test) deben sumar 1.0"
             )
+    if arch.orchestrator.stale_update_policy not in {"accept", "strict"}:
+        raise ValueError(
+            "orchestrator.stale_update_policy debe ser 'accept' o 'strict'"
+        )
 
 
 def infer_primary_workflow(arch: FederatedArchitecture) -> str:
@@ -634,6 +642,8 @@ def build_runtime_plan(
         topics.partial,
         "--topic-global",
         topics.global_model,
+        "--stale-update-policy",
+        arch.orchestrator.stale_update_policy,
     ]
     if broker_k_arg is not None:
         broker_cmd.extend(["--k", str(int(broker_k_arg))])

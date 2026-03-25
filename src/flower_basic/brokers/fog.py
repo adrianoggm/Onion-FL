@@ -62,6 +62,7 @@ GLOBAL_TOPIC = "fl/global_model"  # (optional) republish global model
 
 MQTT_BROKER = "localhost"
 MQTT_PORT = 1883
+STALE_UPDATE_POLICY = "accept"
 
 # Number of updates per region before computing partial aggregate
 # K_MAP allows per-region thresholds (e.g., {"fog_1": 2, "fog_2": 3})
@@ -74,6 +75,7 @@ buffers = defaultdict(list)
 
 # Track unique clients per region
 clients_per_region: dict[str, set] = defaultdict(set)
+LATEST_GLOBAL_ROUND = 0
 
 # Environment overrides (optional)
 try:
@@ -83,6 +85,7 @@ try:
     MQTT_BROKER = os.getenv("MQTT_BROKER", MQTT_BROKER)
     MQTT_PORT = int(os.getenv("MQTT_PORT", str(MQTT_PORT)))
     K = int(os.getenv("FOG_K", str(K)))
+    STALE_UPDATE_POLICY = os.getenv("FOG_STALE_UPDATE_POLICY", STALE_UPDATE_POLICY)
     _k_map_env = os.getenv("FOG_K_MAP")
     if _k_map_env:
         try:
@@ -191,6 +194,39 @@ def weighted_average(
     return avg, centroid_stats
 
 
+def _expected_client_round() -> int:
+    return max(1, int(LATEST_GLOBAL_ROUND) + 1)
+
+
+def _normalize_round(raw_round: Any, fallback: int) -> int:
+    try:
+        return int(raw_round)
+    except (TypeError, ValueError):
+        return int(fallback)
+
+
+def _normalize_sent_at(raw_sent_at: Any) -> float:
+    try:
+        return float(raw_sent_at)
+    except (TypeError, ValueError):
+        return time.time()
+
+
+def on_global_model(client, userdata, msg):
+    """Track the latest global round to classify stale client updates."""
+    global LATEST_GLOBAL_ROUND
+
+    try:
+        payload = json.loads(msg.payload.decode())
+        global_round = _normalize_round(payload.get("round"), LATEST_GLOBAL_ROUND)
+        LATEST_GLOBAL_ROUND = max(LATEST_GLOBAL_ROUND, global_round)
+        print(
+            f"[BROKER] Global round updated to {LATEST_GLOBAL_ROUND}; expected client round={_expected_client_round()}"
+        )
+    except Exception as exc:
+        print(f"[BROKER] Ignoring malformed global model message: {exc}")
+
+
 def on_update(client, userdata, msg):
     """Handle local client updates and emit partial aggregates per region."""
     try:
@@ -200,10 +236,29 @@ def on_update(client, userdata, msg):
         weights = payload.get("weights", {})
         client_id = payload.get("client_id", "unknown")
         num_samples = payload.get("num_samples", 0)  # Track contribution
+        expected_round = _expected_client_round()
+        update_round = _normalize_round(payload.get("round"), expected_round)
+        sent_at = _normalize_sent_at(payload.get("sent_at"))
+        received_at = time.time()
         trace_context = payload.get("trace_context", {})  # Extract trace context
 
         if not weights:
             print(f"[BROKER] Received empty weights from {client_id}")
+            return
+
+        is_stale = update_round < expected_round
+        is_future = update_round > expected_round
+        round_status = "current"
+        if is_stale:
+            round_status = "stale"
+        elif is_future:
+            round_status = "future"
+
+        if STALE_UPDATE_POLICY == "strict" and round_status != "current":
+            print(
+                f"[BROKER] Dropping {round_status} update from client={client_id}, "
+                f"region={region}, update_round={update_round}, expected_round={expected_round}"
+            )
             return
 
         # Use linked CONSUMER span to continue trace from swell-client
@@ -216,6 +271,8 @@ def on_update(client, userdata, msg):
                 "region": region,
                 "client_id": client_id,
                 "num_samples": num_samples,
+                "update_round": update_round,
+                "expected_round": expected_round,
             },
         ):
             # Store weights along with metadata for weighted aggregation
@@ -224,6 +281,10 @@ def on_update(client, userdata, msg):
                     "weights": weights,
                     "num_samples": num_samples,
                     "client_id": client_id,
+                    "round": update_round,
+                    "expected_round": expected_round,
+                    "sent_at": sent_at,
+                    "received_at": received_at,
                     "trace_context": trace_context,
                 }
             )
@@ -260,16 +321,37 @@ def on_update(client, userdata, msg):
 
             print(
                 f"[BROKER] Update received from client={client_id}, region={region}, samples={num_samples}. "
-                f"Buffer: {len(buffers[region])}/{region_k}"
+                f"Buffer: {len(buffers[region])}/{region_k} | "
+                f"round={update_round} expected={expected_round} status={round_status}"
             )
 
             if len(buffers[region]) >= region_k:
                 agg_start = time.time()
+                batch = list(buffers[region])
 
                 # Extract weights and compute sample-weighted average
-                weight_list = [item["weights"] for item in buffers[region]]
-                sample_counts = [item["num_samples"] for item in buffers[region]]
+                weight_list = [item["weights"] for item in batch]
+                sample_counts = [item["num_samples"] for item in batch]
                 total_samples = sum(sample_counts)
+                round_values = [
+                    int(item.get("round", expected_round)) for item in batch
+                ]
+                stale_count = sum(1 for value in round_values if value < expected_round)
+                future_count = sum(
+                    1 for value in round_values if value > expected_round
+                )
+                round_min = min(round_values) if round_values else expected_round
+                round_max = max(round_values) if round_values else expected_round
+                delays = [
+                    max(
+                        0.0,
+                        float(item.get("received_at", received_at))
+                        - float(item.get("sent_at", received_at)),
+                    )
+                    for item in batch
+                ]
+                max_delay_seconds = max(delays) if delays else 0.0
+                mean_delay_seconds = sum(delays) / len(delays) if delays else 0.0
 
                 # Use sample counts as weights for FedAvg
                 if total_samples > 0:
@@ -303,9 +385,14 @@ def on_update(client, userdata, msg):
                     f"mean={centroid_stats['mean']:.6f}, std={centroid_stats['std']:.4f}, "
                     f"params={centroid_stats['num_params']}"
                 )
+                print(
+                    f"[BROKER] Round summary for {region}: expected={expected_round}, "
+                    f"min={round_min}, max={round_max}, stale={stale_count}, "
+                    f"future={future_count}, max_delay={max_delay_seconds:.2f}s"
+                )
 
                 # Log contribution breakdown
-                for item in buffers[region]:
+                for item in batch:
                     contrib_pct = (
                         (item["num_samples"] / total_samples * 100)
                         if total_samples > 0
@@ -332,6 +419,14 @@ def on_update(client, userdata, msg):
                         "region": region,
                         "partial_weights": partial,
                         "total_samples": total_samples,
+                        "expected_round": expected_round,
+                        "round_min": round_min,
+                        "round_max": round_max,
+                        "stale_update_count": stale_count,
+                        "future_update_count": future_count,
+                        "max_delay_seconds": max_delay_seconds,
+                        "mean_delay_seconds": mean_delay_seconds,
+                        "stale_policy": STALE_UPDATE_POLICY,
                         "timestamp": time.time(),
                         "trace_context": trace_ctx,  # Propagate trace context
                     }
@@ -358,9 +453,19 @@ def on_update(client, userdata, msg):
         traceback.print_exc()
 
 
+def on_message(client, userdata, msg):
+    """Route MQTT messages to the appropriate handler."""
+    if msg.topic == UPDATE_TOPIC:
+        on_update(client, userdata, msg)
+        return
+    if msg.topic == GLOBAL_TOPIC:
+        on_global_model(client, userdata, msg)
+
+
 def main():
     """Start fog broker MQTT loop."""
     global K, MQTT_BROKER, MQTT_PORT, UPDATE_TOPIC, PARTIAL_TOPIC, GLOBAL_TOPIC
+    global STALE_UPDATE_POLICY
 
     enable_timestamped_print()
 
@@ -410,6 +515,12 @@ def main():
         default=os.getenv("MQTT_TOPIC_GLOBAL", GLOBAL_TOPIC),
         help="Topic for global model publish",
     )
+    parser.add_argument(
+        "--stale-update-policy",
+        default=os.getenv("FOG_STALE_UPDATE_POLICY", STALE_UPDATE_POLICY),
+        choices=("accept", "strict"),
+        help="How to handle updates whose round does not match the expected round",
+    )
     args = parser.parse_args()
 
     K = max(1, int(args.k))
@@ -426,16 +537,20 @@ def main():
     UPDATE_TOPIC = args.topic_updates
     PARTIAL_TOPIC = args.topic_partial
     GLOBAL_TOPIC = args.topic_global
+    STALE_UPDATE_POLICY = str(args.stale_update_policy).lower()
 
     # Configurar cliente MQTT con callback API v2
     mqttc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-    mqttc.on_connect = lambda c, u, f, rc, p=None: c.subscribe(UPDATE_TOPIC)
-    mqttc.on_message = on_update
+    mqttc.on_connect = lambda c, u, f, rc, p=None: c.subscribe(
+        [(UPDATE_TOPIC, 0), (GLOBAL_TOPIC, 0)]
+    )
+    mqttc.on_message = on_message
     mqttc.connect(MQTT_BROKER, MQTT_PORT)
     print(f"[BROKER] Broker fog iniciado. Escuchando actualizaciones en {UPDATE_TOPIC}")
     print(
         f"[BROKER] Agregando K={K} actualizaciones por región antes de enviar al servidor central"
     )
+    print(f"[BROKER] Stale update policy: {STALE_UPDATE_POLICY}")
 
     # Cleanup function to push metrics before exit
     def cleanup(*args):
