@@ -23,7 +23,9 @@ def test_broker_region_panels_collapse_duplicate_series() -> None:
         / "flower-fl.json"
     )
     dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
-    panels = {panel["title"]: panel for panel in dashboard["panels"] if "title" in panel}
+    panels = {
+        panel["title"]: panel for panel in dashboard["panels"] if "title" in panel
+    }
 
     assert panels["Clients per Fog Region"]["targets"][0]["expr"] == (
         "max by (region) (flower_fl_broker_clients_per_region)"
