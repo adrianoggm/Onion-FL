@@ -17,9 +17,7 @@ This establishes a baseline for comparison with federated learning results.
 
 from __future__ import annotations
 
-import warnings
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -28,15 +26,14 @@ import torch.nn as nn
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
-    accuracy_score,
-    classification_report,
-    confusion_matrix,
     ConfusionMatrixDisplay,
+    accuracy_score,
+    confusion_matrix,
     f1_score,
     precision_score,
     recall_score,
 )
-from sklearn.model_selection import cross_val_score, StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, cross_val_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
@@ -44,7 +41,6 @@ from sklearn.svm import SVC
 try:
     import matplotlib.pyplot as plt
     import seaborn as sns
-    from scipy import signal
 
     VISUALIZATIONS_AVAILABLE = True
     plt.style.use("default")
@@ -63,7 +59,7 @@ class SWELLBaselineEvaluator:
         self.data_dir = Path(data_dir)
         self.results = {}
 
-    def load_swell_data(self) -> Tuple[np.ndarray, np.ndarray, List[str], pd.DataFrame]:
+    def load_swell_data(self) -> tuple[np.ndarray, np.ndarray, list[str], pd.DataFrame]:
         """Load COMPLETE SWELL dataset - MANDATORY for evaluations."""
         print("Loading COMPLETE SWELL dataset...")
 
@@ -165,10 +161,10 @@ class SWELLBaselineEvaluator:
                     if df.shape[1] == 1 and ";" in str(df.columns[0]):
                         try:
                             df = pd.read_csv(file_path, sep=";", encoding="utf-8")
-                        except:
+                        except UnicodeDecodeError:
                             try:
                                 df = pd.read_csv(file_path, sep=";", encoding="latin1")
-                            except:
+                            except UnicodeDecodeError:
                                 df = pd.read_csv(file_path, sep=";", encoding="cp1252")
 
                     print(
@@ -331,7 +327,7 @@ class SWELLBaselineEvaluator:
                     merged_df = merged_df.sample(n=50000, random_state=42)
             else:
                 print(
-                    f"      Warning: No common merge columns found, skipping this modality"
+                    "      Warning: No common merge columns found, skipping this modality"
                 )
                 continue
 
@@ -481,7 +477,7 @@ class SWELLBaselineEvaluator:
                 col_mean = np.nanmean(X[:, col_idx])
                 X[np.isnan(X[:, col_idx]), col_idx] = col_mean
 
-        print(f"\n✓ Successfully loaded SWELL data:")
+        print("\n✓ Successfully loaded SWELL data:")
         print(f"  Total samples: {len(X)}")
         print(f"  Feature dimensions: {X.shape[1]}")
         print(f"  Unique subjects: {len(set(subjects))}")
@@ -506,7 +502,7 @@ class SWELLBaselineEvaluator:
             print(f"  {i:2d}. {col}")
 
         # Data types
-        print(f"\nData Types:")
+        print("\nData Types:")
         dtypes = df.dtypes
         for col, dtype in dtypes.items():
             print(f"  {col}: {dtype}")
@@ -527,19 +523,19 @@ class SWELLBaselineEvaluator:
 
         if subject_col:
             unique_subjects = df[subject_col].nunique()
-            print(f"\nSubject Information:")
+            print("\nSubject Information:")
             print(f"  Subject column: {subject_col}")
             print(f"  Unique subjects: {unique_subjects}")
-            print(f"  Samples per subject (top 10):")
+            print("  Samples per subject (top 10):")
             subject_counts = df[subject_col].value_counts().head(10)
             for subj, count in subject_counts.items():
                 print(f"    {subj}: {count} samples")
 
         # Condition (stress questionnaire) analysis
         if "condition" in df.columns:
-            print(f"\nCondition (Stress Levels) Analysis:")
+            print("\nCondition (Stress Levels) Analysis:")
             print(f"  Unique conditions: {df['condition'].nunique()}")
-            print(f"  Condition distribution:")
+            print("  Condition distribution:")
             condition_counts = df["condition"].value_counts()
             for cond, count in condition_counts.items():
                 print(f"    '{cond}': {count} samples ({count/len(df)*100:.1f}%)")
@@ -584,7 +580,7 @@ class SWELLBaselineEvaluator:
                     stress_labels.append("Unknown")
 
             stress_counts = pd.Series(stress_labels).value_counts()
-            print(f"  Mapped stress distribution:")
+            print("  Mapped stress distribution:")
             for label, count in stress_counts.items():
                 print(f"    {label}: {count} samples ({count/len(df)*100:.1f}%)")
 
@@ -613,14 +609,14 @@ class SWELLBaselineEvaluator:
         # Descriptive statistics for numeric features
         numeric_cols = df.select_dtypes(include=[np.number]).columns
         if len(numeric_cols) > 0:
-            print(f"\nDescriptive Statistics (Numeric Features):")
+            print("\nDescriptive Statistics (Numeric Features):")
             desc = df[numeric_cols].describe()
             print(desc)
 
             # Check for missing values
             missing = df[numeric_cols].isnull().sum()
             if missing.sum() > 0:
-                print(f"\nMissing Values in Numeric Columns:")
+                print("\nMissing Values in Numeric Columns:")
                 for col, count in missing[missing > 0].items():
                     print(f"  {col}: {count} missing ({count/len(df)*100:.1f}%)")
 
@@ -634,7 +630,7 @@ class SWELLBaselineEvaluator:
                 modalities[modality].append(col)
 
         if modalities:
-            print(f"\nModality Breakdown:")
+            print("\nModality Breakdown:")
             for modality, cols in modalities.items():
                 print(f"  {modality}: {len(cols)} features")
                 if len(cols) <= 10:
@@ -688,10 +684,10 @@ class SWELLBaselineEvaluator:
         with open("swell_dataset_analysis.json", "w") as f:
             json.dump(analysis_data, f, indent=2, default=str)
 
-        print(f"\n💾 Dataset analysis saved to: swell_dataset_analysis.json")
+        print("\n💾 Dataset analysis saved to: swell_dataset_analysis.json")
 
     def create_visualizations(
-        self, df: pd.DataFrame, X: np.ndarray, y: np.ndarray, results: Dict
+        self, df: pd.DataFrame, X: np.ndarray, y: np.ndarray, results: dict
     ) -> None:
         """Create comprehensive visualizations for dataset analysis."""
         if not VISUALIZATIONS_AVAILABLE:
@@ -1019,7 +1015,7 @@ class SWELLBaselineEvaluator:
         except Exception as e:
             print(f"⚠️  Could not create feature importance plot: {e}")
 
-    def plot_confusion_matrices(self, results: Dict, plots_dir: Path) -> None:
+    def plot_confusion_matrices(self, results: dict, plots_dir: Path) -> None:
         """Plot confusion matrices for all models."""
         fig, axes = plt.subplots(2, 2, figsize=(12, 10))
         axes = axes.ravel()
@@ -1085,8 +1081,8 @@ class SWELLBaselineEvaluator:
     # 4. Mock data generation is PROHIBITED for ML/AI evaluation
 
     def split_by_subjects(
-        self, X: np.ndarray, y: np.ndarray, subjects: List[str]
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        self, X: np.ndarray, y: np.ndarray, subjects: list[str]
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Split data by subjects to prevent data leakage."""
         unique_subjects = list(set(subjects))
         n_subjects = len(unique_subjects)
@@ -1096,7 +1092,6 @@ class SWELLBaselineEvaluator:
         # Calculate split sizes
         n_train = int(0.5 * n_subjects)  # 50% for training
         n_val = int(0.2 * n_subjects)  # 20% for validation
-        n_test = n_subjects - n_train - n_val  # Remaining for test
 
         # Shuffle subjects
         np.random.seed(42)
@@ -1129,7 +1124,7 @@ class SWELLBaselineEvaluator:
         y_train: np.ndarray,
         y_val: np.ndarray,
         y_test: np.ndarray,
-    ) -> Dict:
+    ) -> dict:
         """Train classical ML models and evaluate performance with cross-validation and confusion matrices."""
         print("\nTraining classical models...")
 
@@ -1175,7 +1170,7 @@ class SWELLBaselineEvaluator:
 
             # Generate confusion matrix
             cm = confusion_matrix(y_test, y_test_pred)
-            print(f"    Confusion Matrix:")
+            print("    Confusion Matrix:")
             print(f"      {cm}")
 
             results[name] = {
@@ -1198,7 +1193,7 @@ class SWELLBaselineEvaluator:
         y_train: np.ndarray,
         y_val: np.ndarray,
         y_test: np.ndarray,
-    ) -> Dict:
+    ) -> dict:
         """Train multimodal neural network."""
         print("\nTraining Multimodal Neural Network...")
 
@@ -1214,7 +1209,6 @@ class SWELLBaselineEvaluator:
         X_val_tensor = torch.FloatTensor(X_val_scaled)
         y_val_tensor = torch.LongTensor(y_val)
         X_test_tensor = torch.FloatTensor(X_test_scaled)
-        y_test_tensor = torch.LongTensor(y_test)
 
         # Define multimodal neural network
         class MultimodalSWELLNet(nn.Module):
@@ -1336,7 +1330,7 @@ class SWELLBaselineEvaluator:
 
     def calculate_metrics(
         self, y_true: np.ndarray, y_pred: np.ndarray, split_name: str
-    ) -> Dict:
+    ) -> dict:
         """Calculate comprehensive metrics."""
         return {
             "accuracy": accuracy_score(y_true, y_pred),
@@ -1348,7 +1342,7 @@ class SWELLBaselineEvaluator:
             "confusion_matrix": confusion_matrix(y_true, y_pred).tolist(),
         }
 
-    def run_evaluation(self) -> Dict:
+    def run_evaluation(self) -> dict:
         """Run complete baseline evaluation."""
         print("🎯 SWELL Dataset Baseline Performance Evaluation")
         print("=" * 60)
@@ -1364,7 +1358,7 @@ class SWELLBaselineEvaluator:
             X, y, subjects
         )
 
-        print(f"\nFinal split sizes:")
+        print("\nFinal split sizes:")
         print(f"  Training: {len(X_train)} samples")
         print(f"  Validation: {len(X_val)} samples")
         print(f"  Test: {len(X_test)} samples")
@@ -1390,7 +1384,7 @@ class SWELLBaselineEvaluator:
 
         return all_results
 
-    def print_summary(self, results: Dict) -> None:
+    def print_summary(self, results: dict) -> None:
         """Print evaluation summary."""
         print("\n" + "=" * 60)
         print("📊 SWELL BASELINE PERFORMANCE SUMMARY")
@@ -1420,7 +1414,7 @@ class SWELLBaselineEvaluator:
             # Confusion matrix
             if "confusion_matrix" in result:
                 cm = result["confusion_matrix"]
-                print(f"  Confusion Matrix:")
+                print("  Confusion Matrix:")
                 print(f"    {cm[0]}  (No Stress)")
                 print(f"    {cm[1]}  (Stress)")
 
@@ -1434,15 +1428,15 @@ class SWELLBaselineEvaluator:
         print(f"\n🏆 Best Model: {best_model[0]}")
         print(f"   Test Accuracy: {best_model[1]['test']['accuracy']:.3f}")
 
-        print(f"\n💡 Key Insights:")
-        print(f"   - Cross-validation provides robust performance estimates")
-        print(f"   - Confusion matrices show prediction patterns")
+        print("\n💡 Key Insights:")
+        print("   - Cross-validation provides robust performance estimates")
+        print("   - Confusion matrices show prediction patterns")
         print(
-            f"   - Multimodal approach leverages computer + facial + posture + physiology"
+            "   - Multimodal approach leverages computer + facial + posture + physiology"
         )
-        print(f"   - Subject-based splitting prevents data leakage")
-        print(f"   - Results represent realistic federated learning scenarios")
-        print(f"   - Can compare with 3-node federated learning performance")
+        print("   - Subject-based splitting prevents data leakage")
+        print("   - Results represent realistic federated learning scenarios")
+        print("   - Can compare with 3-node federated learning performance")
 
 
 def main():

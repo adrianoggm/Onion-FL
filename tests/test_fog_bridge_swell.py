@@ -45,13 +45,27 @@ def test_on_message_sets_partial(monkeypatch) -> None:
     )
     msg = SimpleNamespace(
         payload=json.dumps(
-            {"region": "fog_0", "partial_weights": {"a": [1, 2]}, "trace_context": {}}
+            {
+                "region": "fog_0",
+                "partial_weights": {"a": [1, 2]},
+                "expected_round": 3,
+                "round_min": 2,
+                "round_max": 3,
+                "stale_update_count": 1,
+                "future_update_count": 0,
+                "max_delay_seconds": 4.5,
+                "mean_delay_seconds": 2.0,
+                "stale_policy": "accept",
+                "trace_context": {},
+            }
         ).encode("utf-8")
     )
 
     client.on_message(None, None, msg)
     assert client.partial_weights == {"a": [1, 2]}
     assert client.partial_trace_context == {}
+    assert client.partial_metadata["expected_round"] == 3
+    assert client.partial_metadata["stale_update_count"] == 1
 
 
 def test_fit_forwards_partial(monkeypatch) -> None:
@@ -66,11 +80,24 @@ def test_fit_forwards_partial(monkeypatch) -> None:
     client.partial_weights = {
         name: np.zeros_like(param) for name, param in client.model.state_dict().items()
     }
+    client.partial_metadata = {
+        "expected_round": 2,
+        "round_min": 1,
+        "round_max": 2,
+        "stale_update_count": 1,
+        "future_update_count": 0,
+        "max_delay_seconds": 3.0,
+        "mean_delay_seconds": 2.0,
+        "stale_policy": "accept",
+    }
 
-    out, num_samples, _metrics = client.fit(params, {})
+    out, num_samples, metrics = client.fit(params, {})
     assert len(out) == len(params)
     assert num_samples == 1000
     assert client.partial_weights is None
+    assert client.partial_metadata == {}
+    assert metrics["expected_round"] == 2
+    assert metrics["stale_update_count"] == 1
 
 
 def test_fit_times_out_without_partial(monkeypatch) -> None:

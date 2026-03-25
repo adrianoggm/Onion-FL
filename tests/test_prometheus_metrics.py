@@ -9,7 +9,9 @@ def test_get_metrics_port_from_env_priority(monkeypatch) -> None:
     monkeypatch.setenv("METRICS_PORT_SERVER", "9100")
     monkeypatch.setenv("METRICS_PORT", "9200")
 
-    port = prometheus_metrics.get_metrics_port_from_env(default=8000, component="server")
+    port = prometheus_metrics.get_metrics_port_from_env(
+        default=8000, component="server"
+    )
     assert port == 9100
 
 
@@ -17,7 +19,9 @@ def test_get_metrics_port_from_env_fallback(monkeypatch) -> None:
     monkeypatch.delenv("METRICS_PORT_SERVER", raising=False)
     monkeypatch.setenv("METRICS_PORT", "9300")
 
-    port = prometheus_metrics.get_metrics_port_from_env(default=8000, component="server")
+    port = prometheus_metrics.get_metrics_port_from_env(
+        default=8000, component="server"
+    )
     assert port == 9300
 
 

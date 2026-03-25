@@ -88,7 +88,7 @@ def test_publish_update_payload(tmp_path: Path, monkeypatch) -> None:
         region="fog_0",
         client_id="client_1",
     )
-    client.publish_update(avg_loss=0.25, val_acc=0.5)
+    client.publish_update(avg_loss=0.25, val_acc=0.5, round_num=2)
 
     assert client.mqtt.publish.called
     publish_call = client.mqtt.publish.call_args
@@ -98,7 +98,9 @@ def test_publish_update_payload(tmp_path: Path, monkeypatch) -> None:
     assert topic == client.topic_updates
     assert parsed["client_id"] == "client_1"
     assert parsed["region"] == "fog_0"
+    assert parsed["round"] == 2
     assert parsed["num_samples"] == 4
+    assert parsed["sent_at"] > 0
     assert "weights" in parsed
     assert "trace_context" in parsed
 
@@ -132,7 +134,9 @@ def test_on_message_sets_pending_global(tmp_path: Path, monkeypatch) -> None:
     weights["extra"] = [1, 2, 3]
 
     payload = {"round": 1, "global_weights": weights, "trace_context": {}}
-    msg = SimpleNamespace(payload=json.dumps(payload).encode("utf-8"), topic=client.topic_global)
+    msg = SimpleNamespace(
+        payload=json.dumps(payload).encode("utf-8"), topic=client.topic_global
+    )
 
     client.on_message(None, None, msg)
     assert client._pending_global_state is not None
@@ -214,9 +218,7 @@ def test_run_applies_pending_state(tmp_path: Path, monkeypatch) -> None:
     _write_split(node_dir / "val.npz", n_samples=2, n_features=2)
 
     client = SwellFLClientMQTT(node_dir=str(node_dir), region="fog_0")
-    pending = {
-        k: torch.zeros_like(v) for k, v in client.model.state_dict().items()
-    }
+    pending = {k: torch.zeros_like(v) for k, v in client.model.state_dict().items()}
     client._pending_global_state = pending
     client._got_global = True
 

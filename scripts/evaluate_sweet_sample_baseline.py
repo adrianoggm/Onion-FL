@@ -29,7 +29,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import numpy as np
 from sklearn.base import ClassifierMixin, clone
@@ -54,10 +54,10 @@ if SRC_PATH.exists() and str(SRC_PATH) not in sys.path:
 from flower_basic.datasets import load_sweet_sample_dataset
 
 
-def _build_models(random_state: int) -> Dict[str, ClassifierMixin]:
+def _build_models(random_state: int) -> dict[str, ClassifierMixin]:
     """Return the baseline models to evaluate."""
 
-    models: Dict[str, ClassifierMixin] = {
+    models: dict[str, ClassifierMixin] = {
         "logistic_regression": Pipeline(
             steps=[
                 ("scaler", StandardScaler()),
@@ -82,7 +82,7 @@ def _build_models(random_state: int) -> Dict[str, ClassifierMixin]:
     return models
 
 
-def _distribution_summary(y: np.ndarray) -> Dict[str, float]:
+def _distribution_summary(y: np.ndarray) -> dict[str, float]:
     """Return class distribution summary as percentages."""
 
     unique, counts = np.unique(y, return_counts=True)
@@ -100,8 +100,8 @@ def _compute_metrics(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     y_proba: np.ndarray | None,
-    target_name_map: Dict[int, str],
-) -> Dict[str, Any]:
+    target_name_map: dict[int, str],
+) -> dict[str, Any]:
     """Compute standard classification metrics."""
 
     unique_classes = np.unique(y_true)
@@ -118,7 +118,7 @@ def _compute_metrics(
         output_dict=True,
     )
 
-    metrics: Dict[str, Any] = {
+    metrics: dict[str, Any] = {
         "accuracy": accuracy_score(y_true, y_pred),
         "macro_precision": precision_score(
             y_true, y_pred, average="macro", zero_division=0
@@ -143,13 +143,13 @@ def _compute_metrics(
 
 def evaluate_models(
     *,
-    models: Dict[str, ClassifierMixin],
+    models: dict[str, ClassifierMixin],
     dataset,
-    target_name_map: Dict[int, str],
-) -> Dict[str, Dict[str, Any]]:
+    target_name_map: dict[int, str],
+) -> dict[str, dict[str, Any]]:
     """Train models using subject-disjoint splits and gather metrics."""
 
-    results: Dict[str, Dict[str, Any]] = {}
+    results: dict[str, dict[str, Any]] = {}
     combined_train_X = np.vstack([dataset.train.X, dataset.val.X])
     combined_train_y = np.concatenate([dataset.train.y, dataset.val.y])
 
@@ -235,13 +235,13 @@ def evaluate_models(
     return results
 
 
-def _target_name_map(label_strategy: str) -> Dict[int, str]:
+def _target_name_map(label_strategy: str) -> dict[int, str]:
     if label_strategy == "binary":
         return {0: "low", 1: "elevated"}
     return {level: str(level) for level in range(1, 6)}
 
 
-def _split_summary(dataset) -> Dict[str, Any]:
+def _split_summary(dataset) -> dict[str, Any]:
     """Return a summary friendly for JSON storage."""
 
     return {

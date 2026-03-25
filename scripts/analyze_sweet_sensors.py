@@ -172,7 +172,7 @@ def analyze_sensor_data(data_dir: str, label_strategy: str = "ordinal_3class"):
 
     # Overall subject statistics
     samples_per_subject = [np.sum(all_subjects == subj) for subj in unique_subjects]
-    print(f"\n📊 Samples per subject statistics:")
+    print("\n📊 Samples per subject statistics:")
     print(f"  Mean: {np.mean(samples_per_subject):.1f}")
     print(f"  Median: {np.median(samples_per_subject):.1f}")
     print(f"  Std: {np.std(samples_per_subject):.1f}")
@@ -192,7 +192,7 @@ def analyze_sensor_data(data_dir: str, label_strategy: str = "ordinal_3class"):
     # Sort by absolute correlation
     correlations.sort(key=lambda x: abs(x[1]), reverse=True)
 
-    print(f"\nTop 10 features most correlated with stress level:")
+    print("\nTop 10 features most correlated with stress level:")
     for i, (feat, corr) in enumerate(correlations[:10], 1):
         direction = "↑ positive" if corr > 0 else "↓ negative"
         print(f"  {i:2d}. {feat:30s}: {corr:+.4f} ({direction})")

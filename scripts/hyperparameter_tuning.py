@@ -49,7 +49,9 @@ def create_subject_level_cv_splits(data_dict, n_folds=5, seed=42):
     subject_class_counts = {}
     for subj in subjects:
         subj_labels = [
-            l for s, l in zip(data_dict["subjects"], data_dict["labels"]) if s == subj
+            label
+            for s, label in zip(data_dict["subjects"], data_dict["labels"])
+            if s == subj
         ]
         subject_class_counts[subj] = Counter(subj_labels).most_common(1)[0][0]
 
@@ -62,7 +64,7 @@ def create_subject_level_cv_splits(data_dict, n_folds=5, seed=42):
 
     # Create folds
     folds = [[] for _ in range(n_folds)]
-    for cls, cls_subjects in class_subjects.items():
+    for cls_subjects in class_subjects.values():
         rng.shuffle(cls_subjects)
         for i, subj in enumerate(cls_subjects):
             folds[i % n_folds].append(subj)
@@ -496,7 +498,7 @@ def main():
             continue
 
         if model_key == "xgb" and not HAS_XGBOOST:
-            print(f"⚠️  Skipping XGBoost (not installed)")
+            print("⚠️  Skipping XGBoost (not installed)")
             continue
 
         result = tuning_functions[model_key](X_scaled, y_train_full, cv_splits)

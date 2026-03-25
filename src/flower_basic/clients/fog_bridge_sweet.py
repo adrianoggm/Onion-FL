@@ -24,8 +24,8 @@ from flower_basic.telemetry import (
     init_otel,
     record_metric,
     shutdown_telemetry,
-    start_linked_consumer_span,
     start_linked_client_span,
+    start_linked_consumer_span,
 )
 
 # Telemetry - initialized lazily in main() to avoid import-time side effects
@@ -112,7 +112,7 @@ class FogClientSweet(BaseMQTTComponent, fl.client.NumPyClient):
                 self.partial_trace_context,
                 source_service="sweet-fog-broker",
                 attributes={"region": region},
-            ) as span:
+            ):
                 if COUNTER_PARTIALS_RECEIVED:
                     record_metric(COUNTER_PARTIALS_RECEIVED, 1, {"region": self.region})
                 print(f"{self.tag} Partial aggregate received for region={region}")

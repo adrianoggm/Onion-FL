@@ -15,15 +15,16 @@ Output:
 from __future__ import annotations
 
 import json
-from pathlib import Path
-import numpy as np
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import accuracy_score, classification_report
-import xgboost as xgb
 
 # Add src to path
 import sys
+from pathlib import Path
+
+import numpy as np
+import xgboost as xgb
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import StratifiedKFold
+from sklearn.preprocessing import StandardScaler
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -187,7 +188,7 @@ def main():
     print("✅ SWEET Selection1 Pre-training Complete!")
     print(f"   Mean CV Accuracy: {mean_cv_acc:.4f} ± {std_cv_acc:.4f}")
     print(f"   Final Model: {model_path}")
-    print(f"   Ready for federated fine-tuning on selection2")
+    print("   Ready for federated fine-tuning on selection2")
     print("=" * 80)
 
 

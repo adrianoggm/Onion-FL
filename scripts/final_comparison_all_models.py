@@ -5,7 +5,6 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
 
 # Load all results
 results_dir = Path(".")
@@ -193,7 +192,7 @@ model_names = [f"{name}\n({res['mean_accuracy']:.3f})" for name, res in top_5]
 
 # Get best params/config info
 details = []
-for name, res in top_5:
+for _name, res in top_5:
     if "config" in res:
         if isinstance(res["config"], dict):
             detail = f"depth={res['config'].get('max_depth', '?')}, n_est={res['config'].get('n_estimators', '?')}"
@@ -235,7 +234,7 @@ ax4.legend(fontsize=10)
 ax4.grid(axis="x", alpha=0.3)
 
 # Add detail annotations
-for i, (bar_acc, bar_f1, detail) in enumerate(zip(bars_acc, bars_f1, details)):
+for i, detail in enumerate(details):
     ax4.text(
         0.05,
         i,
@@ -243,7 +242,7 @@ for i, (bar_acc, bar_f1, detail) in enumerate(zip(bars_acc, bars_f1, details)):
         fontsize=7,
         style="italic",
         color="gray",
-        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.7),
+        bbox={"boxstyle": "round,pad=0.3", "facecolor": "white", "alpha": 0.7},
     )
 
 plt.savefig("FINAL_COMPREHENSIVE_COMPARISON.png", dpi=300, bbox_inches="tight")
@@ -287,12 +286,12 @@ print(
     f"   Improvement over random (33.3%): {(best_model[1]['mean_accuracy'] - 0.333) / 0.333 * 100:.1f}%"
 )
 
-print(f"\n📊 Category Winners:")
+print("\n📊 Category Winners:")
 for cat_name, cat_results in categories.items():
     best_in_cat = max(cat_results, key=lambda x: x["mean_accuracy"])
     print(f"   {cat_name}: {best_in_cat['mean_accuracy']:.4f}")
 
-print(f"\n💡 Hyperparameter Tuning Impact:")
+print("\n💡 Hyperparameter Tuning Impact:")
 trad_best = max(trad_accs)
 tuned_best = max(tuned_accs)
 improvement = (tuned_best - trad_best) * 100
@@ -300,19 +299,19 @@ print(f"   Traditional Best: {trad_best:.4f}")
 print(f"   Tuned Best: {tuned_best:.4f}")
 print(f"   Improvement: +{improvement:.2f} percentage points")
 
-print(f"\n⚠️  Extreme Architecture Reality Check:")
+print("\n⚠️  Extreme Architecture Reality Check:")
 extreme_best = max(extreme_accs)
 print(f"   Extreme Best: {extreme_best:.4f}")
 if extreme_best < tuned_best:
-    print(f"   ❌ Extreme architectures did NOT beat hyperparameter tuning")
+    print("   ❌ Extreme architectures did NOT beat hyperparameter tuning")
     print(f"   📉 Gap: {(tuned_best - extreme_best) * 100:.2f} percentage points")
 else:
-    print(f"   ✅ Extreme architectures improved performance!")
+    print("   ✅ Extreme architectures improved performance!")
 
-print(f"\n🎯 FINAL RECOMMENDATION:")
+print("\n🎯 FINAL RECOMMENDATION:")
 print(f"   Use: {best_model[0]} (Accuracy: {best_model[1]['mean_accuracy']:.4f})")
-print(f"   Reason: Best balance of performance and reliability")
-print(f"   Estimated generalization: ~55% on unseen data")
+print("   Reason: Best balance of performance and reliability")
+print("   Estimated generalization: ~55% on unseen data")
 
 print("\n" + "=" * 100)
 

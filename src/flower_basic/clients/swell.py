@@ -24,8 +24,20 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from flower_basic.clients.baseclient import BaseMQTTComponent
 from flower_basic.datasets.swell_federated import load_node_split
-from flower_basic.swell_model import SwellMLP
 from flower_basic.logging_utils import enable_timestamped_print
+from flower_basic.prometheus_metrics import (
+    CLIENT_LOCAL_ACCURACY,
+    CLIENT_LOCAL_LOSS,
+    CLIENT_TEST_SAMPLES,
+    CLIENT_TRAIN_SAMPLES,
+    CLIENT_TRAINING_DURATION,
+    CLIENT_TRAINING_ROUNDS,
+    CLIENT_VAL_SAMPLES,
+    get_metrics_port_from_env,
+    push_metrics_to_gateway,
+    start_metrics_server,
+)
+from flower_basic.swell_model import SwellMLP
 
 # Telemetry (optional)
 from flower_basic.telemetry import (
@@ -35,28 +47,9 @@ from flower_basic.telemetry import (
     init_otel,
     record_metric,
     shutdown_telemetry,
-    start_span,
-    start_client_span,
-    start_server_span,
-    start_consumer_span,
-    start_producer_span,
-    start_linked_producer_span,
     start_linked_consumer_span,
-    inject_trace_context,
-    extract_trace_context,
-    SpanKind,
-)
-from flower_basic.prometheus_metrics import (
-    start_metrics_server,
-    get_metrics_port_from_env,
-    push_metrics_to_gateway,
-    CLIENT_TRAIN_SAMPLES,
-    CLIENT_VAL_SAMPLES,
-    CLIENT_TEST_SAMPLES,
-    CLIENT_TRAINING_ROUNDS,
-    CLIENT_TRAINING_DURATION,
-    CLIENT_LOCAL_LOSS,
-    CLIENT_LOCAL_ACCURACY,
+    start_linked_producer_span,
+    start_span,
 )
 
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
@@ -236,6 +229,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
             mqtt_port=mqtt_port,
             subscriptions=[self.topic_global],
         )
+        self.current_round = 0
         self._got_global = False
         # Protect model updates from MQTT callback during training
         self._lock = threading.Lock()
@@ -371,7 +365,9 @@ class SwellFLClientMQTT(BaseMQTTComponent):
         print(f"{self.tag} Val loss: {val_loss:.4f} | Val acc: {val_acc:.3f}")
         return {"val_loss": val_loss, "val_acc": val_acc}
 
-    def publish_update(self, avg_loss: float, val_acc: float = 0.0) -> None:
+    def publish_update(
+        self, avg_loss: float, val_acc: float = 0.0, round_num: int | None = None
+    ) -> None:
         # Use PRODUCER span with context propagation for distributed tracing
         with start_linked_producer_span(
             TRACER, "client.publish_update", "fog-broker", {"region": self.region}
@@ -385,10 +381,14 @@ class SwellFLClientMQTT(BaseMQTTComponent):
             payload = {
                 "client_id": self.client_id,
                 "region": self.region,
+                "round": int(
+                    round_num if round_num is not None else max(1, self.current_round)
+                ),
                 "weights": weights,
                 "num_samples": self.num_samples,
                 "loss": float(avg_loss),
                 "val_acc": float(val_acc),  # Include validation accuracy
+                "sent_at": time.time(),
                 "trace_context": trace_ctx,  # Propagate trace context
             }
             self.mqtt.publish(self.topic_updates, json.dumps(payload))
@@ -454,6 +454,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                         print(f"{self.tag} Global model applied")
 
             print(f"\n=== Round {r}/{rounds} ===")
+            self.current_round = r
             avg_loss = self.train_one_round()
             # Validate before publishing update
             val_metrics = self.evaluate_val()
@@ -468,7 +469,9 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                     f.write(_json.dumps(rec) + "\n")
             except Exception:
                 pass
-            self.publish_update(avg_loss, val_acc)  # Include validation accuracy
+            self.publish_update(
+                avg_loss, val_acc, round_num=r
+            )  # Include validation accuracy
             if r < rounds:
                 time.sleep(delay)
         self.stop_mqtt()

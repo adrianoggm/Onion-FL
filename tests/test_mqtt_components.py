@@ -1,8 +1,9 @@
-﻿"""Tests for MQTT components (client, broker_fog)."""
+"""Tests for MQTT components (client, broker_fog)."""
 
 import json
 import sys
 import time
+from collections import defaultdict
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -184,6 +185,122 @@ class TestBrokerFog:
             on_update(self.mock_client, None, mock_msg)
         except Exception as e:
             pytest.fail(f"Should handle missing fields gracefully, but raised: {e}")
+
+    def test_on_update_strict_policy_drops_out_of_round_updates(self):
+        """Strict policy should discard updates that do not match the expected round."""
+        from flower_basic.brokers import fog
+
+        original_policy = fog.STALE_UPDATE_POLICY
+        original_round = fog.LATEST_GLOBAL_ROUND
+        original_k = fog.K
+
+        try:
+            fog.STALE_UPDATE_POLICY = "strict"
+            fog.LATEST_GLOBAL_ROUND = 2  # expected client round = 3
+            fog.K = 1
+
+            with patch.object(fog, "buffers", defaultdict(list)), patch.object(
+                fog, "clients_per_region", defaultdict(set)
+            ):
+                test_payload = {
+                    "region": self.test_region,
+                    "weights": self.sample_weights,
+                    "client_id": "late_client",
+                    "num_samples": 100,
+                    "round": 2,
+                }
+                mock_msg = Mock()
+                mock_msg.payload.decode.return_value = json.dumps(test_payload)
+
+                fog.on_update(self.mock_client, None, mock_msg)
+
+                assert fog.buffers[self.test_region] == []
+                self.mock_client.publish.assert_not_called()
+        finally:
+            fog.STALE_UPDATE_POLICY = original_policy
+            fog.LATEST_GLOBAL_ROUND = original_round
+            fog.K = original_k
+
+    def test_on_update_accept_policy_keeps_stale_updates(self):
+        """Accept policy should keep stale updates and defer the study to aggregation."""
+        from flower_basic.brokers import fog
+
+        original_policy = fog.STALE_UPDATE_POLICY
+        original_round = fog.LATEST_GLOBAL_ROUND
+        original_k = fog.K
+
+        try:
+            fog.STALE_UPDATE_POLICY = "accept"
+            fog.LATEST_GLOBAL_ROUND = 2  # expected client round = 3
+            fog.K = 2
+
+            with patch.object(fog, "buffers", defaultdict(list)), patch.object(
+                fog, "clients_per_region", defaultdict(set)
+            ):
+                test_payload = {
+                    "region": self.test_region,
+                    "weights": self.sample_weights,
+                    "client_id": "late_client",
+                    "num_samples": 100,
+                    "round": 2,
+                }
+                mock_msg = Mock()
+                mock_msg.payload.decode.return_value = json.dumps(test_payload)
+
+                fog.on_update(self.mock_client, None, mock_msg)
+
+                assert len(fog.buffers[self.test_region]) == 1
+                assert fog.buffers[self.test_region][0]["round"] == 2
+                self.mock_client.publish.assert_not_called()
+        finally:
+            fog.STALE_UPDATE_POLICY = original_policy
+            fog.LATEST_GLOBAL_ROUND = original_round
+            fog.K = original_k
+
+    def test_on_update_publishes_round_delay_metadata(self):
+        """Published partials should expose round/delay metadata for later analysis."""
+        from flower_basic.brokers import fog
+
+        original_policy = fog.STALE_UPDATE_POLICY
+        original_round = fog.LATEST_GLOBAL_ROUND
+        original_k = fog.K
+
+        try:
+            fog.STALE_UPDATE_POLICY = "accept"
+            fog.LATEST_GLOBAL_ROUND = 2  # expected client round = 3
+            fog.K = 1
+
+            with patch.object(fog, "buffers", defaultdict(list)), patch.object(
+                fog, "clients_per_region", defaultdict(set)
+            ):
+                test_payload = {
+                    "region": self.test_region,
+                    "weights": self.sample_weights,
+                    "client_id": "late_client",
+                    "num_samples": 100,
+                    "round": 2,
+                    "sent_at": time.time() - 1.5,
+                }
+                mock_msg = Mock(topic=fog.UPDATE_TOPIC)
+                mock_msg.payload.decode.return_value = json.dumps(test_payload)
+
+                fog.on_update(self.mock_client, None, mock_msg)
+
+                self.mock_client.publish.assert_called_once()
+                _topic, payload = self.mock_client.publish.call_args[0]
+                parsed = json.loads(payload)
+
+                assert parsed["expected_round"] == 3
+                assert parsed["round_min"] == 2
+                assert parsed["round_max"] == 2
+                assert parsed["stale_update_count"] == 1
+                assert parsed["future_update_count"] == 0
+                assert parsed["stale_policy"] == "accept"
+                assert parsed["max_delay_seconds"] >= 1.0
+        finally:
+            fog.STALE_UPDATE_POLICY = original_policy
+            fog.LATEST_GLOBAL_ROUND = original_round
+            fog.K = original_k
 
 
 class TestClientMQTT:

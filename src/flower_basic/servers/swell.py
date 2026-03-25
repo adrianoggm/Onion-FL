@@ -19,6 +19,22 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from flower_basic.datasets.swell_federated import load_node_split
+from flower_basic.logging_utils import enable_timestamped_print
+from flower_basic.prometheus_metrics import (
+    FL_ACCURACY,
+    FL_ACTIVE_CLIENTS,
+    FL_AGGREGATIONS,
+    FL_CONFUSION_MATRIX,
+    FL_GLOBAL_TEST_SAMPLES,
+    FL_GLOBAL_TRAIN_SAMPLES,
+    FL_GLOBAL_VAL_SAMPLES,
+    FL_LOSS,
+    FL_ROUND_DURATION,
+    FL_ROUNDS,
+    get_metrics_port_from_env,
+    push_metrics_to_gateway,
+    start_metrics_server,
+)
 from flower_basic.swell_model import SwellMLP
 from flower_basic.telemetry import (
     create_counter,
@@ -27,29 +43,9 @@ from flower_basic.telemetry import (
     init_otel,
     record_metric,
     shutdown_telemetry,
-    start_span,
-    start_server_span,
-    start_producer_span,
     start_linked_producer_span,
-    inject_trace_context,
-    SpanKind,
+    start_server_span,
 )
-from flower_basic.prometheus_metrics import (
-    start_metrics_server,
-    FL_ROUNDS,
-    FL_ACCURACY,
-    FL_LOSS,
-    FL_ACTIVE_CLIENTS,
-    FL_AGGREGATIONS,
-    FL_ROUND_DURATION,
-    FL_GLOBAL_TRAIN_SAMPLES,
-    FL_GLOBAL_VAL_SAMPLES,
-    FL_GLOBAL_TEST_SAMPLES,
-    FL_CONFUSION_MATRIX,
-    get_metrics_port_from_env,
-    push_metrics_to_gateway,
-)
-from flower_basic.logging_utils import enable_timestamped_print
 
 MODEL_TOPIC = os.getenv("MQTT_TOPIC_GLOBAL", "fl/global_model")
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
@@ -118,7 +114,15 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
         self.param_names = list(model.state_dict().keys())
         self.eval_data = eval_data
         self.total_rounds = total_rounds
-        self.history = {"round": [], "loss": [], "accuracy": []}
+        self.history = {
+            "round": [],
+            "loss": [],
+            "accuracy": [],
+            "stale_updates": [],
+            "future_updates": [],
+            "max_delay_seconds": [],
+            "round_span": [],
+        }
 
         # Log evaluation data status
         if self.eval_data is not None:
@@ -148,6 +152,33 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
         print(
             f"{TAG} Received results from {len(results)} fog nodes, {len(failures)} failures"
         )
+
+        stale_updates = 0
+        future_updates = 0
+        max_delay_seconds = 0.0
+        max_round_span = 0
+        for _client_proxy, fit_res in results:
+            metrics = getattr(fit_res, "metrics", {}) or {}
+            if not isinstance(metrics, dict):
+                metrics = {}
+            stale_updates += int(metrics.get("stale_update_count", 0))
+            future_updates += int(metrics.get("future_update_count", 0))
+            max_delay_seconds = max(
+                max_delay_seconds, float(metrics.get("max_delay_seconds", 0.0))
+            )
+            round_min = int(metrics.get("round_min", server_round))
+            round_max = int(metrics.get("round_max", server_round))
+            max_round_span = max(max_round_span, round_max - round_min)
+
+        print(
+            f"{TAG} Staleness summary: stale_updates={stale_updates}, "
+            f"future_updates={future_updates}, max_round_span={max_round_span}, "
+            f"max_delay={max_delay_seconds:.2f}s"
+        )
+        self.history["stale_updates"].append(stale_updates)
+        self.history["future_updates"].append(future_updates)
+        self.history["max_delay_seconds"].append(max_delay_seconds)
+        self.history["round_span"].append(max_round_span)
 
         # Record number of active clients
         record_metric(GAUGE_ACTIVE_CLIENTS, len(results), {"round": str(server_round)})

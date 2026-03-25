@@ -19,14 +19,11 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
-
-import numpy as np
-import pandas as pd
 
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import seaborn as sns
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = REPO_ROOT / "src"
@@ -35,7 +32,6 @@ if SRC_DIR.exists():
 
 from flower_basic.datasets import wesad as wesad_module  # noqa: E402
 from flower_basic.datasets.swell import load_swell_dataset  # noqa: E402
-
 
 CANONICAL_SCL_MAP = {
     "scl_mean": "eda_mean",
@@ -169,13 +165,13 @@ def _normalize_subject_series(series: pd.Series) -> pd.Series:
 
 
 def _map_swell_conditions(series: pd.Series) -> np.ndarray:
-    conditions = (
-        series.astype(str).str.strip().str.lower().str.replace("_", " ")
+    conditions = series.astype(str).str.strip().str.lower().str.replace("_", " ")
+    return np.array(
+        [SWELL_LABEL_MAPPING.get(cond, 1) for cond in conditions], dtype=np.int64
     )
-    return np.array([SWELL_LABEL_MAPPING.get(cond, 1) for cond in conditions], dtype=np.int64)
 
 
-def _aggregate_sample_by_keys(df: pd.DataFrame, keys: List[str]) -> pd.DataFrame:
+def _aggregate_sample_by_keys(df: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
     if not keys:
         return df
     key_cols = [k for k in keys if k in df.columns]
@@ -194,7 +190,9 @@ def _dedupe_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _safe_merge(left: pd.DataFrame, right: pd.DataFrame, keys: List[str]) -> pd.DataFrame:
+def _safe_merge(
+    left: pd.DataFrame, right: pd.DataFrame, keys: list[str]
+) -> pd.DataFrame:
     """Merge two frames, dropping overlapping non-key columns from the right."""
     overlap = set(left.columns) & set(right.columns)
     overlap = overlap - set(keys)
@@ -247,10 +245,10 @@ def _detect_swell_feature_dir(data_dir: Path) -> Path:
 
 
 def _load_swell_raw_missingness(
-    data_dir: Path, modalities: List[str]
-) -> Tuple[Dict[str, dict], dict]:
+    data_dir: Path, modalities: list[str]
+) -> tuple[dict[str, dict], dict]:
     feature_dir = _detect_swell_feature_dir(data_dir)
-    per_modality: Dict[str, dict] = {}
+    per_modality: dict[str, dict] = {}
     merged_df: pd.DataFrame | None = None
 
     for modality in modalities:
@@ -342,9 +340,9 @@ def _load_swell_raw_missingness(
 
 def _load_wesad_light(
     data_dir: Path,
-    signals: List[str] | None,
+    signals: list[str] | None,
     sensor_location: str,
-    conditions: List[str] | None,
+    conditions: list[str] | None,
     window_size: int,
     overlap: float,
     max_rows: int,
@@ -359,11 +357,11 @@ def _load_wesad_light(
     rng = np.random.default_rng(seed)
     per_subject_cap = max(1, max_rows // max(1, len(subjects)))
 
-    sample_X: List[np.ndarray] = []
-    sample_y: List[np.ndarray] = []
-    subject_counts: Dict[str, int] = {}
+    sample_X: list[np.ndarray] = []
+    sample_y: list[np.ndarray] = []
+    subject_counts: dict[str, int] = {}
     class_counts = {0: 0, 1: 0}
-    feature_names: List[str] | None = None
+    feature_names: list[str] | None = None
     total_rows = 0
     missing = 0
     total_elements = 0
@@ -428,23 +426,22 @@ def _load_wesad_light(
 
 def _load_swell_light(
     data_dir: Path,
-    modalities: List[str],
+    modalities: list[str],
     max_rows: int,
     seed: int,
     chunk_size: int,
     scan_full: bool,
 ) -> dict:
     feature_dir = _detect_swell_feature_dir(data_dir)
-    rng = np.random.default_rng(seed)
 
-    per_modality_missing: Dict[str, dict] = {}
-    feature_info: Dict[str, dict] = {}
-    rows_by_modality: Dict[str, int] = {}
+    per_modality_missing: dict[str, dict] = {}
+    feature_info: dict[str, dict] = {}
+    rows_by_modality: dict[str, int] = {}
     subjects_union: set[str] = set()
-    subject_counts: Dict[str, int] = {}
-    class_counts_by_modality: Dict[str, dict] = {}
+    subject_counts: dict[str, int] = {}
+    class_counts_by_modality: dict[str, dict] = {}
 
-    sample_frames: Dict[str, pd.DataFrame] = {}
+    sample_frames: dict[str, pd.DataFrame] = {}
 
     for modality in modalities:
         file_path = None
@@ -490,7 +487,9 @@ def _load_swell_light(
             sample_df = sample_df.replace(999, np.nan)
         if modality == "physiology":
             sample_df = sample_df.rename(
-                columns={col: CANONICAL_SCL_MAP.get(col, col) for col in sample_df.columns}
+                columns={
+                    col: CANONICAL_SCL_MAP.get(col, col) for col in sample_df.columns
+                }
             )
         sample_df = _dedupe_columns(sample_df)
         sample_keys = ["participant", "condition", "blok", "block", "trial", "c"]
@@ -514,7 +513,9 @@ def _load_swell_light(
             class_rows = 0
 
             for chunk in chunks:
-                chunk.columns = chunk.columns.str.strip().str.replace(" ", "_").str.lower()
+                chunk.columns = (
+                    chunk.columns.str.strip().str.replace(" ", "_").str.lower()
+                )
                 if "participant" not in chunk.columns:
                     for subj_col in [
                         "pp",
@@ -531,7 +532,10 @@ def _load_swell_light(
                     chunk = chunk.replace(999, np.nan)
                 if modality == "physiology":
                     chunk = chunk.rename(
-                        columns={col: CANONICAL_SCL_MAP.get(col, col) for col in chunk.columns}
+                        columns={
+                            col: CANONICAL_SCL_MAP.get(col, col)
+                            for col in chunk.columns
+                        }
                     )
 
                 if total_cols is None:
@@ -542,7 +546,9 @@ def _load_swell_light(
                 total_cells += int(chunk.shape[0] * chunk.shape[1])
 
                 if "participant" in chunk.columns:
-                    normalized = _normalize_subject_series(chunk["participant"]).astype(str)
+                    normalized = _normalize_subject_series(chunk["participant"]).astype(
+                        str
+                    )
                     subjects_union.update(normalized.tolist())
                     counts = normalized.value_counts()
                     for subj, cnt in counts.items():
@@ -559,7 +565,9 @@ def _load_swell_light(
                 "rows": int(total_rows),
                 "cols": int(total_cols or 0),
                 "missing": int(missing_total),
-                "missing_ratio": float(missing_total / total_cells) if total_cells else 0.0,
+                "missing_ratio": (
+                    float(missing_total / total_cells) if total_cells else 0.0
+                ),
             }
 
             if class_rows > 0:
@@ -579,11 +587,15 @@ def _load_swell_light(
                 "rows": total_rows,
                 "cols": total_cols,
                 "missing": missing_total,
-                "missing_ratio": float(missing_total / total_cells) if total_cells else 0.0,
+                "missing_ratio": (
+                    float(missing_total / total_cells) if total_cells else 0.0
+                ),
             }
 
             if "participant" in sample_df.columns:
-                normalized = _normalize_subject_series(sample_df["participant"]).astype(str)
+                normalized = _normalize_subject_series(sample_df["participant"]).astype(
+                    str
+                )
                 subjects_union.update(normalized.tolist())
                 counts = normalized.value_counts()
                 for subj, cnt in counts.items():
@@ -687,7 +699,9 @@ def _load_swell_light(
                 col for idx, col in enumerate(feature_columns) if valid_features[idx]
             ]
 
-    n_samples_est = min(rows_by_modality.values()) if rows_by_modality else X_sample.shape[0]
+    n_samples_est = (
+        min(rows_by_modality.values()) if rows_by_modality else X_sample.shape[0]
+    )
 
     total_missing = sum(v["missing"] for v in per_modality_missing.values())
     total_cells = sum(v["rows"] * v["cols"] for v in per_modality_missing.values())
@@ -711,7 +725,7 @@ def _load_swell_light(
     }
 
 
-def _count_swell_subjects(data_dir: Path) -> List[str]:
+def _count_swell_subjects(data_dir: Path) -> list[str]:
     rri_dir = data_dir / "data" / "raw" / "rri"
     if rri_dir.exists():
         subjects = []
@@ -724,9 +738,7 @@ def _count_swell_subjects(data_dir: Path) -> List[str]:
     return []
 
 
-def _load_swell_physiology_final(
-    data_dir: Path, max_rows: int, seed: int
-) -> dict:
+def _load_swell_physiology_final(data_dir: Path, max_rows: int, seed: int) -> dict:
     final_dir = data_dir / "data" / "final"
     train_path = final_dir / "train.csv"
     test_path = final_dir / "test.csv"
@@ -767,7 +779,7 @@ def _load_swell_physiology_final(
     y_sample = _map_swell_conditions(sampled[condition_col])
 
     subjects = _count_swell_subjects(data_dir)
-    subject_counts = {s: 0 for s in subjects}
+    subject_counts = dict.fromkeys(subjects, 0)
 
     return {
         "X_sample": X_sample,
@@ -794,14 +806,16 @@ def _maybe_sample(
         return X, y, subject_ids
     rng = np.random.default_rng(seed)
     idx = rng.choice(X.shape[0], size=max_rows, replace=False)
-    return X[idx], (y[idx] if y is not None else None), (
-        subject_ids[idx] if subject_ids is not None else None
+    return (
+        X[idx],
+        (y[idx] if y is not None else None),
+        (subject_ids[idx] if subject_ids is not None else None),
     )
 
 
 def _select_features_by_variance(
-    X: np.ndarray, feature_names: List[str], max_features: int
-) -> Tuple[np.ndarray, List[str]]:
+    X: np.ndarray, feature_names: list[str], max_features: int
+) -> tuple[np.ndarray, list[str]]:
     if X.size == 0 or X.shape[0] == 0 or X.shape[1] == 0:
         return np.array([], dtype=int), []
     if X.shape[1] <= max_features:
@@ -818,7 +832,7 @@ def _safe_corrcoef(X: np.ndarray) -> np.ndarray:
     return np.corrcoef(X, rowvar=False)
 
 
-def _corr_summary(corr: np.ndarray) -> Dict[str, float]:
+def _corr_summary(corr: np.ndarray) -> dict[str, float]:
     if corr.size == 0 or corr.shape[0] < 2:
         return {"mean_abs": 0.0, "median_abs": 0.0}
     tri = corr[np.triu_indices_from(corr, k=1)]
@@ -832,7 +846,7 @@ def _corr_summary(corr: np.ndarray) -> Dict[str, float]:
 
 
 def _feature_label_corrs(
-    X: np.ndarray, y: np.ndarray, feature_names: List[str]
+    X: np.ndarray, y: np.ndarray, feature_names: list[str]
 ) -> pd.DataFrame:
     if X.size == 0 or X.shape[1] == 0:
         return pd.DataFrame({"feature": [], "corr": []})
@@ -849,8 +863,8 @@ def _feature_label_corrs(
     return pd.DataFrame({"feature": feature_names, "corr": corrs})
 
 
-def _group_wesad_features(feature_names: List[str]) -> Dict[str, int]:
-    groups: Dict[str, int] = {}
+def _group_wesad_features(feature_names: list[str]) -> dict[str, int]:
+    groups: dict[str, int] = {}
     for name in feature_names:
         if name.startswith("acc_"):
             key = "acc"
@@ -861,13 +875,13 @@ def _group_wesad_features(feature_names: List[str]) -> Dict[str, int]:
 
 
 def _wesad_metadata_only(
-    signals: List[str],
+    signals: list[str],
     sensor_location: str,
-    stats: List[str] | None = None,
+    stats: list[str] | None = None,
 ) -> dict:
     if stats is None:
         stats = ["mean", "std", "min", "max", "median"]
-    channels: List[str] = []
+    channels: list[str] = []
     for signal in signals:
         key = signal.upper()
         if key == "ACC":
@@ -962,9 +976,7 @@ def _plot_class_balance(metrics: dict, out_dir: Path) -> None:
         metrics["swell"]["class_distribution"].get("0", 0),
     ]
     totals = [stress[i] + nostress[i] for i in range(2)]
-    stress_pct = [
-        (stress[i] / totals[i] * 100) if totals[i] else 0.0 for i in range(2)
-    ]
+    stress_pct = [(stress[i] / totals[i] * 100) if totals[i] else 0.0 for i in range(2)]
     nostress_pct = [
         (nostress[i] / totals[i] * 100) if totals[i] else 0.0 for i in range(2)
     ]
@@ -1021,9 +1033,7 @@ def _plot_samples_per_subject(
     plt.close(fig)
 
 
-def _plot_missingness_modalities(
-    per_modality: Dict[str, dict], out_dir: Path
-) -> None:
+def _plot_missingness_modalities(per_modality: dict[str, dict], out_dir: Path) -> None:
     fig, ax = plt.subplots(figsize=(8, 5))
     if not per_modality:
         ax.text(0.5, 0.5, "Insuficiente", ha="center", va="center")
@@ -1045,7 +1055,7 @@ def _plot_missingness_modalities(
 
 
 def _plot_feature_overlap(
-    wesad_features: List[str], swell_features: List[str], out_dir: Path
+    wesad_features: list[str], swell_features: list[str], out_dir: Path
 ) -> None:
     if not wesad_features or not swell_features:
         fig, ax = plt.subplots(figsize=(7, 5))
@@ -1075,8 +1085,8 @@ def _plot_feature_overlap(
 
 
 def _plot_feature_groups(
-    wesad_groups: Dict[str, int],
-    swell_modalities: Dict[str, dict],
+    wesad_groups: dict[str, int],
+    swell_modalities: dict[str, dict],
     out_dir: Path,
 ) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
@@ -1108,9 +1118,9 @@ def _plot_feature_groups(
 
 def _plot_corr_heatmaps(
     wesad_corr: np.ndarray,
-    wesad_names: List[str],
+    wesad_names: list[str],
     swell_corr: np.ndarray,
-    swell_names: List[str],
+    swell_names: list[str],
     out_dir: Path,
 ) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(16, 7))
@@ -1232,15 +1242,13 @@ def _plot_label_tables(out_dir: Path) -> None:
 
 
 def _write_feature_table(
-    wesad_features: List[str], swell_features: List[str], out_dir: Path
+    wesad_features: list[str], swell_features: list[str], out_dir: Path
 ) -> None:
     max_len = max(len(wesad_features), len(swell_features))
     wesad_padded = wesad_features + [""] * (max_len - len(wesad_features))
     swell_padded = swell_features + [""] * (max_len - len(swell_features))
 
-    df = pd.DataFrame(
-        {"WESAD_features": wesad_padded, "SWELL_features": swell_padded}
-    )
+    df = pd.DataFrame({"WESAD_features": wesad_padded, "SWELL_features": swell_padded})
     df.to_csv(out_dir / "wesad_swell_feature_table.csv", index=False)
     df.to_markdown(out_dir / "wesad_swell_feature_table.md", index=False)
 
@@ -1377,8 +1385,8 @@ def _write_summary(summary: dict, out_dir: Path) -> None:
 
     md_lines.extend(
         [
-        "## Features compartidas",
-        f"- Conteo: {summary['shared_features']['count']}",
+            "## Features compartidas",
+            f"- Conteo: {summary['shared_features']['count']}",
         ]
     )
 
@@ -1542,9 +1550,9 @@ def main() -> int:
             per_modality_missing = s_info.get("feature_info", {})
             merged_missing = {
                 "missing": int(np.isnan(Xs).sum()),
-                "missing_ratio": float(np.isnan(Xs).sum() / Xs.size)
-                if Xs.size
-                else 0.0,
+                "missing_ratio": (
+                    float(np.isnan(Xs).sum() / Xs.size) if Xs.size else 0.0
+                ),
                 "rows": int(Xs.shape[0]),
                 "cols": int(Xs.shape[1]),
             }
@@ -1663,7 +1671,9 @@ def main() -> int:
         s_fl.sort_values("abs_corr", ascending=False).to_csv(
             out_dir / "swell_physiology_feature_correlations.csv", index=False
         )
-        with open(out_dir / "swell_physiology_feature_list.txt", "w", encoding="utf-8") as f:
+        with open(
+            out_dir / "swell_physiology_feature_list.txt", "w", encoding="utf-8"
+        ) as f:
             f.write("\n".join(s_feature_names))
 
     # Summary metrics
@@ -1689,7 +1699,11 @@ def main() -> int:
             ],
         },
         "swell": {
-            "n_subjects": int(len(set(s_subjects))) if len(s_subjects) else int(len(s_subject_counts)),
+            "n_subjects": (
+                int(len(set(s_subjects)))
+                if len(s_subjects)
+                else int(len(s_subject_counts))
+            ),
             "n_samples": int(s_n_samples),
             "n_features": int(len(s_feature_names)),
             "class_distribution": {

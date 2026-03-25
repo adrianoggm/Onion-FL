@@ -36,7 +36,7 @@ def _write_npz(path: Path, n_samples: int, n_features: int, subject: str) -> Non
     np.savez(path, X=X, y=y, subjects=subjects)
 
 
-def _make_arch() -> FederatedArchitecture:
+def _make_arch(k: int = 0) -> FederatedArchitecture:
     return FederatedArchitecture(
         orchestrator=OrchestratorSpec(
             address="localhost:8080",
@@ -55,7 +55,7 @@ def _make_arch() -> FederatedArchitecture:
         fog_nodes=[
             FogNodeSpec(
                 id="fog_0",
-                k=0,
+                k=k,
                 clients=[
                     ClientSpec(
                         id="c1",
@@ -75,7 +75,7 @@ def _make_arch() -> FederatedArchitecture:
 
 def test_apply_manifest_paths_global_strategy(tmp_path: Path) -> None:
     _add_scripts_to_path()
-    import run_architecture_from_config as rac  # noqa: WPS433
+    import run_architecture_from_config as rac
 
     base = tmp_path / "run"
     subject_1 = base / "fog_0" / "subject_1"
@@ -101,13 +101,14 @@ def test_apply_manifest_paths_global_strategy(tmp_path: Path) -> None:
     fog = arch.fog_nodes[0]
     assert len(fog.clients) == 1
     assert fog.clients[0].id == "c1"
+    assert fog.clients[0].data_dir == str(subject_1)
     assert fog.k == 1
     assert arch.model.input_dim == 5
 
 
 def test_apply_manifest_paths_per_subject_strategy(tmp_path: Path) -> None:
     _add_scripts_to_path()
-    import run_architecture_from_config as rac  # noqa: WPS433
+    import run_architecture_from_config as rac
 
     base = tmp_path / "run"
     subject_1 = base / "fog_0" / "subject_1"
@@ -132,5 +133,32 @@ def test_apply_manifest_paths_per_subject_strategy(tmp_path: Path) -> None:
 
     fog = arch.fog_nodes[0]
     assert [c.id for c in fog.clients] == ["c1"]
+    assert fog.clients[0].data_dir == str(subject_1)
     assert fog.k == 1
     assert arch.model.input_dim == 4
+
+
+def test_apply_manifest_paths_clamps_k_to_spawned_clients(tmp_path: Path) -> None:
+    _add_scripts_to_path()
+    import run_architecture_from_config as rac
+
+    base = tmp_path / "run"
+    subject_1 = base / "fog_0" / "subject_1"
+    subject_1.mkdir(parents=True)
+    _write_npz(subject_1 / "train.npz", n_samples=4, n_features=5, subject="1")
+
+    manifest = {
+        "nodes": {"fog_0": ["1"]},
+        "clients": {"fog_0": {"c1": "1"}},
+        "global_subjects": {"train": ["1"], "all": ["1"]},
+        "config": {"split": {"strategy": "global"}},
+        "meta": {"n_features": 5},
+    }
+    manifest_path = base / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    arch = _make_arch(k=5)
+    rac._apply_manifest_paths(arch, manifest_path)
+
+    fog = arch.fog_nodes[0]
+    assert fog.k == 1

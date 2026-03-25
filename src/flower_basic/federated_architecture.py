@@ -60,6 +60,7 @@ class DatasetConfig:
     split_train: float = 0.5
     split_val: float = 0.2
     split_test: float = 0.3
+    split_strategy: str = "per_subject"
     scaler: str = "global"
     output_dir: str = "federated_runs/swell"
     run_name: str | None = None
@@ -67,6 +68,7 @@ class DatasetConfig:
     manual_assignments: dict[str, list[int]] | None = None
     per_node_percentages: list[float] | None = None
     ensure_min_train_per_node: bool = True
+    test_assignments: dict[str, list[int]] | None = None
 
 
 @dataclass
@@ -93,6 +95,7 @@ class OrchestratorSpec:
     address: str = "0.0.0.0:8080"
     protocol: str = "MQTT"
     rounds: int = 3
+    stale_update_policy: str = "accept"
     mqtt: MQTTConfig = field(default_factory=MQTTConfig)
 
 
@@ -155,6 +158,9 @@ def load_architecture_config(config_path: str | os.PathLike) -> FederatedArchite
         address=str(orchestrator_raw.get("address", "0.0.0.0:8080")),
         protocol=str(orchestrator_raw.get("protocol", "MQTT")),
         rounds=int(orchestrator_raw.get("rounds", 3)),
+        stale_update_policy=str(
+            orchestrator_raw.get("stale_update_policy", "accept")
+        ).lower(),
         mqtt=MQTTConfig(
             broker=str(mqtt_raw.get("broker", "localhost")),
             port=int(mqtt_raw.get("port", 1883)),
@@ -187,6 +193,7 @@ def load_architecture_config(config_path: str | os.PathLike) -> FederatedArchite
             split_train=float(split_raw.get("train", 0.5)),
             split_val=float(split_raw.get("val", 0.2)),
             split_test=float(split_raw.get("test", 0.3)),
+            split_strategy=str(split_raw.get("strategy", "per_subject")),
             scaler=str(split_raw.get("scaler", "global")),
             output_dir=str(dataset_raw.get("output_dir", "federated_runs/swell")),
             run_name=dataset_raw.get("run_name"),
@@ -196,6 +203,7 @@ def load_architecture_config(config_path: str | os.PathLike) -> FederatedArchite
             ensure_min_train_per_node=bool(
                 dataset_raw.get("ensure_min_train_per_node", True)
             ),
+            test_assignments=dataset_raw.get("test_assignments"),
         )
 
     fog_nodes: list[FogNodeSpec] = []
@@ -253,6 +261,10 @@ def _validate_architecture(arch: FederatedArchitecture) -> None:
             raise ValueError(
                 "Las proporciones de split (train/val/test) deben sumar 1.0"
             )
+    if arch.orchestrator.stale_update_policy not in {"accept", "strict"}:
+        raise ValueError(
+            "orchestrator.stale_update_policy debe ser 'accept' o 'strict'"
+        )
 
 
 def infer_primary_workflow(arch: FederatedArchitecture) -> str:
@@ -333,6 +345,7 @@ def materialize_swell_partitions(
             "test": ds.split_test,
             "seed": ds.seed,
             "scaler": ds.scaler,
+            "strategy": ds.split_strategy,
         },
         "federation": {
             "mode": ds.mode,
@@ -342,6 +355,7 @@ def materialize_swell_partitions(
             "output_dir": str(output_dir),
             "run_name": run_name,
             "ensure_min_train_per_node": ds.ensure_min_train_per_node,
+            "test_assignments": ds.test_assignments,
         },
     }
 
@@ -351,22 +365,116 @@ def materialize_swell_partitions(
 
     result = plan_and_materialize_swell_federated(str(config_path))
     manifest_path = Path(result["output_dir"]) / "manifest.json"
+    apply_manifest_paths(arch, manifest_path)
 
-    # Propagate input_dim from manifest (ensures server/bridge match generated features)
-    meta = result.get("manifest", {}).get("meta", {})
+    return manifest_path
+
+
+def apply_manifest_paths(
+    arch: FederatedArchitecture, manifest_path: Path | str
+) -> None:
+    """Rehydrate SWELL clients from a generated manifest.
+
+    The manifest is the source of truth for:
+    - stable client ids generated per subject
+    - the exact per-subject train directories to launch
+    - the effective number of trainable clients per fog node
+    """
+
+    manifest_path = Path(manifest_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    nodes = manifest.get("nodes", {})
+    clients_map = manifest.get("clients", {})
+    global_subjects = manifest.get("global_subjects", {})
+    config = manifest.get("config", {})
+    split_config = config.get("split", {})
+    split_strategy = split_config.get("strategy", "global")
+
+    if split_strategy == "per_subject":
+        train_subjects = {
+            str(subject_id) for subject_id in global_subjects.get("all", [])
+        }
+        print(
+            f"[MANIFEST] Strategy: per_subject - all {len(train_subjects)} subjects have train data"
+        )
+    else:
+        train_subjects = {
+            str(subject_id) for subject_id in global_subjects.get("train", [])
+        }
+        print(
+            f"[MANIFEST] Strategy: global - only {len(train_subjects)} subjects in train split"
+        )
+
+    base = manifest_path.parent
+    meta = manifest.get("meta", {})
     n_features = meta.get("n_features")
     if n_features is not None:
         arch.model.input_dim = int(n_features)
 
-    # Set node directories for all SWELL clients
     for fog in arch.fog_nodes:
-        node_dir = Path(result["output_dir"]) / fog.id
-        for client in fog.clients:
-            wf = _normalize_workflow(client.workflow or client.dataset)
-            if wf == "swell":
-                client.data_dir = str(node_dir)
+        if fog.id not in nodes:
+            continue
 
-    return manifest_path
+        fog_clients = clients_map.get(fog.id, {})
+        if not fog_clients:
+            continue
+
+        new_clients: list[ClientSpec] = []
+        for client_id, subject_id in fog_clients.items():
+            subject_str = str(subject_id)
+            if subject_str not in train_subjects:
+                print(
+                    f"[MANIFEST] Skipping {client_id} (subject {subject_str} has no train data)"
+                )
+                continue
+
+            subject_dir = base / fog.id / f"subject_{subject_str}"
+            train_file = subject_dir / "train.npz"
+            if train_file.exists():
+                import numpy as np
+
+                try:
+                    arr = np.load(train_file, allow_pickle=True)
+                    if arr["X"].shape[0] == 0:
+                        print(f"[MANIFEST] Skipping {client_id} (train.npz is empty)")
+                        continue
+                except Exception as exc:
+                    print(
+                        f"[MANIFEST] Skipping {client_id} (error reading train.npz: {exc})"
+                    )
+                    continue
+            else:
+                print(f"[MANIFEST] Skipping {client_id} (train.npz not found)")
+                continue
+
+            new_clients.append(
+                ClientSpec(
+                    id=client_id,
+                    dataset="swell",
+                    workflow="swell",
+                    rounds=arch.orchestrator.rounds,
+                    data_dir=str(subject_dir),
+                )
+            )
+
+        fog.clients = new_clients
+        available_clients = len(new_clients)
+        if available_clients == 0:
+            print(f"[MANIFEST] {fog.id}: 0 clientes con training data")
+            continue
+
+        if fog.k <= 0:
+            fog.k = available_clients
+        elif fog.k > available_clients:
+            print(
+                f"[MANIFEST] Adjusting {fog.id} K from {fog.k} "
+                f"to {available_clients} to match spawned clients"
+            )
+            fog.k = available_clients
+
+        print(
+            f"[MANIFEST] {fog.id}: {available_clients} clientes con training data (K={fog.k})"
+        )
 
 
 def build_runtime_plan(
@@ -409,7 +517,11 @@ def build_runtime_plan(
                     f"Workflow mixto no soportado en un mismo run: primario={primary}, cliente={client.id} usa {wf}"
                 )
 
-    k_map = {fog.id: fog.k for fog in arch.fog_nodes}
+    active_fogs = [fog for fog in arch.fog_nodes if fog.clients]
+    if not active_fogs:
+        raise ValueError("No hay nodos fog activos con clientes para lanzar")
+
+    k_map = {fog.id: fog.k for fog in active_fogs}
     broker_env = {
         "MQTT_BROKER": mqtt.broker,
         "MQTT_PORT": str(mqtt.port),
@@ -443,9 +555,9 @@ def build_runtime_plan(
             "--topic-global",
             topics.global_model,
             "--min-fit-clients",
-            str(len(arch.fog_nodes)),
+            str(len(active_fogs)),
             "--min-available-clients",
-            str(len(arch.fog_nodes)),
+            str(len(active_fogs)),
         ]
         if manifest_path is not None:
             server_cmd.extend(["--manifest", str(manifest_path)])
@@ -471,7 +583,7 @@ def build_runtime_plan(
 
     # Fog bridge client(s)
     if primary == "swell":
-        for fog in arch.fog_nodes:
+        for fog in active_fogs:
             bridge_cmd = [
                 python_exec,
                 "-m",
@@ -530,6 +642,8 @@ def build_runtime_plan(
         topics.partial,
         "--topic-global",
         topics.global_model,
+        "--stale-update-policy",
+        arch.orchestrator.stale_update_policy,
     ]
     if broker_k_arg is not None:
         broker_cmd.extend(["--k", str(int(broker_k_arg))])
@@ -541,7 +655,7 @@ def build_runtime_plan(
 
     # Clients per fog node (with unique index for metrics port)
     client_index = 0  # Global client index for deterministic metrics ports
-    for fog in arch.fog_nodes:
+    for fog in active_fogs:
         for client in fog.clients:
             workflow = _normalize_workflow(client.workflow or client.dataset) or primary
             merged_params: dict[str, Any] = {}

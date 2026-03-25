@@ -12,7 +12,6 @@ if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
 import json
-from typing import Dict, Tuple
 
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
@@ -31,7 +30,7 @@ from flower_basic.evaluation import group_cross_validation
 DATA_DIR = Path.cwd()
 
 
-def _class_distribution(labels: np.ndarray) -> Dict[int, int]:
+def _class_distribution(labels: np.ndarray) -> dict[int, int]:
     unique_labels, counts = np.unique(labels, return_counts=True)
     return {int(label): int(count) for label, count in zip(unique_labels, counts)}
 
@@ -40,7 +39,7 @@ def _split_by_subject(
     subject_ids: np.ndarray,
     test_size: float,
     random_state: int = 42,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Create boolean masks for a subject-based split."""
 
     unique_subjects = np.unique(subject_ids)
@@ -62,7 +61,7 @@ def _split_by_subject(
     return train_mask, val_mask
 
 
-def _summarize_split(split: DatasetSplit) -> Dict[str, object]:
+def _summarize_split(split: DatasetSplit) -> dict[str, object]:
     """Return key statistics for a dataset split."""
     train_dist = _class_distribution(split.y_train)
     test_dist = _class_distribution(split.y_test)
@@ -84,7 +83,7 @@ def _evaluate_models(
     y_train: np.ndarray,
     X_test: np.ndarray,
     y_test: np.ndarray,
-) -> Dict[str, Dict[str, float]]:
+) -> dict[str, dict[str, float]]:
     """Train baseline classifiers and capture accuracy/F1 metrics."""
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
@@ -95,7 +94,7 @@ def _evaluate_models(
         "random_forest": RandomForestClassifier(n_estimators=200, random_state=42),
     }
 
-    results: Dict[str, Dict[str, float]] = {}
+    results: dict[str, dict[str, float]] = {}
 
     for name, model in models.items():
         model.fit(X_train_scaled, y_train)
@@ -110,7 +109,7 @@ def _evaluate_models(
 
 def _build_full_dataset(
     split: DatasetSplit,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Stack train/test partitions into full dataset arrays."""
 
     X_full = np.vstack([split.X_train, split.X_test])
@@ -119,7 +118,7 @@ def _build_full_dataset(
     return X_full, y_full, groups_full
 
 
-def _evaluate_dataset(split: DatasetSplit) -> Dict[str, object]:
+def _evaluate_dataset(split: DatasetSplit) -> dict[str, object]:
     """Evaluate individual dataset baselines."""
     metrics = _evaluate_models(split.X_train, split.y_train, split.X_test, split.y_test)
     summary = _summarize_split(split)
@@ -130,7 +129,7 @@ def _evaluate_dataset(split: DatasetSplit) -> Dict[str, object]:
     return summary
 
 
-def _evaluate_combined(combined: CombinedDataset) -> Dict[str, object]:
+def _evaluate_combined(combined: CombinedDataset) -> dict[str, object]:
     """Evaluate the combined multimodal baseline with a validation split."""
 
     train_mask, val_mask = _split_by_subject(
@@ -184,7 +183,7 @@ def _evaluate_combined(combined: CombinedDataset) -> Dict[str, object]:
     }
 
 
-def _write_markdown(summary: Dict[str, object], path: Path) -> None:
+def _write_markdown(summary: dict[str, object], path: Path) -> None:
     """Write a concise Markdown report for a dataset."""
     metrics = summary["metrics"]
     lines = [

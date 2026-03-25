@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import List, Tuple
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
@@ -27,7 +26,7 @@ from flower_basic.datasets.multimodal import load_real_multimodal_dataset
 
 def _split_by_subject(
     subject_ids: np.ndarray, test_size: float = 0.2, random_state: int = 42
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Create masks for subject-based partitioning."""
 
     unique_subjects = np.unique(subject_ids)
@@ -50,7 +49,7 @@ def _split_by_subject(
 
 
 def _print_partition_summary(
-    name: str, partitions: List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]
+    name: str, partitions: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]
 ) -> None:
     """Display a concise summary for each federated partition."""
     print(f"{name} partitions: {len(partitions)} clients")

@@ -137,10 +137,46 @@ def test_mqtt_fedavg_swell_accepts_tuple_parameters() -> None:
     fl_params = fl.common.ndarrays_to_parameters(params)
     payload = (fl_params, {"extra": True})
 
-    with patch.object(
-        fl.server.strategy.FedAvg, "aggregate_fit", return_value=payload
-    ):
-        result = strategy.aggregate_fit(server_round=1, results=[(Mock(), Mock())], failures=[])
+    with patch.object(fl.server.strategy.FedAvg, "aggregate_fit", return_value=payload):
+        result = strategy.aggregate_fit(
+            server_round=1, results=[(Mock(), Mock())], failures=[]
+        )
 
     assert result is not None
     assert mqtt_client.publish.called
+
+
+def test_mqtt_fedavg_swell_tracks_staleness_metadata() -> None:
+    model = SwellMLP(input_dim=4)
+    mqtt_client = Mock()
+
+    strategy = MQTTFedAvgSwell(
+        model=model,
+        mqtt_client=mqtt_client,
+        eval_data=None,
+        total_rounds=1,
+        fraction_fit=1.0,
+        min_fit_clients=1,
+        min_available_clients=1,
+    )
+
+    params = [v.detach().cpu().numpy() for v in model.state_dict().values()]
+    fl_params = fl.common.ndarrays_to_parameters(params)
+    fit_res = Mock()
+    fit_res.metrics = {
+        "stale_update_count": 2,
+        "future_update_count": 0,
+        "round_min": 1,
+        "round_max": 2,
+        "max_delay_seconds": 1.25,
+    }
+
+    with patch.object(
+        fl.server.strategy.FedAvg, "aggregate_fit", return_value=fl_params
+    ):
+        strategy.aggregate_fit(server_round=1, results=[(Mock(), fit_res)], failures=[])
+
+    assert strategy.history["stale_updates"] == [2]
+    assert strategy.history["future_updates"] == [0]
+    assert strategy.history["round_span"] == [1]
+    assert strategy.history["max_delay_seconds"] == [1.25]

@@ -7,7 +7,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Dict, Iterable, Tuple
+from typing import Iterable
 
 import numpy as np
 import pandas as pd
@@ -23,8 +23,8 @@ if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
 from flower_basic.datasets.multimodal import load_real_multimodal_dataset
-from flower_basic.datasets.swell import load_swell_dataset
 from flower_basic.datasets.sweet_samples import load_sweet_sample_full
+from flower_basic.datasets.swell import load_swell_dataset
 from flower_basic.datasets.wesad import WESAD_SUBJECTS, load_wesad_dataset
 
 
@@ -35,7 +35,7 @@ def _stack_split(
     y_test: np.ndarray,
     train_subject_ids: Iterable[str],
     test_subject_ids: Iterable[str],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Combine train/test partitions into full dataset arrays."""
     X = np.vstack([X_train, X_test])
     y = np.concatenate([y_train, y_test])
@@ -54,7 +54,7 @@ def _run_group_cv(
     y: np.ndarray,
     groups: np.ndarray,
     n_splits: int = 5,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Execute subject-aware GroupKFold CV and return per-fold and summary metrics."""
     groups = np.asarray(groups)
     unique_groups = np.unique(groups)
@@ -121,7 +121,7 @@ def _run_group_cv(
     return fold_df, summary
 
 
-def _load_wesad_full() -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _load_wesad_full() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Load WESAD once and return full dataset arrays and subject IDs."""
     X_train, X_test, y_train, y_test, info = load_wesad_dataset(
         normalize=False,
@@ -138,7 +138,7 @@ def _load_wesad_full() -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     )
 
 
-def _load_swell_full() -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _load_swell_full() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Load SWELL once and return full dataset arrays and subject IDs."""
     X_train, X_test, y_train, y_test, info = load_swell_dataset(
         modalities=["computer"],
@@ -155,10 +155,10 @@ def _load_swell_full() -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     )
 
 
-def _load_combined_full() -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _load_combined_full() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Load combined WESAD+SWELL dataset and return full arrays with prefixed IDs."""
-    wesad_kwargs: Dict[str, object] = {"normalize": False}
-    swell_kwargs: Dict[str, object] = {
+    wesad_kwargs: dict[str, object] = {"normalize": False}
+    swell_kwargs: dict[str, object] = {
         "normalize_features": False,
         "modalities": ["computer"],
     }
@@ -179,7 +179,7 @@ def _load_sweet_samples_full(
     label_strategy: str = "binary",
     threshold: float = 2.0,
     min_samples: int = 5,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Load SWEET sample-subject dataset and return arrays with subject IDs."""
     X, y, groups, _ = load_sweet_sample_full(
         label_strategy=label_strategy,

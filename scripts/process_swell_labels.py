@@ -6,9 +6,10 @@ Loads the stress labels from 'hrv stress labels.xlsx' and creates
 CSV feature files with real labels (stress/rest).
 """
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
 
 
 def create_swell_features_from_labels():

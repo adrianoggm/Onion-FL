@@ -13,11 +13,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import ast
 import logging
 import re
 from pathlib import Path
-from typing import Dict, List, NamedTuple, Optional
+from typing import NamedTuple
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +34,9 @@ class DeprecationViolation(NamedTuple):
 class ECG5000DeprecationChecker:
     """Checker for deprecated ECG5000 dataset usage."""
 
-    def __init__(self, project_root: Optional[Path] = None):
+    def __init__(self, project_root: Path | None = None):
         self.project_root = project_root or Path.cwd()
-        self.violations: List[DeprecationViolation] = []
+        self.violations: list[DeprecationViolation] = []
 
         # Patterns to detect ECG5000 usage
         self.deprecated_patterns = {
@@ -67,7 +66,7 @@ class ECG5000DeprecationChecker:
             r"SWELL",
         ]
 
-    def check_file(self, file_path: Path) -> List[DeprecationViolation]:
+    def check_file(self, file_path: Path) -> list[DeprecationViolation]:
         """Check a single file for deprecated ECG5000 usage."""
         violations = []
 
@@ -75,7 +74,7 @@ class ECG5000DeprecationChecker:
             return violations
 
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 lines = f.readlines()
 
             for line_num, line in enumerate(lines, 1):
@@ -134,7 +133,7 @@ class ECG5000DeprecationChecker:
 
         return False
 
-    def check_project(self) -> List[DeprecationViolation]:
+    def check_project(self) -> list[DeprecationViolation]:
         """Check entire project for deprecated ECG5000 usage."""
         all_violations = []
 
@@ -209,7 +208,7 @@ class ECG5000DeprecationChecker:
 
         return "\n".join(report)
 
-    def suggest_fixes(self) -> Dict[Path, List[str]]:
+    def suggest_fixes(self) -> dict[Path, list[str]]:
         """Generate automatic fix suggestions for each file."""
         fixes_by_file = {}
 

@@ -27,6 +27,20 @@ from typing import Any
 import numpy as np
 import paho.mqtt.client as mqtt
 
+from flower_basic.prometheus_metrics import (
+    BROKER_AGGREGATIONS,
+    BROKER_BUFFER_SIZE,
+    BROKER_CLIENT_CONTRIBUTION,
+    BROKER_CLIENTS_PER_REGION,
+    BROKER_PARTIALS_PUBLISHED,
+    BROKER_UPDATES_RECEIVED,
+    FOG_REGION_MODEL_MEAN,
+    FOG_REGION_MODEL_NORM,
+    FOG_REGION_MODEL_STD,
+    FOG_REGION_SAMPLES,
+    get_metrics_port_from_env,
+    start_metrics_server,
+)
 from flower_basic.telemetry import (
     create_counter,
     create_gauge,
@@ -34,24 +48,9 @@ from flower_basic.telemetry import (
     init_otel,
     record_metric,
     shutdown_telemetry,
-    start_server_span,
     start_linked_consumer_span,
     start_linked_producer_span,
-)
-from flower_basic.prometheus_metrics import (
-    start_metrics_server,
-    get_metrics_port_from_env,
-    push_metrics_to_gateway,
-    BROKER_CLIENTS_PER_REGION,
-    BROKER_AGGREGATIONS,
-    BROKER_BUFFER_SIZE,
-    BROKER_UPDATES_RECEIVED,
-    BROKER_PARTIALS_PUBLISHED,
-    BROKER_CLIENT_CONTRIBUTION,
-    FOG_REGION_SAMPLES,
-    FOG_REGION_MODEL_NORM,
-    FOG_REGION_MODEL_MEAN,
-    FOG_REGION_MODEL_STD,
+    start_server_span,
 )
 
 # MQTT CONFIG AND AGGREGATION PARAMETERS
@@ -144,6 +143,17 @@ def _init_telemetry():
         "Number of unique clients per fog region",
         "1",
     )
+
+
+def shutdown_broker_runtime() -> None:
+    """Flush broker telemetry without pushing broker gauges to Pushgateway.
+
+    SWEET fog brokers are long-lived `/metrics` targets already scraped by
+    Prometheus. Pushing the same registry again on shutdown duplicates region
+    gauges in Grafana.
+    """
+
+    shutdown_telemetry()
 
 
 def weighted_average(
@@ -449,13 +459,10 @@ def main():
         f"[SWEET_FOG_BROKER] Agregando K={K} actualizaciones por región antes de enviar al servidor central"
     )
 
-    # Cleanup function to push metrics before exit
-    def cleanup(*args):
-        print("[SWEET_FOG_BROKER] Pushing metrics before shutdown...")
-        push_metrics_to_gateway(
-            job="sweet-fog-broker", grouping_key={"component": "broker"}
-        )
-        shutdown_telemetry()
+    # Cleanup function to flush telemetry before exit.
+    def cleanup(*_args):
+        print("[SWEET_FOG_BROKER] Shutting down telemetry...")
+        shutdown_broker_runtime()
 
     # Register cleanup for various termination signals
     atexit.register(cleanup)

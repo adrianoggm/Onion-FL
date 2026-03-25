@@ -6,7 +6,6 @@ This script helps diagnose issues with the baseline model and suggests improveme
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -75,19 +74,19 @@ def analyze_dataset(data_dir: str, label_strategy: str = "ordinal"):
     val_class_dict = dict(zip(val_unique, val_counts))
     test_class_dict = dict(zip(test_unique, test_counts))
 
-    print(f"\n   Train distribution:")
+    print("\n   Train distribution:")
     for cls in unique_classes:
         count = train_class_dict.get(int(cls), 0)
         pct = count / len(dataset.train.y) * 100
         print(f"     Class {int(cls)}: {count:4d} samples ({pct:5.1f}%)")
 
-    print(f"\n   Val distribution:")
+    print("\n   Val distribution:")
     for cls in unique_classes:
         count = val_class_dict.get(int(cls), 0)
         pct = count / len(dataset.val.y) * 100
         print(f"     Class {int(cls)}: {count:4d} samples ({pct:5.1f}%)")
 
-    print(f"\n   Test distribution:")
+    print("\n   Test distribution:")
     for cls in unique_classes:
         count = test_class_dict.get(int(cls), 0)
         pct = count / len(dataset.test.y) * 100
@@ -98,7 +97,7 @@ def analyze_dataset(data_dir: str, label_strategy: str = "ordinal"):
     train_imbalance = max(all_counts) / min(all_counts)
     print(f"\n   ⚠️  Class imbalance ratio: {train_imbalance:.2f}:1")
     if train_imbalance > 2:
-        print(f"   ⚠️  HIGH IMBALANCE! Consider using class_weight")
+        print("   ⚠️  HIGH IMBALANCE! Consider using class_weight")
 
     # Feature statistics
     print("\n3. Feature Statistics:")
@@ -111,7 +110,7 @@ def analyze_dataset(data_dir: str, label_strategy: str = "ordinal"):
     print(f"   Inf values: {inf_count}")
 
     # Feature ranges
-    print(f"\n   Feature ranges (before scaling):")
+    print("\n   Feature ranges (before scaling):")
     for i, name in enumerate(dataset.feature_names[:5]):
         values = dataset.train.X[:, i]
         print(
@@ -167,35 +166,35 @@ def analyze_dataset(data_dir: str, label_strategy: str = "ordinal"):
     num_classes = len(unique_classes)
 
     if label_strategy == "ordinal":
-        print(f"\npython scripts/prepare_sweet_baseline.py `")
+        print("\npython scripts/prepare_sweet_baseline.py `")
         print(f"    --data-dir {data_dir} `")
-        print(f"    --output-dir baseline_models/sweet `")
-        print(f"    --label-strategy ordinal `")
-        print(f"    --hidden-dims 64 32 `")
-        print(f"    --lr 0.001 `")
-        print(f"    --epochs 100 `")
-        print(f"    --batch-size 32")
+        print("    --output-dir baseline_models/sweet `")
+        print("    --label-strategy ordinal `")
+        print("    --hidden-dims 64 32 `")
+        print("    --lr 0.001 `")
+        print("    --epochs 100 `")
+        print("    --batch-size 32")
         print(f"\nNote: Using ordinal labels (1-5) for {num_classes} stress levels")
     elif label_strategy == "ordinal_3class":
-        print(f"\npython scripts/prepare_sweet_baseline.py `")
+        print("\npython scripts/prepare_sweet_baseline.py `")
         print(f"    --data-dir {data_dir} `")
-        print(f"    --output-dir baseline_models/sweet `")
-        print(f"    --label-strategy ordinal_3class `")
-        print(f"    --hidden-dims 64 32 `")
-        print(f"    --lr 0.001 `")
-        print(f"    --epochs 100 `")
-        print(f"    --batch-size 32")
-        print(f"\nNote: Using 3-class labels (0=low, 1=medium, 2=high stress)")
+        print("    --output-dir baseline_models/sweet `")
+        print("    --label-strategy ordinal_3class `")
+        print("    --hidden-dims 64 32 `")
+        print("    --lr 0.001 `")
+        print("    --epochs 100 `")
+        print("    --batch-size 32")
+        print("\nNote: Using 3-class labels (0=low, 1=medium, 2=high stress)")
     else:
-        print(f"\npython scripts/prepare_sweet_baseline.py `")
+        print("\npython scripts/prepare_sweet_baseline.py `")
         print(f"    --data-dir {data_dir} `")
-        print(f"    --output-dir baseline_models/sweet `")
-        print(f"    --label-strategy binary `")
-        print(f"    --threshold 3.0 `")
-        print(f"    --hidden-dims 64 32 `")
-        print(f"    --lr 0.001 `")
-        print(f"    --epochs 100 `")
-        print(f"    --batch-size 32")
+        print("    --output-dir baseline_models/sweet `")
+        print("    --label-strategy binary `")
+        print("    --threshold 3.0 `")
+        print("    --hidden-dims 64 32 `")
+        print("    --lr 0.001 `")
+        print("    --epochs 100 `")
+        print("    --batch-size 32")
 
     return dataset
 

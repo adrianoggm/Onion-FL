@@ -18,7 +18,6 @@ import seaborn as sns
 from sklearn.ensemble import (
     GradientBoostingClassifier,
     RandomForestClassifier,
-    VotingClassifier,
 )
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -328,7 +327,7 @@ def plot_results(results_dict: dict, output_dir: Path):
     ax1.grid(axis="x", alpha=0.3)
 
     # Add value labels
-    for i, (bar, acc, std) in enumerate(zip(bars, mean_accs_sorted, std_accs_sorted)):
+    for bar, acc, std in zip(bars, mean_accs_sorted, std_accs_sorted):
         ax1.text(
             bar.get_width() + 0.01,
             bar.get_y() + bar.get_height() / 2,
@@ -353,7 +352,7 @@ def plot_results(results_dict: dict, output_dir: Path):
     ax2.set_title("Model Comparison: F1-Score", fontweight="bold", fontsize=12)
     ax2.grid(axis="x", alpha=0.3)
 
-    for i, (bar, f1, std) in enumerate(zip(bars, mean_f1s_sorted, std_f1s_sorted)):
+    for bar, f1, std in zip(bars, mean_f1s_sorted, std_f1s_sorted):
         ax2.text(
             bar.get_width() + 0.01,
             bar.get_y() + bar.get_height() / 2,
@@ -397,13 +396,9 @@ def plot_results(results_dict: dict, output_dir: Path):
     x = np.arange(len(classes))
     width = 0.25
 
-    bars1 = ax4.bar(
-        x - width, metrics_data["Precision"], width, label="Precision", alpha=0.8
-    )
-    bars2 = ax4.bar(x, metrics_data["Recall"], width, label="Recall", alpha=0.8)
-    bars3 = ax4.bar(
-        x + width, metrics_data["F1-Score"], width, label="F1-Score", alpha=0.8
-    )
+    ax4.bar(x - width, metrics_data["Precision"], width, label="Precision", alpha=0.8)
+    ax4.bar(x, metrics_data["Recall"], width, label="Recall", alpha=0.8)
+    ax4.bar(x + width, metrics_data["F1-Score"], width, label="F1-Score", alpha=0.8)
 
     ax4.set_xlabel("Class", fontweight="bold")
     ax4.set_ylabel("Score", fontweight="bold")
@@ -532,7 +527,7 @@ def main():
         [dataset.train.subject_ids, dataset.val.subject_ids, dataset.test.subject_ids]
     )
 
-    print(f"✓ Dataset loaded")
+    print("✓ Dataset loaded")
     print(f"  Total samples: {len(y)}")
     print(f"  Total subjects: {len(np.unique(subject_ids))}")
     print(f"  Features: {X.shape[1]}")
@@ -551,7 +546,7 @@ def main():
         subject_ids, y_per_subject, args.n_folds, args.seed
     )
 
-    print(f"✓ CV splits created")
+    print("✓ CV splits created")
     for fold, (train_idx, test_idx) in enumerate(cv_splits, 1):
         train_subjs = len(np.unique(subject_ids[train_idx]))
         test_subjs = len(np.unique(subject_ids[test_idx]))
@@ -638,7 +633,7 @@ def main():
     print(f"Mean Precision: {best_results['mean_precision']:.4f}")
     print(f"Mean Recall: {best_results['mean_recall']:.4f}")
 
-    print(f"\nPer-class metrics:")
+    print("\nPer-class metrics:")
     class_report = best_results["classification_report"]
     print(
         f"{'Class':<15} {'Precision':<12} {'Recall':<12} {'F1-Score':<12} {'Support':<10}"
@@ -657,21 +652,21 @@ def main():
     print(f"\n{'=' * 80}")
     print("✅ ANALYSIS COMPLETE")
     print(f"{'=' * 80}")
-    print(f"\nℹ️  INTERPRETATION:")
-    print(f"  - Subject-level CV ensures truly independent evaluation")
+    print("\nℹ️  INTERPRETATION:")
+    print("  - Subject-level CV ensures truly independent evaluation")
     print(f"  - Best accuracy: {best_results['mean_accuracy']:.1%} (vs 33.3% random)")
     print(
         f"  - Improvement: {(best_results['mean_accuracy'] - 0.333) / 0.333 * 100:.1f}% over random"
     )
 
     if best_results["mean_accuracy"] < 0.65:
-        print(f"\n⚠️  CONCLUSION: Limited performance suggests:")
-        print(f"  1. Dataset features have weak discriminative power")
-        print(f"  2. Stress is highly individual/contextual")
-        print(f"  3. Need for feature engineering or temporal modeling")
-        print(f"  4. Federated learning with personalization may help")
+        print("\n⚠️  CONCLUSION: Limited performance suggests:")
+        print("  1. Dataset features have weak discriminative power")
+        print("  2. Stress is highly individual/contextual")
+        print("  3. Need for feature engineering or temporal modeling")
+        print("  4. Federated learning with personalization may help")
     else:
-        print(f"\n✅ Good performance! Model has learned meaningful patterns.")
+        print("\n✅ Good performance! Model has learned meaningful patterns.")
 
 
 if __name__ == "__main__":

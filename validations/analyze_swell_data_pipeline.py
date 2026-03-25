@@ -5,10 +5,10 @@ Análisis de la Pipeline de Procesamiento del Dataset SWELL
 Este script analiza la relación entre los datos RAW (RRI) y los datos procesados (train/test)
 """
 
-import pandas as pd
-import numpy as np
-import os
 from pathlib import Path
+
+import numpy as np
+import pandas as pd
 
 
 def analyze_raw_data():
@@ -54,7 +54,7 @@ def analyze_processed_data():
     df_train = pd.read_csv("data/SWELL/data/final/train.csv")
     df_test = pd.read_csv("data/SWELL/data/final/test.csv")
 
-    print(f"\n📈 Dataset procesado:")
+    print("\n📈 Dataset procesado:")
     print(f"   Train: {len(df_train):,} muestras")
     print(f"   Test:  {len(df_test):,} muestras")
     print(f"   Total: {len(df_train) + len(df_test):,} muestras")
@@ -99,7 +99,7 @@ def analyze_processed_data():
 
     relative = [c for c in df_train.columns if "REL_RR" in c]
 
-    print(f"\n📊 Tipos de features:")
+    print("\n📊 Tipos de features:")
     print(
         f"   ⏱️  Dominio temporal: {len(time_domain)} ({', '.join(time_domain[:5])}...)"
     )
@@ -109,7 +109,7 @@ def analyze_processed_data():
     print(f"   🔀 No lineales: {len(nonlinear)} ({', '.join(nonlinear)})")
     print(f"   📐 Relativas: {len(relative)} ({len(relative)} features)")
 
-    print(f"\n🎯 Distribución de clases:")
+    print("\n🎯 Distribución de clases:")
     combined = pd.concat([df_train, df_test])
     for condition, count in combined["condition"].value_counts().items():
         pct = count / len(combined) * 100
@@ -210,7 +210,7 @@ def main():
     print("=" * 80)
 
     # Análisis raw
-    raw_stats = analyze_raw_data()
+    analyze_raw_data()
 
     # Análisis procesado
     df_train, df_test = analyze_processed_data()

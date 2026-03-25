@@ -11,13 +11,10 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Dict, List
-
-import numpy as np
-import pandas as pd
 
 import matplotlib.pyplot as plt
-
+import numpy as np
+import pandas as pd
 
 SWELL_PHYSIO_FILE = "D - Physiology features (HR_HRV_SCL - final).csv"
 
@@ -64,9 +61,9 @@ def _swell_missing_by_subject(
     if not file_path.exists():
         raise FileNotFoundError(f"SWELL physiology file not found: {file_path}")
 
-    subject_counts: Dict[str, int] = {}
-    missing_counts: Dict[str, int] = {}
-    total_counts: Dict[str, int] = {}
+    subject_counts: dict[str, int] = {}
+    missing_counts: dict[str, int] = {}
+    total_counts: dict[str, int] = {}
 
     processed = 0
     for chunk in _iter_csv_chunks(file_path, chunk_size):
@@ -126,7 +123,7 @@ def _iter_empatica_csv(path: Path, chunksize: int, max_rows: int | None):
 
 def _wesad_missing_by_subject(
     wesad_dir: Path,
-    signals: List[str],
+    signals: list[str],
     max_rows: int | None,
     chunk_size: int,
 ) -> pd.DataFrame:
@@ -141,7 +138,7 @@ def _wesad_missing_by_subject(
 
         subject_total = 0
         subject_missing = 0
-        per_signal: Dict[str, float] = {}
+        per_signal: dict[str, float] = {}
 
         for signal in signals:
             file_path = e4_dir / f"{signal}.csv"
@@ -171,7 +168,9 @@ def _wesad_missing_by_subject(
     return pd.DataFrame(rows)
 
 
-def _plot_tables(wesad_df: pd.DataFrame, swell_df: pd.DataFrame, out_path: Path) -> None:
+def _plot_tables(
+    wesad_df: pd.DataFrame, swell_df: pd.DataFrame, out_path: Path
+) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(12, 6))
 
     def _make_table(ax, df: pd.DataFrame, title: str):
@@ -182,10 +181,14 @@ def _plot_tables(wesad_df: pd.DataFrame, swell_df: pd.DataFrame, out_path: Path)
             return
         show = df.copy()
         show["missing_ratio"] = show["missing_ratio"].map(lambda x: f"{x:.4f}")
-        cols = ["subject", "rows", "missing_ratio"] if "rows" in show.columns else [
-            "subject",
-            "missing_ratio",
-        ]
+        cols = (
+            ["subject", "rows", "missing_ratio"]
+            if "rows" in show.columns
+            else [
+                "subject",
+                "missing_ratio",
+            ]
+        )
         cell_text = show[cols].values.tolist()
         table = ax.table(
             cellText=cell_text,

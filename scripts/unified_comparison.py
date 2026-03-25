@@ -63,7 +63,7 @@ ax1.legend(fontsize=10)
 ax1.grid(axis="x", alpha=0.3)
 
 # Add value labels
-for i, (bar, acc, std) in enumerate(zip(bars, accuracies, stds)):
+for bar, acc, std in zip(bars, accuracies, stds):
     ax1.text(
         bar.get_width() + 0.005,
         bar.get_y() + bar.get_height() / 2,
@@ -84,7 +84,7 @@ ax2.set_xlabel("F1-Score (Weighted)", fontweight="bold", fontsize=11)
 ax2.set_title("F1-Score Comparison", fontweight="bold", fontsize=12)
 ax2.grid(axis="x", alpha=0.3)
 
-for i, (bar, f1) in enumerate(zip(bars2, f1_scores)):
+for bar, f1 in zip(bars2, f1_scores):
     ax2.text(
         bar.get_width() + 0.005,
         bar.get_y() + bar.get_height() / 2,

@@ -58,7 +58,7 @@ def main():
         print("✅ SWEET Selection2 Federated Splits Ready!")
         print(f"   Output: {manifest['output_dir']}")
         print(f"   Nodes: {len(manifest['nodes'])}")
-        print(f"   Ready for federated fine-tuning")
+        print("   Ready for federated fine-tuning")
         print("=" * 80)
 
     except FileNotFoundError as e:

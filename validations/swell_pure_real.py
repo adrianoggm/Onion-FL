@@ -10,7 +10,6 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
@@ -60,7 +59,7 @@ def swell_pure_real_evaluation():
     y = df["Condition"].isin(["T", "I", "R"]).astype(int)
     subjects = df["PP"]
 
-    print(f"Dataset prepared:")
+    print("Dataset prepared:")
     print(f"  Features: {X.shape[1]}")
     print(f"  Samples: {len(X)}")
     print(f"  Real participants: {len(subjects.unique())}")
@@ -80,7 +79,7 @@ def swell_pure_real_evaluation():
     val_participants = shuffled_participants[n_train : n_train + n_val]
     test_participants = shuffled_participants[n_train + n_val :]
 
-    print(f"Subject-based split (NO DATA LEAKAGE):")
+    print("Subject-based split (NO DATA LEAKAGE):")
     print(f"  Train participants: {sorted(train_participants)}")
     print(f"  Validation participants: {sorted(val_participants)}")
     print(f"  Test participants: {sorted(test_participants)}")
@@ -98,7 +97,7 @@ def swell_pure_real_evaluation():
     y_val = y[val_mask]
     y_test = y[test_mask]
 
-    print(f"Final split sizes:")
+    print("Final split sizes:")
     print(f"  Training: {len(X_train)} samples")
     print(f"  Validation: {len(X_val)} samples")
     print(f"  Test: {len(X_test)} samples")
@@ -168,11 +167,11 @@ def swell_pure_real_evaluation():
     print(f"   Test Accuracy: {best_model[1]['test_accuracy']:.3f}")
 
     # Key insights
-    print(f"\n💡 Key Insights:")
+    print("\n💡 Key Insights:")
     print(f"   - REAL participants: {len(unique_participants)} subjects")
-    print(f"   - Subject-based splitting prevents data leakage")
-    print(f"   - Results represent realistic federated learning scenarios")
-    print(f"   - NO synthetic data generation (following docs/RULES.md)")
+    print("   - Subject-based splitting prevents data leakage")
+    print("   - Results represent realistic federated learning scenarios")
+    print("   - NO synthetic data generation (following docs/RULES.md)")
 
     # Comparison warning
     if best_model[1]["test_accuracy"] < 0.9:

@@ -24,6 +24,18 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from flower_basic.clients.baseclient import BaseMQTTComponent
 from flower_basic.datasets.sweet_federated import load_node_split
+from flower_basic.prometheus_metrics import (
+    CLIENT_LOCAL_ACCURACY,
+    CLIENT_LOCAL_LOSS,
+    CLIENT_TEST_SAMPLES,
+    CLIENT_TRAIN_SAMPLES,
+    CLIENT_TRAINING_DURATION,
+    CLIENT_TRAINING_ROUNDS,
+    CLIENT_VAL_SAMPLES,
+    get_metrics_port_from_env,
+    push_metrics_to_gateway,
+    start_metrics_server,
+)
 from flower_basic.sweet_model import SweetMLP
 
 # Telemetry
@@ -34,21 +46,9 @@ from flower_basic.telemetry import (
     init_otel,
     record_metric,
     shutdown_telemetry,
-    start_span,
-    start_linked_producer_span,
     start_linked_consumer_span,
-)
-from flower_basic.prometheus_metrics import (
-    start_metrics_server,
-    get_metrics_port_from_env,
-    push_metrics_to_gateway,
-    CLIENT_TRAIN_SAMPLES,
-    CLIENT_VAL_SAMPLES,
-    CLIENT_TEST_SAMPLES,
-    CLIENT_TRAINING_ROUNDS,
-    CLIENT_TRAINING_DURATION,
-    CLIENT_LOCAL_LOSS,
-    CLIENT_LOCAL_ACCURACY,
+    start_linked_producer_span,
+    start_span,
 )
 
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
@@ -183,8 +183,8 @@ class SweetFLClientMQTT(BaseMQTTComponent):
             try:
                 import json
 
-                with open(pretrained_path, "r") as f:
-                    pretrained_data = json.load(f)
+                with open(pretrained_path) as f:
+                    json.load(f)
 
                 # Convert XGBoost weights to PyTorch (if needed)
                 # For now, just log that pre-trained model exists
@@ -296,7 +296,7 @@ class SweetFLClientMQTT(BaseMQTTComponent):
                 batch_count = 0
 
                 # Multiple local epochs
-                for epoch in range(self.local_epochs):
+                for _epoch in range(self.local_epochs):
                     epoch_loss = 0.0
                     epoch_samples = 0
                     for X, y in self.train_loader:

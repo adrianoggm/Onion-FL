@@ -1,7 +1,7 @@
 """Extract SWEET selection2 user data."""
 
-from pathlib import Path
 import zipfile
+from pathlib import Path
 
 selection2_zip_dir = Path("data/SWEET/selection2/selection2_zip")
 users_output_dir = Path("data/SWEET/selection2/users")

@@ -11,7 +11,6 @@ Outputs a directory with per-node train/val/test npz files and a manifest.json.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 

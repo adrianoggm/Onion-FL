@@ -5,12 +5,12 @@ Análisis Detallado de Datos RAW del Dataset SWELL
 Analiza los archivos RRI raw y las etiquetas para entender la estructura completa
 """
 
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 from pathlib import Path
-from collections import defaultdict
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
 
 # Configuración visual
 plt.style.use("seaborn-v0_8-darkgrid")
@@ -31,14 +31,14 @@ def load_labels():
 
         print(f"\n✓ Archivo cargado: {labels_file}")
         print(f"  Shape: {df_labels.shape}")
-        print(f"\n📊 Columnas encontradas:")
+        print("\n📊 Columnas encontradas:")
         for i, col in enumerate(df_labels.columns, 1):
             print(f"  {i}. {col}")
 
-        print(f"\n🔍 Primeras filas:")
+        print("\n🔍 Primeras filas:")
         print(df_labels.head(10).to_string())
 
-        print(f"\n📈 Estadísticas:")
+        print("\n📈 Estadísticas:")
         if (
             "participant" in df_labels.columns
             or "subject" in df_labels.columns
@@ -346,7 +346,7 @@ def plot_example_signals():
                 transform=ax.transAxes,
                 va="top",
                 fontsize=9,
-                bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
+                bbox={"boxstyle": "round", "facecolor": "wheat", "alpha": 0.5},
             )
 
         except Exception as e:
@@ -373,14 +373,14 @@ def print_summary(df_stats):
     print("📊 RESUMEN ESTADÍSTICO COMPLETO")
     print("=" * 80)
 
-    print(f"\n🔢 Estadísticas Generales:")
+    print("\n🔢 Estadísticas Generales:")
     print(f"  Total sujetos: {len(df_stats)}")
     print(f"  Total muestras RRI: {df_stats['num_samples'].sum():,}")
     print(
         f"  Duración total: {df_stats['duration_hours'].sum():.1f} horas ({df_stats['duration_hours'].sum()/24:.1f} días)"
     )
 
-    print(f"\n⏱️  Duración por Sujeto:")
+    print("\n⏱️  Duración por Sujeto:")
     print(
         f"  Media: {df_stats['duration_min'].mean():.1f} min ({df_stats['duration_hours'].mean():.2f} h)"
     )
@@ -388,26 +388,26 @@ def print_summary(df_stats):
     print(f"  Máxima: {df_stats['duration_min'].max():.1f} min")
     print(f"  STD: {df_stats['duration_min'].std():.1f} min")
 
-    print(f"\n💓 RRI (Intervalos R-R):")
+    print("\n💓 RRI (Intervalos R-R):")
     print(f"  Media global: {df_stats['rri_mean'].mean():.1f} ms")
     print(
         f"  Rango: {df_stats['rri_min'].min():.1f} - {df_stats['rri_max'].max():.1f} ms"
     )
     print(f"  Variabilidad media (STD): {df_stats['rri_std'].mean():.1f} ms")
 
-    print(f"\n❤️  Frecuencia Cardíaca (HR):")
+    print("\n❤️  Frecuencia Cardíaca (HR):")
     print(f"  Media global: {df_stats['hr_mean'].mean():.1f} bpm")
     print(
         f"  Rango: {df_stats['hr_min'].min():.1f} - {df_stats['hr_max'].max():.1f} bpm"
     )
     print(f"  STD media: {df_stats['hr_std'].mean():.1f} bpm")
 
-    print(f"\n⚠️  Calidad de Datos:")
+    print("\n⚠️  Calidad de Datos:")
     print(f"  Outliers promedio: {df_stats['outlier_pct'].mean():.2f}%")
     print(f"  Missing beats promedio: {df_stats['missing_beats'].mean():.1f}")
     print(f"  Sujetos con >1% outliers: {(df_stats['outlier_pct'] > 1).sum()}")
 
-    print(f"\n📋 Tabla Completa de Estadísticas:")
+    print("\n📋 Tabla Completa de Estadísticas:")
     print(
         df_stats[
             [
@@ -429,7 +429,7 @@ def main():
     print("=" * 80)
 
     # 1. Cargar labels
-    df_labels = load_labels()
+    load_labels()
 
     # 2. Analizar archivos RRI
     df_stats = analyze_rri_files()
@@ -446,7 +446,7 @@ def main():
     print("\n" + "=" * 80)
     print("✅ ANÁLISIS COMPLETADO")
     print("=" * 80)
-    print(f"\n📁 Visualizaciones guardadas en: swell_plots/")
+    print("\n📁 Visualizaciones guardadas en: swell_plots/")
     print("   - swell_raw_analysis.png")
     print("   - swell_raw_distributions.png")
     print("   - swell_raw_signals.png")
