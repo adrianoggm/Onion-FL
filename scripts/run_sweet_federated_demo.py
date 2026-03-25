@@ -247,17 +247,27 @@ def _shutdown_processes(procs: list[subprocess.Popen]) -> None:
         try:
             if proc.poll() is None:
                 proc.terminate()
-        except Exception:
-            pass
+        except Exception as exc:
+            print(
+                f"[WARN] Failed to terminate process (pid={getattr(proc, 'pid', '?')}): {exc}",
+                file=sys.stderr,
+            )
 
     for proc in procs:
         try:
             proc.wait(timeout=5.0)
-        except Exception:
+        except Exception as exc:
+            print(
+                f"[WARN] Failed to wait for process (pid={getattr(proc, 'pid', '?')}); attempting kill: {exc}",
+                file=sys.stderr,
+            )
             try:
                 proc.kill()
-            except Exception:
-                pass
+            except Exception as kill_exc:
+                print(
+                    f"[WARN] Failed to kill process (pid={getattr(proc, 'pid', '?')}): {kill_exc}",
+                    file=sys.stderr,
+                )
 
 
 def main() -> None:
