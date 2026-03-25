@@ -229,6 +229,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
             mqtt_port=mqtt_port,
             subscriptions=[self.topic_global],
         )
+        self.current_round = 0
         self._got_global = False
         # Protect model updates from MQTT callback during training
         self._lock = threading.Lock()
@@ -364,7 +365,9 @@ class SwellFLClientMQTT(BaseMQTTComponent):
         print(f"{self.tag} Val loss: {val_loss:.4f} | Val acc: {val_acc:.3f}")
         return {"val_loss": val_loss, "val_acc": val_acc}
 
-    def publish_update(self, avg_loss: float, val_acc: float = 0.0) -> None:
+    def publish_update(
+        self, avg_loss: float, val_acc: float = 0.0, round_num: int | None = None
+    ) -> None:
         # Use PRODUCER span with context propagation for distributed tracing
         with start_linked_producer_span(
             TRACER, "client.publish_update", "fog-broker", {"region": self.region}
@@ -378,10 +381,14 @@ class SwellFLClientMQTT(BaseMQTTComponent):
             payload = {
                 "client_id": self.client_id,
                 "region": self.region,
+                "round": int(
+                    round_num if round_num is not None else max(1, self.current_round)
+                ),
                 "weights": weights,
                 "num_samples": self.num_samples,
                 "loss": float(avg_loss),
                 "val_acc": float(val_acc),  # Include validation accuracy
+                "sent_at": time.time(),
                 "trace_context": trace_ctx,  # Propagate trace context
             }
             self.mqtt.publish(self.topic_updates, json.dumps(payload))
@@ -447,6 +454,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                         print(f"{self.tag} Global model applied")
 
             print(f"\n=== Round {r}/{rounds} ===")
+            self.current_round = r
             avg_loss = self.train_one_round()
             # Validate before publishing update
             val_metrics = self.evaluate_val()
@@ -461,7 +469,9 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                     f.write(_json.dumps(rec) + "\n")
             except Exception:
                 pass
-            self.publish_update(avg_loss, val_acc)  # Include validation accuracy
+            self.publish_update(
+                avg_loss, val_acc, round_num=r
+            )  # Include validation accuracy
             if r < rounds:
                 time.sleep(delay)
         self.stop_mqtt()

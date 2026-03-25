@@ -80,6 +80,7 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
         self.model = SwellMLP(input_dim=input_dim)
         self.param_names = list(self.model.state_dict().keys())
         self.partial_weights = None
+        self.partial_metadata = {}
         self.partial_trace_context = None  # Store trace context from partial
         self.partial_topic = partial_topic
         self.region = region
@@ -99,6 +100,16 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
             if region != self.region:
                 return
             self.partial_weights = data.get("partial_weights")
+            self.partial_metadata = {
+                "expected_round": int(data.get("expected_round", 0)),
+                "round_min": int(data.get("round_min", 0)),
+                "round_max": int(data.get("round_max", 0)),
+                "stale_update_count": int(data.get("stale_update_count", 0)),
+                "future_update_count": int(data.get("future_update_count", 0)),
+                "max_delay_seconds": float(data.get("max_delay_seconds", 0.0)),
+                "mean_delay_seconds": float(data.get("mean_delay_seconds", 0.0)),
+                "stale_policy": str(data.get("stale_policy", "accept")),
+            }
             self.partial_trace_context = data.get(
                 "trace_context", {}
             )  # Extract trace context
@@ -146,13 +157,19 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
                 if span:
                     span.set_attribute("status", "timeout")
                 record_metric(COUNTER_TIMEOUTS, 1, {"region": self.region})
-                return get_parameters(self.model), 1, {}
+                return (
+                    get_parameters(self.model),
+                    1,
+                    {"timeout": True, "region": self.region},
+                )
 
             partial_list = [
                 np.array(self.partial_weights[name], dtype=np.float32)
                 for name in self.param_names
             ]
+            metrics = {"region": self.region, **self.partial_metadata}
             self.partial_weights = None
+            self.partial_metadata = {}
             self.partial_trace_context = None  # Clear trace context after use
             num_samples = 1000
             print(f"{self.tag} Forwarding partial to central server")
@@ -160,7 +177,7 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
                 span.set_attribute("status", "forwarded")
                 span.set_attribute("num_samples", num_samples)
             record_metric(COUNTER_FORWARDS_TO_SERVER, 1, {"region": self.region})
-            return partial_list, num_samples, {}
+            return partial_list, num_samples, metrics
 
     def evaluate(self, parameters, config):
         return 0.0, 0, {}
