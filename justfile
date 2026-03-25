@@ -119,6 +119,48 @@ default:
       --launch \
       --delay 0.1
 
+# Launch SWELL with stale updates accepted (recommended baseline for comparison)
+@swell-launch-accept:
+    echo "{{GREEN}}🚀 Launching SWELL with stale policy=accept{{NC}}"
+    export MQTT_BROKER=localhost MQTT_PORT=1883
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4320
+    export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4320
+    python scripts/run_architecture_from_config.py \
+      --config configs/federated_architecture_accept.yaml \
+      --manifest federated_runs/swell/10_executions_physiology/manifest.json \
+      --launch \
+      --delay 0.1
+
+# Launch SWELL with stale updates dropped when they do not match the expected round
+@swell-launch-strict:
+    echo "{{GREEN}}🚀 Launching SWELL with stale policy=strict{{NC}}"
+    export MQTT_BROKER=localhost MQTT_PORT=1883
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4320
+    export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4320
+    python scripts/run_architecture_from_config.py \
+      --config configs/federated_architecture_strict.yaml \
+      --manifest federated_runs/swell/10_executions_physiology/manifest.json \
+      --launch \
+      --delay 0.1
+
+# One-command demo for the accept policy using the same physiology manifest
+@swell-demo-accept:
+    echo "{{GREEN}}🚀 Starting SWELL demo with stale policy=accept{{NC}}"
+    just docker-up
+    sleep 3
+    just swell-prepare-physio
+    sleep 2
+    just swell-launch-accept
+
+# One-command demo for the strict policy using the same physiology manifest
+@swell-demo-strict:
+    echo "{{GREEN}}🚀 Starting SWELL demo with stale policy=strict{{NC}}"
+    just docker-up
+    sleep 3
+    just swell-prepare-physio
+    sleep 2
+    just swell-launch-strict
+
 # ============================================================================
 # 🧪 TESTING & EVALUATION
 # ============================================================================
