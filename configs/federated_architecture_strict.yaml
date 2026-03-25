@@ -1,11 +1,11 @@
 federated_architecture:
   workflow: SWELL  # Flujo principal (SWELL | WESAD | SWEET)
 
-  # Configuración del dataset (debe coincidir con swell_federated_10runs.yaml)
+  # Variante pensada para descartar updates fuera de la ronda esperada.
   dataset:
     name: SWELL
     data_dir: data/SWELL
-    modalities: [physiology]  # Solo características fisiológicas
+    modalities: [physiology]
     split:
       train: 0.7
       val: 0.15
@@ -20,7 +20,7 @@ federated_architecture:
   orchestrator:
     address: "0.0.0.0:8080"
     rounds: 12
-    stale_update_policy: accept  # accept | strict
+    stale_update_policy: strict
     protocol: "MQTT"
     mqtt:
       broker: "localhost"
@@ -32,34 +32,21 @@ federated_architecture:
 
   model:
     type: "swell_mlp"
-    # Dimensión de entrada: 16 features fisiológicas (se sobreescribe desde manifest.meta.n_features)
     input_dim: 16
 
-  # Parámetros globales para clientes (aplican a todos los fogs si no se override)
   client_params:
     lr: 0.001
     local_epochs: 14
     seed: 46
 
-  # Nota: cuando se lanza con --manifest, la lista de clients se regenera
-  # automáticamente desde el manifest (1 cliente por sujeto con datos de train).
-  # Los clients definidos aquí son plantillas que se sobreescriben.
-  #
-  # Distribución real con swell_federated_10runs.yaml (seed=67, train=0.7):
-  #   fog_0: 6 clientes train [1,2,3,4,5,6] + 2 test [19,20]
-  #   fog_1: 5 clientes train [7,9,10,13,22] + 1 val [12] + 2 test [14,23]
-  #   fog_2: 3 clientes train [18,21,25] + 3 val [15,16,17] + 1 test [24]
-
   fog_nodes:
     - id: fog_0
-      # K=3: agrega cada 3 actualizaciones de los 6 clientes train
       k: 3
       params:
         lr: 0.001
         local_epochs: 14
         seed: 46
       clients:
-        # Con --manifest se generan 6 clientes (sujetos 1,2,3,4,5,6)
         - {id: fog_0_client_1, dataset: SWELL, rounds: 12, data_dir: "federated_runs/swell/10_executions_physiology/fog_0/subject_1"}
         - {id: fog_0_client_2, dataset: SWELL, rounds: 12, data_dir: "federated_runs/swell/10_executions_physiology/fog_0/subject_2"}
         - {id: fog_0_client_3, dataset: SWELL, rounds: 12, data_dir: "federated_runs/swell/10_executions_physiology/fog_0/subject_3"}
@@ -68,14 +55,12 @@ federated_architecture:
         - {id: fog_0_client_6, dataset: SWELL, rounds: 12, data_dir: "federated_runs/swell/10_executions_physiology/fog_0/subject_6"}
 
     - id: fog_1
-      # K=3: agrega cada 3 actualizaciones de los 5 clientes train
       k: 3
       params:
         lr: 0.001
         local_epochs: 14
         seed: 46
       clients:
-        # Con --manifest se generan 5 clientes (sujetos 7,9,10,13,22)
         - {id: fog_1_client_7, dataset: SWELL, rounds: 12, data_dir: "federated_runs/swell/10_executions_physiology/fog_1/subject_7"}
         - {id: fog_1_client_9, dataset: SWELL, rounds: 12, data_dir: "federated_runs/swell/10_executions_physiology/fog_1/subject_9"}
         - {id: fog_1_client_10, dataset: SWELL, rounds: 12, data_dir: "federated_runs/swell/10_executions_physiology/fog_1/subject_10"}
@@ -83,14 +68,12 @@ federated_architecture:
         - {id: fog_1_client_22, dataset: SWELL, rounds: 12, data_dir: "federated_runs/swell/10_executions_physiology/fog_1/subject_22"}
 
     - id: fog_2
-      # K=3: agrega cada 3 actualizaciones de los 3 clientes train
       k: 3
       params:
         lr: 0.001
         local_epochs: 14
         seed: 46
       clients:
-        # Con --manifest se generan 3 clientes (sujetos 18,21,25)
         - {id: fog_2_client_18, dataset: SWELL, rounds: 12, data_dir: "federated_runs/swell/10_executions_physiology/fog_2/subject_18"}
         - {id: fog_2_client_21, dataset: SWELL, rounds: 12, data_dir: "federated_runs/swell/10_executions_physiology/fog_2/subject_21"}
         - {id: fog_2_client_25, dataset: SWELL, rounds: 12, data_dir: "federated_runs/swell/10_executions_physiology/fog_2/subject_25"}
