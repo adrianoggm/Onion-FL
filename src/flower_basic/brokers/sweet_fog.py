@@ -39,7 +39,6 @@ from flower_basic.prometheus_metrics import (
     FOG_REGION_MODEL_STD,
     FOG_REGION_SAMPLES,
     get_metrics_port_from_env,
-    push_metrics_to_gateway,
     start_metrics_server,
 )
 from flower_basic.telemetry import (
@@ -144,6 +143,17 @@ def _init_telemetry():
         "Number of unique clients per fog region",
         "1",
     )
+
+
+def shutdown_broker_runtime() -> None:
+    """Flush broker telemetry without pushing broker gauges to Pushgateway.
+
+    SWEET fog brokers are long-lived `/metrics` targets already scraped by
+    Prometheus. Pushing the same registry again on shutdown duplicates region
+    gauges in Grafana.
+    """
+
+    shutdown_telemetry()
 
 
 def weighted_average(
@@ -449,13 +459,10 @@ def main():
         f"[SWEET_FOG_BROKER] Agregando K={K} actualizaciones por región antes de enviar al servidor central"
     )
 
-    # Cleanup function to push metrics before exit
-    def cleanup(*args):
-        print("[SWEET_FOG_BROKER] Pushing metrics before shutdown...")
-        push_metrics_to_gateway(
-            job="sweet-fog-broker", grouping_key={"component": "broker"}
-        )
-        shutdown_telemetry()
+    # Cleanup function to flush telemetry before exit.
+    def cleanup(*_args):
+        print("[SWEET_FOG_BROKER] Shutting down telemetry...")
+        shutdown_broker_runtime()
 
     # Register cleanup for various termination signals
     atexit.register(cleanup)
