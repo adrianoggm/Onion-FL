@@ -95,6 +95,31 @@ def test_load_architecture_config_reads_split_strategy(tmp_path: Path):
     assert arch.dataset.test_assignments == {"fog_0": [19, 20]}
 
 
+def test_load_architecture_config_reads_stale_update_policy(tmp_path: Path):
+    cfg = {"federated_architecture": _make_config()}
+    cfg["federated_architecture"]["orchestrator"]["stale_update_policy"] = "strict"
+    cfg_path = tmp_path / "arch.json"
+    cfg_path.write_text(json.dumps(cfg), encoding="utf-8")
+
+    arch = load_architecture_config(cfg_path)
+
+    assert arch.orchestrator.stale_update_policy == "strict"
+
+
+def test_policy_config_examples_load() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    accept_arch = load_architecture_config(
+        repo_root / "configs" / "federated_architecture_accept.yaml"
+    )
+    strict_arch = load_architecture_config(
+        repo_root / "configs" / "federated_architecture_strict.yaml"
+    )
+
+    assert accept_arch.orchestrator.stale_update_policy == "accept"
+    assert strict_arch.orchestrator.stale_update_policy == "strict"
+
+
 def test_runtime_plan_includes_k_map(tmp_path: Path):
     cfg = {"federated_architecture": _make_config()}
     cfg_path = tmp_path / "arch.json"

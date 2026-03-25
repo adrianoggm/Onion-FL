@@ -163,6 +163,113 @@ def test_build_runtime_plan_skips_empty_fogs(tmp_path: Path) -> None:
     assert broker_cmd.env.get("FOG_K_MAP") in (None, '{"fog_0": 1}')
 
 
+def test_build_runtime_plan_matches_exact_multispawn_topology(tmp_path: Path) -> None:
+    node_a = tmp_path / "fog_0_client_1"
+    node_b = tmp_path / "fog_0_client_2"
+    node_c = tmp_path / "fog_1_client_1"
+    node_d = tmp_path / "fog_2_client_1"
+    for node_dir in (node_a, node_b, node_c, node_d):
+        node_dir.mkdir()
+        _write_train_npz(node_dir / "train.npz", n_samples=2, n_features=6)
+
+    arch = FederatedArchitecture(
+        orchestrator=OrchestratorSpec(
+            address="localhost:8080",
+            rounds=3,
+            protocol="MQTT",
+            stale_update_policy="strict",
+            mqtt=MQTTConfig(
+                broker="localhost",
+                port=1883,
+                topics=MQTTTopics(
+                    updates="fl/updates",
+                    partial="fl/partial",
+                    global_model="fl/global_model",
+                ),
+            ),
+        ),
+        fog_nodes=[
+            FogNodeSpec(
+                id="fog_0",
+                k=2,
+                clients=[
+                    ClientSpec(
+                        id="fog_0_client_1",
+                        dataset="swell",
+                        workflow="swell",
+                        rounds=3,
+                        data_dir=str(node_a),
+                    ),
+                    ClientSpec(
+                        id="fog_0_client_2",
+                        dataset="swell",
+                        workflow="swell",
+                        rounds=3,
+                        data_dir=str(node_b),
+                    ),
+                ],
+            ),
+            FogNodeSpec(
+                id="fog_1",
+                k=1,
+                clients=[
+                    ClientSpec(
+                        id="fog_1_client_1",
+                        dataset="swell",
+                        workflow="swell",
+                        rounds=3,
+                        data_dir=str(node_c),
+                    )
+                ],
+            ),
+            FogNodeSpec(
+                id="fog_2",
+                k=1,
+                clients=[
+                    ClientSpec(
+                        id="fog_2_client_1",
+                        dataset="swell",
+                        workflow="swell",
+                        rounds=3,
+                        data_dir=str(node_d),
+                    )
+                ],
+            ),
+        ],
+        model=ModelConfig(type="swell_mlp", input_dim=None),
+        dataset=None,
+        workflow="swell",
+    )
+
+    repo_root = Path(__file__).resolve().parents[1]
+    commands = build_runtime_plan(arch, repo_root=repo_root)
+
+    bridge_roles = [cmd.role for cmd in commands if cmd.role.startswith("fog_bridge_")]
+    client_roles = [cmd.role for cmd in commands if cmd.role.startswith("client_")]
+
+    assert len(bridge_roles) == 3
+    assert len(client_roles) == 4
+    assert set(bridge_roles) == {
+        "fog_bridge_fog_0",
+        "fog_bridge_fog_1",
+        "fog_bridge_fog_2",
+    }
+    assert set(client_roles) == {
+        "client_fog_0_client_1",
+        "client_fog_0_client_2",
+        "client_fog_1_client_1",
+        "client_fog_2_client_1",
+    }
+
+    server_cmd = next(cmd for cmd in commands if cmd.role == "server")
+    assert server_cmd.cmd[server_cmd.cmd.index("--min-fit-clients") + 1] == "3"
+    assert server_cmd.cmd[server_cmd.cmd.index("--min-available-clients") + 1] == "3"
+
+    broker_cmd = next(cmd for cmd in commands if cmd.role == "broker")
+    assert broker_cmd.cmd[broker_cmd.cmd.index("--stale-update-policy") + 1] == "strict"
+    assert broker_cmd.env["FOG_K_MAP"] == '{"fog_0": 2, "fog_1": 1, "fog_2": 1}'
+
+
 def test_materialize_swell_partitions_updates_arch(tmp_path: Path, monkeypatch) -> None:
     output_dir = tmp_path / "runs"
     run_name = "run_test"

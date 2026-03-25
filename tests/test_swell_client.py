@@ -88,7 +88,7 @@ def test_publish_update_payload(tmp_path: Path, monkeypatch) -> None:
         region="fog_0",
         client_id="client_1",
     )
-    client.publish_update(avg_loss=0.25, val_acc=0.5)
+    client.publish_update(avg_loss=0.25, val_acc=0.5, round_num=2)
 
     assert client.mqtt.publish.called
     publish_call = client.mqtt.publish.call_args
@@ -98,7 +98,9 @@ def test_publish_update_payload(tmp_path: Path, monkeypatch) -> None:
     assert topic == client.topic_updates
     assert parsed["client_id"] == "client_1"
     assert parsed["region"] == "fog_0"
+    assert parsed["round"] == 2
     assert parsed["num_samples"] == 4
+    assert parsed["sent_at"] > 0
     assert "weights" in parsed
     assert "trace_context" in parsed
 
