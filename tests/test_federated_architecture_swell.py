@@ -15,8 +15,14 @@ from flower_basic.federated_architecture import (
     MQTTConfig,
     MQTTTopics,
     OrchestratorSpec,
+    apply_manifest_paths,
     build_runtime_plan,
+    build_distribution_payloads,
+    distribute_architecture,
     materialize_swell_partitions,
+    plan_runtime_commands,
+    plan_swell_materialization,
+    resolve_runtime_architecture,
 )
 
 
@@ -71,10 +77,11 @@ def test_build_runtime_plan_infers_input_dim(tmp_path: Path) -> None:
 
     arch = _make_arch(str(node_dir))
     repo_root = Path(__file__).resolve().parents[1]
-    commands = build_runtime_plan(arch, repo_root=repo_root)
+    runtime_plan = build_runtime_plan(arch, repo_root=repo_root)
 
-    assert arch.model.input_dim == 10
-    roles = [cmd.role for cmd in commands]
+    assert arch.model.input_dim is None
+    assert runtime_plan.architecture.model.input_dim == 10
+    roles = [cmd.role for cmd in runtime_plan.commands]
     assert "server" in roles
 
 
@@ -89,6 +96,20 @@ def test_build_runtime_plan_requires_input_dim(tmp_path: Path) -> None:
         build_runtime_plan(arch, repo_root=repo_root)
 
 
+def test_resolve_runtime_architecture_returns_independent_copy(tmp_path: Path) -> None:
+    node_dir = tmp_path / "node"
+    node_dir.mkdir()
+    _write_train_npz(node_dir / "train.npz", n_samples=3, n_features=6)
+
+    arch = _make_arch(str(node_dir))
+    resolved = resolve_runtime_architecture(arch, inferred_input_dim=6)
+    resolved.fog_nodes[0].clients[0].rounds = 99
+
+    assert resolved.model.input_dim == 6
+    assert arch.model.input_dim is None
+    assert arch.fog_nodes[0].clients[0].rounds == 2
+
+
 def test_build_runtime_plan_includes_manifest(tmp_path: Path) -> None:
     node_dir = tmp_path / "node"
     node_dir.mkdir()
@@ -97,11 +118,11 @@ def test_build_runtime_plan_includes_manifest(tmp_path: Path) -> None:
     arch = _make_arch(str(node_dir))
     repo_root = Path(__file__).resolve().parents[1]
     manifest_path = tmp_path / "manifest.json"
-    commands = build_runtime_plan(
+    runtime_plan = build_runtime_plan(
         arch, repo_root=repo_root, manifest_path=manifest_path
     )
 
-    server_cmd = next(cmd for cmd in commands if cmd.role == "server")
+    server_cmd = next(cmd for cmd in runtime_plan.commands if cmd.role == "server")
     assert "--manifest" in server_cmd.cmd
     assert str(manifest_path) in server_cmd.cmd
 
@@ -148,7 +169,8 @@ def test_build_runtime_plan_skips_empty_fogs(tmp_path: Path) -> None:
     )
 
     repo_root = Path(__file__).resolve().parents[1]
-    commands = build_runtime_plan(arch, repo_root=repo_root)
+    runtime_plan = build_runtime_plan(arch, repo_root=repo_root)
+    commands = runtime_plan.commands
 
     roles = [cmd.role for cmd in commands]
     assert "fog_bridge_fog_0" in roles
@@ -161,6 +183,54 @@ def test_build_runtime_plan_skips_empty_fogs(tmp_path: Path) -> None:
 
     broker_cmd = next(cmd for cmd in commands if cmd.role == "broker")
     assert broker_cmd.env.get("FOG_K_MAP") in (None, '{"fog_0": 1}')
+
+
+def test_plan_runtime_commands_rejects_mixed_workflow(tmp_path: Path) -> None:
+    node_dir = tmp_path / "node"
+    node_dir.mkdir()
+    _write_train_npz(node_dir / "train.npz", n_samples=2, n_features=5)
+
+    arch = FederatedArchitecture(
+        orchestrator=OrchestratorSpec(
+            address="localhost:8080",
+            rounds=2,
+            protocol="MQTT",
+            mqtt=MQTTConfig(
+                broker="localhost",
+                port=1883,
+                topics=MQTTTopics(
+                    updates="fl/updates",
+                    partial="fl/partial",
+                    global_model="fl/global_model",
+                ),
+            ),
+        ),
+        fog_nodes=[
+            FogNodeSpec(
+                id="fog_0",
+                k=1,
+                clients=[
+                    ClientSpec(
+                        id="c1",
+                        dataset="swell",
+                        workflow="wesad",
+                        rounds=2,
+                        data_dir=str(node_dir),
+                    )
+                ],
+            )
+        ],
+        model=ModelConfig(type="swell_mlp", input_dim=5),
+        dataset=None,
+        workflow="swell",
+    )
+
+    with pytest.raises(ValueError, match="Workflow mixto"):
+        plan_runtime_commands(
+            arch,
+            Path(__file__).resolve().parents[1],
+            python_exec="python3",
+        )
 
 
 def test_build_runtime_plan_matches_exact_multispawn_topology(tmp_path: Path) -> None:
@@ -242,7 +312,8 @@ def test_build_runtime_plan_matches_exact_multispawn_topology(tmp_path: Path) ->
     )
 
     repo_root = Path(__file__).resolve().parents[1]
-    commands = build_runtime_plan(arch, repo_root=repo_root)
+    runtime_plan = build_runtime_plan(arch, repo_root=repo_root)
+    commands = runtime_plan.commands
 
     bridge_roles = [cmd.role for cmd in commands if cmd.role.startswith("fog_bridge_")]
     client_roles = [cmd.role for cmd in commands if cmd.role.startswith("client_")]
@@ -268,6 +339,60 @@ def test_build_runtime_plan_matches_exact_multispawn_topology(tmp_path: Path) ->
     broker_cmd = next(cmd for cmd in commands if cmd.role == "broker")
     assert broker_cmd.cmd[broker_cmd.cmd.index("--stale-update-policy") + 1] == "strict"
     assert broker_cmd.env["FOG_K_MAP"] == '{"fog_0": 2, "fog_1": 1, "fog_2": 1}'
+
+
+def test_plan_swell_materialization_requires_run_name(tmp_path: Path) -> None:
+    arch = FederatedArchitecture(
+        orchestrator=OrchestratorSpec(),
+        fog_nodes=[
+            FogNodeSpec(
+                id="fog_0",
+                clients=[ClientSpec(id="c1", dataset="swell", workflow="swell")],
+            )
+        ],
+        model=ModelConfig(type="swell_mlp"),
+        dataset=DatasetConfig(
+            data_dir=str(tmp_path / "data"),
+            output_dir=str(tmp_path / "runs"),
+            run_name=None,
+        ),
+        workflow="swell",
+    )
+
+    with pytest.raises(ValueError, match="run_name"):
+        plan_swell_materialization(arch, repo_root=tmp_path)
+
+
+def test_plan_swell_materialization_detaches_mutable_inputs(tmp_path: Path) -> None:
+    arch = FederatedArchitecture(
+        orchestrator=OrchestratorSpec(),
+        fog_nodes=[
+            FogNodeSpec(
+                id="fog_0",
+                clients=[ClientSpec(id="c1", dataset="swell", workflow="swell")],
+            )
+        ],
+        model=ModelConfig(type="swell_mlp"),
+        dataset=DatasetConfig(
+            data_dir=str(tmp_path / "data"),
+            output_dir=str(tmp_path / "runs"),
+            run_name="detached",
+            modalities=["hrv"],
+            subjects=[1, 2],
+            manual_assignments={"fog_0": [1]},
+            per_node_percentages=[1.0],
+            test_assignments={"fog_0": [2]},
+        ),
+        workflow="swell",
+    )
+
+    plan = plan_swell_materialization(arch, repo_root=tmp_path)
+    plan.config["dataset"]["modalities"].append("posture")
+    plan.config["federation"]["manual_assignments"]["fog_0"].append(2)
+
+    assert arch.dataset is not None
+    assert arch.dataset.modalities == ["hrv"]
+    assert arch.dataset.manual_assignments == {"fog_0": [1]}
 
 
 def test_materialize_swell_partitions_updates_arch(tmp_path: Path, monkeypatch) -> None:
@@ -331,21 +456,141 @@ def test_materialize_swell_partitions_updates_arch(tmp_path: Path, monkeypatch) 
         return {"output_dir": str(expected_out), "manifest": manifest}
 
     monkeypatch.setattr(
-        "flower_basic.datasets.swell_federated.plan_and_materialize_swell_federated",
+        "flower_basic.federated_architecture._run_swell_materialization",
         _fake_plan,
     )
 
-    manifest_path = materialize_swell_partitions(arch, repo_root=tmp_path)
+    plan = plan_swell_materialization(arch, repo_root=tmp_path)
+    result = materialize_swell_partitions(arch, repo_root=tmp_path)
 
-    assert manifest_path == expected_out / "manifest.json"
-    assert arch.model.input_dim == 7
+    assert plan.config_path == expected_out / "_arch_auto_config.json"
+    assert result.manifest_path == expected_out / "manifest.json"
+    assert arch.model.input_dim is None
+    assert result.architecture.model.input_dim == 7
     assert captured["config_path"].exists()
     cfg = json.loads(captured["config_path"].read_text(encoding="utf-8"))
     assert cfg["dataset"]["data_dir"] == str(tmp_path / "data")
     assert cfg["split"]["strategy"] == "global"
     assert cfg["federation"]["test_assignments"] == {"fog_0": [2]}
-    assert [client.id for client in arch.fog_nodes[0].clients] == ["fog_0_client_1"]
-    assert arch.fog_nodes[0].clients[0].data_dir == str(
+    assert [client.id for client in arch.fog_nodes[0].clients] == ["template_client"]
+    assert [client.id for client in result.architecture.fog_nodes[0].clients] == [
+        "fog_0_client_1"
+    ]
+    assert result.architecture.fog_nodes[0].clients[0].data_dir == str(
         expected_out / "fog_0" / "subject_1"
     )
-    assert arch.fog_nodes[0].k == 1
+    assert arch.fog_nodes[0].k == 5
+    assert result.architecture.fog_nodes[0].k == 1
+
+
+def test_apply_manifest_paths_emits_expected_messages(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    base = tmp_path / "run"
+    subject_1 = base / "fog_0" / "subject_1"
+    subject_2 = base / "fog_0" / "subject_2"
+    subject_1.mkdir(parents=True)
+    subject_2.mkdir(parents=True)
+    _write_train_npz(subject_1 / "train.npz", n_samples=2, n_features=4)
+    _write_train_npz(subject_2 / "train.npz", n_samples=0, n_features=4)
+
+    manifest = {
+        "nodes": {"fog_0": ["1", "2"]},
+        "clients": {"fog_0": {"c1": "1", "c2": "2"}},
+        "global_subjects": {"train": ["1", "2"], "all": ["1", "2"]},
+        "config": {"split": {"strategy": "global"}},
+        "meta": {"n_features": 4},
+    }
+    manifest_path = base / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    updated_arch = apply_manifest_paths(_make_arch(None), manifest_path)
+
+    captured = capsys.readouterr()
+    assert "Strategy: global" in captured.out
+    assert "Skipping c2 (train.npz is empty)" in captured.out
+    assert [client.id for client in updated_arch.fog_nodes[0].clients] == ["c1"]
+
+
+def test_apply_manifest_paths_can_disable_output(tmp_path: Path) -> None:
+    base = tmp_path / "run"
+    subject_1 = base / "fog_0" / "subject_1"
+    subject_1.mkdir(parents=True)
+    _write_train_npz(subject_1 / "train.npz", n_samples=2, n_features=4)
+
+    manifest = {
+        "nodes": {"fog_0": ["1"]},
+        "clients": {"fog_0": {"c1": "1"}},
+        "global_subjects": {"train": ["1"], "all": ["1"]},
+        "config": {"split": {"strategy": "global"}},
+        "meta": {"n_features": 4},
+    }
+    manifest_path = base / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    messages: list[str] = []
+    updated_arch = apply_manifest_paths(
+        _make_arch(None), manifest_path, emit=messages.append
+    )
+
+    assert any("fog_0: 1 clientes" in message for message in messages)
+    assert updated_arch.model.input_dim == 4
+
+
+def test_build_distribution_payloads_detach_client_params() -> None:
+    arch = FederatedArchitecture(
+        orchestrator=OrchestratorSpec(),
+        fog_nodes=[
+            FogNodeSpec(
+                id="fog_0",
+                clients=[
+                    ClientSpec(
+                        id="c1",
+                        dataset="swell",
+                        workflow="swell",
+                        params={"seed": 7},
+                    )
+                ],
+            )
+        ],
+        model=ModelConfig(type="swell_mlp", input_dim=4),
+        workflow="swell",
+    )
+
+    payloads = build_distribution_payloads(arch)
+    payloads[0]["clients"][0]["params"]["seed"] = 99
+
+    assert arch.fog_nodes[0].clients[0].params["seed"] == 7
+
+
+def test_distribute_architecture_is_best_effort_on_publish_failure() -> None:
+    arch = FederatedArchitecture(
+        orchestrator=OrchestratorSpec(),
+        fog_nodes=[
+            FogNodeSpec(
+                id="fog_0",
+                clients=[ClientSpec(id="c1", dataset="swell", workflow="swell")],
+            ),
+            FogNodeSpec(
+                id="fog_1",
+                clients=[ClientSpec(id="c2", dataset="swell", workflow="swell")],
+            ),
+        ],
+        model=ModelConfig(type="swell_mlp", input_dim=4),
+        workflow="swell",
+    )
+
+    class _FakeMQTT:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def publish(self, topic: str, _payload: str) -> None:
+            self.calls.append(topic)
+            if topic.endswith("fog_0"):
+                raise RuntimeError("offline")
+
+    fake = _FakeMQTT()
+    payloads = distribute_architecture(arch, mqtt_client=fake)
+
+    assert len(payloads) == 2
+    assert fake.calls == ["fl/ctrl/plan/fog_0", "fl/ctrl/plan/fog_1"]
