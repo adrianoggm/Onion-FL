@@ -1,50 +1,63 @@
 """Dataset loaders for federated learning.
 
-This module provides standardized dataset loaders for various physiological
-and biomedical datasets used in federated learning research.
-
-Available datasets:
-- ECG5000: Time series classification for ECG signals (⚠️ DEPRECATED)
-- WESAD: Wearable Stress and Affect Detection dataset (physiological signals)
-- SWELL: Stress and Workload in Knowledge Work dataset (multimodal)
-
-All loaders follow consistent interfaces and provide:
-- Type-safe implementations with comprehensive type hints
-- Stratified train/test splitting
-- Data preprocessing and normalization
-- Subject-based data partitioning for federated scenarios
-- Comprehensive error handling and validation
+Dataset modules pull in optional scientific stacks. Keep imports lazy so
+callers can use unrelated parts of the framework without installing every
+dataset dependency upfront.
 """
 
 from __future__ import annotations
 
-from .ecg5000 import load_ecg5000_dataset, partition_ecg5000_by_subjects
-from .sweet_federated import plan_and_materialize_sweet_federated
-from .sweet_samples import load_sweet_sample_dataset, load_sweet_sample_full
-from .swell import (
-    get_swell_info,
-    load_swell_all_samples,
-    load_swell_dataset,
-    partition_swell_by_subjects,
-)
-from .swell_federated import plan_and_materialize_swell_federated
-from .wesad import load_wesad_dataset, partition_wesad_by_subjects
+from importlib import import_module
+from typing import Any
 
-__all__ = [
-    # ECG5000 (DEPRECATED)
-    "load_ecg5000_dataset",
-    "partition_ecg5000_by_subjects",
-    # WESAD (Physiological stress detection)
-    "load_wesad_dataset",
-    "partition_wesad_by_subjects",
-    # SWELL (Multimodal stress detection in knowledge work)
-    "load_swell_dataset",
-    "partition_swell_by_subjects",
-    "load_swell_all_samples",
-    "plan_and_materialize_swell_federated",
-    "get_swell_info",
-    # SWEET sample subjects
-    "load_sweet_sample_dataset",
-    "load_sweet_sample_full",
-    "plan_and_materialize_sweet_federated",
-]
+_LAZY_EXPORTS = {
+    "load_ecg5000_dataset": ("flower_basic.datasets.ecg5000", "load_ecg5000_dataset"),
+    "partition_ecg5000_by_subjects": (
+        "flower_basic.datasets.ecg5000",
+        "partition_ecg5000_by_subjects",
+    ),
+    "plan_and_materialize_sweet_federated": (
+        "flower_basic.datasets.sweet_federated",
+        "plan_and_materialize_sweet_federated",
+    ),
+    "load_sweet_sample_dataset": (
+        "flower_basic.datasets.sweet_samples",
+        "load_sweet_sample_dataset",
+    ),
+    "load_sweet_sample_full": (
+        "flower_basic.datasets.sweet_samples",
+        "load_sweet_sample_full",
+    ),
+    "get_swell_info": ("flower_basic.datasets.swell", "get_swell_info"),
+    "load_swell_all_samples": ("flower_basic.datasets.swell", "load_swell_all_samples"),
+    "load_swell_dataset": ("flower_basic.datasets.swell", "load_swell_dataset"),
+    "partition_swell_by_subjects": (
+        "flower_basic.datasets.swell",
+        "partition_swell_by_subjects",
+    ),
+    "plan_and_materialize_swell_federated": (
+        "flower_basic.datasets.swell_federated",
+        "plan_and_materialize_swell_federated",
+    ),
+    "load_wesad_dataset": ("flower_basic.datasets.wesad", "load_wesad_dataset"),
+    "partition_wesad_by_subjects": (
+        "flower_basic.datasets.wesad",
+        "partition_wesad_by_subjects",
+    ),
+}
+
+__all__ = list(_LAZY_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    if name not in _LAZY_EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    module_name, attr_name = _LAZY_EXPORTS[name]
+    value = getattr(import_module(module_name), attr_name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))

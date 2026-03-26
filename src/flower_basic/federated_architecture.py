@@ -14,9 +14,11 @@ import json
 import os
 import sys
 import time
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from copy import deepcopy
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 try:
     import yaml  # type: ignore
@@ -119,6 +121,49 @@ class RuntimeCommand:
     cwd: str | None = None
 
 
+@dataclass(frozen=True)
+class ManifestSubjectStatus:
+    """Filesystem-backed readiness check for one manifest subject."""
+
+    subject_dir: str
+    has_train_data: bool
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
+class ManifestApplicationResult:
+    """Pure result of applying a manifest to an architecture."""
+
+    architecture: FederatedArchitecture
+    messages: list[str]
+
+
+@dataclass(frozen=True)
+class SwellMaterializationPlan:
+    """Pure plan describing how SWELL partitions should be materialized."""
+
+    config: dict[str, Any]
+    config_path: Path
+    manifest_path: Path
+
+
+@dataclass(frozen=True)
+class SwellMaterializationResult:
+    """Result of materializing SWELL partitions and rehydrating the architecture."""
+
+    architecture: FederatedArchitecture
+    config_path: Path
+    manifest_path: Path
+
+
+@dataclass(frozen=True)
+class RuntimePlan:
+    """Resolved architecture plus runnable commands."""
+
+    architecture: FederatedArchitecture
+    commands: list[RuntimeCommand]
+
+
 def _normalize_workflow(name: str | None) -> str | None:
     if name is None:
         return None
@@ -141,18 +186,34 @@ def _read_architecture_file(path: Path) -> dict[str, Any]:
     return data
 
 
-def load_architecture_config(config_path: str | os.PathLike) -> FederatedArchitecture:
-    """Load and validate a federated architecture config."""
-    path = Path(config_path)
-    if not path.exists():
-        raise FileNotFoundError(f"No se encontró el archivo de configuración: {path}")
+def _as_mapping(value: Any) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        return dict(value)
+    return {}
 
-    raw = _read_architecture_file(path)
-    root = raw.get("federated_architecture", raw)
 
-    orchestrator_raw = root.get("orchestrator") or {}
-    mqtt_raw = orchestrator_raw.get("mqtt") or {}
-    topics_raw = mqtt_raw.get("topics") or {}
+def _as_list(value: Any) -> list[Any]:
+    if isinstance(value, (list, tuple, set)):
+        return list(value)
+    return []
+
+
+def _resolve_path(path_like: str | os.PathLike[str], repo_root: Path) -> Path:
+    path = Path(path_like)
+    if path.is_absolute():
+        return path
+    return repo_root / path
+
+
+def parse_architecture_config(raw: Mapping[str, Any]) -> FederatedArchitecture:
+    """Parse a config mapping into a validated architecture without I/O."""
+    root = _as_mapping(raw.get("federated_architecture", raw))
+    if not root:
+        raise ValueError("La configuración debe incluir un objeto federated_architecture")
+
+    orchestrator_raw = _as_mapping(root.get("orchestrator"))
+    mqtt_raw = _as_mapping(orchestrator_raw.get("mqtt"))
+    topics_raw = _as_mapping(mqtt_raw.get("topics"))
 
     orchestrator = OrchestratorSpec(
         address=str(orchestrator_raw.get("address", "0.0.0.0:8080")),
@@ -172,14 +233,14 @@ def load_architecture_config(config_path: str | os.PathLike) -> FederatedArchite
         ),
     )
 
-    model_raw = root.get("model") or {}
+    model_raw = _as_mapping(root.get("model"))
     model = ModelConfig(
         type=str(model_raw.get("type", "ecg_cnn")),
         input_dim=model_raw.get("input_dim"),
     )
 
-    dataset_raw = root.get("dataset") or {}
-    split_raw = dataset_raw.get("split", {})
+    dataset_raw = _as_mapping(root.get("dataset"))
+    split_raw = _as_mapping(dataset_raw.get("split"))
     dataset = None
     if dataset_raw:
         dataset = DatasetConfig(
@@ -187,8 +248,8 @@ def load_architecture_config(config_path: str | os.PathLike) -> FederatedArchite
                 dataset_raw.get("name", dataset_raw.get("dataset", "swell"))
             ).lower(),
             data_dir=str(dataset_raw.get("data_dir", "data/SWELL")),
-            modalities=dataset_raw.get("modalities"),
-            subjects=dataset_raw.get("subjects"),
+            modalities=deepcopy(dataset_raw.get("modalities")),
+            subjects=deepcopy(dataset_raw.get("subjects")),
             seed=int(dataset_raw.get("seed", split_raw.get("seed", 42))),
             split_train=float(split_raw.get("train", 0.5)),
             split_val=float(split_raw.get("val", 0.2)),
@@ -198,26 +259,30 @@ def load_architecture_config(config_path: str | os.PathLike) -> FederatedArchite
             output_dir=str(dataset_raw.get("output_dir", "federated_runs/swell")),
             run_name=dataset_raw.get("run_name"),
             mode=str(dataset_raw.get("mode", "auto")),
-            manual_assignments=dataset_raw.get("manual_assignments"),
-            per_node_percentages=dataset_raw.get("per_node_percentages"),
+            manual_assignments=deepcopy(dataset_raw.get("manual_assignments")),
+            per_node_percentages=deepcopy(dataset_raw.get("per_node_percentages")),
             ensure_min_train_per_node=bool(
                 dataset_raw.get("ensure_min_train_per_node", True)
             ),
-            test_assignments=dataset_raw.get("test_assignments"),
+            test_assignments=deepcopy(dataset_raw.get("test_assignments")),
         )
 
     fog_nodes: list[FogNodeSpec] = []
-    for node_raw in root.get("fog_nodes", []):
+    for node_raw_any in _as_list(root.get("fog_nodes")):
+        node_raw = _as_mapping(node_raw_any)
         clients: list[ClientSpec] = []
-        for c in node_raw.get("clients", []):
+        for client_raw_any in _as_list(node_raw.get("clients")):
+            client_raw = _as_mapping(client_raw_any)
             clients.append(
                 ClientSpec(
-                    id=str(c.get("id")),
-                    dataset=str(c.get("dataset")),
-                    rounds=int(c.get("rounds", 3)),
-                    data_dir=c.get("data_dir"),
-                    params=c.get("params", {}) or {},
-                    workflow=_normalize_workflow(c.get("workflow") or c.get("dataset")),
+                    id=str(client_raw.get("id")),
+                    dataset=str(client_raw.get("dataset")),
+                    rounds=int(client_raw.get("rounds", 3)),
+                    data_dir=client_raw.get("data_dir"),
+                    params=deepcopy(_as_mapping(client_raw.get("params"))),
+                    workflow=_normalize_workflow(
+                        client_raw.get("workflow") or client_raw.get("dataset")
+                    ),
                 )
             )
         fog_nodes.append(
@@ -226,22 +291,29 @@ def load_architecture_config(config_path: str | os.PathLike) -> FederatedArchite
                 address=node_raw.get("address"),
                 k=int(node_raw.get("k", node_raw.get("K", 1))),
                 clients=clients,
-                params=node_raw.get("params", {}) or {},
+                params=deepcopy(_as_mapping(node_raw.get("params"))),
             )
         )
 
-    workflow = _normalize_workflow(root.get("workflow"))
-    client_params = root.get("client_params", {}) or {}
     arch = FederatedArchitecture(
         orchestrator=orchestrator,
         fog_nodes=fog_nodes,
         model=model,
         dataset=dataset,
-        workflow=workflow,
-        client_params=client_params,
+        workflow=_normalize_workflow(root.get("workflow")),
+        client_params=deepcopy(_as_mapping(root.get("client_params"))),
     )
     _validate_architecture(arch)
     return arch
+
+
+def load_architecture_config(config_path: str | os.PathLike) -> FederatedArchitecture:
+    """Load and validate a federated architecture config."""
+    path = Path(config_path)
+    if not path.exists():
+        raise FileNotFoundError(f"No se encontró el archivo de configuración: {path}")
+
+    return parse_architecture_config(_read_architecture_file(path))
 
 
 def _validate_architecture(arch: FederatedArchitecture) -> None:
@@ -308,36 +380,62 @@ def _infer_input_dim_from_clients(
     return None
 
 
+def _run_swell_materialization(config_path: str) -> dict[str, Any]:
+    from .datasets.swell_federated import plan_and_materialize_swell_federated
+
+    return plan_and_materialize_swell_federated(config_path)
+
+
 def materialize_swell_partitions(
     arch: FederatedArchitecture, repo_root: Path | None = None
-) -> Path:
-    """Materialize SWELL federated splits based on the architecture config.
-
-    Returns the path to the generated manifest.json and mutates `arch` to fill client.data_dir.
-    """
+) -> SwellMaterializationResult:
+    """Materialize SWELL federated splits and return a new architecture."""
     if arch.dataset is None:
         raise ValueError(
             "La configuración debe incluir sección 'dataset' para preparar particiones SWELL"
         )
 
-    from .datasets.swell_federated import plan_and_materialize_swell_federated
-
     repo_root = repo_root or _default_repo_root()
     ds = arch.dataset
     run_name = ds.run_name or f"arch_{int(time.time())}"
-    output_dir = Path(ds.output_dir)
-    if not output_dir.is_absolute():
-        output_dir = repo_root / output_dir
+    plan = plan_swell_materialization(arch, repo_root=repo_root, run_name=run_name)
 
-    data_dir = Path(ds.data_dir)
-    if not data_dir.is_absolute():
-        data_dir = repo_root / data_dir
+    plan.config_path.parent.mkdir(parents=True, exist_ok=True)
+    plan.config_path.write_text(json.dumps(plan.config, indent=2), encoding="utf-8")
 
-    cfg = {
+    result = _run_swell_materialization(str(plan.config_path))
+    manifest_path = Path(result["output_dir"]) / "manifest.json"
+    updated_arch = apply_manifest_paths(arch, manifest_path)
+    return SwellMaterializationResult(
+        architecture=updated_arch,
+        config_path=plan.config_path,
+        manifest_path=manifest_path,
+    )
+
+
+def plan_swell_materialization(
+    arch: FederatedArchitecture, repo_root: Path, run_name: str | None = None
+) -> SwellMaterializationPlan:
+    """Build the SWELL split-materialization config without writing files."""
+    if arch.dataset is None:
+        raise ValueError(
+            "La configuración debe incluir sección 'dataset' para preparar particiones SWELL"
+        )
+
+    ds = arch.dataset
+    resolved_run_name = run_name or ds.run_name
+    if resolved_run_name is None:
+        raise ValueError(
+            "dataset.run_name es obligatorio para planificar la materialización SWELL"
+        )
+
+    output_dir = _resolve_path(ds.output_dir, repo_root)
+    data_dir = _resolve_path(ds.data_dir, repo_root)
+    config = {
         "dataset": {
             "data_dir": str(data_dir),
-            "modalities": ds.modalities,
-            "subjects": ds.subjects,
+            "modalities": deepcopy(ds.modalities),
+            "subjects": deepcopy(ds.subjects),
         },
         "split": {
             "train": ds.split_train,
@@ -350,147 +448,229 @@ def materialize_swell_partitions(
         "federation": {
             "mode": ds.mode,
             "num_fog_nodes": len(arch.fog_nodes),
-            "manual_assignments": ds.manual_assignments,
-            "per_node_percentages": ds.per_node_percentages,
+            "manual_assignments": deepcopy(ds.manual_assignments),
+            "per_node_percentages": deepcopy(ds.per_node_percentages),
             "output_dir": str(output_dir),
-            "run_name": run_name,
+            "run_name": resolved_run_name,
             "ensure_min_train_per_node": ds.ensure_min_train_per_node,
-            "test_assignments": ds.test_assignments,
+            "test_assignments": deepcopy(ds.test_assignments),
         },
     }
-
-    config_path = output_dir / run_name / "_arch_auto_config.json"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
-
-    result = plan_and_materialize_swell_federated(str(config_path))
-    manifest_path = Path(result["output_dir"]) / "manifest.json"
-    apply_manifest_paths(arch, manifest_path)
-
-    return manifest_path
+    run_dir = output_dir / resolved_run_name
+    return SwellMaterializationPlan(
+        config=config,
+        config_path=run_dir / "_arch_auto_config.json",
+        manifest_path=run_dir / "manifest.json",
+    )
 
 
-def apply_manifest_paths(
-    arch: FederatedArchitecture, manifest_path: Path | str
-) -> None:
-    """Rehydrate SWELL clients from a generated manifest.
+def _inspect_manifest_subjects(
+    manifest: Mapping[str, Any], manifest_base: Path
+) -> tuple[dict[str, dict[str, ManifestSubjectStatus]], int | None]:
+    """Read per-subject train files so the pure planner can stay side-effect free."""
+    subject_statuses: dict[str, dict[str, ManifestSubjectStatus]] = {}
+    inferred_n_features: int | None = None
+    nodes = _as_mapping(manifest.get("nodes"))
 
-    The manifest is the source of truth for:
-    - stable client ids generated per subject
-    - the exact per-subject train directories to launch
-    - the effective number of trainable clients per fog node
-    """
+    for fog_id, subjects in nodes.items():
+        fog_statuses: dict[str, ManifestSubjectStatus] = {}
+        for subject_id in _as_list(subjects):
+            subject_str = str(subject_id)
+            subject_dir = manifest_base / str(fog_id) / f"subject_{subject_str}"
+            train_file = subject_dir / "train.npz"
+            if not train_file.exists():
+                fog_statuses[subject_str] = ManifestSubjectStatus(
+                    subject_dir=str(subject_dir),
+                    has_train_data=False,
+                    reason="train.npz not found",
+                )
+                continue
 
-    manifest_path = Path(manifest_path)
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    nodes = manifest.get("nodes", {})
-    clients_map = manifest.get("clients", {})
-    global_subjects = manifest.get("global_subjects", {})
-    config = manifest.get("config", {})
-    split_config = config.get("split", {})
-    split_strategy = split_config.get("strategy", "global")
+            import numpy as np
 
+            try:
+                arr = np.load(train_file, allow_pickle=True)
+                x_data = arr["X"]
+            except Exception as exc:
+                fog_statuses[subject_str] = ManifestSubjectStatus(
+                    subject_dir=str(subject_dir),
+                    has_train_data=False,
+                    reason=f"error reading train.npz: {exc}",
+                )
+                continue
+
+            if inferred_n_features is None and getattr(x_data, "ndim", 0) >= 2:
+                inferred_n_features = int(x_data.shape[1])
+            if x_data.shape[0] == 0:
+                fog_statuses[subject_str] = ManifestSubjectStatus(
+                    subject_dir=str(subject_dir),
+                    has_train_data=False,
+                    reason="train.npz is empty",
+                )
+                continue
+
+            fog_statuses[subject_str] = ManifestSubjectStatus(
+                subject_dir=str(subject_dir),
+                has_train_data=True,
+            )
+
+        subject_statuses[str(fog_id)] = fog_statuses
+
+    return subject_statuses, inferred_n_features
+
+
+def plan_manifest_application(
+    arch: FederatedArchitecture,
+    manifest: Mapping[str, Any],
+    subject_statuses: Mapping[str, Mapping[str, ManifestSubjectStatus]],
+    *,
+    n_features: int | None = None,
+) -> ManifestApplicationResult:
+    """Apply a manifest to an architecture without mutating the input."""
+    nodes = _as_mapping(manifest.get("nodes"))
+    clients_map = _as_mapping(manifest.get("clients"))
+    global_subjects = _as_mapping(manifest.get("global_subjects"))
+    config = _as_mapping(manifest.get("config"))
+    split_config = _as_mapping(config.get("split"))
+    split_strategy = str(split_config.get("strategy", "global"))
+
+    messages: list[str] = []
     if split_strategy == "per_subject":
-        train_subjects = {
-            str(subject_id) for subject_id in global_subjects.get("all", [])
-        }
-        print(
+        train_subjects = {str(subject_id) for subject_id in _as_list(global_subjects.get("all"))}
+        messages.append(
             f"[MANIFEST] Strategy: per_subject - all {len(train_subjects)} subjects have train data"
         )
     else:
         train_subjects = {
-            str(subject_id) for subject_id in global_subjects.get("train", [])
+            str(subject_id) for subject_id in _as_list(global_subjects.get("train"))
         }
-        print(
+        messages.append(
             f"[MANIFEST] Strategy: global - only {len(train_subjects)} subjects in train split"
         )
 
-    base = manifest_path.parent
-    meta = manifest.get("meta", {})
-    n_features = meta.get("n_features")
+    resolved_arch = deepcopy(arch)
     if n_features is not None:
-        arch.model.input_dim = int(n_features)
+        resolved_arch.model.input_dim = int(n_features)
 
-    for fog in arch.fog_nodes:
+    for fog in resolved_arch.fog_nodes:
         if fog.id not in nodes:
             continue
 
-        fog_clients = clients_map.get(fog.id, {})
+        fog_clients = _as_mapping(clients_map.get(fog.id))
         if not fog_clients:
             continue
 
+        statuses_for_fog = subject_statuses.get(fog.id, {})
         new_clients: list[ClientSpec] = []
         for client_id, subject_id in fog_clients.items():
             subject_str = str(subject_id)
             if subject_str not in train_subjects:
-                print(
+                messages.append(
                     f"[MANIFEST] Skipping {client_id} (subject {subject_str} has no train data)"
                 )
                 continue
 
-            subject_dir = base / fog.id / f"subject_{subject_str}"
-            train_file = subject_dir / "train.npz"
-            if train_file.exists():
-                import numpy as np
-
-                try:
-                    arr = np.load(train_file, allow_pickle=True)
-                    if arr["X"].shape[0] == 0:
-                        print(f"[MANIFEST] Skipping {client_id} (train.npz is empty)")
-                        continue
-                except Exception as exc:
-                    print(
-                        f"[MANIFEST] Skipping {client_id} (error reading train.npz: {exc})"
-                    )
-                    continue
-            else:
-                print(f"[MANIFEST] Skipping {client_id} (train.npz not found)")
+            status = statuses_for_fog.get(subject_str)
+            if status is None or not status.has_train_data:
+                reason = (
+                    status.reason if status is not None and status.reason else "train.npz not found"
+                )
+                messages.append(f"[MANIFEST] Skipping {client_id} ({reason})")
                 continue
 
             new_clients.append(
                 ClientSpec(
-                    id=client_id,
+                    id=str(client_id),
                     dataset="swell",
                     workflow="swell",
                     rounds=arch.orchestrator.rounds,
-                    data_dir=str(subject_dir),
+                    data_dir=status.subject_dir,
                 )
             )
 
-        fog.clients = new_clients
         available_clients = len(new_clients)
+        new_k = fog.k
         if available_clients == 0:
-            print(f"[MANIFEST] {fog.id}: 0 clientes con training data")
-            continue
-
-        if fog.k <= 0:
-            fog.k = available_clients
-        elif fog.k > available_clients:
-            print(
-                f"[MANIFEST] Adjusting {fog.id} K from {fog.k} "
-                f"to {available_clients} to match spawned clients"
+            messages.append(f"[MANIFEST] {fog.id}: 0 clientes con training data")
+        else:
+            if new_k <= 0:
+                new_k = available_clients
+            elif new_k > available_clients:
+                messages.append(
+                    f"[MANIFEST] Adjusting {fog.id} K from {fog.k} "
+                    f"to {available_clients} to match spawned clients"
+                )
+                new_k = available_clients
+            messages.append(
+                f"[MANIFEST] {fog.id}: {available_clients} clientes con training data (K={new_k})"
             )
-            fog.k = available_clients
 
-        print(
-            f"[MANIFEST] {fog.id}: {available_clients} clientes con training data (K={fog.k})"
-        )
+        fog.clients = new_clients
+        fog.k = new_k
+
+    return ManifestApplicationResult(architecture=resolved_arch, messages=messages)
 
 
-def build_runtime_plan(
+def apply_manifest_paths(
     arch: FederatedArchitecture,
-    repo_root: Path | None = None,
+    manifest_path: Path | str,
+    *,
+    emit: Callable[[str], None] | None = print,
+) -> FederatedArchitecture:
+    """Rehydrate SWELL clients from a generated manifest and return a new arch."""
+
+    manifest_path = Path(manifest_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    meta = _as_mapping(manifest.get("meta"))
+    subject_statuses, inferred_n_features = _inspect_manifest_subjects(
+        manifest, manifest_path.parent
+    )
+    resolved_n_features = meta.get("n_features", inferred_n_features)
+    result = plan_manifest_application(
+        arch,
+        manifest,
+        subject_statuses,
+        n_features=int(resolved_n_features) if resolved_n_features is not None else None,
+    )
+    if emit is not None:
+        for message in result.messages:
+            emit(message)
+    return result.architecture
+
+
+def resolve_runtime_architecture(
+    arch: FederatedArchitecture, *, inferred_input_dim: int | None = None
+) -> FederatedArchitecture:
+    """Resolve derived runtime fields without mutating the input architecture."""
+    resolved_arch = deepcopy(arch)
+    primary = infer_primary_workflow(arch)
+    if primary != "swell":
+        return resolved_arch
+
+    input_dim = resolved_arch.model.input_dim
+    if input_dim is None:
+        input_dim = inferred_input_dim
+    if input_dim is None:
+        raise ValueError("model.input_dim es obligatorio para ejecutar el flujo SWELL")
+    resolved_arch.model.input_dim = int(input_dim)
+    return resolved_arch
+
+
+def plan_runtime_commands(
+    arch: FederatedArchitecture,
+    repo_root: Path,
+    *,
+    python_exec: str,
+    python_path: str | None = None,
     manifest_path: Path | str | None = None,
 ) -> list[RuntimeCommand]:
-    """Translate architecture into runnable commands (without starting them)."""
-    root = repo_root or _default_repo_root()
-    python_exec = os.getenv("PYTHON", sys.executable)
+    """Translate an already-resolved architecture into runnable commands."""
     mqtt = arch.orchestrator.mqtt
     topics = mqtt.topics
     primary = infer_primary_workflow(arch)
-    py_path = str(root / "src")
-    if os.getenv("PYTHONPATH"):
-        py_path = py_path + os.pathsep + os.getenv("PYTHONPATH")
+    py_path = str(repo_root / "src")
+    if python_path:
+        py_path = py_path + os.pathsep + python_path
     env_path = {"PYTHONPATH": py_path}
 
     def _merge_env(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -499,16 +679,6 @@ def build_runtime_plan(
             env.update(extra)
         return env
 
-    if primary == "swell":
-        inferred = _infer_input_dim_from_clients(arch, root)
-        if arch.model.input_dim is None and inferred is not None:
-            arch.model.input_dim = inferred
-        if arch.model.input_dim is None:
-            raise ValueError(
-                "model.input_dim es obligatorio para ejecutar el flujo SWELL"
-            )
-
-    # Validar que todos los clientes usen el mismo workflow primario (una sola jerarquía por run)
     for fog in arch.fog_nodes:
         for client in fog.clients:
             wf = _normalize_workflow(client.workflow or client.dataset)
@@ -529,17 +699,16 @@ def build_runtime_plan(
         "MQTT_TOPIC_PARTIAL": topics.partial,
         "MQTT_TOPIC_GLOBAL": topics.global_model,
     }
-    # Solo usar K_MAP si hay valores distintos
+    broker_k_arg = None
     if len(set(k_map.values())) > 1:
         broker_env["FOG_K_MAP"] = json.dumps(k_map)
-        broker_k_arg = None
     else:
         broker_k_arg = next(iter(k_map.values())) if k_map else 1
 
     commands: list[RuntimeCommand] = []
-
-    # Central server
     if primary == "swell":
+        if arch.model.input_dim is None:
+            raise ValueError("model.input_dim es obligatorio para ejecutar el flujo SWELL")
         server_cmd = [
             python_exec,
             "-m",
@@ -578,11 +747,17 @@ def build_runtime_plan(
             topics.global_model,
         ]
     commands.append(
-        RuntimeCommand(role="server", cmd=server_cmd, cwd=str(root), env=_merge_env())
+        RuntimeCommand(
+            role="server",
+            cmd=server_cmd,
+            cwd=str(repo_root),
+            env=_merge_env(),
+        )
     )
 
-    # Fog bridge client(s)
     if primary == "swell":
+        if arch.model.input_dim is None:
+            raise ValueError("model.input_dim es obligatorio para ejecutar el flujo SWELL")
         for fog in active_fogs:
             bridge_cmd = [
                 python_exec,
@@ -603,12 +778,12 @@ def build_runtime_plan(
                 RuntimeCommand(
                     role=f"fog_bridge_{fog.id}",
                     cmd=bridge_cmd,
-                    cwd=str(root),
+                    cwd=str(repo_root),
                     env=_merge_env(),
                 )
             )
     else:
-        bridge_script = root / "src" / "flower_basic" / "fog_flower_client.py"
+        bridge_script = repo_root / "src" / "flower_basic" / "fog_flower_client.py"
         bridge_cmd = [
             python_exec,
             str(bridge_script),
@@ -623,11 +798,13 @@ def build_runtime_plan(
         ]
         commands.append(
             RuntimeCommand(
-                role="fog_bridge", cmd=bridge_cmd, cwd=str(root), env=_merge_env()
+                role="fog_bridge",
+                cmd=bridge_cmd,
+                cwd=str(repo_root),
+                env=_merge_env(),
             )
         )
 
-    # Fog broker
     broker_cmd = [
         python_exec,
         "-m",
@@ -649,12 +826,14 @@ def build_runtime_plan(
         broker_cmd.extend(["--k", str(int(broker_k_arg))])
     commands.append(
         RuntimeCommand(
-            role="broker", cmd=broker_cmd, env=_merge_env(broker_env), cwd=str(root)
+            role="broker",
+            cmd=broker_cmd,
+            env=_merge_env(broker_env),
+            cwd=str(repo_root),
         )
     )
 
-    # Clients per fog node (with unique index for metrics port)
-    client_index = 0  # Global client index for deterministic metrics ports
+    client_index = 0
     for fog in active_fogs:
         for client in fog.clients:
             workflow = _normalize_workflow(client.workflow or client.dataset) or primary
@@ -672,9 +851,7 @@ def build_runtime_plan(
             }
             if workflow == "swell":
                 if client.data_dir is None:
-                    raise ValueError(
-                        f"Cliente {client.id} requiere data_dir para SWELL"
-                    )
+                    raise ValueError(f"Cliente {client.id} requiere data_dir para SWELL")
                 cmd = [
                     python_exec,
                     "-m",
@@ -717,26 +894,25 @@ def build_runtime_plan(
                         role=f"client_{client.id}",
                         cmd=cmd,
                         env=_merge_env(env_client),
-                        cwd=str(root),
+                        cwd=str(repo_root),
                     )
                 )
                 client_index += 1
             elif workflow == "wesad":
-                client_script = root / "src" / "flower_basic" / "client.py"
-                cmd = [
-                    python_exec,
-                    str(client_script),
-                    "--rounds",
-                    str(client.rounds),
-                    "--region",
-                    fog.id,
-                ]
+                client_script = repo_root / "src" / "flower_basic" / "client.py"
                 commands.append(
                     RuntimeCommand(
                         role=f"client_{client.id}",
-                        cmd=cmd,
+                        cmd=[
+                            python_exec,
+                            str(client_script),
+                            "--rounds",
+                            str(client.rounds),
+                            "--region",
+                            fog.id,
+                        ],
                         env=_merge_env(env_client),
-                        cwd=str(root),
+                        cwd=str(repo_root),
                     )
                 )
             else:
@@ -745,50 +921,78 @@ def build_runtime_plan(
     return commands
 
 
+def build_runtime_plan(
+    arch: FederatedArchitecture,
+    repo_root: Path | None = None,
+    manifest_path: Path | str | None = None,
+) -> RuntimePlan:
+    """Resolve the architecture and build commands without mutating the input."""
+    root = repo_root or _default_repo_root()
+    inferred = None
+    if infer_primary_workflow(arch) == "swell" and arch.model.input_dim is None:
+        inferred = _infer_input_dim_from_clients(arch, root)
+
+    resolved_arch = resolve_runtime_architecture(arch, inferred_input_dim=inferred)
+    commands = plan_runtime_commands(
+        resolved_arch,
+        root,
+        python_exec=os.getenv("PYTHON", sys.executable),
+        python_path=os.getenv("PYTHONPATH"),
+        manifest_path=manifest_path,
+    )
+    return RuntimePlan(architecture=resolved_arch, commands=commands)
+
+
+def build_distribution_payloads(arch: FederatedArchitecture) -> list[dict[str, Any]]:
+    """Build per-fog payloads without publishing them."""
+    payloads: list[dict[str, Any]] = []
+    topics = arch.orchestrator.mqtt.topics
+    for fog in arch.fog_nodes:
+        payloads.append(
+            {
+                "fog_id": fog.id,
+                "k": fog.k,
+                "clients": [
+                    {
+                        "id": c.id,
+                        "dataset": c.dataset,
+                        "workflow": _normalize_workflow(c.workflow or c.dataset),
+                        "rounds": c.rounds,
+                        "data_dir": c.data_dir,
+                        "params": deepcopy(c.params),
+                    }
+                    for c in fog.clients
+                ],
+                "topics": {
+                    "updates": topics.updates,
+                    "partial": topics.partial,
+                    "global_model": topics.global_model,
+                },
+                "orchestrator": {
+                    "address": arch.orchestrator.address,
+                    "rounds": arch.orchestrator.rounds,
+                    "protocol": arch.orchestrator.protocol,
+                },
+            }
+        )
+    return payloads
+
+
 def distribute_architecture(
     arch: FederatedArchitecture,
     mqtt_client: Any = None,
     base_topic: str = "fl/ctrl/plan",
 ) -> list[dict[str, Any]]:
-    """Prepare and optionally publish per-fog configuration over MQTT.
+    """Prepare and optionally publish per-fog configuration over MQTT."""
+    payloads = build_distribution_payloads(arch)
+    if mqtt_client is None:
+        return payloads
 
-    Returns the payloads so they can be inspected or unit-tested without a broker.
-    """
-    payloads: list[dict[str, Any]] = []
-    topics = arch.orchestrator.mqtt.topics
-    for fog in arch.fog_nodes:
-        payload = {
-            "fog_id": fog.id,
-            "k": fog.k,
-            "clients": [
-                {
-                    "id": c.id,
-                    "dataset": c.dataset,
-                    "workflow": _normalize_workflow(c.workflow or c.dataset),
-                    "rounds": c.rounds,
-                    "data_dir": c.data_dir,
-                    "params": c.params,
-                }
-                for c in fog.clients
-            ],
-            "topics": {
-                "updates": topics.updates,
-                "partial": topics.partial,
-                "global_model": topics.global_model,
-            },
-            "orchestrator": {
-                "address": arch.orchestrator.address,
-                "rounds": arch.orchestrator.rounds,
-                "protocol": arch.orchestrator.protocol,
-            },
-        }
-        payloads.append(payload)
-
-        if mqtt_client is not None:
-            try:
-                topic = f"{base_topic}/{fog.id}"
-                mqtt_client.publish(topic, json.dumps(payload))
-            except Exception:
-                # Fall back silently; publishing is best-effort in tests/offline modes.
-                pass
+    for payload in payloads:
+        try:
+            topic = f"{base_topic}/{payload['fog_id']}"
+            mqtt_client.publish(topic, json.dumps(payload))
+        except Exception:
+            # Fall back silently; publishing is best-effort in tests/offline modes.
+            pass
     return payloads

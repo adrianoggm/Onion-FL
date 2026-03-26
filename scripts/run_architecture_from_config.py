@@ -29,9 +29,11 @@ from flower_basic.federated_architecture import (  # noqa: E402
 )
 
 
-def _apply_manifest_paths(arch: FederatedArchitecture, manifest_path: Path) -> None:
+def _apply_manifest_paths(
+    arch: FederatedArchitecture, manifest_path: Path
+) -> FederatedArchitecture:
     """Backwards-compatible wrapper used by tests and the CLI script."""
-    apply_manifest_paths(arch, manifest_path)
+    return apply_manifest_paths(arch, manifest_path)
 
 
 def _print_plan(commands) -> None:
@@ -156,7 +158,7 @@ def main() -> None:
     manifest_path = Path(args.manifest) if args.manifest else None
     if primary == "swell":
         if manifest_path:
-            _apply_manifest_paths(arch, manifest_path)
+            arch = _apply_manifest_paths(arch, manifest_path)
         else:
             needs_materialization = args.prepare_splits or any(
                 (c.data_dir is None or not Path(str(c.data_dir)).exists())
@@ -165,7 +167,9 @@ def main() -> None:
                 if (c.workflow or c.dataset or "").lower() == "swell"
             )
             if needs_materialization:
-                manifest_path = materialize_swell_partitions(arch, repo_root=REPO_ROOT)
+                materialized = materialize_swell_partitions(arch, repo_root=REPO_ROOT)
+                arch = materialized.architecture
+                manifest_path = materialized.manifest_path
                 print(
                     f"[INFO] Particiones SWELL preparadas automáticamente: {manifest_path}"
                 )
@@ -184,14 +188,14 @@ def main() -> None:
         if mqttc is not None:
             mqttc.loop_stop()
 
-    commands = build_runtime_plan(
+    runtime_plan = build_runtime_plan(
         arch, repo_root=REPO_ROOT, manifest_path=manifest_path
     )
-    _print_plan(commands)
+    _print_plan(runtime_plan.commands)
 
     should_launch = args.launch
     if should_launch:
-        _launch(commands, delay=args.delay)
+        _launch(runtime_plan.commands, delay=args.delay)
 
 
 if __name__ == "__main__":
