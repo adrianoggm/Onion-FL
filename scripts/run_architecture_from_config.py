@@ -10,6 +10,7 @@ Usage:
 
 import argparse
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -43,6 +44,44 @@ def _print_plan(commands) -> None:
         print(f"- {cmd.role}: {' '.join(cmd.cmd)}{env_hint}")
 
 
+def _extract_arg(cmd: list[str], flag: str) -> str | None:
+    try:
+        idx = cmd.index(flag)
+    except ValueError:
+        return None
+    if idx + 1 >= len(cmd):
+        return None
+    return cmd[idx + 1]
+
+
+def _normalize_connect_host(host: str) -> str:
+    stripped = host.strip().strip("[]")
+    if stripped in {"", "0.0.0.0", "::", "*"}:
+        return "127.0.0.1"
+    return stripped
+
+
+def _wait_for_server_ready(server_addr: str, timeout_s: float = 20.0) -> bool:
+    host, sep, port_str = server_addr.rpartition(":")
+    if not sep:
+        return False
+
+    connect_host = _normalize_connect_host(host)
+    try:
+        port = int(port_str)
+    except ValueError:
+        return False
+
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((connect_host, port), timeout=1.0):
+                return True
+        except OSError:
+            time.sleep(0.25)
+    return False
+
+
 def _launch(commands, delay: float = 1.0) -> None:
     procs: list[subprocess.Popen] = []
 
@@ -73,6 +112,16 @@ def _launch(commands, delay: float = 1.0) -> None:
             print(f"[LAUNCH] {cmd.role}: {' '.join(cmd.cmd)}")
             proc = subprocess.Popen(cmd.cmd, cwd=cmd.cwd, env=env)
             procs.append(proc)
+            if cmd.role == "server":
+                server_addr = _extract_arg(cmd.cmd, "--server_addr")
+                if server_addr:
+                    print(f"[LAUNCH] Waiting for server readiness at {server_addr}...")
+                    if _wait_for_server_ready(server_addr):
+                        print(f"[LAUNCH] Server is accepting connections at {server_addr}")
+                    else:
+                        print(
+                            f"[LAUNCH] Server did not become ready within timeout: {server_addr}"
+                        )
             time.sleep(delay)
 
         print("\n[RUNNING] Todos los procesos lanzados. Ctrl+C para detener.")

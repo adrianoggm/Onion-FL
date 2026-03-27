@@ -765,6 +765,8 @@ def plan_runtime_commands(
                 "flower_basic.clients.fog_bridge_swell",
                 "--input_dim",
                 str(int(arch.model.input_dim)),
+                "--server",
+                arch.orchestrator.address,
                 "--region",
                 fog.id,
                 "--mqtt-broker",
