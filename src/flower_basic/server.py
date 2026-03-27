@@ -14,7 +14,11 @@ import flwr as fl
 import paho.mqtt.client as mqtt
 
 from .model import ECGModel
-from .runtime_protocol import build_global_model_payload, extract_named_parameters
+from .runtime_protocol import (
+    build_global_model_payload,
+    extract_named_parameters,
+    serialize_named_weights,
+)
 
 # -----------------------------------------------------------------------------
 # MQTT CONFIGURATION
@@ -78,7 +82,7 @@ class MQTTFedAvg(fl.server.strategy.FedAvg):
             # Serializar para MQTT
             payload = build_global_model_payload(
                 round_num=server_round,
-                weights=state_dict,
+                weights=state_dict_to_numpy(state_dict),
             )
 
             # Publicar modelo global via MQTT
@@ -100,6 +104,11 @@ class MQTTFedAvg(fl.server.strategy.FedAvg):
             print("[SERVER] Continuando sin publicación MQTT")
 
         return new_parameters
+
+
+def state_dict_to_numpy(state_dict):
+    """Compatibility wrapper kept for legacy tests and call sites."""
+    return serialize_named_weights(state_dict)
 
 
 # -----------------------------------------------------------------------------

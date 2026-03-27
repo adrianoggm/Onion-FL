@@ -105,6 +105,23 @@ def _coerce_float(value: Any, fallback: float | None = None) -> float | None:
         return fallback
 
 
+def _payload_to_text(payload: Any) -> str:
+    if isinstance(payload, (bytes, bytearray)):
+        return payload.decode()
+    if isinstance(payload, str):
+        return payload
+    decode = getattr(payload, "decode", None)
+    if callable(decode):
+        try:
+            decoded = decode()
+        except TypeError:
+            decoded = decode("utf-8")
+        if isinstance(decoded, (bytes, bytearray)):
+            return decoded.decode()
+        return str(decoded)
+    return str(payload)
+
+
 def serialize_named_weights(weights: Mapping[str, Any]) -> dict[str, Any]:
     """Detach model weights into JSON-serializable primitives."""
     return {str(name): _to_jsonable(value) for name, value in weights.items()}
@@ -201,10 +218,7 @@ def decode_global_model_message(
     allowed_param_names: Iterable[str],
 ) -> GlobalModelEnvelope | None:
     """Decode and filter a server global-model message for a specific client."""
-    if isinstance(payload_bytes, (bytes, bytearray)):
-        raw_payload = payload_bytes.decode()
-    else:
-        raw_payload = str(payload_bytes)
+    raw_payload = _payload_to_text(payload_bytes)
 
     try:
         parsed = json.loads(raw_payload)
@@ -246,10 +260,7 @@ def decode_client_update_message(
     default_client_id: str = "unknown",
 ) -> ClientUpdateEnvelope | None:
     """Decode a local client update sent to a fog broker."""
-    if isinstance(payload_bytes, (bytes, bytearray)):
-        raw_payload = payload_bytes.decode()
-    else:
-        raw_payload = str(payload_bytes)
+    raw_payload = _payload_to_text(payload_bytes)
 
     try:
         parsed = json.loads(raw_payload)
@@ -283,10 +294,7 @@ def decode_partial_aggregate_message(
     default_region: str = "unknown",
 ) -> PartialAggregateEnvelope | None:
     """Decode a fog partial aggregate sent to a Flower bridge."""
-    if isinstance(payload_bytes, (bytes, bytearray)):
-        raw_payload = payload_bytes.decode()
-    else:
-        raw_payload = str(payload_bytes)
+    raw_payload = _payload_to_text(payload_bytes)
 
     try:
         parsed = json.loads(raw_payload)
