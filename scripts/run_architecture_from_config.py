@@ -117,7 +117,9 @@ def _launch(commands, delay: float = 1.0) -> None:
                 if server_addr:
                     print(f"[LAUNCH] Waiting for server readiness at {server_addr}...")
                     if _wait_for_server_ready(server_addr):
-                        print(f"[LAUNCH] Server is accepting connections at {server_addr}")
+                        print(
+                            f"[LAUNCH] Server is accepting connections at {server_addr}"
+                        )
                     else:
                         print(
                             f"[LAUNCH] Server did not become ready within timeout: {server_addr}"

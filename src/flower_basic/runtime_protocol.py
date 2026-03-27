@@ -321,10 +321,7 @@ def decode_partial_aggregate_message(
         stale_update_count=_coerce_int(parsed.get("stale_update_count"), 0) or 0,
         future_update_count=_coerce_int(parsed.get("future_update_count"), 0) or 0,
         max_delay_seconds=_coerce_float(parsed.get("max_delay_seconds"), 0.0) or 0.0,
-        mean_delay_seconds=_coerce_float(
-            parsed.get("mean_delay_seconds"), 0.0
-        )
-        or 0.0,
+        mean_delay_seconds=_coerce_float(parsed.get("mean_delay_seconds"), 0.0) or 0.0,
         stale_policy=(
             None
             if parsed.get("stale_policy") is None

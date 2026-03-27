@@ -346,9 +346,7 @@ class SweetFLClientMQTT(BaseMQTTComponent):
             CLIENT_TRAINING_DURATION.labels(
                 client_id=self.client_id, region=self.region
             ).observe(training_duration)
-            CLIENT_LOCAL_LOSS.labels(
-                client_id=self.client_id, region=self.region
-            ).set(
+            CLIENT_LOCAL_LOSS.labels(client_id=self.client_id, region=self.region).set(
                 avg_loss
             )
 
@@ -383,9 +381,7 @@ class SweetFLClientMQTT(BaseMQTTComponent):
         val_acc = correct / count
 
         # Prometheus validation accuracy
-        CLIENT_LOCAL_ACCURACY.labels(
-            client_id=self.client_id, region=self.region
-        ).set(
+        CLIENT_LOCAL_ACCURACY.labels(client_id=self.client_id, region=self.region).set(
             val_acc
         )
 
@@ -453,19 +449,13 @@ class SweetFLClientMQTT(BaseMQTTComponent):
             )
 
         # Prometheus metrics
-        CLIENT_TRAIN_SAMPLES.labels(
-            client_id=self.client_id, region=self.region
-        ).set(
+        CLIENT_TRAIN_SAMPLES.labels(client_id=self.client_id, region=self.region).set(
             self.num_samples
         )
-        CLIENT_VAL_SAMPLES.labels(
-            client_id=self.client_id, region=self.region
-        ).set(
+        CLIENT_VAL_SAMPLES.labels(client_id=self.client_id, region=self.region).set(
             self.num_val_samples
         )
-        CLIENT_TEST_SAMPLES.labels(
-            client_id=self.client_id, region=self.region
-        ).set(
+        CLIENT_TEST_SAMPLES.labels(client_id=self.client_id, region=self.region).set(
             self.num_test_samples
         )
 

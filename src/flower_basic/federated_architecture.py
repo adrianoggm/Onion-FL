@@ -16,7 +16,7 @@ import sys
 import time
 from collections.abc import Mapping
 from copy import deepcopy
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
@@ -209,7 +209,9 @@ def parse_architecture_config(raw: Mapping[str, Any]) -> FederatedArchitecture:
     """Parse a config mapping into a validated architecture without I/O."""
     root = _as_mapping(raw.get("federated_architecture", raw))
     if not root:
-        raise ValueError("La configuración debe incluir un objeto federated_architecture")
+        raise ValueError(
+            "La configuración debe incluir un objeto federated_architecture"
+        )
 
     orchestrator_raw = _as_mapping(root.get("orchestrator"))
     mqtt_raw = _as_mapping(orchestrator_raw.get("mqtt"))
@@ -536,7 +538,9 @@ def plan_manifest_application(
 
     messages: list[str] = []
     if split_strategy == "per_subject":
-        train_subjects = {str(subject_id) for subject_id in _as_list(global_subjects.get("all"))}
+        train_subjects = {
+            str(subject_id) for subject_id in _as_list(global_subjects.get("all"))
+        }
         messages.append(
             f"[MANIFEST] Strategy: per_subject - all {len(train_subjects)} subjects have train data"
         )
@@ -573,7 +577,9 @@ def plan_manifest_application(
             status = statuses_for_fog.get(subject_str)
             if status is None or not status.has_train_data:
                 reason = (
-                    status.reason if status is not None and status.reason else "train.npz not found"
+                    status.reason
+                    if status is not None and status.reason
+                    else "train.npz not found"
                 )
                 messages.append(f"[MANIFEST] Skipping {client_id} ({reason})")
                 continue
@@ -630,7 +636,9 @@ def apply_manifest_paths(
         arch,
         manifest,
         subject_statuses,
-        n_features=int(resolved_n_features) if resolved_n_features is not None else None,
+        n_features=(
+            int(resolved_n_features) if resolved_n_features is not None else None
+        ),
     )
     if emit is not None:
         for message in result.messages:
@@ -708,7 +716,9 @@ def plan_runtime_commands(
     commands: list[RuntimeCommand] = []
     if primary == "swell":
         if arch.model.input_dim is None:
-            raise ValueError("model.input_dim es obligatorio para ejecutar el flujo SWELL")
+            raise ValueError(
+                "model.input_dim es obligatorio para ejecutar el flujo SWELL"
+            )
         server_cmd = [
             python_exec,
             "-m",
@@ -757,7 +767,9 @@ def plan_runtime_commands(
 
     if primary == "swell":
         if arch.model.input_dim is None:
-            raise ValueError("model.input_dim es obligatorio para ejecutar el flujo SWELL")
+            raise ValueError(
+                "model.input_dim es obligatorio para ejecutar el flujo SWELL"
+            )
         for fog in active_fogs:
             bridge_cmd = [
                 python_exec,
@@ -853,7 +865,9 @@ def plan_runtime_commands(
             }
             if workflow == "swell":
                 if client.data_dir is None:
-                    raise ValueError(f"Cliente {client.id} requiere data_dir para SWELL")
+                    raise ValueError(
+                        f"Cliente {client.id} requiere data_dir para SWELL"
+                    )
                 cmd = [
                     python_exec,
                     "-m",

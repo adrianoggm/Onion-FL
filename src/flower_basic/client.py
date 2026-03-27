@@ -84,7 +84,9 @@ class FLClientMQTT:
                     return
                 state_dict = {k: torch.tensor(v) for k, v in envelope.weights.items()}
                 self.model.load_state_dict(state_dict, strict=True)
-                round_num = envelope.round_num if envelope.round_num is not None else "?"
+                round_num = (
+                    envelope.round_num if envelope.round_num is not None else "?"
+                )
                 print(f"[CLIENT] Global model loaded from round {round_num}")
                 self._got_global = True
             except Exception as e:
