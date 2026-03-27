@@ -31,6 +31,10 @@ from flower_basic.prometheus_metrics import (
     push_metrics_to_gateway,
     start_metrics_server,
 )
+from flower_basic.runtime_protocol import (
+    build_global_model_payload,
+    extract_named_parameters,
+)
 from flower_basic.sweet_model import SweetMLP
 from flower_basic.telemetry import (
     create_counter,
@@ -156,21 +160,12 @@ class MQTTFedAvgSweet(fl.server.strategy.FedAvg):
             return None
 
         try:
-            parameters_obj = new_parameters
-            if isinstance(new_parameters, tuple):
-                parameters_obj = new_parameters[0]
-
-            if hasattr(parameters_obj, "tensors"):
-                param_arrays = [
-                    fl.common.bytes_to_ndarray(t) for t in parameters_obj.tensors
-                ]
-            else:
-                param_arrays = fl.common.parameters_to_ndarrays(parameters_obj)
-
-            state_dict = {}
-            for i, name in enumerate(self.param_names):
-                if i < len(param_arrays):
-                    state_dict[name] = param_arrays[i]
+            state_dict = extract_named_parameters(
+                new_parameters,
+                self.param_names,
+                bytes_to_ndarray=fl.common.bytes_to_ndarray,
+                parameters_to_ndarrays=fl.common.parameters_to_ndarrays,
+            )
 
             if self.mqtt is not None:
                 # Use PRODUCER span with context propagation to clients
@@ -180,13 +175,11 @@ class MQTTFedAvgSweet(fl.server.strategy.FedAvg):
                     target_service="sweet-client",
                     attributes={"round": server_round},
                 ) as (span, trace_ctx):
-                    payload = {
-                        "round": server_round,
-                        "global_weights": {
-                            k: v.tolist() for k, v in state_dict.items()
-                        },
-                        "trace_context": trace_ctx,
-                    }
+                    payload = build_global_model_payload(
+                        round_num=server_round,
+                        weights=state_dict,
+                        trace_context=trace_ctx,
+                    )
                     self.mqtt.publish(MODEL_TOPIC, json.dumps(payload))
                 print(f"{TAG} Published global model on {MODEL_TOPIC}")
 

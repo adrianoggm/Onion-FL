@@ -15,6 +15,10 @@ import torch
 
 from .datasets import load_wesad_dataset
 from .model import ECGModel
+from .runtime_protocol import (
+    build_client_update_payload,
+    decode_global_model_message,
+)
 
 # -----------------------------------------------------------------------------
 # MQTT CONFIG
@@ -72,16 +76,19 @@ class FLClientMQTT:
         """Handle global model messages from central server."""
         if msg.topic == TOPIC_GLOBAL_MODEL:
             try:
-                payload = json.loads(msg.payload.decode())
-                if "global_weights" in payload:
-                    weights_dict = payload["global_weights"]
-                    state_dict = {k: torch.tensor(v) for k, v in weights_dict.items()}
-                    self.model.load_state_dict(state_dict, strict=True)
-                    round_num = payload.get("round", "?")
-                    print(f"[CLIENT] Global model loaded from round {round_num}")
-                    self._got_global = True
-                else:
+                envelope = decode_global_model_message(
+                    msg.payload, allowed_param_names=self.model.state_dict().keys()
+                )
+                if envelope is None:
                     print("[CLIENT] Invalid payload format received")
+                    return
+                state_dict = {k: torch.tensor(v) for k, v in envelope.weights.items()}
+                self.model.load_state_dict(state_dict, strict=True)
+                round_num = (
+                    envelope.round_num if envelope.round_num is not None else "?"
+                )
+                print(f"[CLIENT] Global model loaded from round {round_num}")
+                self._got_global = True
             except Exception as e:
                 print(f"[CLIENT] Error processing MQTT message: {e}")
 
@@ -112,17 +119,17 @@ class FLClientMQTT:
 
         # Serialize current weights and publish with metadata
         state = self.model.state_dict()
-        payload = {
-            "client_id": f"client_{id(self) % 1000}",  # simple client id
-            "region": "region_0",  # default region (overridable)
-            "weights": {k: v.cpu().numpy().tolist() for k, v in state.items()},
-            "num_samples": (
+        payload = build_client_update_payload(
+            client_id=f"client_{id(self) % 1000}",
+            region="region_0",
+            weights={k: v.cpu().numpy() for k, v in state.items()},
+            num_samples=(
                 len(self.train_loader.dataset)
                 if hasattr(self.train_loader.dataset, "__len__")
                 else len(self.train_loader)
             ),
-            "loss": avg_loss,
-        }
+            avg_loss=avg_loss,
+        )
         # Region override via env (MQTT_REGION) if provided
         payload["region"] = os.getenv("MQTT_REGION", payload["region"])
 

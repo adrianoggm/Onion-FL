@@ -10,6 +10,7 @@ Usage:
 
 import argparse
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -29,9 +30,11 @@ from flower_basic.federated_architecture import (  # noqa: E402
 )
 
 
-def _apply_manifest_paths(arch: FederatedArchitecture, manifest_path: Path) -> None:
+def _apply_manifest_paths(
+    arch: FederatedArchitecture, manifest_path: Path
+) -> FederatedArchitecture:
     """Backwards-compatible wrapper used by tests and the CLI script."""
-    apply_manifest_paths(arch, manifest_path)
+    return apply_manifest_paths(arch, manifest_path)
 
 
 def _print_plan(commands) -> None:
@@ -39,6 +42,44 @@ def _print_plan(commands) -> None:
     for cmd in commands:
         env_hint = f" env={list(cmd.env.keys())}" if cmd.env else ""
         print(f"- {cmd.role}: {' '.join(cmd.cmd)}{env_hint}")
+
+
+def _extract_arg(cmd: list[str], flag: str) -> str | None:
+    try:
+        idx = cmd.index(flag)
+    except ValueError:
+        return None
+    if idx + 1 >= len(cmd):
+        return None
+    return cmd[idx + 1]
+
+
+def _normalize_connect_host(host: str) -> str:
+    stripped = host.strip().strip("[]")
+    if stripped in {"", "0.0.0.0", "::", "*"}:
+        return "127.0.0.1"
+    return stripped
+
+
+def _wait_for_server_ready(server_addr: str, timeout_s: float = 20.0) -> bool:
+    host, sep, port_str = server_addr.rpartition(":")
+    if not sep:
+        return False
+
+    connect_host = _normalize_connect_host(host)
+    try:
+        port = int(port_str)
+    except ValueError:
+        return False
+
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((connect_host, port), timeout=1.0):
+                return True
+        except OSError:
+            time.sleep(0.25)
+    return False
 
 
 def _launch(commands, delay: float = 1.0) -> None:
@@ -71,6 +112,18 @@ def _launch(commands, delay: float = 1.0) -> None:
             print(f"[LAUNCH] {cmd.role}: {' '.join(cmd.cmd)}")
             proc = subprocess.Popen(cmd.cmd, cwd=cmd.cwd, env=env)
             procs.append(proc)
+            if cmd.role == "server":
+                server_addr = _extract_arg(cmd.cmd, "--server_addr")
+                if server_addr:
+                    print(f"[LAUNCH] Waiting for server readiness at {server_addr}...")
+                    if _wait_for_server_ready(server_addr):
+                        print(
+                            f"[LAUNCH] Server is accepting connections at {server_addr}"
+                        )
+                    else:
+                        print(
+                            f"[LAUNCH] Server did not become ready within timeout: {server_addr}"
+                        )
             time.sleep(delay)
 
         print("\n[RUNNING] Todos los procesos lanzados. Ctrl+C para detener.")
@@ -156,7 +209,7 @@ def main() -> None:
     manifest_path = Path(args.manifest) if args.manifest else None
     if primary == "swell":
         if manifest_path:
-            _apply_manifest_paths(arch, manifest_path)
+            arch = _apply_manifest_paths(arch, manifest_path)
         else:
             needs_materialization = args.prepare_splits or any(
                 (c.data_dir is None or not Path(str(c.data_dir)).exists())
@@ -165,7 +218,9 @@ def main() -> None:
                 if (c.workflow or c.dataset or "").lower() == "swell"
             )
             if needs_materialization:
-                manifest_path = materialize_swell_partitions(arch, repo_root=REPO_ROOT)
+                materialized = materialize_swell_partitions(arch, repo_root=REPO_ROOT)
+                arch = materialized.architecture
+                manifest_path = materialized.manifest_path
                 print(
                     f"[INFO] Particiones SWELL preparadas automáticamente: {manifest_path}"
                 )
@@ -184,14 +239,14 @@ def main() -> None:
         if mqttc is not None:
             mqttc.loop_stop()
 
-    commands = build_runtime_plan(
+    runtime_plan = build_runtime_plan(
         arch, repo_root=REPO_ROOT, manifest_path=manifest_path
     )
-    _print_plan(commands)
+    _print_plan(runtime_plan.commands)
 
     should_launch = args.launch
     if should_launch:
-        _launch(commands, delay=args.delay)
+        _launch(runtime_plan.commands, delay=args.delay)
 
 
 if __name__ == "__main__":

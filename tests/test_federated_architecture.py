@@ -127,7 +127,8 @@ def test_runtime_plan_includes_k_map(tmp_path: Path):
     arch = load_architecture_config(cfg_path)
 
     repo_root = Path(__file__).resolve().parents[1]
-    commands = build_runtime_plan(arch, repo_root=repo_root, manifest_path=None)
+    runtime_plan = build_runtime_plan(arch, repo_root=repo_root, manifest_path=None)
+    commands = runtime_plan.commands
 
     roles = [c.role for c in commands]
     assert "server" in roles and "broker" in roles

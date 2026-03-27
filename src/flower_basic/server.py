@@ -14,7 +14,11 @@ import flwr as fl
 import paho.mqtt.client as mqtt
 
 from .model import ECGModel
-from .utils import state_dict_to_numpy
+from .runtime_protocol import (
+    build_global_model_payload,
+    extract_named_parameters,
+    serialize_named_weights,
+)
 
 # -----------------------------------------------------------------------------
 # MQTT CONFIGURATION
@@ -65,45 +69,21 @@ class MQTTFedAvg(fl.server.strategy.FedAvg):
             return None
 
         try:
-            # Debug: Ver el tipo de new_parameters
             print(f"[SERVER] DEBUG: Tipo de parámetros: {type(new_parameters)}")
-
-            # Manejar diferentes tipos de parámetros según versión de Flower
-            if isinstance(new_parameters, tuple):
-                # Es una tupla (versión antigua): (parameters, fit_metrics_dict)
-                parameters_obj = new_parameters[0]
-                print(
-                    f"[SERVER] DEBUG: Extraída tupla, tipo interno: {type(parameters_obj)}"
-                )
-            else:
-                parameters_obj = new_parameters
-
-            # Convertir parámetros a arrays numpy
-            if hasattr(parameters_obj, "tensors"):
-                # Flower 1.8+
-                param_arrays = parameters_obj.tensors
-                param_arrays = [
-                    fl.common.bytes_to_ndarray(tensor) for tensor in param_arrays
-                ]
-                print("[SERVER] DEBUG: Usando parameters_obj.tensors")
-            else:
-                # Flower anterior - usar la función de conversión
-                param_arrays = fl.common.parameters_to_ndarrays(parameters_obj)
-                print("[SERVER] DEBUG: Usando parameters_to_ndarrays")
-
-            # Crear state_dict
-            state_dict = {}
-            for i, name in enumerate(self.param_names):
-                if i < len(param_arrays):
-                    state_dict[name] = param_arrays[i]
+            state_dict = extract_named_parameters(
+                new_parameters,
+                self.param_names,
+                bytes_to_ndarray=fl.common.bytes_to_ndarray,
+                parameters_to_ndarrays=fl.common.parameters_to_ndarrays,
+            )
 
             print(f"[SERVER] DEBUG: State dict creado con {len(state_dict)} parámetros")
 
             # Serializar para MQTT
-            payload = {
-                "round": server_round,
-                "global_weights": state_dict_to_numpy(state_dict),
-            }
+            payload = build_global_model_payload(
+                round_num=server_round,
+                weights=state_dict_to_numpy(state_dict),
+            )
 
             # Publicar modelo global via MQTT
             if self.mqtt is not None:
@@ -124,6 +104,11 @@ class MQTTFedAvg(fl.server.strategy.FedAvg):
             print("[SERVER] Continuando sin publicación MQTT")
 
         return new_parameters
+
+
+def state_dict_to_numpy(state_dict):
+    """Compatibility wrapper kept for legacy tests and call sites."""
+    return serialize_named_weights(state_dict)
 
 
 # -----------------------------------------------------------------------------

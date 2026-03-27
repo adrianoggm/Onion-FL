@@ -41,6 +41,11 @@ from flower_basic.prometheus_metrics import (
     get_metrics_port_from_env,
     start_metrics_server,
 )
+from flower_basic.runtime_protocol import (
+    build_partial_aggregate_payload,
+    decode_client_update_message,
+    summarize_update_batch,
+)
 from flower_basic.telemetry import (
     create_counter,
     create_gauge,
@@ -203,13 +208,16 @@ def weighted_average(
 def on_update(client, userdata, msg):
     """Handle local client updates and emit partial aggregates per region."""
     try:
-        payload = json.loads(msg.payload.decode())
+        envelope = decode_client_update_message(msg.payload)
+        if envelope is None:
+            print("[SWEET_FOG_BROKER] Ignoring malformed update payload")
+            return
 
-        region = payload.get("region", "default_region")
-        weights = payload.get("weights", {})
-        client_id = payload.get("client_id", "unknown")
-        num_samples = payload.get("num_samples", 0)  # Track contribution
-        trace_context = payload.get("trace_context", {})  # Extract trace context
+        region = envelope.region
+        weights = envelope.weights
+        client_id = envelope.client_id
+        num_samples = envelope.num_samples
+        trace_context = envelope.trace_context
 
         if not weights:
             print(f"[SWEET_FOG_BROKER] Received empty weights from {client_id}")
@@ -282,17 +290,13 @@ def on_update(client, userdata, msg):
 
             if len(buffers[region]) >= region_k:
                 agg_start = time.time()
+                batch = list(buffers[region])
 
                 # Extract weights and compute sample-weighted average
-                weight_list = [item["weights"] for item in buffers[region]]
-                sample_counts = [item["num_samples"] for item in buffers[region]]
-                total_samples = sum(sample_counts)
-
-                # Use sample counts as weights for FedAvg
-                if total_samples > 0:
-                    weights_for_avg = [s / total_samples for s in sample_counts]
-                else:
-                    weights_for_avg = None
+                weight_list = [item["weights"] for item in batch]
+                batch_summary = summarize_update_batch(batch)
+                total_samples = batch_summary.total_samples
+                weights_for_avg = batch_summary.sample_weights
 
                 # Use SERVER span for aggregation processing
                 with start_server_span(
@@ -322,7 +326,7 @@ def on_update(client, userdata, msg):
                 )
 
                 # Log contribution breakdown
-                for item in buffers[region]:
+                for item in batch:
                     contrib_pct = (
                         (item["num_samples"] / total_samples * 100)
                         if total_samples > 0
@@ -346,13 +350,13 @@ def on_update(client, userdata, msg):
                     target_service="sweet-fog-bridge",
                     attributes={"region": region, "total_samples": total_samples},
                 ) as (span, trace_ctx):
-                    msg_payload = {
-                        "region": region,
-                        "partial_weights": partial,
-                        "total_samples": total_samples,
-                        "timestamp": time.time(),
-                        "trace_context": trace_ctx,  # Propagate trace context
-                    }
+                    msg_payload = build_partial_aggregate_payload(
+                        region=region,
+                        partial_weights=partial,
+                        total_samples=total_samples,
+                        timestamp=time.time(),
+                        trace_context=trace_ctx,
+                    )
                     client.publish(PARTIAL_TOPIC, json.dumps(msg_payload))
 
                 # Record aggregation metrics (OTEL)

@@ -96,14 +96,15 @@ def test_apply_manifest_paths_global_strategy(tmp_path: Path) -> None:
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     arch = _make_arch()
-    rac._apply_manifest_paths(arch, manifest_path)
+    updated_arch = rac._apply_manifest_paths(arch, manifest_path)
 
-    fog = arch.fog_nodes[0]
+    fog = updated_arch.fog_nodes[0]
     assert len(fog.clients) == 1
     assert fog.clients[0].id == "c1"
     assert fog.clients[0].data_dir == str(subject_1)
     assert fog.k == 1
-    assert arch.model.input_dim == 5
+    assert updated_arch.model.input_dim == 5
+    assert arch.model.input_dim is None
 
 
 def test_apply_manifest_paths_per_subject_strategy(tmp_path: Path) -> None:
@@ -129,13 +130,14 @@ def test_apply_manifest_paths_per_subject_strategy(tmp_path: Path) -> None:
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     arch = _make_arch()
-    rac._apply_manifest_paths(arch, manifest_path)
+    updated_arch = rac._apply_manifest_paths(arch, manifest_path)
 
-    fog = arch.fog_nodes[0]
+    fog = updated_arch.fog_nodes[0]
     assert [c.id for c in fog.clients] == ["c1"]
     assert fog.clients[0].data_dir == str(subject_1)
     assert fog.k == 1
-    assert arch.model.input_dim == 4
+    assert updated_arch.model.input_dim == 4
+    assert arch.model.input_dim is None
 
 
 def test_apply_manifest_paths_clamps_k_to_spawned_clients(tmp_path: Path) -> None:
@@ -158,7 +160,8 @@ def test_apply_manifest_paths_clamps_k_to_spawned_clients(tmp_path: Path) -> Non
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     arch = _make_arch(k=5)
-    rac._apply_manifest_paths(arch, manifest_path)
+    updated_arch = rac._apply_manifest_paths(arch, manifest_path)
 
-    fog = arch.fog_nodes[0]
+    fog = updated_arch.fog_nodes[0]
     assert fog.k == 1
+    assert arch.fog_nodes[0].k == 5
