@@ -9,7 +9,6 @@ names consistent for ordering.
 """
 
 import argparse
-import json
 import os
 import time
 
@@ -17,6 +16,7 @@ import flwr as fl
 import numpy as np
 
 from flower_basic.clients.baseclient import BaseMQTTComponent
+from flower_basic.runtime_protocol import decode_partial_aggregate_message
 from flower_basic.sweet_model import SweetMLP, get_parameters, set_parameters
 from flower_basic.telemetry import (
     create_counter,
@@ -97,25 +97,27 @@ class FogClientSweet(BaseMQTTComponent, fl.client.NumPyClient):
 
     def on_message(self, client, userdata, msg):
         try:
-            data = json.loads(msg.payload.decode())
-            self.partial_weights = data.get("partial_weights")
-            self.partial_trace_context = data.get(
-                "trace_context", {}
-            )  # Extract trace context
-            region = data.get("region", "unknown")
-            if region != self.region:
+            envelope = decode_partial_aggregate_message(msg.payload)
+            if envelope is None:
+                print(f"{self.tag} Ignoring malformed partial payload")
                 return
+            if envelope.region != self.region:
+                return
+            self.partial_weights = envelope.weights
+            self.partial_trace_context = envelope.trace_context
             # Use linked CONSUMER span to continue trace from sweet-fog-broker
             with start_linked_consumer_span(
                 TRACER,
                 "bridge.receive_partial",
                 self.partial_trace_context,
                 source_service="sweet-fog-broker",
-                attributes={"region": region},
+                attributes={"region": envelope.region},
             ):
                 if COUNTER_PARTIALS_RECEIVED:
                     record_metric(COUNTER_PARTIALS_RECEIVED, 1, {"region": self.region})
-                print(f"{self.tag} Partial aggregate received for region={region}")
+                print(
+                    f"{self.tag} Partial aggregate received for region={envelope.region}"
+                )
         except Exception as e:
             print(f"{self.tag} Error processing partial: {e}")
 

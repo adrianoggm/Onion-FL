@@ -37,6 +37,10 @@ from flower_basic.prometheus_metrics import (
     push_metrics_to_gateway,
     start_metrics_server,
 )
+from flower_basic.runtime_protocol import (
+    build_client_update_payload,
+    decode_global_model_message,
+)
 from flower_basic.swell_model import SwellMLP
 
 # Telemetry (optional)
@@ -247,28 +251,25 @@ class SwellFLClientMQTT(BaseMQTTComponent):
     def on_message(self, client, userdata, msg):
         if msg.topic == self.topic_global:
             try:
-                payload = json.loads(msg.payload.decode())
-                weights = payload.get("global_weights")
-                trace_context = payload.get(
-                    "trace_context", {}
-                )  # Extract trace context
-                if weights:
+                envelope = decode_global_model_message(
+                    msg.payload, self.model.state_dict().keys()
+                )
+                if envelope is not None:
                     # Use linked CONSUMER span to continue trace from server
                     with start_linked_consumer_span(
                         TRACER,
                         "client.receive_global_model",
-                        trace_context,
+                        envelope.trace_context,
                         source_service="server-swell",
                         attributes={
                             "region": self.region,
-                            "round": payload.get("round", "?"),
+                            "round": envelope.round_num or "?",
                         },
                     ):
                         # Buffer the global state to apply between rounds (avoid in-place during training)
                         state = {
-                            k: torch.tensor(v)
-                            for k, v in weights.items()
-                            if k in self.model.state_dict()
+                            name: torch.tensor(value)
+                            for name, value in envelope.weights.items()
                         }
                         with self._lock:
                             self._pending_global_state = state
@@ -277,7 +278,7 @@ class SwellFLClientMQTT(BaseMQTTComponent):
                             COUNTER_GLOBAL_MODELS_RECEIVED, 1, {"region": self.region}
                         )
                         print(
-                            f"{self.tag} Global model available (round={payload.get('round','?')})"
+                            f"{self.tag} Global model available (round={envelope.round_num or '?'})"
                         )
             except Exception as e:
                 print(f"{self.tag} Error processing global model: {e}")
@@ -374,23 +375,21 @@ class SwellFLClientMQTT(BaseMQTTComponent):
         ) as (span, trace_ctx):
             with self._lock:
                 state = self.model.state_dict()
-                weights = {
-                    k: v.detach().cpu().numpy().tolist() for k, v in state.items()
-                }
+                weights = {k: v.detach().cpu().numpy() for k, v in state.items()}
 
-            payload = {
-                "client_id": self.client_id,
-                "region": self.region,
-                "round": int(
+            payload = build_client_update_payload(
+                client_id=self.client_id,
+                region=self.region,
+                round_num=int(
                     round_num if round_num is not None else max(1, self.current_round)
                 ),
-                "weights": weights,
-                "num_samples": self.num_samples,
-                "loss": float(avg_loss),
-                "val_acc": float(val_acc),  # Include validation accuracy
-                "sent_at": time.time(),
-                "trace_context": trace_ctx,  # Propagate trace context
-            }
+                weights=weights,
+                num_samples=self.num_samples,
+                avg_loss=avg_loss,
+                val_acc=val_acc,
+                sent_at=time.time(),
+                trace_context=trace_ctx,
+            )
             self.mqtt.publish(self.topic_updates, json.dumps(payload))
             record_metric(
                 COUNTER_UPDATES_PUBLISHED,

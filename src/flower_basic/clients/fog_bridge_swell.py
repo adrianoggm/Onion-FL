@@ -9,7 +9,6 @@ names consistent for ordering.
 """
 
 import argparse
-import json
 import os
 import time
 
@@ -18,6 +17,7 @@ import numpy as np
 
 from flower_basic.clients.baseclient import BaseMQTTComponent
 from flower_basic.logging_utils import enable_timestamped_print
+from flower_basic.runtime_protocol import decode_partial_aggregate_message
 from flower_basic.swell_model import SwellMLP, get_parameters, set_parameters
 from flower_basic.telemetry import (
     create_counter,
@@ -95,34 +95,36 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
 
     def on_message(self, client, userdata, msg):
         try:
-            data = json.loads(msg.payload.decode())
-            region = data.get("region", "unknown")
-            if region != self.region:
+            envelope = decode_partial_aggregate_message(msg.payload)
+            if envelope is None:
+                print(f"{self.tag} Ignoring malformed partial payload")
                 return
-            self.partial_weights = data.get("partial_weights")
+            if envelope.region != self.region:
+                return
+            self.partial_weights = envelope.weights
             self.partial_metadata = {
-                "expected_round": int(data.get("expected_round", 0)),
-                "round_min": int(data.get("round_min", 0)),
-                "round_max": int(data.get("round_max", 0)),
-                "stale_update_count": int(data.get("stale_update_count", 0)),
-                "future_update_count": int(data.get("future_update_count", 0)),
-                "max_delay_seconds": float(data.get("max_delay_seconds", 0.0)),
-                "mean_delay_seconds": float(data.get("mean_delay_seconds", 0.0)),
-                "stale_policy": str(data.get("stale_policy", "accept")),
+                "expected_round": envelope.expected_round or 0,
+                "round_min": envelope.round_min or 0,
+                "round_max": envelope.round_max or 0,
+                "stale_update_count": envelope.stale_update_count,
+                "future_update_count": envelope.future_update_count,
+                "max_delay_seconds": envelope.max_delay_seconds,
+                "mean_delay_seconds": envelope.mean_delay_seconds,
+                "stale_policy": envelope.stale_policy or "accept",
             }
-            self.partial_trace_context = data.get(
-                "trace_context", {}
-            )  # Extract trace context
+            self.partial_trace_context = envelope.trace_context
             # Use linked CONSUMER span to continue trace from fog-broker
             with start_linked_consumer_span(
                 TRACER,
                 "bridge.receive_partial",
                 self.partial_trace_context,
                 source_service="fog-broker",
-                attributes={"region": region},
+                attributes={"region": envelope.region},
             ):
                 record_metric(COUNTER_PARTIALS_RECEIVED, 1, {"region": self.region})
-                print(f"{self.tag} Partial aggregate received for region={region}")
+                print(
+                    f"{self.tag} Partial aggregate received for region={envelope.region}"
+                )
         except Exception as e:
             print(f"{self.tag} Error processing partial: {e}")
 

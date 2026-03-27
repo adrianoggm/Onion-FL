@@ -36,6 +36,10 @@ from flower_basic.prometheus_metrics import (
     push_metrics_to_gateway,
     start_metrics_server,
 )
+from flower_basic.runtime_protocol import (
+    build_client_update_payload,
+    decode_global_model_message,
+)
 from flower_basic.sweet_model import SweetMLP
 
 # Telemetry
@@ -150,6 +154,11 @@ class SweetFLClientMQTT(BaseMQTTComponent):
         self.tag = (
             f"[CLIENT {self.region}{'_' + self.subject_id if self.subject_id else ''}]"
         )
+        self.client_id = (
+            f"{self.region}_client_{self.subject_id}"
+            if self.subject_id
+            else f"{self.region}_client_{os.getpid() % 10000}"
+        )
         self.topic_updates = topic_updates
         self.topic_global = topic_global
         self.local_epochs = local_epochs
@@ -250,24 +259,23 @@ class SweetFLClientMQTT(BaseMQTTComponent):
         """Receive global model from server."""
         if msg.topic == self.topic_global:
             try:
-                payload = json.loads(msg.payload.decode())
-                weights = payload.get("global_weights")
-                trace_context = payload.get("trace_context", {})
-                if weights:
+                envelope = decode_global_model_message(
+                    msg.payload, self.model.state_dict().keys()
+                )
+                if envelope is not None:
                     with start_linked_consumer_span(
                         TRACER,
                         "client.receive_global_model",
-                        trace_context,
+                        envelope.trace_context,
                         source_service="server-sweet",
                         attributes={
                             "region": self.region,
-                            "round": payload.get("round", "?"),
+                            "round": envelope.round_num or "?",
                         },
                     ):
                         state = {
-                            k: torch.tensor(v)
-                            for k, v in weights.items()
-                            if k in self.model.state_dict()
+                            name: torch.tensor(value)
+                            for name, value in envelope.weights.items()
                         }
                         with self._lock:
                             self._pending_global_state = state
@@ -279,7 +287,7 @@ class SweetFLClientMQTT(BaseMQTTComponent):
                                 {"region": self.region},
                             )
                         print(
-                            f"{self.tag} Global model available (round={payload.get('round','?')})"
+                            f"{self.tag} Global model available (round={envelope.round_num or '?'})"
                         )
             except Exception as e:
                 print(f"{self.tag} Error processing global model: {e}")
@@ -332,12 +340,15 @@ class SweetFLClientMQTT(BaseMQTTComponent):
                 record_metric(GAUGE_TRAIN_SAMPLES, n, {"region": self.region})
 
             # Prometheus metrics
-            client_id = f"{self.region}_client_{os.getpid() % 10000}"
-            CLIENT_TRAINING_ROUNDS.labels(client_id=client_id, region=self.region).inc()
+            CLIENT_TRAINING_ROUNDS.labels(
+                client_id=self.client_id, region=self.region
+            ).inc()
             CLIENT_TRAINING_DURATION.labels(
-                client_id=client_id, region=self.region
+                client_id=self.client_id, region=self.region
             ).observe(training_duration)
-            CLIENT_LOCAL_LOSS.labels(client_id=client_id, region=self.region).set(
+            CLIENT_LOCAL_LOSS.labels(
+                client_id=self.client_id, region=self.region
+            ).set(
                 avg_loss
             )
 
@@ -372,8 +383,9 @@ class SweetFLClientMQTT(BaseMQTTComponent):
         val_acc = correct / count
 
         # Prometheus validation accuracy
-        client_id = f"{self.region}_client_{os.getpid() % 10000}"
-        CLIENT_LOCAL_ACCURACY.labels(client_id=client_id, region=self.region).set(
+        CLIENT_LOCAL_ACCURACY.labels(
+            client_id=self.client_id, region=self.region
+        ).set(
             val_acc
         )
 
@@ -387,27 +399,24 @@ class SweetFLClientMQTT(BaseMQTTComponent):
         ) as (span, trace_ctx):
             with self._lock:
                 state = self.model.state_dict()
-                weights = {
-                    k: v.detach().cpu().numpy().tolist() for k, v in state.items()
-                }
-
-            client_id = f"{self.region}_client_{os.getpid() % 10000}"
 
             payload = {
-                "client_id": client_id,
-                "region": self.region,
-                "weights": weights,
-                "num_samples": self.num_samples,
-                "loss": float(avg_loss),
-                "val_acc": float(val_acc),
-                "trace_context": trace_ctx,
+                **build_client_update_payload(
+                    client_id=self.client_id,
+                    region=self.region,
+                    weights={k: v.detach().cpu().numpy() for k, v in state.items()},
+                    num_samples=self.num_samples,
+                    avg_loss=avg_loss,
+                    val_acc=val_acc,
+                    trace_context=trace_ctx,
+                )
             }
             self.mqtt.publish(self.topic_updates, json.dumps(payload))
             if COUNTER_UPDATES_PUBLISHED:
                 record_metric(
                     COUNTER_UPDATES_PUBLISHED,
                     1,
-                    {"region": self.region, "client_id": client_id},
+                    {"region": self.region, "client_id": self.client_id},
                 )
         print(
             f"{self.tag} Local update published ({self.num_samples} samples) to {self.topic_updates}"
@@ -429,8 +438,6 @@ class SweetFLClientMQTT(BaseMQTTComponent):
         """Run federated learning rounds."""
         print(f"{self.tag} Starting {rounds} federated rounds (region={self.region})")
 
-        client_id = f"{self.region}_client_{os.getpid() % 10000}"
-
         # Register dataset metrics
         if GAUGE_TRAIN_SAMPLES:
             record_metric(
@@ -446,13 +453,19 @@ class SweetFLClientMQTT(BaseMQTTComponent):
             )
 
         # Prometheus metrics
-        CLIENT_TRAIN_SAMPLES.labels(client_id=client_id, region=self.region).set(
+        CLIENT_TRAIN_SAMPLES.labels(
+            client_id=self.client_id, region=self.region
+        ).set(
             self.num_samples
         )
-        CLIENT_VAL_SAMPLES.labels(client_id=client_id, region=self.region).set(
+        CLIENT_VAL_SAMPLES.labels(
+            client_id=self.client_id, region=self.region
+        ).set(
             self.num_val_samples
         )
-        CLIENT_TEST_SAMPLES.labels(client_id=client_id, region=self.region).set(
+        CLIENT_TEST_SAMPLES.labels(
+            client_id=self.client_id, region=self.region
+        ).set(
             self.num_test_samples
         )
 

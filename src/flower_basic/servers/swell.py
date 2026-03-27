@@ -35,6 +35,11 @@ from flower_basic.prometheus_metrics import (
     push_metrics_to_gateway,
     start_metrics_server,
 )
+from flower_basic.runtime_protocol import (
+    build_global_model_payload,
+    extract_named_parameters,
+    summarize_staleness_metrics,
+)
 from flower_basic.swell_model import SwellMLP
 from flower_basic.telemetry import (
     create_counter,
@@ -153,32 +158,20 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
             f"{TAG} Received results from {len(results)} fog nodes, {len(failures)} failures"
         )
 
-        stale_updates = 0
-        future_updates = 0
-        max_delay_seconds = 0.0
-        max_round_span = 0
-        for _client_proxy, fit_res in results:
-            metrics = getattr(fit_res, "metrics", {}) or {}
-            if not isinstance(metrics, dict):
-                metrics = {}
-            stale_updates += int(metrics.get("stale_update_count", 0))
-            future_updates += int(metrics.get("future_update_count", 0))
-            max_delay_seconds = max(
-                max_delay_seconds, float(metrics.get("max_delay_seconds", 0.0))
-            )
-            round_min = int(metrics.get("round_min", server_round))
-            round_max = int(metrics.get("round_max", server_round))
-            max_round_span = max(max_round_span, round_max - round_min)
+        staleness = summarize_staleness_metrics(
+            [getattr(fit_res, "metrics", {}) for _client_proxy, fit_res in results],
+            server_round=server_round,
+        )
 
         print(
-            f"{TAG} Staleness summary: stale_updates={stale_updates}, "
-            f"future_updates={future_updates}, max_round_span={max_round_span}, "
-            f"max_delay={max_delay_seconds:.2f}s"
+            f"{TAG} Staleness summary: stale_updates={staleness.stale_updates}, "
+            f"future_updates={staleness.future_updates}, max_round_span={staleness.max_round_span}, "
+            f"max_delay={staleness.max_delay_seconds:.2f}s"
         )
-        self.history["stale_updates"].append(stale_updates)
-        self.history["future_updates"].append(future_updates)
-        self.history["max_delay_seconds"].append(max_delay_seconds)
-        self.history["round_span"].append(max_round_span)
+        self.history["stale_updates"].append(staleness.stale_updates)
+        self.history["future_updates"].append(staleness.future_updates)
+        self.history["max_delay_seconds"].append(staleness.max_delay_seconds)
+        self.history["round_span"].append(staleness.max_round_span)
 
         # Record number of active clients
         record_metric(GAUGE_ACTIVE_CLIENTS, len(results), {"round": str(server_round)})
@@ -196,21 +189,12 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
             return None
 
         try:
-            parameters_obj = new_parameters
-            if isinstance(new_parameters, tuple):
-                parameters_obj = new_parameters[0]
-
-            if hasattr(parameters_obj, "tensors"):
-                param_arrays = [
-                    fl.common.bytes_to_ndarray(t) for t in parameters_obj.tensors
-                ]
-            else:
-                param_arrays = fl.common.parameters_to_ndarrays(parameters_obj)
-
-            state_dict = {}
-            for i, name in enumerate(self.param_names):
-                if i < len(param_arrays):
-                    state_dict[name] = param_arrays[i]
+            state_dict = extract_named_parameters(
+                new_parameters,
+                self.param_names,
+                bytes_to_ndarray=fl.common.bytes_to_ndarray,
+                parameters_to_ndarrays=fl.common.parameters_to_ndarrays,
+            )
 
             if self.mqtt is not None:
                 # Use PRODUCER span with context propagation to clients
@@ -220,13 +204,11 @@ class MQTTFedAvgSwell(fl.server.strategy.FedAvg):
                     target_service="swell-client",
                     attributes={"round": server_round},
                 ) as (span, trace_ctx):
-                    payload = {
-                        "round": server_round,
-                        "global_weights": {
-                            k: v.tolist() for k, v in state_dict.items()
-                        },
-                        "trace_context": trace_ctx,  # Propagate trace context
-                    }
+                    payload = build_global_model_payload(
+                        round_num=server_round,
+                        weights=state_dict,
+                        trace_context=trace_ctx,
+                    )
                     self.mqtt.publish(MODEL_TOPIC, json.dumps(payload))
                 print(f"{TAG} Published global model on {MODEL_TOPIC}")
 

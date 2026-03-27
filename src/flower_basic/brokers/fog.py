@@ -42,6 +42,11 @@ from flower_basic.prometheus_metrics import (
     get_metrics_port_from_env,
     start_metrics_server,
 )
+from flower_basic.runtime_protocol import (
+    build_partial_aggregate_payload,
+    decode_client_update_message,
+    summarize_update_batch,
+)
 from flower_basic.telemetry import (
     create_counter,
     create_gauge,
@@ -208,49 +213,46 @@ def _expected_client_round() -> int:
     return max(1, int(LATEST_GLOBAL_ROUND) + 1)
 
 
-def _normalize_round(raw_round: Any, fallback: int) -> int:
-    try:
-        return int(raw_round)
-    except (TypeError, ValueError):
-        return int(fallback)
-
-
-def _normalize_sent_at(raw_sent_at: Any) -> float:
-    try:
-        return float(raw_sent_at)
-    except (TypeError, ValueError):
-        return time.time()
-
-
 def on_global_model(client, userdata, msg):
     """Track the latest global round to classify stale client updates."""
     global LATEST_GLOBAL_ROUND
 
     try:
         payload = json.loads(msg.payload.decode())
-        global_round = _normalize_round(payload.get("round"), LATEST_GLOBAL_ROUND)
+        if not isinstance(payload, dict):
+            raise TypeError("global model payload must be a JSON object")
+        global_round = int(payload.get("round", LATEST_GLOBAL_ROUND))
         LATEST_GLOBAL_ROUND = max(LATEST_GLOBAL_ROUND, global_round)
         print(
             f"[BROKER] Global round updated to {LATEST_GLOBAL_ROUND}; expected client round={_expected_client_round()}"
         )
-    except Exception as exc:
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
         print(f"[BROKER] Ignoring malformed global model message: {exc}")
 
 
 def on_update(client, userdata, msg):
     """Handle local client updates and emit partial aggregates per region."""
     try:
-        payload = json.loads(msg.payload.decode())
-
-        region = payload.get("region", "default_region")
-        weights = payload.get("weights", {})
-        client_id = payload.get("client_id", "unknown")
-        num_samples = payload.get("num_samples", 0)  # Track contribution
-        expected_round = _expected_client_round()
-        update_round = _normalize_round(payload.get("round"), expected_round)
-        sent_at = _normalize_sent_at(payload.get("sent_at"))
         received_at = time.time()
-        trace_context = payload.get("trace_context", {})  # Extract trace context
+        expected_round = _expected_client_round()
+        envelope = decode_client_update_message(
+            msg.payload,
+            fallback_round=expected_round,
+            fallback_sent_at=received_at,
+        )
+        if envelope is None:
+            print("[BROKER] Ignoring malformed update payload")
+            return
+
+        region = envelope.region
+        weights = envelope.weights
+        client_id = envelope.client_id
+        num_samples = envelope.num_samples
+        update_round = (
+            envelope.round_num if envelope.round_num is not None else expected_round
+        )
+        sent_at = envelope.sent_at if envelope.sent_at is not None else received_at
+        trace_context = envelope.trace_context
 
         if not weights:
             print(f"[BROKER] Received empty weights from {client_id}")
@@ -341,33 +343,26 @@ def on_update(client, userdata, msg):
 
                 # Extract weights and compute sample-weighted average
                 weight_list = [item["weights"] for item in batch]
-                sample_counts = [item["num_samples"] for item in batch]
-                total_samples = sum(sample_counts)
-                round_values = [
-                    int(item.get("round", expected_round)) for item in batch
-                ]
-                stale_count = sum(1 for value in round_values if value < expected_round)
-                future_count = sum(
-                    1 for value in round_values if value > expected_round
+                batch_summary = summarize_update_batch(
+                    batch,
+                    expected_round=expected_round,
                 )
-                round_min = min(round_values) if round_values else expected_round
-                round_max = max(round_values) if round_values else expected_round
-                delays = [
-                    max(
-                        0.0,
-                        float(item.get("received_at", received_at))
-                        - float(item.get("sent_at", received_at)),
-                    )
-                    for item in batch
-                ]
-                max_delay_seconds = max(delays) if delays else 0.0
-                mean_delay_seconds = sum(delays) / len(delays) if delays else 0.0
-
-                # Use sample counts as weights for FedAvg
-                if total_samples > 0:
-                    weights_for_avg = [s / total_samples for s in sample_counts]
-                else:
-                    weights_for_avg = None
+                total_samples = batch_summary.total_samples
+                stale_count = batch_summary.stale_update_count
+                future_count = batch_summary.future_update_count
+                round_min = (
+                    batch_summary.round_min
+                    if batch_summary.round_min is not None
+                    else expected_round
+                )
+                round_max = (
+                    batch_summary.round_max
+                    if batch_summary.round_max is not None
+                    else expected_round
+                )
+                max_delay_seconds = batch_summary.max_delay_seconds
+                mean_delay_seconds = batch_summary.mean_delay_seconds
+                weights_for_avg = batch_summary.sample_weights
 
                 # Use SERVER span for aggregation processing
                 with start_server_span(
@@ -425,21 +420,21 @@ def on_update(client, userdata, msg):
                     target_service="fog-bridge",
                     attributes={"region": region, "total_samples": total_samples},
                 ) as (span, trace_ctx):
-                    msg_payload = {
-                        "region": region,
-                        "partial_weights": partial,
-                        "total_samples": total_samples,
-                        "expected_round": expected_round,
-                        "round_min": round_min,
-                        "round_max": round_max,
-                        "stale_update_count": stale_count,
-                        "future_update_count": future_count,
-                        "max_delay_seconds": max_delay_seconds,
-                        "mean_delay_seconds": mean_delay_seconds,
-                        "stale_policy": STALE_UPDATE_POLICY,
-                        "timestamp": time.time(),
-                        "trace_context": trace_ctx,  # Propagate trace context
-                    }
+                    msg_payload = build_partial_aggregate_payload(
+                        region=region,
+                        partial_weights=partial,
+                        total_samples=total_samples,
+                        expected_round=expected_round,
+                        round_min=round_min,
+                        round_max=round_max,
+                        stale_update_count=stale_count,
+                        future_update_count=future_count,
+                        max_delay_seconds=max_delay_seconds,
+                        mean_delay_seconds=mean_delay_seconds,
+                        stale_policy=STALE_UPDATE_POLICY,
+                        timestamp=time.time(),
+                        trace_context=trace_ctx,
+                    )
                     client.publish(PARTIAL_TOPIC, json.dumps(msg_payload))
 
                 # Record aggregation metrics (OTEL)
