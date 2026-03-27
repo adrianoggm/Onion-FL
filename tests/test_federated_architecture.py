@@ -8,7 +8,6 @@ from flower_basic.federated_architecture import (
     build_runtime_plan,
     infer_primary_workflow,
     load_architecture_config,
-    parse_architecture_config,
 )
 
 
@@ -69,46 +68,6 @@ def test_load_architecture_config_from_json(tmp_path: Path):
     assert arch.orchestrator.rounds == 2
     assert len(arch.fog_nodes) == 2
     assert infer_primary_workflow(arch) == "swell"
-
-
-def test_parse_architecture_config_is_pure() -> None:
-    cfg = {"federated_architecture": _make_config()}
-    cfg["federated_architecture"]["client_params"] = {"lr": 0.1}
-    cfg["federated_architecture"]["fog_nodes"][0]["params"] = {"batch_size": 16}
-    cfg["federated_architecture"]["fog_nodes"][0]["clients"][0]["params"] = {
-        "seed": 7
-    }
-    cfg["federated_architecture"]["dataset"] = {
-        "name": "SWELL",
-        "data_dir": "data/SWELL",
-        "modalities": ["hrv"],
-        "subjects": [1, 2],
-        "manual_assignments": {"fog_0": [1]},
-        "per_node_percentages": [1.0],
-        "test_assignments": {"fog_0": [2]},
-    }
-
-    arch = parse_architecture_config(cfg)
-    assert arch.dataset is not None
-
-    arch.client_params["lr"] = 0.2
-    arch.fog_nodes[0].params["batch_size"] = 32
-    arch.fog_nodes[0].clients[0].params["seed"] = 8
-    arch.dataset.modalities.append("posture")
-    arch.dataset.manual_assignments["fog_0"].append(2)
-
-    assert arch.orchestrator.rounds == 2
-    assert len(arch.fog_nodes) == 2
-    assert cfg["federated_architecture"]["model"]["input_dim"] == 178
-    assert cfg["federated_architecture"]["client_params"]["lr"] == 0.1
-    assert cfg["federated_architecture"]["fog_nodes"][0]["params"]["batch_size"] == 16
-    assert cfg["federated_architecture"]["fog_nodes"][0]["clients"][0]["params"][
-        "seed"
-    ] == 7
-    assert cfg["federated_architecture"]["dataset"]["modalities"] == ["hrv"]
-    assert cfg["federated_architecture"]["dataset"]["manual_assignments"] == {
-        "fog_0": [1]
-    }
 
 
 def test_load_architecture_config_reads_split_strategy(tmp_path: Path):

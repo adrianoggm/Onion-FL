@@ -336,6 +336,9 @@ def test_build_runtime_plan_matches_exact_multispawn_topology(tmp_path: Path) ->
     assert server_cmd.cmd[server_cmd.cmd.index("--min-fit-clients") + 1] == "3"
     assert server_cmd.cmd[server_cmd.cmd.index("--min-available-clients") + 1] == "3"
 
+    bridge_cmd = next(cmd for cmd in commands if cmd.role == "fog_bridge_fog_0")
+    assert bridge_cmd.cmd[bridge_cmd.cmd.index("--server") + 1] == "localhost:8080"
+
     broker_cmd = next(cmd for cmd in commands if cmd.role == "broker")
     assert broker_cmd.cmd[broker_cmd.cmd.index("--stale-update-policy") + 1] == "strict"
     assert broker_cmd.env["FOG_K_MAP"] == '{"fog_0": 2, "fog_1": 1, "fog_2": 1}'
