@@ -14,15 +14,16 @@ import json
 import os
 import random
 import signal
-import threading
-import time
 from pathlib import Path
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from flower_basic.clients.baseclient import BaseMQTTComponent
+from flower_basic.clients.federated_base import (
+    ClientDataLoaders,
+    FederatedMQTTClientBase,
+)
 from flower_basic.datasets.swell_federated import load_node_split
 from flower_basic.logging_utils import enable_timestamped_print
 from flower_basic.prometheus_metrics import (
@@ -37,13 +38,8 @@ from flower_basic.prometheus_metrics import (
     push_metrics_to_gateway,
     start_metrics_server,
 )
-from flower_basic.runtime_protocol import (
-    build_client_update_payload,
-    decode_global_model_message,
-)
+from flower_basic.runtime_protocol import GlobalModelEnvelope
 from flower_basic.swell_model import SwellMLP
-
-# Telemetry (optional)
 from flower_basic.telemetry import (
     create_counter,
     create_gauge,
@@ -51,10 +47,8 @@ from flower_basic.telemetry import (
     init_otel,
     record_metric,
     shutdown_telemetry,
-    start_linked_consumer_span,
-    start_linked_producer_span,
-    start_span,
 )
+from flower_basic.training.local import EvalResult, TrainRoundResult
 
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
@@ -141,12 +135,70 @@ def _set_determinism(seed: int) -> torch.Generator:
             pass
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    gen = torch.Generator()
-    gen.manual_seed(seed)
-    return gen
+    generator = torch.Generator()
+    generator.manual_seed(seed)
+    return generator
 
 
-class SwellFLClientMQTT(BaseMQTTComponent):
+def _load_optional_split(split_path: Path) -> tuple[np.ndarray | None, np.ndarray | None]:
+    if not split_path.exists():
+        return None, None
+
+    try:
+        features, labels, _ = load_node_split(split_path)
+    except Exception:
+        return None, None
+
+    if features.size == 0:
+        return None, None
+    return features, labels
+
+
+def _build_client_data(
+    node_dir: Path,
+    *,
+    batch_size: int,
+    generator: torch.Generator | None,
+) -> tuple[ClientDataLoaders, int]:
+    train_features, train_labels, _ = load_node_split(node_dir / "train.npz")
+    if train_features.size == 0:
+        raise RuntimeError("Train split is empty for this node. Check subject assignments.")
+
+    train_loader = DataLoader(
+        TensorDataset(
+            torch.from_numpy(train_features).float(),
+            torch.from_numpy(train_labels).long(),
+        ),
+        batch_size=batch_size,
+        shuffle=True,
+        generator=generator,
+    )
+
+    val_loader = None
+    val_features, val_labels = _load_optional_split(node_dir / "val.npz")
+    if val_features is not None and val_labels is not None:
+        val_loader = DataLoader(
+            TensorDataset(
+                torch.from_numpy(val_features).float(),
+                torch.from_numpy(val_labels).long(),
+            ),
+            batch_size=256,
+            shuffle=False,
+        )
+
+    test_features, _ = _load_optional_split(node_dir / "test.npz")
+
+    data = ClientDataLoaders(
+        train_loader=train_loader,
+        val_loader=val_loader,
+        num_train_samples=len(train_features),
+        num_val_samples=0 if val_features is None else len(val_features),
+        num_test_samples=0 if test_features is None else len(test_features),
+    )
+    return data, int(train_features.shape[1])
+
+
+class SwellFLClientMQTT(FederatedMQTTClientBase):
     def __init__(
         self,
         node_dir: str,
@@ -162,273 +214,88 @@ class SwellFLClientMQTT(BaseMQTTComponent):
         topic_global: str = TOPIC_GLOBAL_MODEL,
     ):
         self.node_dir = Path(node_dir)
-        self.region = region
-        self.tag = f"[CLIENT {self.region}]"
-        self.client_id = client_id or f"{self.region}_client_{os.getpid() % 10000}"
-        self.local_epochs = max(1, int(local_epochs))
         self.seed = int(seed) if seed is not None else None
-        self.topic_updates = topic_updates
-        self.topic_global = topic_global
-
-        # Load splits
-        X_train, y_train, _ = load_node_split(self.node_dir / "train.npz")
-        if X_train.size == 0:
-            raise RuntimeError(
-                "Train split is empty for this node. Check subject assignments."
-            )
-
-        input_dim = X_train.shape[1]
-        gen = _set_determinism(self.seed) if self.seed is not None else None
-        self.model = SwellMLP(input_dim=input_dim)
-
-        # DataLoaders
-        self.train_loader = DataLoader(
-            TensorDataset(
-                torch.from_numpy(X_train).float(), torch.from_numpy(y_train).long()
-            ),
-            batch_size=batch_size,
-            shuffle=True,
-            generator=gen,
-        )
-
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
-        self.criterion = torch.nn.CrossEntropyLoss()
-        # Optional validation split
-        self.val_loader = None
-        self.num_val_samples = 0  # Initialize before conditional
-        val_path = self.node_dir / "val.npz"
-        if val_path.exists():
-            try:
-                X_val, y_val, _ = load_node_split(val_path)
-                if X_val.size > 0:
-                    self.val_loader = DataLoader(
-                        TensorDataset(
-                            torch.from_numpy(X_val).float(),
-                            torch.from_numpy(y_val).long(),
-                        ),
-                        batch_size=256,
-                        shuffle=False,
-                    )
-                    self.num_val_samples = len(X_val)
-            except Exception:
-                self.val_loader = None
-                self.num_val_samples = 0
-
-        # Load test samples count
-        self.num_test_samples = 0
-        test_path = self.node_dir / "test.npz"
-        if test_path.exists():
-            try:
-                X_test, _, _ = load_node_split(test_path)
-                self.num_test_samples = len(X_test) if X_test.size > 0 else 0
-            except Exception:
-                self.num_test_samples = 0
-
-        # Metrics output path
         self.metrics_path = self.node_dir / "val_metrics.jsonl"
 
+        generator = _set_determinism(self.seed) if self.seed is not None else None
+        data, input_dim = _build_client_data(
+            self.node_dir, batch_size=batch_size, generator=generator
+        )
+        model = SwellMLP(input_dim=input_dim)
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        criterion = torch.nn.CrossEntropyLoss()
+        resolved_client_id = client_id or f"{region}_client_{os.getpid() % 10000}"
+
         super().__init__(
-            tag=self.tag,
+            tag=f"[CLIENT {region}]",
+            region=region,
+            client_id=resolved_client_id,
+            model=model,
+            optimizer=optimizer,
+            criterion=criterion,
+            data=data,
+            local_epochs=local_epochs,
             mqtt_broker=mqtt_broker,
             mqtt_port=mqtt_port,
-            subscriptions=[self.topic_global],
+            topic_updates=topic_updates,
+            topic_global=topic_global,
+            tracer=TRACER,
+            global_source_service="server-swell",
+            update_target_service="fog-broker",
         )
-        self.current_round = 0
-        self._got_global = False
-        # Protect model updates from MQTT callback during training
-        self._lock = threading.Lock()
-        self._pending_global_state = None
-
-        # Store sample count for contribution tracking
-        self.num_samples = len(X_train)
-
-        # Report dataset distribution
-        self.num_samples + self.num_val_samples + self.num_test_samples
-        print(
-            f"{self.tag} Initialized with {self.num_samples} train / {self.num_val_samples} val / {self.num_test_samples} test samples"
-        )
-
-    def on_message(self, client, userdata, msg):
-        if msg.topic == self.topic_global:
-            try:
-                envelope = decode_global_model_message(
-                    msg.payload, self.model.state_dict().keys()
-                )
-                if envelope is not None:
-                    # Use linked CONSUMER span to continue trace from server
-                    with start_linked_consumer_span(
-                        TRACER,
-                        "client.receive_global_model",
-                        envelope.trace_context,
-                        source_service="server-swell",
-                        attributes={
-                            "region": self.region,
-                            "round": envelope.round_num or "?",
-                        },
-                    ):
-                        # Buffer the global state to apply between rounds (avoid in-place during training)
-                        state = {
-                            name: torch.tensor(value)
-                            for name, value in envelope.weights.items()
-                        }
-                        with self._lock:
-                            self._pending_global_state = state
-                        self._got_global = True
-                        record_metric(
-                            COUNTER_GLOBAL_MODELS_RECEIVED, 1, {"region": self.region}
-                        )
-                        print(
-                            f"{self.tag} Global model available (round={envelope.round_num or '?'})"
-                        )
-            except Exception as e:
-                print(f"{self.tag} Error processing global model: {e}")
-
-    def train_one_round(self) -> float:
-        start_time = time.time()
-
-        with start_span(TRACER, "client.train_one_round", {"region": self.region}):
-            with self._lock:
-                self.model.train()
-                total = 0.0
-                n = 0
-                batch_count = 0
-                for _ in range(self.local_epochs):
-                    for X, y in self.train_loader:
-                        self.optimizer.zero_grad()
-                        logits = self.model(X)
-                        loss = self.criterion(logits, y)
-                        loss.backward()
-                        self.optimizer.step()
-                        total += loss.item() * X.size(0)
-                        n += X.size(0)
-                        batch_count += 1
-                avg_loss = total / max(n, 1)
-
-            # Record metrics (OTEL)
-            training_duration = time.time() - start_time
-            record_metric(COUNTER_TRAINING_ROUNDS, 1, {"region": self.region})
-            record_metric(
-                COUNTER_BATCHES_PROCESSED, batch_count, {"region": self.region}
-            )
-            if HIST_TRAINING_DURATION:
-                HIST_TRAINING_DURATION.record(
-                    training_duration, {"region": self.region}
-                )
-            if HIST_TRAINING_LOSS:
-                HIST_TRAINING_LOSS.record(avg_loss, {"region": self.region})
-            record_metric(GAUGE_TRAIN_SAMPLES, n, {"region": self.region})
-
-            # Record Prometheus metrics
-            CLIENT_TRAINING_ROUNDS.labels(
-                client_id=self.client_id, region=self.region
-            ).inc()
-            CLIENT_TRAINING_DURATION.labels(
-                client_id=self.client_id, region=self.region
-            ).observe(training_duration)
-            CLIENT_LOCAL_LOSS.labels(client_id=self.client_id, region=self.region).set(
-                avg_loss
-            )
 
         print(
-            f"{self.tag} Train loss: {avg_loss:.4f} | samples: {n} | batches: {batch_count} | epochs: {self.local_epochs}"
-        )
-        return avg_loss
-
-    def evaluate_val(self) -> dict:
-        if self.val_loader is None:
-            return {}
-        with self._lock:
-            prev_mode = self.model.training
-            self.model.eval()
-            total = 0.0
-            correct = 0
-            count = 0
-            with torch.no_grad():
-                for X, y in self.val_loader:
-                    logits = self.model(X)
-                    loss = self.criterion(logits, y)
-                    total += loss.item() * X.size(0)
-                    preds = torch.argmax(logits, dim=1)
-                    correct += (preds == y).sum().item()
-                    count += X.size(0)
-            if prev_mode:
-                self.model.train()
-        if count == 0:
-            return {}
-        val_loss = total / count
-        val_acc = correct / count
-
-        # Record Prometheus validation accuracy
-        CLIENT_LOCAL_ACCURACY.labels(client_id=self.client_id, region=self.region).set(
-            val_acc
+            f"{self.tag} Initialized with {self.num_samples} train / "
+            f"{self.num_val_samples} val / {self.num_test_samples} test samples"
         )
 
-        print(f"{self.tag} Val loss: {val_loss:.4f} | Val acc: {val_acc:.3f}")
-        return {"val_loss": val_loss, "val_acc": val_acc}
+    def on_global_model_buffered(self, envelope: GlobalModelEnvelope) -> None:
+        record_metric(COUNTER_GLOBAL_MODELS_RECEIVED, 1, {"region": self.region})
 
-    def publish_update(
-        self, avg_loss: float, val_acc: float = 0.0, round_num: int | None = None
+    def on_train_round_completed(
+        self, result: TrainRoundResult, duration: float
     ) -> None:
-        # Use PRODUCER span with context propagation for distributed tracing
-        with start_linked_producer_span(
-            TRACER, "client.publish_update", "fog-broker", {"region": self.region}
-        ) as (span, trace_ctx):
-            with self._lock:
-                state = self.model.state_dict()
-                weights = {k: v.detach().cpu().numpy() for k, v in state.items()}
-
-            payload = build_client_update_payload(
-                client_id=self.client_id,
-                region=self.region,
-                round_num=int(
-                    round_num if round_num is not None else max(1, self.current_round)
-                ),
-                weights=weights,
-                num_samples=self.num_samples,
-                avg_loss=avg_loss,
-                val_acc=val_acc,
-                sent_at=time.time(),
-                trace_context=trace_ctx,
-            )
-            self.mqtt.publish(self.topic_updates, json.dumps(payload))
-            record_metric(
-                COUNTER_UPDATES_PUBLISHED,
-                1,
-                {"region": self.region, "client_id": self.client_id},
-            )
-        print(
-            f"{self.tag} Local update published ({self.num_samples} samples) to {self.topic_updates}"
+        record_metric(COUNTER_TRAINING_ROUNDS, 1, {"region": self.region})
+        record_metric(
+            COUNTER_BATCHES_PROCESSED, result.batch_count, {"region": self.region}
+        )
+        if HIST_TRAINING_DURATION:
+            HIST_TRAINING_DURATION.record(duration, {"region": self.region})
+        if HIST_TRAINING_LOSS:
+            HIST_TRAINING_LOSS.record(result.avg_loss, {"region": self.region})
+        record_metric(
+            GAUGE_TRAIN_SAMPLES, result.num_samples, {"region": self.region}
         )
 
-    def wait_for_global(self, timeout_s: float = 30.0) -> bool:
-        waited = 0.0
-        interval = 0.5
-        with self._lock:
-            if self._pending_global_state is not None:
-                return True
-            self._got_global = False
+        CLIENT_TRAINING_ROUNDS.labels(
+            client_id=self.client_id, region=self.region
+        ).inc()
+        CLIENT_TRAINING_DURATION.labels(
+            client_id=self.client_id, region=self.region
+        ).observe(duration)
+        CLIENT_LOCAL_LOSS.labels(client_id=self.client_id, region=self.region).set(
+            result.avg_loss
+        )
 
-        while waited < timeout_s:
-            with self._lock:
-                if self._pending_global_state is not None or self._got_global:
-                    return True
-            time.sleep(interval)
-            waited += interval
-        print(f"{self.tag} Timeout waiting for global model. Proceeding.")
-        return False
+    def on_validation_completed(self, result: EvalResult) -> None:
+        CLIENT_LOCAL_ACCURACY.labels(client_id=self.client_id, region=self.region).set(
+            result.accuracy
+        )
 
-    def run(self, rounds: int = 3, delay: float = 2.0) -> None:
-        print(f"{self.tag} Starting {rounds} federated rounds (region={self.region})")
+    def on_update_published(self, payload: dict[str, object]) -> None:
+        record_metric(
+            COUNTER_UPDATES_PUBLISHED,
+            1,
+            {"region": self.region, "client_id": self.client_id},
+        )
 
-        # Client ID for metrics
-        # Register dataset distribution metrics once at start (OTEL)
+    def on_dataset_metrics_registered(self) -> None:
         record_metric(GAUGE_TRAIN_SAMPLES, self.num_samples, {"region": self.region})
         record_metric(GAUGE_VAL_SAMPLES, self.num_val_samples, {"region": self.region})
         record_metric(
             GAUGE_TEST_SAMPLES, self.num_test_samples, {"region": self.region}
         )
 
-        # Register Prometheus metrics
         CLIENT_TRAIN_SAMPLES.labels(client_id=self.client_id, region=self.region).set(
             self.num_samples
         )
@@ -439,47 +306,25 @@ class SwellFLClientMQTT(BaseMQTTComponent):
             self.num_test_samples
         )
 
-        for r in range(1, rounds + 1):
-            if r > 1:
-                self.wait_for_global()
-                # Apply pending global safely between rounds
-                with self._lock:
-                    if self._pending_global_state is not None:
-                        current = self.model.state_dict()
-                        current.update(self._pending_global_state)
-                        self.model.load_state_dict(current, strict=False)
-                        self._pending_global_state = None
-                        self._got_global = False
-                        print(f"{self.tag} Global model applied")
-
-            print(f"\n=== Round {r}/{rounds} ===")
-            self.current_round = r
-            avg_loss = self.train_one_round()
-            # Validate before publishing update
-            val_metrics = self.evaluate_val()
-            val_acc = val_metrics.get("val_acc", 0.0)
-            # Persist metrics
-            try:
-                rec = {"round": r, "region": self.region, "train_loss": float(avg_loss)}
-                rec.update({k: float(v) for k, v in val_metrics.items()})
-                import json as _json
-
-                with open(self.metrics_path, "a", encoding="utf-8") as f:
-                    f.write(_json.dumps(rec) + "\n")
-            except Exception:
-                pass
-            self.publish_update(
-                avg_loss, val_acc, round_num=r
-            )  # Include validation accuracy
-            if r < rounds:
-                time.sleep(delay)
-        self.stop_mqtt()
+    def persist_round_metrics(
+        self, round_num: int, avg_loss: float, val_metrics: dict[str, float]
+    ) -> None:
+        try:
+            record = {
+                "round": round_num,
+                "region": self.region,
+                "train_loss": float(avg_loss),
+            }
+            record.update({key: float(value) for key, value in val_metrics.items()})
+            with self.metrics_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record) + "\n")
+        except Exception:
+            pass
 
 
 def main():
     enable_timestamped_print()
 
-    # Parse arguments first to get client index for metrics port
     ap = argparse.ArgumentParser(description="SWELL MQTT federated local client")
     ap.add_argument(
         "--node_dir",
@@ -511,18 +356,15 @@ def main():
     )
     args = ap.parse_args()
 
-    # Initialize telemetry for this service
     _init_telemetry()
 
-    # Start Prometheus metrics server with deterministic port
     base_port = get_metrics_port_from_env(default=8100, component="CLIENT")
     if args.client_index >= 0:
         client_port = base_port + args.client_index
     else:
-        client_port = base_port + (os.getpid() % 100)  # Fallback to PID-based
+        client_port = base_port + (os.getpid() % 100)
     start_metrics_server(port=client_port)
 
-    # Cleanup function to push metrics before exit
     def cleanup(*_args):
         print(f"[CLIENT {args.region}] Pushing metrics before shutdown...")
         push_metrics_to_gateway(
@@ -534,7 +376,6 @@ def main():
         )
         shutdown_telemetry()
 
-    # Register cleanup for various termination signals
     atexit.register(cleanup)
     signal.signal(signal.SIGTERM, lambda s, f: (cleanup(), exit(0)))
     signal.signal(signal.SIGINT, lambda s, f: (cleanup(), exit(0)))
