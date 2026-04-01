@@ -1,32 +1,25 @@
 #!/usr/bin/env python3
-"""Fog broker (regional aggregator).
-
-This component aggregates local client updates per fog region before sending a
-partial model to the central server. It implements the fog layer aggregation in
-the hierarchical FL architecture.
-
-Flow:
-1. Subscribe to 'fl/updates' to receive client updates.
-2. Buffer K updates per region.
-3. Compute weighted average.
-4. Publish partial aggregate to 'fl/partial'.
-5. Clear buffer and wait for the next batch.
-"""
+"""Fog broker (regional aggregator)."""
 
 from __future__ import annotations
 
 import argparse
 import atexit
-import json
 import os
 import signal
-import time
 from collections import defaultdict
-from typing import Any
 
-import numpy as np
 import paho.mqtt.client as mqtt
 
+from flower_basic.brokers.federated_base import (
+    BrokerCallbacks,
+    BrokerConfig,
+    BrokerTelemetryHandles,
+    handle_client_update,
+    handle_global_model_round_update,
+    parse_k_map,
+    weighted_average,
+)
 from flower_basic.logging_utils import enable_timestamped_print
 from flower_basic.prometheus_metrics import (
     BROKER_AGGREGATIONS,
@@ -42,46 +35,29 @@ from flower_basic.prometheus_metrics import (
     get_metrics_port_from_env,
     start_metrics_server,
 )
-from flower_basic.runtime_protocol import (
-    build_partial_aggregate_payload,
-    decode_client_update_message,
-    summarize_update_batch,
-)
 from flower_basic.telemetry import (
     create_counter,
     create_gauge,
     create_histogram,
     init_otel,
-    record_metric,
     shutdown_telemetry,
-    start_linked_consumer_span,
-    start_linked_producer_span,
-    start_server_span,
 )
 
-# MQTT CONFIG AND AGGREGATION PARAMETERS
-UPDATE_TOPIC = "fl/updates"  # clients publish local updates here
-PARTIAL_TOPIC = "fl/partial"  # broker publishes partial aggregates here
-GLOBAL_TOPIC = "fl/global_model"  # (optional) republish global model
+UPDATE_TOPIC = "fl/updates"
+PARTIAL_TOPIC = "fl/partial"
+GLOBAL_TOPIC = "fl/global_model"
 
 MQTT_BROKER = "localhost"
 MQTT_PORT = 1883
 STALE_UPDATE_POLICY = "accept"
 
-# Number of updates per region before computing partial aggregate
-# K_MAP allows per-region thresholds (e.g., {"fog_1": 2, "fog_2": 3})
 K = 3
 K_MAP: dict[str, int] = {}
 
-# BUFFERS PER REGION
-# Each region has its own buffer of updates
 buffers = defaultdict(list)
-
-# Track unique clients per region
 clients_per_region: dict[str, set] = defaultdict(set)
 LATEST_GLOBAL_ROUND = 0
 
-# Environment overrides (optional)
 try:
     UPDATE_TOPIC = os.getenv("MQTT_TOPIC_UPDATES", UPDATE_TOPIC)
     PARTIAL_TOPIC = os.getenv("MQTT_TOPIC_PARTIAL", PARTIAL_TOPIC)
@@ -90,17 +66,10 @@ try:
     MQTT_PORT = int(os.getenv("MQTT_PORT", str(MQTT_PORT)))
     K = int(os.getenv("FOG_K", str(K)))
     STALE_UPDATE_POLICY = os.getenv("FOG_STALE_UPDATE_POLICY", STALE_UPDATE_POLICY)
-    _k_map_env = os.getenv("FOG_K_MAP")
-    if _k_map_env:
-        try:
-            parsed = json.loads(_k_map_env)
-            K_MAP = {str(k): int(v) for k, v in parsed.items()}
-        except Exception:
-            K_MAP = {}
+    K_MAP = parse_k_map(os.getenv("FOG_K_MAP"), broker_tag="[BROKER]")
 except Exception:
     pass
 
-# Telemetry - initialized lazily in main() to avoid import-time side effects
 TRACER = None
 METER = None
 COUNTER_UPDATES_RECEIVED = None
@@ -155,307 +124,97 @@ def _init_telemetry():
 
 
 def shutdown_broker_runtime() -> None:
-    """Flush broker telemetry without pushing broker gauges to Pushgateway.
-
-    Fog brokers are long-lived `/metrics` targets already scraped by Prometheus.
-    Pushing the same registry again on shutdown creates duplicate region series
-    in Grafana panels such as buffer size and clients-per-fog.
-    """
-
+    """Flush broker telemetry without pushing broker gauges to Pushgateway."""
     shutdown_telemetry()
 
 
-def weighted_average(
-    updates: list[dict[str, Any]], weights: list[float] | None = None
-) -> tuple[dict[str, Any], dict[str, float]]:
-    """Compute weighted average of model updates per region.
-
-    Args:
-        updates: List of dicts {param_name: numpy_array_serializable}
-        weights: Optional weights. If None, use uniform average.
-
-    Returns:
-        Tuple of:
-        - Dict with averaged parameters to send to central server
-        - Dict with centroid statistics (norm, mean, std)
-    """
-    n = len(updates)
-    if weights is None:
-        weights = [1.0 / n] * n
-    avg = {}
-
-    # For each model parameter...
-    all_params = []  # Collect all flattened parameters for stats
-    for key in updates[0]:
-        # Stack all parameter tensors for this key
-        param_arrays = [np.array(up[key]) for up in updates]
-        stacked = np.stack(param_arrays, axis=0)  # Shape: (n_updates, *param_shape)
-
-        # Compute weighted average along the first axis
-        weights_array = np.array(weights).reshape(-1, *([1] * (stacked.ndim - 1)))
-        averaged = (stacked * weights_array).sum(axis=0)
-        avg[key] = averaged.tolist()
-        all_params.append(averaged.flatten())
-
-    # Calculate centroid statistics
-    all_weights = np.concatenate(all_params)
-    centroid_stats = {
-        "norm": float(np.linalg.norm(all_weights)),  # L2 norm
-        "mean": float(np.mean(all_weights)),
-        "std": float(np.std(all_weights)),
-        "num_params": len(all_weights),
-    }
-
-    return avg, centroid_stats
+def _broker_config() -> BrokerConfig:
+    return BrokerConfig(
+        broker_tag="[BROKER]",
+        source_service="swell-client",
+        target_service="fog-bridge",
+        partial_topic=PARTIAL_TOPIC,
+        default_k=K,
+        k_map=K_MAP,
+        use_round_metadata=True,
+        stale_update_policy=STALE_UPDATE_POLICY,
+    )
 
 
-def _expected_client_round() -> int:
-    return max(1, int(LATEST_GLOBAL_ROUND) + 1)
+def _broker_telemetry() -> BrokerTelemetryHandles:
+    return BrokerTelemetryHandles(
+        tracer=TRACER,
+        counter_updates_received=COUNTER_UPDATES_RECEIVED,
+        counter_partials_published=COUNTER_PARTIALS_PUBLISHED,
+        hist_aggregation_time=HIST_AGGREGATION_TIME,
+        gauge_buffer_size=GAUGE_BUFFER_SIZE,
+        gauge_client_contribution=GAUGE_CLIENT_CONTRIBUTION,
+        counter_aggregations_total=COUNTER_AGGREGATIONS_TOTAL,
+        gauge_clients_per_region=GAUGE_CLIENTS_PER_REGION,
+    )
+
+
+def _record_prometheus_update(
+    region: str, client_id: str, num_samples: int, buffer_size: int, num_clients: int
+) -> None:
+    BROKER_UPDATES_RECEIVED.labels(region=region).inc()
+    BROKER_BUFFER_SIZE.labels(region=region).set(buffer_size)
+    BROKER_CLIENT_CONTRIBUTION.labels(client_id=client_id, region=region).set(
+        num_samples
+    )
+    BROKER_CLIENTS_PER_REGION.labels(region=region).set(num_clients)
+
+
+def _record_prometheus_buffer_cleared(region: str) -> None:
+    BROKER_BUFFER_SIZE.labels(region=region).set(0)
+
+
+def _record_prometheus_aggregation(region: str) -> None:
+    BROKER_PARTIALS_PUBLISHED.labels(region=region).inc()
+    BROKER_AGGREGATIONS.labels(region=region).inc()
+
+
+def _record_region_model_metrics(
+    region: str, centroid_stats: dict[str, float], total_samples: int
+) -> None:
+    FOG_REGION_MODEL_NORM.labels(region=region).set(centroid_stats["norm"])
+    FOG_REGION_MODEL_MEAN.labels(region=region).set(centroid_stats["mean"])
+    FOG_REGION_MODEL_STD.labels(region=region).set(centroid_stats["std"])
+    FOG_REGION_SAMPLES.labels(region=region).set(total_samples)
+
+
+def _broker_callbacks() -> BrokerCallbacks:
+    return BrokerCallbacks(
+        record_prometheus_update=_record_prometheus_update,
+        record_prometheus_buffer_cleared=_record_prometheus_buffer_cleared,
+        record_prometheus_aggregation=_record_prometheus_aggregation,
+        record_region_model_metrics=_record_region_model_metrics,
+    )
 
 
 def on_global_model(client, userdata, msg):
     """Track the latest global round to classify stale client updates."""
     global LATEST_GLOBAL_ROUND
-
-    try:
-        payload = json.loads(msg.payload.decode())
-        if not isinstance(payload, dict):
-            raise TypeError("global model payload must be a JSON object")
-        global_round = int(payload.get("round", LATEST_GLOBAL_ROUND))
-        LATEST_GLOBAL_ROUND = max(LATEST_GLOBAL_ROUND, global_round)
-        print(
-            f"[BROKER] Global round updated to {LATEST_GLOBAL_ROUND}; expected client round={_expected_client_round()}"
-        )
-    except (TypeError, ValueError, json.JSONDecodeError) as exc:
-        print(f"[BROKER] Ignoring malformed global model message: {exc}")
+    LATEST_GLOBAL_ROUND = handle_global_model_round_update(
+        msg.payload,
+        latest_global_round=LATEST_GLOBAL_ROUND,
+        broker_tag="[BROKER]",
+    )
 
 
 def on_update(client, userdata, msg):
     """Handle local client updates and emit partial aggregates per region."""
-    try:
-        received_at = time.time()
-        expected_round = _expected_client_round()
-        envelope = decode_client_update_message(
-            msg.payload,
-            fallback_round=expected_round,
-            fallback_sent_at=received_at,
-        )
-        if envelope is None:
-            print("[BROKER] Ignoring malformed update payload")
-            return
-
-        region = envelope.region
-        weights = envelope.weights
-        client_id = envelope.client_id
-        num_samples = envelope.num_samples
-        update_round = (
-            envelope.round_num if envelope.round_num is not None else expected_round
-        )
-        sent_at = envelope.sent_at if envelope.sent_at is not None else received_at
-        trace_context = envelope.trace_context
-
-        if not weights:
-            print(f"[BROKER] Received empty weights from {client_id}")
-            return
-
-        is_stale = update_round < expected_round
-        is_future = update_round > expected_round
-        round_status = "current"
-        if is_stale:
-            round_status = "stale"
-        elif is_future:
-            round_status = "future"
-
-        if STALE_UPDATE_POLICY == "strict" and round_status != "current":
-            print(
-                f"[BROKER] Dropping {round_status} update from client={client_id}, "
-                f"region={region}, update_round={update_round}, expected_round={expected_round}"
-            )
-            return
-
-        # Use linked CONSUMER span to continue trace from swell-client
-        with start_linked_consumer_span(
-            TRACER,
-            "broker.receive_update",
-            trace_context,
-            source_service="swell-client",
-            attributes={
-                "region": region,
-                "client_id": client_id,
-                "num_samples": num_samples,
-                "update_round": update_round,
-                "expected_round": expected_round,
-            },
-        ):
-            # Store weights along with metadata for weighted aggregation
-            buffers[region].append(
-                {
-                    "weights": weights,
-                    "num_samples": num_samples,
-                    "client_id": client_id,
-                    "round": update_round,
-                    "expected_round": expected_round,
-                    "sent_at": sent_at,
-                    "received_at": received_at,
-                    "trace_context": trace_context,
-                }
-            )
-            region_k = K_MAP.get(region, K)
-
-            # Track unique clients per region
-            clients_per_region[region].add(client_id)
-
-            # Record metrics (OTEL)
-            record_metric(
-                COUNTER_UPDATES_RECEIVED, 1, {"region": region, "client_id": client_id}
-            )
-            record_metric(GAUGE_BUFFER_SIZE, len(buffers[region]), {"region": region})
-            record_metric(
-                GAUGE_CLIENT_CONTRIBUTION,
-                num_samples,
-                {"region": region, "client_id": client_id},
-            )
-            record_metric(
-                GAUGE_CLIENTS_PER_REGION,
-                len(clients_per_region[region]),
-                {"region": region},
-            )
-
-            # Record Prometheus metrics
-            BROKER_UPDATES_RECEIVED.labels(region=region).inc()
-            BROKER_BUFFER_SIZE.labels(region=region).set(len(buffers[region]))
-            BROKER_CLIENT_CONTRIBUTION.labels(client_id=client_id, region=region).set(
-                num_samples
-            )
-            BROKER_CLIENTS_PER_REGION.labels(region=region).set(
-                len(clients_per_region[region])
-            )
-
-            print(
-                f"[BROKER] Update received from client={client_id}, region={region}, samples={num_samples}. "
-                f"Buffer: {len(buffers[region])}/{region_k} | "
-                f"round={update_round} expected={expected_round} status={round_status}"
-            )
-
-            if len(buffers[region]) >= region_k:
-                agg_start = time.time()
-                batch = list(buffers[region])
-
-                # Extract weights and compute sample-weighted average
-                weight_list = [item["weights"] for item in batch]
-                batch_summary = summarize_update_batch(
-                    batch,
-                    expected_round=expected_round,
-                )
-                total_samples = batch_summary.total_samples
-                stale_count = batch_summary.stale_update_count
-                future_count = batch_summary.future_update_count
-                round_min = (
-                    batch_summary.round_min
-                    if batch_summary.round_min is not None
-                    else expected_round
-                )
-                round_max = (
-                    batch_summary.round_max
-                    if batch_summary.round_max is not None
-                    else expected_round
-                )
-                max_delay_seconds = batch_summary.max_delay_seconds
-                mean_delay_seconds = batch_summary.mean_delay_seconds
-                weights_for_avg = batch_summary.sample_weights
-
-                # Use SERVER span for aggregation processing
-                with start_server_span(
-                    TRACER,
-                    "broker.aggregate",
-                    attributes={
-                        "region": region,
-                        "num_clients": len(weight_list),
-                        "total_samples": total_samples,
-                    },
-                ):
-                    partial, centroid_stats = weighted_average(
-                        weight_list, weights_for_avg
-                    )
-                    agg_duration = time.time() - agg_start
-
-                # Record centroid (model) metrics for this fog region
-                FOG_REGION_MODEL_NORM.labels(region=region).set(centroid_stats["norm"])
-                FOG_REGION_MODEL_MEAN.labels(region=region).set(centroid_stats["mean"])
-                FOG_REGION_MODEL_STD.labels(region=region).set(centroid_stats["std"])
-                FOG_REGION_SAMPLES.labels(region=region).set(total_samples)
-
-                print(
-                    f"[BROKER] Centroid stats for {region}: norm={centroid_stats['norm']:.4f}, "
-                    f"mean={centroid_stats['mean']:.6f}, std={centroid_stats['std']:.4f}, "
-                    f"params={centroid_stats['num_params']}"
-                )
-                print(
-                    f"[BROKER] Round summary for {region}: expected={expected_round}, "
-                    f"min={round_min}, max={round_max}, stale={stale_count}, "
-                    f"future={future_count}, max_delay={max_delay_seconds:.2f}s"
-                )
-
-                # Log contribution breakdown
-                for item in batch:
-                    contrib_pct = (
-                        (item["num_samples"] / total_samples * 100)
-                        if total_samples > 0
-                        else 0
-                    )
-                    print(
-                        f"[BROKER] Client {item['client_id']} contributed {item['num_samples']} samples ({contrib_pct:.1f}%)"
-                    )
-
-                buffers[region].clear()
-                record_metric(GAUGE_BUFFER_SIZE, 0, {"region": region})
-
-                # Record Prometheus metrics after aggregation
-                BROKER_BUFFER_SIZE.labels(region=region).set(0)
-
-                # Use PRODUCER span with context propagation to fog-bridge
-                with start_linked_producer_span(
-                    TRACER,
-                    "broker.publish_partial",
-                    target_service="fog-bridge",
-                    attributes={"region": region, "total_samples": total_samples},
-                ) as (span, trace_ctx):
-                    msg_payload = build_partial_aggregate_payload(
-                        region=region,
-                        partial_weights=partial,
-                        total_samples=total_samples,
-                        expected_round=expected_round,
-                        round_min=round_min,
-                        round_max=round_max,
-                        stale_update_count=stale_count,
-                        future_update_count=future_count,
-                        max_delay_seconds=max_delay_seconds,
-                        mean_delay_seconds=mean_delay_seconds,
-                        stale_policy=STALE_UPDATE_POLICY,
-                        timestamp=time.time(),
-                        trace_context=trace_ctx,
-                    )
-                    client.publish(PARTIAL_TOPIC, json.dumps(msg_payload))
-
-                # Record aggregation metrics (OTEL)
-                record_metric(COUNTER_PARTIALS_PUBLISHED, 1, {"region": region})
-                record_metric(COUNTER_AGGREGATIONS_TOTAL, 1, {"region": region})
-                if HIST_AGGREGATION_TIME:
-                    HIST_AGGREGATION_TIME.record(agg_duration, {"region": region})
-
-                # Record Prometheus metrics
-                BROKER_PARTIALS_PUBLISHED.labels(region=region).inc()
-                BROKER_AGGREGATIONS.labels(region=region).inc()
-
-                print(
-                    f"[BROKER] Partial aggregate published for region={region} (total samples: {total_samples})"
-                )
-
-    except Exception as e:
-        print(f"[BROKER ERROR] Error procesando actualización: {e}")
-        import traceback
-
-        traceback.print_exc()
+    handle_client_update(
+        client=client,
+        msg=msg,
+        config=_broker_config(),
+        telemetry=_broker_telemetry(),
+        callbacks=_broker_callbacks(),
+        buffers=buffers,
+        clients_per_region=clients_per_region,
+        weighted_average_fn=weighted_average,
+        latest_global_round=LATEST_GLOBAL_ROUND,
+    )
 
 
 def on_message(client, userdata, msg):
@@ -473,11 +232,8 @@ def main():
     global STALE_UPDATE_POLICY
 
     enable_timestamped_print()
-
-    # Initialize telemetry for this service
     _init_telemetry()
 
-    # Start Prometheus metrics server
     metrics_port = get_metrics_port_from_env(default=8001, component="BROKER")
     start_metrics_server(port=metrics_port)
 
@@ -529,13 +285,8 @@ def main():
     args = parser.parse_args()
 
     K = max(1, int(args.k))
-    if args.k_map:
-        try:
-            parsed = json.loads(args.k_map)
-            K_MAP.clear()
-            K_MAP.update({str(k): max(1, int(v)) for k, v in parsed.items()})
-        except Exception as exc:  # pragma: no cover - defensive
-            print(f"[BROKER] Ignorando k-map inválido: {exc}")
+    K_MAP.clear()
+    K_MAP.update(parse_k_map(args.k_map, broker_tag="[BROKER]"))
 
     MQTT_BROKER = args.mqtt_broker
     MQTT_PORT = int(args.mqtt_port)
@@ -544,7 +295,6 @@ def main():
     GLOBAL_TOPIC = args.topic_global
     STALE_UPDATE_POLICY = str(args.stale_update_policy).lower()
 
-    # Configurar cliente MQTT con callback API v2
     mqttc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     mqttc.on_connect = lambda c, u, f, rc, p=None: c.subscribe(
         [(UPDATE_TOPIC, 0), (GLOBAL_TOPIC, 0)]
@@ -557,12 +307,10 @@ def main():
     )
     print(f"[BROKER] Stale update policy: {STALE_UPDATE_POLICY}")
 
-    # Cleanup function to flush telemetry before exit.
     def cleanup(*_args):
         print("[BROKER] Shutting down telemetry...")
         shutdown_broker_runtime()
 
-    # Register cleanup for various termination signals
     atexit.register(cleanup)
     signal.signal(signal.SIGTERM, lambda s, f: (cleanup(), exit(0)))
     signal.signal(signal.SIGINT, lambda s, f: (cleanup(), exit(0)))
