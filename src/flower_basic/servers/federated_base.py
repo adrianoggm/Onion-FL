@@ -102,7 +102,7 @@ class FederatedMQTTStrategyBase(fl.server.strategy.FedAvg):
         raise NotImplementedError
 
     def on_missing_final_eval_data(self, server_round: int) -> None:
-        print(f"{self.tag} \u26a0 FINAL ROUND: No test data available for evaluation!")
+        print(f"{self.tag} WARNING: FINAL ROUND: No test data available for evaluation!")
 
     def on_deferred_evaluation(self, server_round: int) -> None:
         print(

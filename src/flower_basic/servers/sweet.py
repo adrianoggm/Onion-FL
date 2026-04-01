@@ -1,7 +1,7 @@
 """SWEET central server with MQTT publishing.
 
 Uses SweetMLP to maintain parameter names consistent with clients.
-Follows SWELL architecture: Fog Bridges → Central Server → Global Model Broadcast
+Follows SWELL architecture: Fog Bridges -> Central Server -> Global Model Broadcast
 """
 
 from __future__ import annotations
@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import time
 from pathlib import Path
 from typing import Any
 
@@ -31,10 +30,7 @@ from flower_basic.prometheus_metrics import (
     push_metrics_to_gateway,
     start_metrics_server,
 )
-from flower_basic.runtime_protocol import (
-    build_global_model_payload,
-    extract_named_parameters,
-)
+from flower_basic.servers.federated_base import FederatedMQTTStrategyBase
 from flower_basic.sweet_model import SweetMLP
 from flower_basic.telemetry import (
     create_counter,
@@ -43,8 +39,6 @@ from flower_basic.telemetry import (
     init_otel,
     record_metric,
     shutdown_telemetry,
-    start_linked_producer_span,
-    start_server_span,
 )
 
 MODEL_TOPIC = os.getenv("MQTT_TOPIC_GLOBAL", "fl/global_model")
@@ -76,14 +70,12 @@ def _init_telemetry():
     COUNTER_AGGREGATIONS = create_counter(
         METER, "fl_aggregations_total", "Total number of model aggregations"
     )
-
     HIST_AGGREGATION_TIME = create_histogram(
         METER,
         "fl_aggregation_duration_seconds",
         "Time to aggregate client updates",
         "s",
     )
-
     GAUGE_GLOBAL_ACCURACY = create_gauge(
         METER, "fl_global_accuracy", "Current global model accuracy", "1"
     )
@@ -95,7 +87,7 @@ def _init_telemetry():
     )
 
 
-class MQTTFedAvgSweet(fl.server.strategy.FedAvg):
+class MQTTFedAvgSweet(FederatedMQTTStrategyBase):
     def __init__(
         self,
         model: SweetMLP,
@@ -104,134 +96,67 @@ class MQTTFedAvgSweet(fl.server.strategy.FedAvg):
         total_rounds: int = 10,
         **kwargs,
     ):
-        super().__init__(**kwargs)
-        self.global_model = model
-        self.mqtt = mqtt_client
-        self.param_names = list(model.state_dict().keys())
-        self.eval_data = eval_data
-        self.total_rounds = total_rounds
-        self.history = {"round": [], "loss": [], "accuracy": []}
+        super().__init__(
+            model=model,
+            mqtt_client=mqtt_client,
+            eval_data=eval_data,
+            total_rounds=total_rounds,
+            tracer=TRACER,
+            model_topic=MODEL_TOPIC,
+            publish_target_service="sweet-client",
+            tag=TAG,
+            **kwargs,
+        )
 
-        # Log evaluation data status
-        if self.eval_data is not None:
-            X, y = self.eval_data
-            unique_labels = np.unique(y)
-            print(
-                f"{TAG} Evaluation data loaded: {X.shape[0]} samples, {len(unique_labels)} classes"
-            )
-        else:
-            print(
-                f"{TAG} WARNING: No evaluation data - model quality will NOT be verified!"
-            )
+    def describe_eval_data(self) -> str | None:
+        if self.eval_data is None:
+            return None
+        features, labels = self.eval_data
+        unique_labels = np.unique(labels)
+        return f"{features.shape[0]} samples, {len(unique_labels)} classes"
 
-    def aggregate_fit(
+    def before_aggregate_fit(
         self,
         server_round: int,
         results: list[tuple[Any, fl.common.FitRes]],
         failures,
-    ) -> fl.common.Parameters | None:
-        start_time = time.time()
-
-        print(f"\n{TAG} ╔══════════════════════════════════════════╗")
-        print(
-            f"{TAG} ║           ROUND {server_round}/{self.total_rounds}                        ║"
-        )
-        print(f"{TAG} ╚══════════════════════════════════════════╝")
-        print(
-            f"{TAG} Received results from {len(results)} fog nodes, {len(failures)} failures"
-        )
-
-        # Record number of active clients
+    ) -> None:
         if GAUGE_ACTIVE_CLIENTS:
             record_metric(
                 GAUGE_ACTIVE_CLIENTS, len(results), {"round": str(server_round)}
             )
 
-        # Use SERVER span to show this service handles incoming requests from fog-bridge
-        with start_server_span(
-            TRACER,
-            "server.aggregate_fit",
-            attributes={"round": server_round, "num_results": len(results)},
-        ):
-            new_parameters = super().aggregate_fit(server_round, results, failures)
+    def evaluate_aggregated_state(
+        self, server_round: int, state_dict: dict[str, Any]
+    ) -> tuple[float, float]:
+        torch_state = {name: torch.tensor(value) for name, value in state_dict.items()}
+        self.global_model.load_state_dict(torch_state, strict=False)
+        return _evaluate_global(self.global_model, self.eval_data)
 
-        if new_parameters is None:
-            print(f"{TAG} Aggregation returned None")
-            return None
+    def on_final_evaluation(
+        self, server_round: int, evaluation: tuple[float, float]
+    ) -> None:
+        loss, acc = evaluation
 
-        try:
-            state_dict = extract_named_parameters(
-                new_parameters,
-                self.param_names,
-                bytes_to_ndarray=fl.common.bytes_to_ndarray,
-                parameters_to_ndarrays=fl.common.parameters_to_ndarrays,
-            )
+        self.history["round"].append(server_round)
+        self.history["loss"].append(loss)
+        self.history["accuracy"].append(acc)
 
-            if self.mqtt is not None:
-                # Use PRODUCER span with context propagation to clients
-                with start_linked_producer_span(
-                    TRACER,
-                    "server.publish_global_model",
-                    target_service="sweet-client",
-                    attributes={"round": server_round},
-                ) as (span, trace_ctx):
-                    payload = build_global_model_payload(
-                        round_num=server_round,
-                        weights=state_dict,
-                        trace_context=trace_ctx,
-                    )
-                    self.mqtt.publish(MODEL_TOPIC, json.dumps(payload))
-                print(f"{TAG} Published global model on {MODEL_TOPIC}")
+        if GAUGE_GLOBAL_ACCURACY:
+            record_metric(GAUGE_GLOBAL_ACCURACY, acc, {"round": str(server_round)})
+        if GAUGE_GLOBAL_LOSS:
+            record_metric(GAUGE_GLOBAL_LOSS, loss, {"round": str(server_round)})
 
-            # Only evaluate on the FINAL round after all federated aggregation is complete
-            if server_round == self.total_rounds:
-                if self.eval_data is not None:
-                    try:
-                        torch_state = {
-                            k: torch.tensor(v) for k, v in state_dict.items()
-                        }
-                        self.global_model.load_state_dict(torch_state, strict=False)
-                        loss, acc = _evaluate_global(self.global_model, self.eval_data)
+        FL_ACCURACY.labels(server="sweet").set(acc)
+        FL_LOSS.labels(server="sweet").set(loss)
+        self._print_final_evaluation(loss, acc)
 
-                        # Store final metrics
-                        self.history["round"].append(server_round)
-                        self.history["loss"].append(loss)
-                        self.history["accuracy"].append(acc)
-
-                        # Record global metrics for telemetry (OTEL)
-                        if GAUGE_GLOBAL_ACCURACY:
-                            record_metric(
-                                GAUGE_GLOBAL_ACCURACY, acc, {"round": str(server_round)}
-                            )
-                        if GAUGE_GLOBAL_LOSS:
-                            record_metric(
-                                GAUGE_GLOBAL_LOSS, loss, {"round": str(server_round)}
-                            )
-
-                        # Record Prometheus metrics
-                        FL_ACCURACY.labels(server="sweet").set(acc)
-                        FL_LOSS.labels(server="sweet").set(loss)
-
-                        # Print final evaluation summary
-                        self._print_final_evaluation(loss, acc)
-                    except Exception as eval_exc:
-                        print(f"{TAG} Final evaluation failed: {eval_exc}")
-                        import traceback
-
-                        traceback.print_exc()
-                else:
-                    print(
-                        f"{TAG} ⚠ FINAL ROUND: No test data available for evaluation!"
-                    )
-            else:
-                print(
-                    f"{TAG} Round {server_round}/{self.total_rounds} complete. Evaluation will run after final round."
-                )
-        except Exception as e:
-            print(f"{TAG} MQTT publish failed: {e}")
-
-        # Record aggregation metrics (OTEL)
-        aggregation_time = time.time() - start_time
+    def record_aggregation_metrics(
+        self,
+        server_round: int,
+        results: list[tuple[Any, fl.common.FitRes]],
+        aggregation_time: float,
+    ) -> None:
         if COUNTER_AGGREGATIONS:
             record_metric(COUNTER_AGGREGATIONS, 1, {"round": str(server_round)})
         if COUNTER_ROUNDS:
@@ -239,19 +164,16 @@ class MQTTFedAvgSweet(fl.server.strategy.FedAvg):
         if HIST_AGGREGATION_TIME:
             HIST_AGGREGATION_TIME.record(aggregation_time, {"round": str(server_round)})
 
-        # Record Prometheus metrics
         FL_ROUNDS.labels(server="sweet").inc()
         FL_AGGREGATIONS.labels(server="sweet").inc()
         FL_ACTIVE_CLIENTS.labels(server="sweet").set(len(results))
         FL_ROUND_DURATION.labels(server="sweet").observe(aggregation_time)
 
-        return new_parameters
-
     def _print_final_evaluation(self, loss: float, acc: float):
         """Print final evaluation results after federated learning completes."""
-        X, y = self.eval_data
-        n_samples = X.shape[0]
-        n_classes = len(np.unique(y))
+        features, labels = self.eval_data
+        n_samples = features.shape[0]
+        n_classes = len(np.unique(labels))
 
         print(
             f"\n{TAG} ╔══════════════════════════════════════════════════════════════╗"
@@ -278,7 +200,6 @@ class MQTTFedAvgSweet(fl.server.strategy.FedAvg):
         print(f"{TAG} ║    └────────────────────────────────────────────────┘        ║")
         print(f"{TAG} ║                                                              ║")
 
-        # Visual accuracy bar
         bar_len = 40
         filled = int(acc * bar_len)
         bar = "█" * filled + "░" * (bar_len - filled)
@@ -296,67 +217,73 @@ def _load_eval_data(manifest_path: Path) -> tuple[np.ndarray, np.ndarray] | None
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     nodes = manifest.get("nodes", {})
     base = manifest_path.parent
-    Xs = []
-    ys = []
+    all_features = []
+    all_labels = []
+
     for node_id in nodes.keys():
         test_path = base / node_id / "test.npz"
         if not test_path.exists():
             print(f"{TAG}   Node {node_id}: test.npz NOT FOUND at {test_path}")
             continue
-        X, y, _ = load_node_split(test_path)
-        if X.size > 0:
-            Xs.append(X)
-            ys.append(y)
-            print(f"{TAG}   Node {node_id}: loaded {X.shape[0]} test samples")
-        else:
+
+        features, labels, _ = load_node_split(test_path)
+        if features.size == 0:
             print(f"{TAG}   Node {node_id}: test.npz is empty")
-    if not Xs:
+            continue
+
+        all_features.append(features)
+        all_labels.append(labels)
+        print(f"{TAG}   Node {node_id}: loaded {features.shape[0]} test samples")
+
+    if not all_features:
         print(f"{TAG} WARNING: No test data found for centralized evaluation!")
         return None
-    total_X = np.concatenate(Xs, axis=0)
-    total_y = np.concatenate(ys, axis=0)
+
+    total_features = np.concatenate(all_features, axis=0)
+    total_labels = np.concatenate(all_labels, axis=0)
     print(
-        f"{TAG} Total evaluation data: {total_X.shape[0]} samples, {total_X.shape[1]} features"
+        f"{TAG} Total evaluation data: {total_features.shape[0]} samples, "
+        f"{total_features.shape[1]} features"
     )
-    return total_X, total_y
+    return total_features, total_labels
 
 
 def _evaluate_global(
     model: SweetMLP, data: tuple[np.ndarray, np.ndarray]
 ) -> tuple[float, float]:
     """Evaluate global model on test data."""
-    X, y = data
+    features, labels = data
     device = torch.device("cpu")
     model = model.to(device)
     model.eval()
-    ds = TensorDataset(torch.from_numpy(X).float(), torch.from_numpy(y).long())
-    loader = DataLoader(ds, batch_size=256, shuffle=False)
+    dataset = TensorDataset(
+        torch.from_numpy(features).float(), torch.from_numpy(labels).long()
+    )
+    loader = DataLoader(dataset, batch_size=256, shuffle=False)
     criterion = torch.nn.CrossEntropyLoss()
-    total = 0.0
+
+    total_loss = 0.0
     correct = 0
     count = 0
     with torch.no_grad():
-        for xb, yb in loader:
-            xb = xb.to(device)
-            yb = yb.to(device)
-            logits = model(xb)
-            loss = criterion(logits, yb)
-            total += loss.item() * xb.size(0)
-            preds = torch.argmax(logits, dim=1)
-            correct += (preds == yb).sum().item()
-            count += xb.size(0)
-    loss = total / max(count, 1)
-    acc = correct / max(count, 1)
-    return loss, acc
+        for batch_features, batch_labels in loader:
+            batch_features = batch_features.to(device)
+            batch_labels = batch_labels.to(device)
+            logits = model(batch_features)
+            loss = criterion(logits, batch_labels)
+            total_loss += float(loss.item()) * int(batch_features.size(0))
+            predictions = torch.argmax(logits, dim=1)
+            correct += int((predictions == batch_labels).sum().item())
+            count += int(batch_features.size(0))
+
+    return total_loss / max(count, 1), correct / max(count, 1)
 
 
 def main():
     global MQTT_BROKER, MODEL_TOPIC
 
-    # Initialize telemetry for this service
     _init_telemetry()
 
-    # Start Prometheus metrics server
     metrics_port = get_metrics_port_from_env(default=8000, component="SERVER")
     start_metrics_server(port=metrics_port)
 
@@ -392,8 +319,8 @@ def main():
         mqtt_client.connect(MQTT_BROKER, args.mqtt_port)
         mqtt_client.loop_start()
         print(f"{TAG} Connected to MQTT at {MQTT_BROKER}")
-    except Exception as e:
-        print(f"{TAG} MQTT connection failed: {e}")
+    except Exception as exc:
+        print(f"{TAG} MQTT connection failed: {exc}")
         mqtt_client = None
 
     min_available = (
@@ -429,10 +356,7 @@ def main():
         strategy=strategy,
     )
 
-    # Push metrics to Pushgateway before exit
     push_metrics_to_gateway(job="sweet-server", grouping_key={"component": "server"})
-
-    # Ensure all telemetry is flushed before exit
     shutdown_telemetry()
 
 

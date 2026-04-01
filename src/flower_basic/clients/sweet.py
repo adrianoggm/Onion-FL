@@ -7,7 +7,7 @@ Loads per-node train/val/test NPZ splits prepared by
 scripts/prepare_sweet_federated.py and trains a SweetMLP locally.
 Publishes updated weights to the fog broker over MQTT.
 
-Architecture: Client → Fog Broker → Fog Bridge → Central Server
+Architecture: Client -> Fog Broker -> Fog Bridge -> Central Server
 """
 
 import argparse
@@ -15,14 +15,16 @@ import atexit
 import json
 import os
 import signal
-import threading
-import time
 from pathlib import Path
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from flower_basic.clients.baseclient import BaseMQTTComponent
+from flower_basic.clients.federated_base import (
+    ClientDataLoaders,
+    FederatedMQTTClientBase,
+)
 from flower_basic.datasets.sweet_federated import load_node_split
 from flower_basic.prometheus_metrics import (
     CLIENT_LOCAL_ACCURACY,
@@ -36,13 +38,8 @@ from flower_basic.prometheus_metrics import (
     push_metrics_to_gateway,
     start_metrics_server,
 )
-from flower_basic.runtime_protocol import (
-    build_client_update_payload,
-    decode_global_model_message,
-)
+from flower_basic.runtime_protocol import GlobalModelEnvelope
 from flower_basic.sweet_model import SweetMLP
-
-# Telemetry
 from flower_basic.telemetry import (
     create_counter,
     create_gauge,
@@ -50,10 +47,8 @@ from flower_basic.telemetry import (
     init_otel,
     record_metric,
     shutdown_telemetry,
-    start_linked_consumer_span,
-    start_linked_producer_span,
-    start_span,
 )
+from flower_basic.training.local import EvalResult, TrainRoundResult
 
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
@@ -112,8 +107,95 @@ def _init_telemetry():
     )
 
 
-class SweetFLClientMQTT(BaseMQTTComponent):
-    """SWEET federated client - follows SWELL architecture pattern."""
+def _resolve_split_paths(
+    node_dir: Path, subject_id: str | None
+) -> tuple[Path, Path, Path]:
+    if subject_id:
+        subject_dir = node_dir / f"subject_{subject_id}"
+        return (
+            subject_dir / "train.npz",
+            subject_dir / "val.npz",
+            subject_dir / "test.npz",
+        )
+
+    return node_dir / "train.npz", node_dir / "val.npz", node_dir / "test.npz"
+
+
+def _load_optional_split(split_path: Path) -> tuple[np.ndarray | None, np.ndarray | None]:
+    if not split_path.exists():
+        return None, None
+
+    try:
+        features, labels, _ = load_node_split(split_path)
+    except Exception:
+        return None, None
+
+    if features.size == 0:
+        return None, None
+    return features, labels
+
+
+def _build_client_data(
+    train_file: Path,
+    val_file: Path,
+    test_file: Path,
+    *,
+    batch_size: int,
+) -> ClientDataLoaders:
+    train_features, train_labels, _ = load_node_split(train_file)
+    if train_features.size == 0:
+        raise RuntimeError("Train split is empty for this node. Check subject assignments.")
+
+    train_loader = DataLoader(
+        TensorDataset(
+            torch.from_numpy(train_features).float(),
+            torch.from_numpy(train_labels).long(),
+        ),
+        batch_size=batch_size,
+        shuffle=True,
+    )
+
+    val_loader = None
+    val_features, val_labels = _load_optional_split(val_file)
+    if val_features is not None and val_labels is not None:
+        val_loader = DataLoader(
+            TensorDataset(
+                torch.from_numpy(val_features).float(),
+                torch.from_numpy(val_labels).long(),
+            ),
+            batch_size=256,
+            shuffle=False,
+        )
+
+    test_features, _ = _load_optional_split(test_file)
+
+    return ClientDataLoaders(
+        train_loader=train_loader,
+        val_loader=val_loader,
+        num_train_samples=len(train_features),
+        num_val_samples=0 if val_features is None else len(val_features),
+        num_test_samples=0 if test_features is None else len(test_features),
+    )
+
+
+def _log_pretrained_model_hint(tag: str, node_dir: Path) -> None:
+    pretrained_path = node_dir.parent / "pretrained_model.json"
+    if not pretrained_path.exists():
+        return
+
+    try:
+        with pretrained_path.open(encoding="utf-8") as handle:
+            json.load(handle)
+        print(f"{tag} Pre-trained model found at {pretrained_path}")
+        print(
+            f"{tag} Note: Transfer learning from XGBoost to PyTorch requires weight conversion"
+        )
+    except Exception as exc:
+        print(f"{tag} Warning: Could not load pre-trained model: {exc}")
+
+
+class SweetFLClientMQTT(FederatedMQTTClientBase):
+    """SWEET federated client using the shared MQTT workflow."""
 
     def __init__(
         self,
@@ -122,7 +204,7 @@ class SweetFLClientMQTT(BaseMQTTComponent):
         input_dim: int,
         hidden_dims: list[int],
         num_classes: int,
-        subject_id: str | None = None,  # For per-subject client
+        subject_id: str | None = None,
         lr: float = 1e-3,
         batch_size: int = 32,
         local_epochs: int = 5,
@@ -131,310 +213,102 @@ class SweetFLClientMQTT(BaseMQTTComponent):
         topic_updates: str = TOPIC_UPDATES,
         topic_global: str = TOPIC_GLOBAL_MODEL,
     ):
-        """SWEET FL client using MQTT.
-
-        Args:
-            node_dir: Path to fog node directory (e.g., federated_runs/sweet/auto_5nodes/fog_0)
-            region: Node identifier (e.g., 'fog_0')
-            input_dim: Number of input features
-            hidden_dims: Hidden layer dimensions
-            num_classes: Number of classes
-            subject_id: Optional subject ID for per-subject client (e.g., '123')
-            lr: Learning rate
-            batch_size: Batch size for training
-            local_epochs: Number of local epochs per round
-            mqtt_broker: MQTT broker address
-            mqtt_port: MQTT broker port
-            topic_updates: MQTT topic for publishing updates
-            topic_global: MQTT topic for receiving global model
-        """
         self.node_dir = Path(node_dir)
         self.region = region
         self.subject_id = subject_id
-        self.tag = (
-            f"[CLIENT {self.region}{'_' + self.subject_id if self.subject_id else ''}]"
-        )
-        self.client_id = (
-            f"{self.region}_client_{self.subject_id}"
-            if self.subject_id
-            else f"{self.region}_client_{os.getpid() % 10000}"
-        )
-        self.topic_updates = topic_updates
-        self.topic_global = topic_global
-        self.local_epochs = local_epochs
 
-        # Load splits - support both aggregated and per-subject
-        if subject_id:
-            # Per-subject client (like SWELL)
-            train_file = self.node_dir / f"subject_{subject_id}" / "train.npz"
-            val_file = self.node_dir / f"subject_{subject_id}" / "val.npz"
-            test_file = self.node_dir / f"subject_{subject_id}" / "test.npz"
-        else:
-            # Aggregated node client (legacy)
-            train_file = self.node_dir / "train.npz"
-            val_file = self.node_dir / "val.npz"
-            test_file = self.node_dir / "test.npz"
-
-        X_train, y_train, _ = load_node_split(train_file)
-        if X_train.size == 0:
-            raise RuntimeError(
-                f"Train split is empty for {self.tag}. Check subject assignments."
-            )
-
-        # Model
-        self.model = SweetMLP(
-            input_dim=input_dim, hidden_dims=hidden_dims, num_classes=num_classes
+        tag = f"[CLIENT {region}{'_' + subject_id if subject_id else ''}]"
+        client_id = (
+            f"{region}_client_{subject_id}"
+            if subject_id
+            else f"{region}_client_{os.getpid() % 10000}"
         )
 
-        # Load pre-trained model if available (transfer learning)
-        pretrained_path = self.node_dir.parent / "pretrained_model.json"
-        if pretrained_path.exists():
-            try:
-                import json
-
-                with open(pretrained_path) as f:
-                    json.load(f)
-
-                # Convert XGBoost weights to PyTorch (if needed)
-                # For now, just log that pre-trained model exists
-                print(f"{self.tag} Pre-trained model found at {pretrained_path}")
-                print(
-                    f"{self.tag} Note: Transfer learning from XGBoost to PyTorch requires weight conversion"
-                )
-                # TODO: Implement XGBoost → PyTorch weight transfer
-            except Exception as e:
-                print(f"{self.tag} Warning: Could not load pre-trained model: {e}")
-
-        # DataLoaders
-        self.train_loader = DataLoader(
-            TensorDataset(
-                torch.from_numpy(X_train).float(), torch.from_numpy(y_train).long()
-            ),
-            batch_size=batch_size,
-            shuffle=True,
+        train_file, val_file, test_file = _resolve_split_paths(
+            self.node_dir, subject_id
         )
+        data = _build_client_data(
+            train_file, val_file, test_file, batch_size=batch_size
+        )
+        model = SweetMLP(
+            input_dim=input_dim,
+            hidden_dims=hidden_dims,
+            num_classes=num_classes,
+        )
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        criterion = torch.nn.CrossEntropyLoss()
 
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
-        self.criterion = torch.nn.CrossEntropyLoss()
-
-        # Validation split
-        self.val_loader = None
-        self.num_val_samples = 0
-        if val_file.exists():
-            val_X, val_y, _ = load_node_split(val_file)
-            if val_X.size > 0:
-                self.val_loader = DataLoader(
-                    TensorDataset(
-                        torch.from_numpy(val_X).float(), torch.from_numpy(val_y).long()
-                    ),
-                    batch_size=256,
-                    shuffle=False,
-                )
-                self.num_val_samples = len(val_X)
-
-        # Test samples count
-        self.num_test_samples = 0
-        if test_file.exists():
-            test_X, _, _ = load_node_split(test_file)
-            self.num_test_samples = len(test_X) if test_X.size > 0 else 0
+        _log_pretrained_model_hint(tag, self.node_dir)
 
         super().__init__(
-            tag=self.tag,
+            tag=tag,
+            region=region,
+            client_id=client_id,
+            model=model,
+            optimizer=optimizer,
+            criterion=criterion,
+            data=data,
+            local_epochs=local_epochs,
             mqtt_broker=mqtt_broker,
             mqtt_port=mqtt_port,
-            subscriptions=[self.topic_global],
+            topic_updates=topic_updates,
+            topic_global=topic_global,
+            tracer=TRACER,
+            global_source_service="server-sweet",
+            update_target_service="sweet-fog-broker",
         )
-        self._got_global = False
-        self._lock = threading.Lock()
-        self._pending_global_state = None
-
-        self.num_samples = len(X_train)
 
         print(
             f"{self.tag} Initialized with {self.num_samples} train / "
             f"{self.num_val_samples} val / {self.num_test_samples} test samples"
         )
 
-    def on_message(self, client, userdata, msg):
-        """Receive global model from server."""
-        if msg.topic == self.topic_global:
-            try:
-                envelope = decode_global_model_message(
-                    msg.payload, self.model.state_dict().keys()
-                )
-                if envelope is not None:
-                    with start_linked_consumer_span(
-                        TRACER,
-                        "client.receive_global_model",
-                        envelope.trace_context,
-                        source_service="server-sweet",
-                        attributes={
-                            "region": self.region,
-                            "round": envelope.round_num or "?",
-                        },
-                    ):
-                        state = {
-                            name: torch.tensor(value)
-                            for name, value in envelope.weights.items()
-                        }
-                        with self._lock:
-                            self._pending_global_state = state
-                        self._got_global = True
-                        if COUNTER_GLOBAL_MODELS_RECEIVED:
-                            record_metric(
-                                COUNTER_GLOBAL_MODELS_RECEIVED,
-                                1,
-                                {"region": self.region},
-                            )
-                        print(
-                            f"{self.tag} Global model available (round={envelope.round_num or '?'})"
-                        )
-            except Exception as e:
-                print(f"{self.tag} Error processing global model: {e}")
+    def on_global_model_buffered(self, envelope: GlobalModelEnvelope) -> None:
+        if COUNTER_GLOBAL_MODELS_RECEIVED:
+            record_metric(COUNTER_GLOBAL_MODELS_RECEIVED, 1, {"region": self.region})
 
-    def train_one_round(self) -> float:
-        """Train for multiple local epochs."""
-        start_time = time.time()
-
-        with start_span(TRACER, "client.train_one_round", {"region": self.region}):
-            with self._lock:
-                self.model.train()
-                total_loss = 0.0
-                n = 0
-                batch_count = 0
-
-                # Multiple local epochs
-                for _epoch in range(self.local_epochs):
-                    epoch_loss = 0.0
-                    epoch_samples = 0
-                    for X, y in self.train_loader:
-                        self.optimizer.zero_grad()
-                        logits = self.model(X)
-                        loss = self.criterion(logits, y)
-                        loss.backward()
-                        self.optimizer.step()
-                        epoch_loss += loss.item() * X.size(0)
-                        epoch_samples += X.size(0)
-                        batch_count += 1
-
-                    total_loss += epoch_loss
-                    n += epoch_samples
-
-                avg_loss = total_loss / max(n, 1)
-
-            # Record metrics
-            training_duration = time.time() - start_time
-            if COUNTER_TRAINING_ROUNDS:
-                record_metric(COUNTER_TRAINING_ROUNDS, 1, {"region": self.region})
-            if COUNTER_BATCHES_PROCESSED:
-                record_metric(
-                    COUNTER_BATCHES_PROCESSED, batch_count, {"region": self.region}
-                )
-            if HIST_TRAINING_DURATION:
-                HIST_TRAINING_DURATION.record(
-                    training_duration, {"region": self.region}
-                )
-            if HIST_TRAINING_LOSS:
-                HIST_TRAINING_LOSS.record(avg_loss, {"region": self.region})
-            if GAUGE_TRAIN_SAMPLES:
-                record_metric(GAUGE_TRAIN_SAMPLES, n, {"region": self.region})
-
-            # Prometheus metrics
-            CLIENT_TRAINING_ROUNDS.labels(
-                client_id=self.client_id, region=self.region
-            ).inc()
-            CLIENT_TRAINING_DURATION.labels(
-                client_id=self.client_id, region=self.region
-            ).observe(training_duration)
-            CLIENT_LOCAL_LOSS.labels(client_id=self.client_id, region=self.region).set(
-                avg_loss
+    def on_train_round_completed(
+        self, result: TrainRoundResult, duration: float
+    ) -> None:
+        if COUNTER_TRAINING_ROUNDS:
+            record_metric(COUNTER_TRAINING_ROUNDS, 1, {"region": self.region})
+        if COUNTER_BATCHES_PROCESSED:
+            record_metric(
+                COUNTER_BATCHES_PROCESSED, result.batch_count, {"region": self.region}
+            )
+        if HIST_TRAINING_DURATION:
+            HIST_TRAINING_DURATION.record(duration, {"region": self.region})
+        if HIST_TRAINING_LOSS:
+            HIST_TRAINING_LOSS.record(result.avg_loss, {"region": self.region})
+        if GAUGE_TRAIN_SAMPLES:
+            record_metric(
+                GAUGE_TRAIN_SAMPLES, result.num_samples, {"region": self.region}
             )
 
-        print(
-            f"{self.tag} Train loss: {avg_loss:.4f} | samples: {n} | batches: {batch_count} | epochs: {self.local_epochs}"
+        CLIENT_TRAINING_ROUNDS.labels(
+            client_id=self.client_id, region=self.region
+        ).inc()
+        CLIENT_TRAINING_DURATION.labels(
+            client_id=self.client_id, region=self.region
+        ).observe(duration)
+        CLIENT_LOCAL_LOSS.labels(client_id=self.client_id, region=self.region).set(
+            result.avg_loss
         )
-        return avg_loss
 
-    def evaluate_val(self) -> dict:
-        """Evaluate on validation set."""
-        if self.val_loader is None:
-            return {}
-        with self._lock:
-            prev_mode = self.model.training
-            self.model.eval()
-            total = 0.0
-            correct = 0
-            count = 0
-            with torch.no_grad():
-                for X, y in self.val_loader:
-                    logits = self.model(X)
-                    loss = self.criterion(logits, y)
-                    total += loss.item() * X.size(0)
-                    preds = torch.argmax(logits, dim=1)
-                    correct += (preds == y).sum().item()
-                    count += X.size(0)
-            if prev_mode:
-                self.model.train()
-        if count == 0:
-            return {}
-        val_loss = total / count
-        val_acc = correct / count
-
-        # Prometheus validation accuracy
+    def on_validation_completed(self, result: EvalResult) -> None:
         CLIENT_LOCAL_ACCURACY.labels(client_id=self.client_id, region=self.region).set(
-            val_acc
+            result.accuracy
         )
 
-        print(f"{self.tag} Val loss: {val_loss:.4f} | Val acc: {val_acc:.3f}")
-        return {"val_loss": val_loss, "val_acc": val_acc}
+    def on_update_published(self, payload: dict[str, object]) -> None:
+        if COUNTER_UPDATES_PUBLISHED:
+            record_metric(
+                COUNTER_UPDATES_PUBLISHED,
+                1,
+                {"region": self.region, "client_id": self.client_id},
+            )
 
-    def publish_update(self, avg_loss: float, val_acc: float = 0.0) -> None:
-        """Publish local weights to fog broker."""
-        with start_linked_producer_span(
-            TRACER, "client.publish_update", "sweet-fog-broker", {"region": self.region}
-        ) as (span, trace_ctx):
-            with self._lock:
-                state = self.model.state_dict()
-
-            payload = {
-                **build_client_update_payload(
-                    client_id=self.client_id,
-                    region=self.region,
-                    weights={k: v.detach().cpu().numpy() for k, v in state.items()},
-                    num_samples=self.num_samples,
-                    avg_loss=avg_loss,
-                    val_acc=val_acc,
-                    trace_context=trace_ctx,
-                )
-            }
-            self.mqtt.publish(self.topic_updates, json.dumps(payload))
-            if COUNTER_UPDATES_PUBLISHED:
-                record_metric(
-                    COUNTER_UPDATES_PUBLISHED,
-                    1,
-                    {"region": self.region, "client_id": self.client_id},
-                )
-        print(
-            f"{self.tag} Local update published ({self.num_samples} samples) to {self.topic_updates}"
-        )
-
-    def wait_for_global(self, timeout_s: float = 30.0) -> bool:
-        """Wait for global model from server."""
-        waited = 0.0
-        self._got_global = False
-        interval = 0.5
-        while not self._got_global and waited < timeout_s:
-            time.sleep(interval)
-            waited += interval
-        if not self._got_global:
-            print(f"{self.tag} Timeout waiting for global model. Proceeding.")
-        return self._got_global
-
-    def run(self, rounds: int = 10, delay: float = 2.0) -> None:
-        """Run federated learning rounds."""
-        print(f"{self.tag} Starting {rounds} federated rounds (region={self.region})")
-
-        # Register dataset metrics
+    def on_dataset_metrics_registered(self) -> None:
         if GAUGE_TRAIN_SAMPLES:
             record_metric(
                 GAUGE_TRAIN_SAMPLES, self.num_samples, {"region": self.region}
@@ -448,7 +322,6 @@ class SweetFLClientMQTT(BaseMQTTComponent):
                 GAUGE_TEST_SAMPLES, self.num_test_samples, {"region": self.region}
             )
 
-        # Prometheus metrics
         CLIENT_TRAIN_SAMPLES.labels(client_id=self.client_id, region=self.region).set(
             self.num_samples
         )
@@ -459,31 +332,11 @@ class SweetFLClientMQTT(BaseMQTTComponent):
             self.num_test_samples
         )
 
-        for r in range(rounds):
-            print(f"\n{self.tag} ===== Round {r+1}/{rounds} =====")
+    def should_wait_for_global(self, round_num: int) -> bool:
+        return True
 
-            # Wait for global model
-            if self.wait_for_global(timeout_s=60.0):
-                with self._lock:
-                    if self._pending_global_state:
-                        self.model.load_state_dict(
-                            self._pending_global_state, strict=False
-                        )
-                        self._pending_global_state = None
-
-            # Train
-            avg_loss = self.train_one_round()
-
-            # Validate
-            val_metrics = self.evaluate_val()
-            val_acc = val_metrics.get("val_acc", 0.0)
-
-            # Publish to fog broker
-            self.publish_update(avg_loss, val_acc)
-
-            time.sleep(delay)
-
-        print(f"{self.tag} Training complete!")
+    def global_wait_timeout_seconds(self, round_num: int) -> float:
+        return 60.0
 
 
 def main():
@@ -505,17 +358,14 @@ def main():
 
     args = parser.parse_args()
 
-    # Initialize telemetry
     if args.enable_telemetry:
         _init_telemetry()
 
-    # Start Prometheus
     if args.enable_prometheus:
         port = get_metrics_port_from_env(default=9090)
         start_metrics_server(port)
         print(f"Prometheus metrics at http://localhost:{port}/metrics")
 
-    # Create client
     client = SweetFLClientMQTT(
         node_dir=args.node_dir,
         region=args.region,
@@ -530,22 +380,26 @@ def main():
         mqtt_port=args.mqtt_port,
     )
 
-    # Cleanup
-    def cleanup(*args):
+    def cleanup():
         print(f"\n{client.tag} Shutting down...")
         client.stop_mqtt()
         if args.enable_telemetry:
             shutdown_telemetry()
         if args.enable_prometheus:
             push_metrics_to_gateway()
-        exit(0)
+
+    def handle_signal(_signum, _frame):
+        cleanup()
+        raise SystemExit(0)
 
     atexit.register(cleanup)
-    signal.signal(signal.SIGINT, cleanup)
-    signal.signal(signal.SIGTERM, cleanup)
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
 
-    # Run
-    client.run(rounds=args.rounds)
+    try:
+        client.run(rounds=args.rounds)
+    finally:
+        cleanup()
 
 
 if __name__ == "__main__":
