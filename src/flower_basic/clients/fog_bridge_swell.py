@@ -10,14 +10,12 @@ names consistent for ordering.
 
 import argparse
 import os
-import time
 
 import flwr as fl
-import numpy as np
 
-from flower_basic.clients.baseclient import BaseMQTTComponent
+from flower_basic.clients.fog_bridge_base import BaseFogBridgeClient
 from flower_basic.logging_utils import enable_timestamped_print
-from flower_basic.runtime_protocol import decode_partial_aggregate_message
+from flower_basic.runtime_protocol import PartialAggregateEnvelope
 from flower_basic.swell_model import SwellMLP, get_parameters, set_parameters
 from flower_basic.telemetry import (
     create_counter,
@@ -25,8 +23,6 @@ from flower_basic.telemetry import (
     init_otel,
     record_metric,
     shutdown_telemetry,
-    start_linked_client_span,
-    start_linked_consumer_span,
 )
 
 # Telemetry - initialized lazily in main() to avoid import-time side effects
@@ -66,7 +62,7 @@ MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 PARTIAL_TOPIC = os.getenv("MQTT_TOPIC_PARTIAL", "fl/partial")
 
 
-class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
+class FogClientSwell(BaseFogBridgeClient):
     def __init__(
         self,
         server_address: str,
@@ -76,119 +72,54 @@ class FogClientSwell(BaseMQTTComponent, fl.client.NumPyClient):
         mqtt_port: int = MQTT_PORT,
         partial_topic: str = PARTIAL_TOPIC,
     ):
-        self.server_address = server_address
-        self.model = SwellMLP(input_dim=input_dim)
-        self.param_names = list(self.model.state_dict().keys())
-        self.partial_weights = None
-        self.partial_metadata = {}
-        self.partial_trace_context = None  # Store trace context from partial
-        self.partial_topic = partial_topic
-        self.region = region
-        self.tag = f"[BRIDGE {self.region}]"
         super().__init__(
-            tag=self.tag,
+            server_address=server_address,
+            model=SwellMLP(input_dim=input_dim),
+            get_parameters_fn=get_parameters,
+            set_parameters_fn=set_parameters,
+            region=region,
+            tag=f"[BRIDGE {region}]",
             mqtt_broker=mqtt_broker,
             mqtt_port=mqtt_port,
-            subscriptions=[self.partial_topic],
+            partial_topic=partial_topic,
+            tracer=TRACER,
+            partial_source_service="fog-broker",
+            server_target_service="server-swell",
         )
-        print(f"{self.tag} Listening for partials on {self.partial_topic}")
 
-    def on_message(self, client, userdata, msg):
-        try:
-            envelope = decode_partial_aggregate_message(msg.payload)
-            if envelope is None:
-                print(f"{self.tag} Ignoring malformed partial payload")
-                return
-            if envelope.region != self.region:
-                return
-            self.partial_weights = envelope.weights
-            self.partial_metadata = {
-                "expected_round": envelope.expected_round or 0,
-                "round_min": envelope.round_min or 0,
-                "round_max": envelope.round_max or 0,
-                "stale_update_count": envelope.stale_update_count,
-                "future_update_count": envelope.future_update_count,
-                "max_delay_seconds": envelope.max_delay_seconds,
-                "mean_delay_seconds": envelope.mean_delay_seconds,
-                "stale_policy": envelope.stale_policy or "accept",
-            }
-            self.partial_trace_context = envelope.trace_context
-            # Use linked CONSUMER span to continue trace from fog-broker
-            with start_linked_consumer_span(
-                TRACER,
-                "bridge.receive_partial",
-                self.partial_trace_context,
-                source_service="fog-broker",
-                attributes={"region": envelope.region},
-            ):
-                record_metric(COUNTER_PARTIALS_RECEIVED, 1, {"region": self.region})
-                print(
-                    f"{self.tag} Partial aggregate received for region={envelope.region}"
-                )
-        except Exception as e:
-            print(f"{self.tag} Error processing partial: {e}")
+    def build_partial_metadata(
+        self, envelope: PartialAggregateEnvelope
+    ) -> dict[str, object]:
+        return {
+            "expected_round": envelope.expected_round or 0,
+            "round_min": envelope.round_min or 0,
+            "round_max": envelope.round_max or 0,
+            "stale_update_count": envelope.stale_update_count,
+            "future_update_count": envelope.future_update_count,
+            "max_delay_seconds": envelope.max_delay_seconds,
+            "mean_delay_seconds": envelope.mean_delay_seconds,
+            "stale_policy": envelope.stale_policy or "accept",
+        }
 
-    def get_parameters(self, config):
-        return get_parameters(self.model)
+    def build_timeout_metrics(self) -> dict[str, object]:
+        return {"timeout": True, "region": self.region}
 
-    def fit(self, parameters: list[np.ndarray], config):
-        start_wait = time.time()
+    def on_partial_received(self, envelope: PartialAggregateEnvelope) -> None:
+        record_metric(COUNTER_PARTIALS_RECEIVED, 1, {"region": self.region})
 
-        # Use linked CLIENT span to continue the trace and show dependency to server-swell
-        # This links from the fog-broker trace through to the server
-        with start_linked_client_span(
-            TRACER,
-            "bridge.forward_to_server",
-            "server-swell",
-            trace_context=self.partial_trace_context,
-            attributes={"region": self.region},
-        ) as span:
-            set_parameters(self.model, parameters)
-            timeout = 60
-            waited = 0
-            while self.partial_weights is None and waited < timeout:
-                time.sleep(0.5)
-                waited += 0.5
+    def on_wait_completed(self, wait_duration: float) -> None:
+        if HIST_WAIT_TIME:
+            HIST_WAIT_TIME.record(wait_duration, {"region": self.region})
 
-            wait_duration = time.time() - start_wait
-            if HIST_WAIT_TIME:
-                HIST_WAIT_TIME.record(wait_duration, {"region": self.region})
+    def on_timeout(self) -> None:
+        record_metric(COUNTER_TIMEOUTS, 1, {"region": self.region})
 
-            if self.partial_weights is None:
-                print(f"{self.tag} Timeout waiting for partial")
-                if span:
-                    span.set_attribute("status", "timeout")
-                record_metric(COUNTER_TIMEOUTS, 1, {"region": self.region})
-                return (
-                    get_parameters(self.model),
-                    1,
-                    {"timeout": True, "region": self.region},
-                )
-
-            partial_list = [
-                np.array(self.partial_weights[name], dtype=np.float32)
-                for name in self.param_names
-            ]
-            metrics = {"region": self.region, **self.partial_metadata}
-            self.partial_weights = None
-            self.partial_metadata = {}
-            self.partial_trace_context = None  # Clear trace context after use
-            num_samples = 1000
-            print(f"{self.tag} Forwarding partial to central server")
-            if span:
-                span.set_attribute("status", "forwarded")
-                span.set_attribute("num_samples", num_samples)
-            record_metric(COUNTER_FORWARDS_TO_SERVER, 1, {"region": self.region})
-            return partial_list, num_samples, metrics
-
-    def evaluate(self, parameters, config):
-        return 0.0, 0, {}
+    def on_forwarded(self, num_samples: int) -> None:
+        record_metric(COUNTER_FORWARDS_TO_SERVER, 1, {"region": self.region})
 
 
 def main():
     enable_timestamped_print()
-
-    # Initialize telemetry for this service
     _init_telemetry()
 
     ap = argparse.ArgumentParser(description="Fog bridge client for SWELL")
@@ -219,7 +150,6 @@ def main():
         ),
     )
 
-    # Ensure all telemetry is flushed before exit
     shutdown_telemetry()
 
 

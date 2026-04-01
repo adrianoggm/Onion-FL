@@ -10,13 +10,11 @@ names consistent for ordering.
 
 import argparse
 import os
-import time
 
 import flwr as fl
-import numpy as np
 
-from flower_basic.clients.baseclient import BaseMQTTComponent
-from flower_basic.runtime_protocol import decode_partial_aggregate_message
+from flower_basic.clients.fog_bridge_base import BaseFogBridgeClient
+from flower_basic.runtime_protocol import PartialAggregateEnvelope
 from flower_basic.sweet_model import SweetMLP, get_parameters, set_parameters
 from flower_basic.telemetry import (
     create_counter,
@@ -24,8 +22,6 @@ from flower_basic.telemetry import (
     init_otel,
     record_metric,
     shutdown_telemetry,
-    start_linked_client_span,
-    start_linked_consumer_span,
 )
 
 # Telemetry - initialized lazily in main() to avoid import-time side effects
@@ -65,7 +61,7 @@ MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 PARTIAL_TOPIC = os.getenv("MQTT_TOPIC_PARTIAL", "fl/partial")
 
 
-class FogClientSweet(BaseMQTTComponent, fl.client.NumPyClient):
+class FogClientSweet(BaseFogBridgeClient):
     def __init__(
         self,
         server_address: str,
@@ -77,105 +73,43 @@ class FogClientSweet(BaseMQTTComponent, fl.client.NumPyClient):
         mqtt_port: int = MQTT_PORT,
         partial_topic: str = PARTIAL_TOPIC,
     ):
-        self.server_address = server_address
-        self.model = SweetMLP(
-            input_dim=input_dim, hidden_dims=hidden_dims, num_classes=num_classes
-        )
-        self.param_names = list(self.model.state_dict().keys())
-        self.partial_weights = None
-        self.partial_trace_context = None  # Store trace context from partial
-        self.partial_topic = partial_topic
-        self.region = region
-        self.tag = f"[SWEET_BRIDGE {self.region}]"
         super().__init__(
-            tag=self.tag,
+            server_address=server_address,
+            model=SweetMLP(
+                input_dim=input_dim,
+                hidden_dims=hidden_dims,
+                num_classes=num_classes,
+            ),
+            get_parameters_fn=get_parameters,
+            set_parameters_fn=set_parameters,
+            region=region,
+            tag=f"[SWEET_BRIDGE {region}]",
             mqtt_broker=mqtt_broker,
             mqtt_port=mqtt_port,
-            subscriptions=[self.partial_topic],
+            partial_topic=partial_topic,
+            tracer=TRACER,
+            partial_source_service="sweet-fog-broker",
+            server_target_service="server-sweet",
         )
-        print(f"{self.tag} Listening for partials on {self.partial_topic}")
 
-    def on_message(self, client, userdata, msg):
-        try:
-            envelope = decode_partial_aggregate_message(msg.payload)
-            if envelope is None:
-                print(f"{self.tag} Ignoring malformed partial payload")
-                return
-            if envelope.region != self.region:
-                return
-            self.partial_weights = envelope.weights
-            self.partial_trace_context = envelope.trace_context
-            # Use linked CONSUMER span to continue trace from sweet-fog-broker
-            with start_linked_consumer_span(
-                TRACER,
-                "bridge.receive_partial",
-                self.partial_trace_context,
-                source_service="sweet-fog-broker",
-                attributes={"region": envelope.region},
-            ):
-                if COUNTER_PARTIALS_RECEIVED:
-                    record_metric(COUNTER_PARTIALS_RECEIVED, 1, {"region": self.region})
-                print(
-                    f"{self.tag} Partial aggregate received for region={envelope.region}"
-                )
-        except Exception as e:
-            print(f"{self.tag} Error processing partial: {e}")
+    def on_partial_received(self, envelope: PartialAggregateEnvelope) -> None:
+        if COUNTER_PARTIALS_RECEIVED:
+            record_metric(COUNTER_PARTIALS_RECEIVED, 1, {"region": self.region})
 
-    def get_parameters(self, config):
-        return get_parameters(self.model)
+    def on_wait_completed(self, wait_duration: float) -> None:
+        if HIST_WAIT_TIME:
+            HIST_WAIT_TIME.record(wait_duration, {"region": self.region})
 
-    def fit(self, parameters: list[np.ndarray], config):
-        start_wait = time.time()
+    def on_timeout(self) -> None:
+        if COUNTER_TIMEOUTS:
+            record_metric(COUNTER_TIMEOUTS, 1, {"region": self.region})
 
-        # Use linked CLIENT span to continue the trace and show dependency to server-sweet
-        # This links from the sweet-fog-broker trace through to the server
-        with start_linked_client_span(
-            TRACER,
-            "bridge.forward_to_server",
-            "server-sweet",
-            trace_context=self.partial_trace_context,
-            attributes={"region": self.region},
-        ) as span:
-            set_parameters(self.model, parameters)
-            timeout = 60
-            waited = 0
-            while self.partial_weights is None and waited < timeout:
-                time.sleep(0.5)
-                waited += 0.5
-
-            wait_duration = time.time() - start_wait
-            if HIST_WAIT_TIME:
-                HIST_WAIT_TIME.record(wait_duration, {"region": self.region})
-
-            if self.partial_weights is None:
-                print(f"{self.tag} Timeout waiting for partial")
-                if span:
-                    span.set_attribute("status", "timeout")
-                if COUNTER_TIMEOUTS:
-                    record_metric(COUNTER_TIMEOUTS, 1, {"region": self.region})
-                return get_parameters(self.model), 1, {}
-
-            partial_list = [
-                np.array(self.partial_weights[name], dtype=np.float32)
-                for name in self.param_names
-            ]
-            self.partial_weights = None
-            self.partial_trace_context = None  # Clear trace context after use
-            num_samples = 1000
-            print(f"{self.tag} Forwarding partial to central server")
-            if span:
-                span.set_attribute("status", "forwarded")
-                span.set_attribute("num_samples", num_samples)
-            if COUNTER_FORWARDS_TO_SERVER:
-                record_metric(COUNTER_FORWARDS_TO_SERVER, 1, {"region": self.region})
-            return partial_list, num_samples, {}
-
-    def evaluate(self, parameters, config):
-        return 0.0, 0, {}
+    def on_forwarded(self, num_samples: int) -> None:
+        if COUNTER_FORWARDS_TO_SERVER:
+            record_metric(COUNTER_FORWARDS_TO_SERVER, 1, {"region": self.region})
 
 
 def main():
-    # Initialize telemetry for this service
     _init_telemetry()
 
     ap = argparse.ArgumentParser(description="Fog bridge client for SWEET")
@@ -218,7 +152,6 @@ def main():
         ),
     )
 
-    # Ensure all telemetry is flushed before exit
     shutdown_telemetry()
 
 
