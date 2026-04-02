@@ -7,7 +7,6 @@ Follows SWELL architecture: Fog Bridges -> Central Server -> Global Model Broadc
 from __future__ import annotations
 
 import argparse
-import json
 import os
 from pathlib import Path
 from typing import Any
@@ -16,8 +15,8 @@ import flwr as fl
 import numpy as np
 import paho.mqtt.client as mqtt
 import torch
-from torch.utils.data import DataLoader, TensorDataset
 
+from flower_basic.datasets.federated_common import load_manifest_eval_data
 from flower_basic.datasets.sweet_federated import load_node_split
 from flower_basic.prometheus_metrics import (
     FL_ACCURACY,
@@ -40,6 +39,7 @@ from flower_basic.telemetry import (
     record_metric,
     shutdown_telemetry,
 )
+from flower_basic.training.local import evaluate_classifier_arrays
 
 MODEL_TOPIC = os.getenv("MQTT_TOPIC_GLOBAL", "fl/global_model")
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
@@ -213,70 +213,19 @@ class MQTTFedAvgSweet(FederatedMQTTStrategyBase):
 
 def _load_eval_data(manifest_path: Path) -> tuple[np.ndarray, np.ndarray] | None:
     """Load test data from all nodes for centralized evaluation."""
-    print(f"{TAG} Loading evaluation data from manifest: {manifest_path}")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    nodes = manifest.get("nodes", {})
-    base = manifest_path.parent
-    all_features = []
-    all_labels = []
-
-    for node_id in nodes.keys():
-        test_path = base / node_id / "test.npz"
-        if not test_path.exists():
-            print(f"{TAG}   Node {node_id}: test.npz NOT FOUND at {test_path}")
-            continue
-
-        features, labels, _ = load_node_split(test_path)
-        if features.size == 0:
-            print(f"{TAG}   Node {node_id}: test.npz is empty")
-            continue
-
-        all_features.append(features)
-        all_labels.append(labels)
-        print(f"{TAG}   Node {node_id}: loaded {features.shape[0]} test samples")
-
-    if not all_features:
-        print(f"{TAG} WARNING: No test data found for centralized evaluation!")
-        return None
-
-    total_features = np.concatenate(all_features, axis=0)
-    total_labels = np.concatenate(all_labels, axis=0)
-    print(
-        f"{TAG} Total evaluation data: {total_features.shape[0]} samples, "
-        f"{total_features.shape[1]} features"
+    return load_manifest_eval_data(
+        manifest_path,
+        load_split=load_node_split,
+        tag=TAG,
     )
-    return total_features, total_labels
 
 
 def _evaluate_global(
     model: SweetMLP, data: tuple[np.ndarray, np.ndarray]
 ) -> tuple[float, float]:
     """Evaluate global model on test data."""
-    features, labels = data
-    device = torch.device("cpu")
-    model = model.to(device)
-    model.eval()
-    dataset = TensorDataset(
-        torch.from_numpy(features).float(), torch.from_numpy(labels).long()
-    )
-    loader = DataLoader(dataset, batch_size=256, shuffle=False)
-    criterion = torch.nn.CrossEntropyLoss()
-
-    total_loss = 0.0
-    correct = 0
-    count = 0
-    with torch.no_grad():
-        for batch_features, batch_labels in loader:
-            batch_features = batch_features.to(device)
-            batch_labels = batch_labels.to(device)
-            logits = model(batch_features)
-            loss = criterion(logits, batch_labels)
-            total_loss += float(loss.item()) * int(batch_features.size(0))
-            predictions = torch.argmax(logits, dim=1)
-            correct += int((predictions == batch_labels).sum().item())
-            count += int(batch_features.size(0))
-
-    return total_loss / max(count, 1), correct / max(count, 1)
+    result = evaluate_classifier_arrays(model, data, batch_size=256)
+    return result.loss, result.accuracy
 
 
 def main():

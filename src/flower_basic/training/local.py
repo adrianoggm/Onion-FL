@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, TensorDataset
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,17 @@ class EvalResult:
     loss: float
     accuracy: float
     num_samples: int
+
+
+@dataclass(frozen=True)
+class DetailedEvalResult:
+    """Summary of an evaluation pass with optional confusion-matrix details."""
+
+    loss: float
+    accuracy: float
+    num_samples: int
+    confusion_matrix: np.ndarray | None = None
+    labels: list[int] | None = None
 
 
 def train_classifier_round(
@@ -90,4 +102,82 @@ def evaluate_classifier(
         loss=total_loss / max(count, 1),
         accuracy=correct / max(count, 1),
         num_samples=count,
+    )
+
+
+def evaluate_classifier_arrays(
+    model: torch.nn.Module,
+    data: tuple[np.ndarray, np.ndarray],
+    *,
+    batch_size: int = 256,
+    include_confusion_matrix: bool = False,
+) -> DetailedEvalResult:
+    """Evaluate a classifier on array-backed labeled data."""
+    features, labels = data
+    prev_training = model.training
+    device = torch.device("cpu")
+    model = model.to(device)
+    model.eval()
+
+    dataset = TensorDataset(
+        torch.from_numpy(features).float(),
+        torch.from_numpy(labels).long(),
+    )
+    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    criterion = torch.nn.CrossEntropyLoss()
+
+    total_loss = 0.0
+    correct = 0
+    count = 0
+    all_predictions = [] if include_confusion_matrix else None
+    all_labels = [] if include_confusion_matrix else None
+
+    with torch.no_grad():
+        for batch_features, batch_labels in data_loader:
+            batch_features = batch_features.to(device)
+            batch_labels = batch_labels.to(device)
+            logits = model(batch_features)
+            loss = criterion(logits, batch_labels)
+            batch_size = int(batch_features.size(0))
+            predictions = torch.argmax(logits, dim=1)
+
+            total_loss += float(loss.item()) * batch_size
+            correct += int((predictions == batch_labels).sum().item())
+            count += batch_size
+
+            if include_confusion_matrix:
+                all_predictions.append(predictions.cpu())
+                all_labels.append(batch_labels.cpu())
+
+    if prev_training:
+        model.train()
+
+    confusion_matrix = None
+    label_values = None
+    if include_confusion_matrix:
+        y_true = (
+            torch.cat(all_labels).numpy()
+            if all_labels
+            else np.array([], dtype=np.int64)
+        )
+        y_pred = (
+            torch.cat(all_predictions).numpy()
+            if all_predictions
+            else np.array([], dtype=np.int64)
+        )
+        label_values = sorted(set(y_true.tolist()) | set(y_pred.tolist()))
+        if not label_values:
+            label_values = [0, 1]
+
+        label_index = {label: idx for idx, label in enumerate(label_values)}
+        confusion_matrix = np.zeros((len(label_values), len(label_values)), dtype=int)
+        for true_label, pred_label in zip(y_true, y_pred):
+            confusion_matrix[label_index[true_label], label_index[pred_label]] += 1
+
+    return DetailedEvalResult(
+        loss=total_loss / max(count, 1),
+        accuracy=correct / max(count, 1),
+        num_samples=count,
+        confusion_matrix=confusion_matrix,
+        labels=label_values,
     )

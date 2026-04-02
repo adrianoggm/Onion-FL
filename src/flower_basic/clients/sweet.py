@@ -17,13 +17,15 @@ import os
 import signal
 from pathlib import Path
 
-import numpy as np
 import torch
-from torch.utils.data import DataLoader, TensorDataset
 
 from flower_basic.clients.federated_base import (
     ClientDataLoaders,
     FederatedMQTTClientBase,
+)
+from flower_basic.datasets.federated_common import (
+    build_client_data,
+    resolve_split_paths,
 )
 from flower_basic.datasets.sweet_federated import load_node_split
 from flower_basic.prometheus_metrics import (
@@ -107,34 +109,6 @@ def _init_telemetry():
     )
 
 
-def _resolve_split_paths(
-    node_dir: Path, subject_id: str | None
-) -> tuple[Path, Path, Path]:
-    if subject_id:
-        subject_dir = node_dir / f"subject_{subject_id}"
-        return (
-            subject_dir / "train.npz",
-            subject_dir / "val.npz",
-            subject_dir / "test.npz",
-        )
-
-    return node_dir / "train.npz", node_dir / "val.npz", node_dir / "test.npz"
-
-
-def _load_optional_split(split_path: Path) -> tuple[np.ndarray | None, np.ndarray | None]:
-    if not split_path.exists():
-        return None, None
-
-    try:
-        features, labels, _ = load_node_split(split_path)
-    except Exception:
-        return None, None
-
-    if features.size == 0:
-        return None, None
-    return features, labels
-
-
 def _build_client_data(
     train_file: Path,
     val_file: Path,
@@ -142,39 +116,12 @@ def _build_client_data(
     *,
     batch_size: int,
 ) -> ClientDataLoaders:
-    train_features, train_labels, _ = load_node_split(train_file)
-    if train_features.size == 0:
-        raise RuntimeError("Train split is empty for this node. Check subject assignments.")
-
-    train_loader = DataLoader(
-        TensorDataset(
-            torch.from_numpy(train_features).float(),
-            torch.from_numpy(train_labels).long(),
-        ),
+    return build_client_data(
+        train_file,
+        val_file,
+        test_file,
+        load_split=load_node_split,
         batch_size=batch_size,
-        shuffle=True,
-    )
-
-    val_loader = None
-    val_features, val_labels = _load_optional_split(val_file)
-    if val_features is not None and val_labels is not None:
-        val_loader = DataLoader(
-            TensorDataset(
-                torch.from_numpy(val_features).float(),
-                torch.from_numpy(val_labels).long(),
-            ),
-            batch_size=256,
-            shuffle=False,
-        )
-
-    test_features, _ = _load_optional_split(test_file)
-
-    return ClientDataLoaders(
-        train_loader=train_loader,
-        val_loader=val_loader,
-        num_train_samples=len(train_features),
-        num_val_samples=0 if val_features is None else len(val_features),
-        num_test_samples=0 if test_features is None else len(test_features),
     )
 
 
@@ -224,9 +171,7 @@ class SweetFLClientMQTT(FederatedMQTTClientBase):
             else f"{region}_client_{os.getpid() % 10000}"
         )
 
-        train_file, val_file, test_file = _resolve_split_paths(
-            self.node_dir, subject_id
-        )
+        train_file, val_file, test_file = resolve_split_paths(self.node_dir, subject_id)
         data = _build_client_data(
             train_file, val_file, test_file, batch_size=batch_size
         )

@@ -18,11 +18,14 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, TensorDataset
 
 from flower_basic.clients.federated_base import (
     ClientDataLoaders,
     FederatedMQTTClientBase,
+)
+from flower_basic.datasets.federated_common import (
+    build_client_data,
+    resolve_split_paths,
 )
 from flower_basic.datasets.swell_federated import load_node_split
 from flower_basic.logging_utils import enable_timestamped_print
@@ -140,62 +143,21 @@ def _set_determinism(seed: int) -> torch.Generator:
     return generator
 
 
-def _load_optional_split(split_path: Path) -> tuple[np.ndarray | None, np.ndarray | None]:
-    if not split_path.exists():
-        return None, None
-
-    try:
-        features, labels, _ = load_node_split(split_path)
-    except Exception:
-        return None, None
-
-    if features.size == 0:
-        return None, None
-    return features, labels
-
-
 def _build_client_data(
     node_dir: Path,
     *,
     batch_size: int,
     generator: torch.Generator | None,
-) -> tuple[ClientDataLoaders, int]:
-    train_features, train_labels, _ = load_node_split(node_dir / "train.npz")
-    if train_features.size == 0:
-        raise RuntimeError("Train split is empty for this node. Check subject assignments.")
-
-    train_loader = DataLoader(
-        TensorDataset(
-            torch.from_numpy(train_features).float(),
-            torch.from_numpy(train_labels).long(),
-        ),
+) -> ClientDataLoaders:
+    train_file, val_file, test_file = resolve_split_paths(node_dir)
+    return build_client_data(
+        train_file,
+        val_file,
+        test_file,
+        load_split=load_node_split,
         batch_size=batch_size,
-        shuffle=True,
         generator=generator,
     )
-
-    val_loader = None
-    val_features, val_labels = _load_optional_split(node_dir / "val.npz")
-    if val_features is not None and val_labels is not None:
-        val_loader = DataLoader(
-            TensorDataset(
-                torch.from_numpy(val_features).float(),
-                torch.from_numpy(val_labels).long(),
-            ),
-            batch_size=256,
-            shuffle=False,
-        )
-
-    test_features, _ = _load_optional_split(node_dir / "test.npz")
-
-    data = ClientDataLoaders(
-        train_loader=train_loader,
-        val_loader=val_loader,
-        num_train_samples=len(train_features),
-        num_val_samples=0 if val_features is None else len(val_features),
-        num_test_samples=0 if test_features is None else len(test_features),
-    )
-    return data, int(train_features.shape[1])
 
 
 class SwellFLClientMQTT(FederatedMQTTClientBase):
@@ -218,10 +180,8 @@ class SwellFLClientMQTT(FederatedMQTTClientBase):
         self.metrics_path = self.node_dir / "val_metrics.jsonl"
 
         generator = _set_determinism(self.seed) if self.seed is not None else None
-        data, input_dim = _build_client_data(
-            self.node_dir, batch_size=batch_size, generator=generator
-        )
-        model = SwellMLP(input_dim=input_dim)
+        data = _build_client_data(self.node_dir, batch_size=batch_size, generator=generator)
+        model = SwellMLP(input_dim=data.input_dim)
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
         criterion = torch.nn.CrossEntropyLoss()
         resolved_client_id = client_id or f"{region}_client_{os.getpid() % 10000}"

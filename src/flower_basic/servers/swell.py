@@ -6,7 +6,6 @@ Uses SwellMLP to maintain parameter names consistent with clients.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 from pathlib import Path
 from typing import Any
@@ -15,8 +14,11 @@ import flwr as fl
 import numpy as np
 import paho.mqtt.client as mqtt
 import torch
-from torch.utils.data import DataLoader, TensorDataset
 
+from flower_basic.datasets.federated_common import (
+    load_manifest_eval_data,
+    load_manifest_split_counts,
+)
 from flower_basic.datasets.swell_federated import load_node_split
 from flower_basic.logging_utils import enable_timestamped_print
 from flower_basic.prometheus_metrics import (
@@ -45,6 +47,7 @@ from flower_basic.telemetry import (
     record_metric,
     shutdown_telemetry,
 )
+from flower_basic.training.local import evaluate_classifier_arrays
 
 MODEL_TOPIC = os.getenv("MQTT_TOPIC_GLOBAL", "fl/global_model")
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
@@ -247,107 +250,33 @@ class MQTTFedAvgSwell(FederatedMQTTStrategyBase):
 
 def _load_eval_data(manifest_path: Path) -> tuple[np.ndarray, np.ndarray] | None:
     """Load test data from all nodes for centralized evaluation."""
-    print(f"{TAG} Loading evaluation data from manifest: {manifest_path}")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    nodes = manifest.get("nodes", {})
-    base = manifest_path.parent
-    all_features = []
-    all_labels = []
-
-    for node_id in nodes.keys():
-        test_path = base / node_id / "test.npz"
-        if not test_path.exists():
-            print(f"{TAG}   Node {node_id}: test.npz NOT FOUND at {test_path}")
-            continue
-
-        features, labels, _ = load_node_split(test_path)
-        if features.size == 0:
-            print(f"{TAG}   Node {node_id}: test.npz is empty")
-            continue
-
-        all_features.append(features)
-        all_labels.append(labels)
-        print(f"{TAG}   Node {node_id}: loaded {features.shape[0]} test samples")
-
-    if not all_features:
-        print(f"{TAG} WARNING: No test data found for centralized evaluation!")
-        return None
-
-    total_features = np.concatenate(all_features, axis=0)
-    total_labels = np.concatenate(all_labels, axis=0)
-    print(
-        f"{TAG} Total evaluation data: {total_features.shape[0]} samples, "
-        f"{total_features.shape[1]} features"
+    return load_manifest_eval_data(
+        manifest_path,
+        load_split=load_node_split,
+        tag=TAG,
     )
-    return total_features, total_labels
 
 
 def _load_manifest_split_counts(manifest_path: Path) -> tuple[int, int, int]:
     """Load total train/val/test sample counts from aggregated node splits."""
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    nodes = manifest.get("nodes", {})
-    base = manifest_path.parent
-    totals = {"train": 0, "val": 0, "test": 0}
-
-    for node_id in nodes.keys():
-        for split_name in ("train", "val", "test"):
-            split_path = base / node_id / f"{split_name}.npz"
-            if not split_path.exists():
-                continue
-            features, _, _ = load_node_split(split_path)
-            totals[split_name] += int(features.shape[0])
-
-    return totals["train"], totals["val"], totals["test"]
+    return load_manifest_split_counts(manifest_path, load_split=load_node_split)
 
 
 def _evaluate_global(
     model: SwellMLP, data: tuple[np.ndarray, np.ndarray]
 ) -> tuple[float, float, np.ndarray, list[int]]:
-    features, labels = data
-    device = torch.device("cpu")
-    model = model.to(device)
-    model.eval()
-    dataset = TensorDataset(
-        torch.from_numpy(features).float(), torch.from_numpy(labels).long()
+    result = evaluate_classifier_arrays(
+        model,
+        data,
+        batch_size=256,
+        include_confusion_matrix=True,
     )
-    loader = DataLoader(dataset, batch_size=256, shuffle=False)
-    criterion = torch.nn.CrossEntropyLoss()
-
-    total_loss = 0.0
-    correct = 0
-    count = 0
-    all_predictions = []
-    all_labels = []
-
-    with torch.no_grad():
-        for batch_features, batch_labels in loader:
-            batch_features = batch_features.to(device)
-            batch_labels = batch_labels.to(device)
-            logits = model(batch_features)
-            loss = criterion(logits, batch_labels)
-            total_loss += float(loss.item()) * int(batch_features.size(0))
-            predictions = torch.argmax(logits, dim=1)
-            correct += int((predictions == batch_labels).sum().item())
-            count += int(batch_features.size(0))
-            all_predictions.append(predictions.cpu())
-            all_labels.append(batch_labels.cpu())
-
-    loss = total_loss / max(count, 1)
-    accuracy = correct / max(count, 1)
-    y_true = torch.cat(all_labels).numpy() if all_labels else np.array([], dtype=int)
-    y_pred = (
-        torch.cat(all_predictions).numpy() if all_predictions else np.array([], dtype=int)
+    return (
+        result.loss,
+        result.accuracy,
+        result.confusion_matrix,
+        result.labels,
     )
-    label_values = sorted(set(y_true.tolist()) | set(y_pred.tolist()))
-    if not label_values:
-        label_values = [0, 1]
-
-    label_index = {label: idx for idx, label in enumerate(label_values)}
-    confusion_matrix = np.zeros((len(label_values), len(label_values)), dtype=int)
-    for true_label, pred_label in zip(y_true, y_pred):
-        confusion_matrix[label_index[true_label], label_index[pred_label]] += 1
-
-    return loss, accuracy, confusion_matrix, label_values
 
 
 def main():

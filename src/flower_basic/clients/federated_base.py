@@ -5,13 +5,12 @@ from __future__ import annotations
 import json
 import threading
 import time
-from dataclasses import dataclass
 from typing import Any
 
 import torch
-from torch.utils.data import DataLoader
 
 from flower_basic.clients.baseclient import BaseMQTTComponent
+from flower_basic.datasets.federated_common import ClientDataLoaders
 from flower_basic.runtime_protocol import (
     GlobalModelEnvelope,
     build_client_update_payload,
@@ -28,17 +27,6 @@ from flower_basic.training.local import (
     evaluate_classifier,
     train_classifier_round,
 )
-
-
-@dataclass(frozen=True)
-class ClientDataLoaders:
-    """Prepared loaders and split counts for a local FL client."""
-
-    train_loader: DataLoader
-    val_loader: DataLoader | None
-    num_train_samples: int
-    num_val_samples: int = 0
-    num_test_samples: int = 0
 
 
 class FederatedMQTTClientBase(BaseMQTTComponent):
