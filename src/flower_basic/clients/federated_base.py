@@ -153,9 +153,7 @@ class FederatedMQTTClientBase(BaseMQTTComponent):
     def train_one_round(self) -> float:
         start_time = time.time()
 
-        with start_span(
-            self.tracer, "client.train_one_round", {"region": self.region}
-        ):
+        with start_span(self.tracer, "client.train_one_round", {"region": self.region}):
             with self._lock:
                 result = train_classifier_round(
                     self.model,
@@ -184,7 +182,9 @@ class FederatedMQTTClientBase(BaseMQTTComponent):
             return {}
 
         self.on_validation_completed(result)
-        print(f"{self.tag} Val loss: {result.loss:.4f} | Val acc: {result.accuracy:.3f}")
+        print(
+            f"{self.tag} Val loss: {result.loss:.4f} | Val acc: {result.accuracy:.3f}"
+        )
         return {"val_loss": result.loss, "val_acc": result.accuracy}
 
     def build_update_payload(
@@ -195,7 +195,9 @@ class FederatedMQTTClientBase(BaseMQTTComponent):
         round_num: int | None,
         trace_context: dict[str, Any],
     ) -> dict[str, Any]:
-        payload_round = round_num if round_num is not None else max(1, self.current_round)
+        payload_round = (
+            round_num if round_num is not None else max(1, self.current_round)
+        )
         return build_client_update_payload(
             client_id=self.client_id,
             region=self.region,

@@ -126,7 +126,9 @@ class FederatedMQTTStrategyBase(fl.server.strategy.FedAvg):
         raise NotImplementedError
 
     def on_missing_final_eval_data(self, server_round: int) -> None:
-        print(f"{self.tag} WARNING: FINAL ROUND: No test data available for evaluation!")
+        print(
+            f"{self.tag} WARNING: FINAL ROUND: No test data available for evaluation!"
+        )
 
     def on_deferred_evaluation(self, server_round: int) -> None:
         print(
@@ -203,34 +205,56 @@ class FederatedMQTTStrategyBase(fl.server.strategy.FedAvg):
         print(
             f"\n{self.tag} ╔══════════════════════════════════════════════════════════════╗"
         )
-        print(f"{self.tag} ║     FEDERATED LEARNING COMPLETE - FINAL MODEL EVALUATION     ║")
-        print(f"{self.tag} ╠══════════════════════════════════════════════════════════════╣")
-        print(f"{self.tag} ║                                                              ║")
-        print(f"{self.tag} ║  Test Dataset:                                               ║")
+        print(
+            f"{self.tag} ║     FEDERATED LEARNING COMPLETE - FINAL MODEL EVALUATION     ║"
+        )
+        print(
+            f"{self.tag} ╠══════════════════════════════════════════════════════════════╣"
+        )
+        print(
+            f"{self.tag} ║                                                              ║"
+        )
+        print(
+            f"{self.tag} ║  Test Dataset:                                               ║"
+        )
         print(
             f"{self.tag} ║    - Samples: {n_samples:>10,}                                   ║"
         )
         print(
             f"{self.tag} ║    - Classes: {n_classes:>10}                                   ║"
         )
-        print(f"{self.tag} ║                                                              ║")
-        print(f"{self.tag} ║  Model Performance:                                          ║")
-        print(f"{self.tag} ║    ┌────────────────────────────────────────────────┐        ║")
+        print(
+            f"{self.tag} ║                                                              ║"
+        )
+        print(
+            f"{self.tag} ║  Model Performance:                                          ║"
+        )
+        print(
+            f"{self.tag} ║    ┌────────────────────────────────────────────────┐        ║"
+        )
         print(
             f"{self.tag} ║    │  Loss:     {loss:>10.4f}                        │        ║"
         )
         print(
             f"{self.tag} ║    │  Accuracy: {accuracy:>10.4f}  ({accuracy*100:>6.2f}%)            │        ║"
         )
-        print(f"{self.tag} ║    └────────────────────────────────────────────────┘        ║")
-        print(f"{self.tag} ║                                                              ║")
+        print(
+            f"{self.tag} ║    └────────────────────────────────────────────────┘        ║"
+        )
+        print(
+            f"{self.tag} ║                                                              ║"
+        )
 
         bar_len = 40
         filled = int(accuracy * bar_len)
         bar = "█" * filled + "░" * (bar_len - filled)
         print(f"{self.tag} ║  Accuracy: [{bar}]  ║")
-        print(f"{self.tag} ║             0%                                   100%        ║")
-        print(f"{self.tag} ║                                                              ║")
+        print(
+            f"{self.tag} ║             0%                                   100%        ║"
+        )
+        print(
+            f"{self.tag} ║                                                              ║"
+        )
         print(
             f"{self.tag} ╚══════════════════════════════════════════════════════════════╝\n"
         )

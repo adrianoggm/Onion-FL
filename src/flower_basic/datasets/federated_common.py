@@ -73,7 +73,9 @@ def build_client_data(
     """Build deterministic client loaders and split counts from NPZ artifacts."""
     train_features, train_labels, _ = load_split(train_file)
     if train_features.size == 0:
-        raise RuntimeError("Train split is empty for this node. Check subject assignments.")
+        raise RuntimeError(
+            "Train split is empty for this node. Check subject assignments."
+        )
 
     train_loader = DataLoader(
         TensorDataset(
@@ -137,7 +139,9 @@ def load_manifest_eval_data(
 
         all_features.append(features)
         all_labels.append(labels)
-        print(f"{tag}   Node {node_id}: loaded {features.shape[0]} {split_name} samples")
+        print(
+            f"{tag}   Node {node_id}: loaded {features.shape[0]} {split_name} samples"
+        )
 
     if not all_features:
         print(f"{tag} WARNING: No {split_name} data found for centralized evaluation!")

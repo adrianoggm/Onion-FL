@@ -180,7 +180,9 @@ class SwellFLClientMQTT(FederatedMQTTClientBase):
         self.metrics_path = self.node_dir / "val_metrics.jsonl"
 
         generator = _set_determinism(self.seed) if self.seed is not None else None
-        data = _build_client_data(self.node_dir, batch_size=batch_size, generator=generator)
+        data = _build_client_data(
+            self.node_dir, batch_size=batch_size, generator=generator
+        )
         model = SwellMLP(input_dim=data.input_dim)
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
         criterion = torch.nn.CrossEntropyLoss()
@@ -223,9 +225,7 @@ class SwellFLClientMQTT(FederatedMQTTClientBase):
             HIST_TRAINING_DURATION.record(duration, {"region": self.region})
         if HIST_TRAINING_LOSS:
             HIST_TRAINING_LOSS.record(result.avg_loss, {"region": self.region})
-        record_metric(
-            GAUGE_TRAIN_SAMPLES, result.num_samples, {"region": self.region}
-        )
+        record_metric(GAUGE_TRAIN_SAMPLES, result.num_samples, {"region": self.region})
 
         CLIENT_TRAINING_ROUNDS.labels(
             client_id=self.client_id, region=self.region

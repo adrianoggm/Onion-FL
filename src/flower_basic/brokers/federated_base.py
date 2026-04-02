@@ -103,7 +103,11 @@ def handle_global_model_round_update(
 ) -> int:
     """Track the latest global round announced by the central server."""
     try:
-        payload = json.loads(payload_bytes.decode() if hasattr(payload_bytes, "decode") else payload_bytes)
+        payload = json.loads(
+            payload_bytes.decode()
+            if hasattr(payload_bytes, "decode")
+            else payload_bytes
+        )
         if not isinstance(payload, dict):
             raise TypeError("global model payload must be a JSON object")
         global_round = int(payload.get("round", latest_global_round))
@@ -179,10 +183,7 @@ def handle_client_update(
             elif update_round > expected_round:
                 round_status = "future"
 
-            if (
-                config.stale_update_policy == "strict"
-                and round_status != "current"
-            ):
+            if config.stale_update_policy == "strict" and round_status != "current":
                 print(
                     f"{config.broker_tag} Dropping {round_status} update from "
                     f"client={client_id}, region={region}, update_round={update_round}, "
@@ -243,7 +244,11 @@ def handle_client_update(
             )
 
             callbacks.record_prometheus_update(
-                region, client_id, num_samples, len(buffers[region]), len(clients_per_region[region])
+                region,
+                client_id,
+                num_samples,
+                len(buffers[region]),
+                len(clients_per_region[region]),
             )
 
             message = (
@@ -252,9 +257,7 @@ def handle_client_update(
                 f"Buffer: {len(buffers[region])}/{region_k}"
             )
             if config.use_round_metadata:
-                message += (
-                    f" | round={update_round} expected={expected_round} status={round_status}"
-                )
+                message += f" | round={update_round} expected={expected_round} status={round_status}"
             print(message)
 
             if len(buffers[region]) < region_k:
@@ -310,7 +313,9 @@ def handle_client_update(
 
             for item in batch:
                 contribution_pct = (
-                    item["num_samples"] / total_samples * 100 if total_samples > 0 else 0
+                    item["num_samples"] / total_samples * 100
+                    if total_samples > 0
+                    else 0
                 )
                 print(
                     f"{config.broker_tag} Client {item['client_id']} contributed "

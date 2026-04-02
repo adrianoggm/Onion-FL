@@ -80,7 +80,9 @@ def test_init_counts_for_subject_client(tmp_path: Path, monkeypatch) -> None:
     node_dir = tmp_path / "node"
     subject_dir = node_dir / "subject_user0001"
     subject_dir.mkdir(parents=True)
-    _write_split(subject_dir / "train.npz", n_samples=5, n_features=4, subject="user0001")
+    _write_split(
+        subject_dir / "train.npz", n_samples=5, n_features=4, subject="user0001"
+    )
     _write_split(subject_dir / "val.npz", n_samples=3, n_features=4, subject="user0001")
 
     client = SweetFLClientMQTT(
