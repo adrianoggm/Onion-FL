@@ -8,13 +8,26 @@ import traceback
 from typing import Any
 
 import flwr as fl
+import numpy as np
 import paho.mqtt.client as mqtt
 
+from flower_basic.prometheus_metrics import (
+    FL_ACCURACY,
+    FL_ACTIVE_CLIENTS,
+    FL_AGGREGATIONS,
+    FL_LOSS,
+    FL_ROUND_DURATION,
+    FL_ROUNDS,
+)
 from flower_basic.runtime_protocol import (
     build_global_model_payload,
     extract_named_parameters,
 )
-from flower_basic.telemetry import start_linked_producer_span, start_server_span
+from flower_basic.telemetry import (
+    record_metric,
+    start_linked_producer_span,
+    start_server_span,
+)
 
 
 class FederatedMQTTStrategyBase(fl.server.strategy.FedAvg):
@@ -30,6 +43,7 @@ class FederatedMQTTStrategyBase(fl.server.strategy.FedAvg):
         tracer: Any = None,
         model_topic: str = "fl/global_model",
         publish_target_service: str = "client",
+        server_label: str = "server",
         tag: str = "[SERVER]",
         **kwargs,
     ) -> None:
@@ -42,6 +56,7 @@ class FederatedMQTTStrategyBase(fl.server.strategy.FedAvg):
         self.tracer = tracer
         self.model_topic = model_topic
         self.publish_target_service = publish_target_service
+        self.server_label = server_label
         self.tag = tag
         self.history = self.initialize_history()
         self.log_eval_data_status()
@@ -52,7 +67,11 @@ class FederatedMQTTStrategyBase(fl.server.strategy.FedAvg):
 
     def describe_eval_data(self) -> str | None:
         """Human-readable description used when eval data is available."""
-        return None
+        if self.eval_data is None:
+            return None
+        features, labels = self.eval_data
+        unique_labels = np.unique(labels)
+        return f"{features.shape[0]} samples, {len(unique_labels)} classes"
 
     def log_eval_data_status(self) -> None:
         description = self.describe_eval_data()
@@ -85,7 +104,12 @@ class FederatedMQTTStrategyBase(fl.server.strategy.FedAvg):
         results: list[tuple[Any, fl.common.FitRes]],
         aggregation_time: float,
     ) -> None:
-        """Hook for telemetry and metrics after a round completes."""
+        """Record default per-round telemetry and Prometheus metrics."""
+        self.record_standard_round_metrics(
+            server_round,
+            num_results=len(results),
+            aggregation_time=aggregation_time,
+        )
 
     def should_evaluate_round(self, server_round: int) -> bool:
         """Whether the current round should trigger centralized evaluation."""
@@ -108,6 +132,107 @@ class FederatedMQTTStrategyBase(fl.server.strategy.FedAvg):
         print(
             f"{self.tag} Round {server_round}/{self.total_rounds} complete. "
             "Evaluation will run after final round."
+        )
+
+    def finalize_standard_evaluation(
+        self,
+        server_round: int,
+        *,
+        loss: float,
+        accuracy: float,
+        accuracy_gauge: Any = None,
+        loss_gauge: Any = None,
+    ) -> None:
+        """Record common final-evaluation outputs shared by server strategies."""
+        self.history["round"].append(server_round)
+        self.history["loss"].append(loss)
+        self.history["accuracy"].append(accuracy)
+
+        if accuracy_gauge is not None:
+            record_metric(accuracy_gauge, accuracy, {"round": str(server_round)})
+        if loss_gauge is not None:
+            record_metric(loss_gauge, loss, {"round": str(server_round)})
+
+        FL_ACCURACY.labels(server=self.server_label).set(accuracy)
+        FL_LOSS.labels(server=self.server_label).set(loss)
+        self.print_final_evaluation_summary(loss=loss, accuracy=accuracy)
+
+    def record_active_clients_measurement(
+        self,
+        server_round: int,
+        *,
+        num_results: int,
+        active_clients_gauge: Any = None,
+    ) -> None:
+        """Record the current number of active clients on the OTEL gauge."""
+        record_metric(active_clients_gauge, num_results, {"round": str(server_round)})
+
+    def record_standard_round_metrics(
+        self,
+        server_round: int,
+        *,
+        num_results: int,
+        aggregation_time: float,
+        rounds_counter: Any = None,
+        aggregations_counter: Any = None,
+        aggregation_histogram: Any = None,
+    ) -> None:
+        """Record the metrics shared by all MQTT server strategies per round."""
+        record_metric(aggregations_counter, 1, {"round": str(server_round)})
+        record_metric(rounds_counter, 1)
+        record_metric(
+            aggregation_histogram,
+            aggregation_time,
+            {"round": str(server_round)},
+        )
+
+        FL_ROUNDS.labels(server=self.server_label).inc()
+        FL_AGGREGATIONS.labels(server=self.server_label).inc()
+        FL_ACTIVE_CLIENTS.labels(server=self.server_label).set(num_results)
+        FL_ROUND_DURATION.labels(server=self.server_label).observe(aggregation_time)
+
+    def print_final_evaluation_summary(self, *, loss: float, accuracy: float) -> None:
+        """Render the shared final-evaluation banner."""
+        if self.eval_data is None:
+            return
+
+        features, labels = self.eval_data
+        n_samples = features.shape[0]
+        n_classes = len(np.unique(labels))
+
+        print(
+            f"\n{self.tag} ╔══════════════════════════════════════════════════════════════╗"
+        )
+        print(f"{self.tag} ║     FEDERATED LEARNING COMPLETE - FINAL MODEL EVALUATION     ║")
+        print(f"{self.tag} ╠══════════════════════════════════════════════════════════════╣")
+        print(f"{self.tag} ║                                                              ║")
+        print(f"{self.tag} ║  Test Dataset:                                               ║")
+        print(
+            f"{self.tag} ║    - Samples: {n_samples:>10,}                                   ║"
+        )
+        print(
+            f"{self.tag} ║    - Classes: {n_classes:>10}                                   ║"
+        )
+        print(f"{self.tag} ║                                                              ║")
+        print(f"{self.tag} ║  Model Performance:                                          ║")
+        print(f"{self.tag} ║    ┌────────────────────────────────────────────────┐        ║")
+        print(
+            f"{self.tag} ║    │  Loss:     {loss:>10.4f}                        │        ║"
+        )
+        print(
+            f"{self.tag} ║    │  Accuracy: {accuracy:>10.4f}  ({accuracy*100:>6.2f}%)            │        ║"
+        )
+        print(f"{self.tag} ║    └────────────────────────────────────────────────┘        ║")
+        print(f"{self.tag} ║                                                              ║")
+
+        bar_len = 40
+        filled = int(accuracy * bar_len)
+        bar = "█" * filled + "░" * (bar_len - filled)
+        print(f"{self.tag} ║  Accuracy: [{bar}]  ║")
+        print(f"{self.tag} ║             0%                                   100%        ║")
+        print(f"{self.tag} ║                                                              ║")
+        print(
+            f"{self.tag} ╚══════════════════════════════════════════════════════════════╝\n"
         )
 
     def log_round_banner(

@@ -22,16 +22,10 @@ from flower_basic.datasets.federated_common import (
 from flower_basic.datasets.swell_federated import load_node_split
 from flower_basic.logging_utils import enable_timestamped_print
 from flower_basic.prometheus_metrics import (
-    FL_ACCURACY,
-    FL_ACTIVE_CLIENTS,
-    FL_AGGREGATIONS,
     FL_CONFUSION_MATRIX,
     FL_GLOBAL_TEST_SAMPLES,
     FL_GLOBAL_TRAIN_SAMPLES,
     FL_GLOBAL_VAL_SAMPLES,
-    FL_LOSS,
-    FL_ROUND_DURATION,
-    FL_ROUNDS,
     get_metrics_port_from_env,
     push_metrics_to_gateway,
     start_metrics_server,
@@ -44,7 +38,6 @@ from flower_basic.telemetry import (
     create_gauge,
     create_histogram,
     init_otel,
-    record_metric,
     shutdown_telemetry,
 )
 from flower_basic.training.local import evaluate_classifier_arrays
@@ -112,6 +105,7 @@ class MQTTFedAvgSwell(FederatedMQTTStrategyBase):
             tracer=TRACER,
             model_topic=MODEL_TOPIC,
             publish_target_service="swell-client",
+            server_label="swell",
             tag=TAG,
             **kwargs,
         )
@@ -126,13 +120,6 @@ class MQTTFedAvgSwell(FederatedMQTTStrategyBase):
             "max_delay_seconds": [],
             "round_span": [],
         }
-
-    def describe_eval_data(self) -> str | None:
-        if self.eval_data is None:
-            return None
-        features, labels = self.eval_data
-        unique_labels = np.unique(labels)
-        return f"{features.shape[0]} samples, {len(unique_labels)} classes"
 
     def before_aggregate_fit(
         self,
@@ -155,7 +142,11 @@ class MQTTFedAvgSwell(FederatedMQTTStrategyBase):
         self.history["future_updates"].append(staleness.future_updates)
         self.history["max_delay_seconds"].append(staleness.max_delay_seconds)
         self.history["round_span"].append(staleness.max_round_span)
-        record_metric(GAUGE_ACTIVE_CLIENTS, len(results), {"round": str(server_round)})
+        self.record_active_clients_measurement(
+            server_round,
+            num_results=len(results),
+            active_clients_gauge=GAUGE_ACTIVE_CLIENTS,
+        )
 
     def evaluate_aggregated_state(
         self, server_round: int, state_dict: dict[str, Any]
@@ -171,15 +162,13 @@ class MQTTFedAvgSwell(FederatedMQTTStrategyBase):
     ) -> None:
         loss, acc, confusion_matrix, labels = evaluation
 
-        self.history["round"].append(server_round)
-        self.history["loss"].append(loss)
-        self.history["accuracy"].append(acc)
-
-        record_metric(GAUGE_GLOBAL_ACCURACY, acc, {"round": str(server_round)})
-        record_metric(GAUGE_GLOBAL_LOSS, loss, {"round": str(server_round)})
-
-        FL_ACCURACY.labels(server="swell").set(acc)
-        FL_LOSS.labels(server="swell").set(loss)
+        self.finalize_standard_evaluation(
+            server_round,
+            loss=loss,
+            accuracy=acc,
+            accuracy_gauge=GAUGE_GLOBAL_ACCURACY,
+            loss_gauge=GAUGE_GLOBAL_LOSS,
+        )
         for true_index, true_label in enumerate(labels):
             for pred_index, pred_label in enumerate(labels):
                 FL_CONFUSION_MATRIX.labels(
@@ -188,63 +177,19 @@ class MQTTFedAvgSwell(FederatedMQTTStrategyBase):
                     pred_label=str(pred_label),
                 ).set(int(confusion_matrix[true_index, pred_index]))
 
-        self._print_final_evaluation(loss, acc)
-
     def record_aggregation_metrics(
         self,
         server_round: int,
         results: list[tuple[Any, fl.common.FitRes]],
         aggregation_time: float,
     ) -> None:
-        record_metric(COUNTER_AGGREGATIONS, 1, {"round": str(server_round)})
-        record_metric(COUNTER_ROUNDS, 1)
-        if HIST_AGGREGATION_TIME:
-            HIST_AGGREGATION_TIME.record(aggregation_time, {"round": str(server_round)})
-
-        FL_ROUNDS.labels(server="swell").inc()
-        FL_AGGREGATIONS.labels(server="swell").inc()
-        FL_ACTIVE_CLIENTS.labels(server="swell").set(len(results))
-        FL_ROUND_DURATION.labels(server="swell").observe(aggregation_time)
-
-    def _print_final_evaluation(self, loss: float, acc: float):
-        """Print final evaluation results after federated learning completes."""
-        features, labels = self.eval_data
-        n_samples = features.shape[0]
-        n_classes = len(np.unique(labels))
-
-        print(
-            f"\n{TAG} ╔══════════════════════════════════════════════════════════════╗"
-        )
-        print(f"{TAG} ║     FEDERATED LEARNING COMPLETE - FINAL MODEL EVALUATION     ║")
-        print(f"{TAG} ╠══════════════════════════════════════════════════════════════╣")
-        print(f"{TAG} ║                                                              ║")
-        print(f"{TAG} ║  Test Dataset:                                               ║")
-        print(
-            f"{TAG} ║    - Samples: {n_samples:>10,}                                   ║"
-        )
-        print(
-            f"{TAG} ║    - Classes: {n_classes:>10}                                   ║"
-        )
-        print(f"{TAG} ║                                                              ║")
-        print(f"{TAG} ║  Model Performance:                                          ║")
-        print(f"{TAG} ║    ┌────────────────────────────────────────────────┐        ║")
-        print(
-            f"{TAG} ║    │  Loss:     {loss:>10.4f}                        │        ║"
-        )
-        print(
-            f"{TAG} ║    │  Accuracy: {acc:>10.4f}  ({acc*100:>6.2f}%)            │        ║"
-        )
-        print(f"{TAG} ║    └────────────────────────────────────────────────┘        ║")
-        print(f"{TAG} ║                                                              ║")
-
-        bar_len = 40
-        filled = int(acc * bar_len)
-        bar = "█" * filled + "░" * (bar_len - filled)
-        print(f"{TAG} ║  Accuracy: [{bar}]  ║")
-        print(f"{TAG} ║             0%                                   100%        ║")
-        print(f"{TAG} ║                                                              ║")
-        print(
-            f"{TAG} ╚══════════════════════════════════════════════════════════════╝\n"
+        self.record_standard_round_metrics(
+            server_round,
+            num_results=len(results),
+            aggregation_time=aggregation_time,
+            rounds_counter=COUNTER_ROUNDS,
+            aggregations_counter=COUNTER_AGGREGATIONS,
+            aggregation_histogram=HIST_AGGREGATION_TIME,
         )
 
 
