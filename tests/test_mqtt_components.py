@@ -302,6 +302,90 @@ class TestBrokerFog:
             fog.LATEST_GLOBAL_ROUND = original_round
             fog.K = original_k
 
+    def test_buffer_size_otel_metric_tracks_current_value(self):
+        """Broker OTEL buffer metric should emit deltas for the current buffer size."""
+        from flower_basic.brokers.federated_base import (
+            BrokerCallbacks,
+            BrokerConfig,
+            BrokerTelemetryHandles,
+            handle_client_update,
+        )
+
+        class _Metric:
+            def __init__(self):
+                self.calls = []
+
+            def add(self, value, attributes=None):
+                self.calls.append((value, attributes))
+
+        def _message(client_id: str, num_samples: int):
+            payload = {
+                "region": self.test_region,
+                "weights": self.sample_weights,
+                "client_id": client_id,
+                "num_samples": num_samples,
+            }
+            msg = Mock()
+            msg.payload = json.dumps(payload).encode()
+            return msg
+
+        def _weighted_average(updates, weights=None):
+            return (
+                updates[0],
+                {"norm": 1.0, "mean": 0.0, "std": 0.0, "num_params": 1},
+            )
+
+        buffer_metric = _Metric()
+        telemetry = BrokerTelemetryHandles(
+            gauge_buffer_size=buffer_metric,
+            gauge_client_contribution=_Metric(),
+            gauge_clients_per_region=_Metric(),
+        )
+        callbacks = BrokerCallbacks(
+            record_prometheus_update=lambda *args: None,
+            record_prometheus_buffer_cleared=lambda *args: None,
+            record_prometheus_aggregation=lambda *args: None,
+            record_region_model_metrics=lambda *args: None,
+        )
+        config = BrokerConfig(
+            broker_tag="[TEST_BROKER]",
+            source_service="test-client",
+            target_service="test-bridge",
+            partial_topic="fl/partial",
+            default_k=2,
+            k_map={},
+        )
+        buffers = defaultdict(list)
+        clients_per_region = defaultdict(set)
+
+        handle_client_update(
+            client=self.mock_client,
+            msg=_message("client_1", 10),
+            config=config,
+            telemetry=telemetry,
+            callbacks=callbacks,
+            buffers=buffers,
+            clients_per_region=clients_per_region,
+            weighted_average_fn=_weighted_average,
+        )
+        handle_client_update(
+            client=self.mock_client,
+            msg=_message("client_2", 15),
+            config=config,
+            telemetry=telemetry,
+            callbacks=callbacks,
+            buffers=buffers,
+            clients_per_region=clients_per_region,
+            weighted_average_fn=_weighted_average,
+        )
+
+        assert buffer_metric.calls == [
+            (1.0, {"region": self.test_region}),
+            (1.0, {"region": self.test_region}),
+            (-2.0, {"region": self.test_region}),
+        ]
+        self.mock_client.publish.assert_called_once()
+
 
 class TestClientMQTT:
     """Test cases for the MQTT client component."""

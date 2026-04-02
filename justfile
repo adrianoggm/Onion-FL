@@ -65,6 +65,59 @@ default:
     cd docker && docker-compose -f docker-compose.otel.yml down
     echo "{{GREEN}}✅ Containers stopped{{NC}}"
 
+# Stop local federated/test/demo processes launched from this repo
+@stop-local:
+    echo "{{BLUE}}🛑 Stopping local Flower-Basic processes...{{NC}}"
+    repo_root="$PWD"; \
+    self_pid="$$"; \
+    parent_pid="$PPID"; \
+    patterns=( \
+      "$repo_root/.venv/bin/python -m flower_basic." \
+      "$repo_root/.venv/bin/python scripts/run_architecture_from_config.py" \
+      "$repo_root/.venv/bin/python scripts/run_sweet_architecture.py" \
+      "$repo_root/.venv/bin/python scripts/run_swell_federated_demo.py" \
+      "$repo_root/.venv/bin/python scripts/run_sweet_federated_demo.py" \
+      "$repo_root/.venv/bin/python run_multi_dataset_demo.py" \
+      "python -m flower_basic." \
+      "python scripts/run_architecture_from_config.py" \
+      "python scripts/run_sweet_architecture.py" \
+      "python scripts/run_swell_federated_demo.py" \
+      "python scripts/run_sweet_federated_demo.py" \
+      "python run_multi_dataset_demo.py" \
+    ); \
+    found=0; \
+    target_pids=""; \
+    for pattern in "${patterns[@]}"; do \
+      while read -r pid; do \
+        [ -z "$pid" ] && continue; \
+        [ "$pid" = "$self_pid" ] && continue; \
+        [ "$pid" = "$parent_pid" ] && continue; \
+        case " $target_pids " in \
+          *" $pid "*) continue ;; \
+        esac; \
+        target_pids="$target_pids $pid"; \
+        found=1; \
+        ps -p "$pid" -o pid=,args= || true; \
+      done < <(pgrep -f "$pattern" || true); \
+    done; \
+    if [ "$found" -eq 0 ]; then \
+      echo "{{YELLOW}}No matching local processes found{{NC}}"; \
+      exit 0; \
+    fi; \
+    for pid in $target_pids; do \
+      kill -TERM "$pid" >/dev/null 2>&1 || true; \
+    done; \
+    sleep 2; \
+    for pid in $target_pids; do \
+      kill -KILL "$pid" >/dev/null 2>&1 || true; \
+    done; \
+    echo "{{GREEN}}✅ Local processes stopped{{NC}}"
+
+# Stop local processes and observability stack
+@stop-all:
+    just stop-local
+    just docker-down
+
 # Clean Docker (stop + remove volumes)
 @docker-clean:
     echo "{{BLUE}}🧹 Cleaning Docker (including volumes)...{{NC}}"
@@ -98,9 +151,9 @@ default:
 # Launch full federated system (full modalities)
 @swell-launch:
     echo "{{GREEN}}🚀 Launching federated system (full modalities)...{{NC}}"
-    export MQTT_BROKER=localhost MQTT_PORT=1883
-    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4320
-    export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4320
+    MQTT_BROKER=localhost MQTT_PORT=1883 \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4320 \
+    OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4320 \
     python scripts/run_architecture_from_config.py \
       --config configs/federated_architecture.example.yaml \
       --manifest federated_runs/swell/example_manual/manifest.json \
@@ -110,9 +163,9 @@ default:
 # Launch federated system (physiology-only)
 @swell-launch-physio:
     echo "{{GREEN}}🚀 Launching federated system (physiology-only)...{{NC}}"
-    export MQTT_BROKER=localhost MQTT_PORT=1883
-    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4320
-    export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4320
+    MQTT_BROKER=localhost MQTT_PORT=1883 \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4320 \
+    OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4320 \
     python scripts/run_architecture_from_config.py \
       --config configs/federated_architecture.example.yaml \
       --manifest federated_runs/swell/10_executions_physiology/manifest.json \
@@ -122,9 +175,9 @@ default:
 # Launch SWELL with stale updates accepted (recommended baseline for comparison)
 @swell-launch-accept:
     echo "{{GREEN}}🚀 Launching SWELL with stale policy=accept{{NC}}"
-    export MQTT_BROKER=localhost MQTT_PORT=1883
-    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4320
-    export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4320
+    MQTT_BROKER=localhost MQTT_PORT=1883 \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4320 \
+    OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4320 \
     python scripts/run_architecture_from_config.py \
       --config configs/federated_architecture_accept.yaml \
       --manifest federated_runs/swell/10_executions_physiology/manifest.json \
@@ -134,9 +187,9 @@ default:
 # Launch SWELL with stale updates dropped when they do not match the expected round
 @swell-launch-strict:
     echo "{{GREEN}}🚀 Launching SWELL with stale policy=strict{{NC}}"
-    export MQTT_BROKER=localhost MQTT_PORT=1883
-    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4320
-    export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4320
+    MQTT_BROKER=localhost MQTT_PORT=1883 \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4320 \
+    OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4320 \
     python scripts/run_architecture_from_config.py \
       --config configs/federated_architecture_strict.yaml \
       --manifest federated_runs/swell/10_executions_physiology/manifest.json \

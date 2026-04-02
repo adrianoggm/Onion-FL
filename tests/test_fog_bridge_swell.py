@@ -114,3 +114,25 @@ def test_fit_times_out_without_partial(monkeypatch) -> None:
 
     assert len(out) == len(params)
     assert num_samples == 1
+
+
+def test_fit_handles_forwarding_error_without_exiting(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+    )
+
+    client = FogClientSwell(
+        server_address="localhost:8080", input_dim=4, region="fog_0"
+    )
+    params = get_parameters(client.model)
+    client.partial_weights = {"missing_param": [0.0]}
+    client.partial_metadata = {"expected_round": 1}
+
+    out, num_samples, metrics = client.fit(params, {})
+
+    assert len(out) == len(params)
+    assert num_samples == 1
+    assert metrics["bridge_error"] is True
+    assert metrics["bridge_error_type"] == "KeyError"
+    assert client.partial_weights is None
+    assert client.partial_metadata == {}

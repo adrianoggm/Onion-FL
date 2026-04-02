@@ -189,6 +189,12 @@ def main():
     ap.add_argument("--manifest", type=str, help="Path to manifest.json")
     ap.add_argument("--min-fit-clients", type=int, default=1)
     ap.add_argument("--min-available-clients", type=int, default=None)
+    ap.add_argument(
+        "--round-timeout",
+        type=float,
+        default=float(os.getenv("FLOWER_ROUND_TIMEOUT", "300")),
+        help="Timeout in seconds for a Flower round (<=0 disables timeout)",
+    )
     args = ap.parse_args()
 
     model = SweetMLP(
@@ -235,12 +241,20 @@ def main():
     print(f"{TAG}  - Num classes: {args.num_classes}")
     print(f"{TAG}  - Rounds: {args.rounds}")
     print(f"{TAG}  - Min clients: {args.min_fit_clients}")
+    print(
+        f"{TAG}  - Round timeout: {args.round_timeout:.1f}s"
+        if args.round_timeout > 0
+        else f"{TAG}  - Round timeout: DISABLED"
+    )
     print(f"{TAG}  - Evaluation: {'ENABLED' if eval_data is not None else 'DISABLED'}")
     print(f"{TAG} " + "=" * 62)
     print(f"{TAG} Waiting for fog clients...")
     fl.server.start_server(
         server_address=args.server_addr,
-        config=fl.server.ServerConfig(num_rounds=args.rounds),
+        config=fl.server.ServerConfig(
+            num_rounds=args.rounds,
+            round_timeout=(args.round_timeout if args.round_timeout > 0 else None),
+        ),
         strategy=strategy,
     )
 

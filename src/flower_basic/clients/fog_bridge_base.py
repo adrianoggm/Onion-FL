@@ -3,6 +3,7 @@ from __future__ import annotations
 """Common workflow for MQTT partial-aggregate fog bridges."""
 
 import time
+import traceback
 from typing import Any, Callable
 
 import flwr as fl
@@ -92,6 +93,14 @@ class BaseFogBridgeClient(BaseMQTTComponent, fl.client.NumPyClient):
     def on_forwarded(self, num_samples: int) -> None:
         """Hook for forwarding telemetry."""
 
+    def build_error_metrics(self, exc: Exception) -> dict[str, Any]:
+        """Metrics returned when forwarding a partial fails unexpectedly."""
+        return {
+            "bridge_error": True,
+            "bridge_error_type": type(exc).__name__,
+            "region": self.region,
+        }
+
     def on_message(self, client, userdata, msg) -> None:
         try:
             envelope = decode_partial_aggregate_message(msg.payload)
@@ -124,50 +133,67 @@ class BaseFogBridgeClient(BaseMQTTComponent, fl.client.NumPyClient):
 
     def fit(self, parameters: list[np.ndarray], config):
         start_wait = time.time()
+        span = None
 
-        with start_linked_client_span(
-            self.tracer,
-            "bridge.forward_to_server",
-            self.server_target_service,
-            trace_context=self.partial_trace_context,
-            attributes={"region": self.region},
-        ) as span:
-            self._set_parameters_fn(self.model, parameters)
-            timeout = self.wait_timeout_seconds()
-            waited = 0.0
-            while self.partial_weights is None and waited < timeout:
-                time.sleep(0.5)
-                waited += 0.5
+        try:
+            with start_linked_client_span(
+                self.tracer,
+                "bridge.forward_to_server",
+                self.server_target_service,
+                trace_context=self.partial_trace_context,
+                attributes={"region": self.region},
+            ) as active_span:
+                span = active_span
+                self._set_parameters_fn(self.model, parameters)
+                timeout = self.wait_timeout_seconds()
+                waited = 0.0
+                while self.partial_weights is None and waited < timeout:
+                    time.sleep(0.5)
+                    waited += 0.5
 
-            wait_duration = time.time() - start_wait
-            self.on_wait_completed(wait_duration)
+                wait_duration = time.time() - start_wait
+                self.on_wait_completed(wait_duration)
 
-            if self.partial_weights is None:
-                print(f"{self.tag} Timeout waiting for partial")
+                if self.partial_weights is None:
+                    print(f"{self.tag} Timeout waiting for partial")
+                    if span:
+                        span.set_attribute("status", "timeout")
+                    self.on_timeout()
+                    return (
+                        self._get_parameters_fn(self.model),
+                        1,
+                        self.build_timeout_metrics(),
+                    )
+
+                partial_list = [
+                    np.array(self.partial_weights[name], dtype=np.float32)
+                    for name in self.param_names
+                ]
+                metrics = dict(self.partial_metadata)
+                self.partial_weights = None
+                self.partial_metadata = {}
+                self.partial_trace_context = None
+                num_samples = self.forwarded_num_samples()
+                print(f"{self.tag} Forwarding partial to central server")
                 if span:
-                    span.set_attribute("status", "timeout")
-                self.on_timeout()
-                return (
-                    self._get_parameters_fn(self.model),
-                    1,
-                    self.build_timeout_metrics(),
-                )
-
-            partial_list = [
-                np.array(self.partial_weights[name], dtype=np.float32)
-                for name in self.param_names
-            ]
-            metrics = dict(self.partial_metadata)
+                    span.set_attribute("status", "forwarded")
+                    span.set_attribute("num_samples", num_samples)
+                self.on_forwarded(num_samples)
+                return partial_list, num_samples, metrics
+        except Exception as exc:
+            print(f"{self.tag} Error forwarding partial to central server: {exc}")
+            traceback.print_exc()
             self.partial_weights = None
             self.partial_metadata = {}
             self.partial_trace_context = None
-            num_samples = self.forwarded_num_samples()
-            print(f"{self.tag} Forwarding partial to central server")
             if span:
-                span.set_attribute("status", "forwarded")
-                span.set_attribute("num_samples", num_samples)
-            self.on_forwarded(num_samples)
-            return partial_list, num_samples, metrics
+                span.set_attribute("status", "error")
+                span.set_attribute("error.type", type(exc).__name__)
+            return (
+                self._get_parameters_fn(self.model),
+                1,
+                self.build_error_metrics(exc),
+            )
 
     def evaluate(self, parameters, config):
         return 0.0, 0, {}

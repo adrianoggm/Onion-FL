@@ -21,10 +21,12 @@ _env_loaded = False
 try:
     from dotenv import load_dotenv
 
+    repo_root = Path(__file__).resolve().parents[2]
+
     # Try to find .env in common locations - be more aggressive
     possible_env_paths = [
-        Path(__file__).resolve().parents[3] / ".env",  # project/.env (most common)
-        Path(__file__).resolve().parents[3] / "docker" / ".env",  # project/docker/.env
+        repo_root / ".env",  # project/.env (most common)
+        repo_root / "docker" / ".env",  # project/docker/.env
         Path.cwd() / ".env",  # cwd/.env
         Path.cwd() / "docker" / ".env",  # cwd/docker/.env
         Path.home() / "flower-basic" / ".env",  # home/flower-basic/.env

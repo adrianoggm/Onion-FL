@@ -23,6 +23,8 @@ from flower_basic.telemetry import (
     start_server_span,
 )
 
+_OTEL_GAUGE_VALUES: dict[tuple[int, tuple[tuple[str, Any], ...]], float] = {}
+
 
 @dataclass(frozen=True)
 class BrokerConfig:
@@ -60,6 +62,36 @@ class BrokerCallbacks:
     record_prometheus_buffer_cleared: Callable[[str], None]
     record_prometheus_aggregation: Callable[[str], None]
     record_region_model_metrics: Callable[[str, dict[str, float], int], None]
+
+
+def record_current_gauge_value(
+    metric: Any,
+    value: float | int,
+    attributes: Mapping[str, Any] | None = None,
+) -> None:
+    """Emulate gauge semantics on top of OTEL UpDownCounter instruments.
+
+    OpenTelemetry metrics use UpDownCounter here because the lightweight helper
+    does not expose observable gauges. That instrument expects deltas, while the
+    broker naturally produces current point-in-time values such as buffer size.
+    This helper stores the last value seen for each metric/attribute set and
+    publishes only the delta needed to reach the new value.
+    """
+
+    if metric is None:
+        return
+
+    normalized_attributes = dict(attributes or {})
+    metric_key = (id(metric), tuple(sorted(normalized_attributes.items())))
+    current_value = float(value)
+    previous_value = _OTEL_GAUGE_VALUES.get(metric_key, 0.0)
+    delta = current_value - previous_value
+    _OTEL_GAUGE_VALUES[metric_key] = current_value
+
+    if delta == 0:
+        return
+
+    record_metric(metric, delta, normalized_attributes or None)
 
 
 def weighted_average(
@@ -227,17 +259,17 @@ def handle_client_update(
                 1,
                 {"region": region, "client_id": client_id},
             )
-            record_metric(
+            record_current_gauge_value(
                 telemetry.gauge_buffer_size,
                 len(buffers[region]),
                 {"region": region},
             )
-            record_metric(
+            record_current_gauge_value(
                 telemetry.gauge_client_contribution,
                 num_samples,
                 {"region": region, "client_id": client_id},
             )
-            record_metric(
+            record_current_gauge_value(
                 telemetry.gauge_clients_per_region,
                 len(clients_per_region[region]),
                 {"region": region},
@@ -323,7 +355,9 @@ def handle_client_update(
                 )
 
             buffers[region].clear()
-            record_metric(telemetry.gauge_buffer_size, 0, {"region": region})
+            record_current_gauge_value(
+                telemetry.gauge_buffer_size, 0, {"region": region}
+            )
             callbacks.record_prometheus_buffer_cleared(region)
 
             payload_kwargs = {
