@@ -181,7 +181,26 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
 - `prometheus` serves the `onionfl_*` series that the Grafana dashboard queries; a test keeps the dashboard and the series in sync.
 - `otel` creates one span per send and per receive, linked by `msg_id`. It exports over OTLP to the collector.
 
-## 9. Extending
+## 9. Studio
+
+`onion_fl serve` starts Onion-FL Studio: a FastAPI app (`onion_fl.studio.api`) over the same files as the command line, plus a single-page app in `studio/static/`. The app is plain JavaScript and SVG, with no build step and no dependencies.
+
+| Area | What it shows |
+|---|---|
+| Topologies | The library with graphs and `topology_id`, and an editor that validates through `POST /api/topologies/validate` |
+| Experiments | Scenarios with their `config_id`, the dry-run plan with its warnings, and a launch that starts `onion_fl run` in a child process |
+| Runs | Status, identity, summary, metric series per level, and events polled every two seconds while a run is `running` |
+| Compare | `Runs.compare` by any tags, with the 95% CI band |
+| Tutorial | Every registry's plugins with their explanation and parameters, and dry-run previews (`studio.previews`) |
+
+The previews are pure functions:
+- sharing builds a model with placeholder shapes and lists the groups per link;
+- placement runs the plugin on hypothetical subject counts;
+- the network preview samples a link profile.
+
+Names are checked against a safe pattern so that no request leaves its folder. Responses are never cached, because files change under a running Studio. The design is in [superpowers/specs/2026-10-03-onion-fl-studio-design.md](superpowers/specs/2026-10-03-onion-fl-studio-design.md).
+
+## 10. Extending
 
 **Adding a plugin.** Register a class or a function in its registry, with a pydantic model for its parameters. The new plugin then shows up in the config validation, in `onion_fl schema` and in the front.
 

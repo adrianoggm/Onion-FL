@@ -31,6 +31,7 @@ from onion_fl.observability.sinks import OtelSink, PrometheusSink, otlp_provider
 from onion_fl.roles import EdgeSpec, build_federation
 from onion_fl.roles.policies import create
 from onion_fl.runtime.devices import availability_models, compute_models
+from onion_fl.runtime.network import resolve_profile
 
 
 def resolve_topology(config: ExperimentConfig) -> Topology:
@@ -108,6 +109,23 @@ def _initial_state(config: ExperimentConfig, shapes: Sequence[Any], seed: int):
     return family, state_arrays(model)
 
 
+def link_warnings(topology: Topology) -> list[str]:
+    """Aggregators fed by lossy links without a deadline: one lost update stalls a round."""
+    warnings = []
+    leaves = {leaf.id for leaf in topology.leaves()}
+    for node in topology.nodes:
+        links = [c.link_up for c in topology.children(node.id)]
+        if node.id in leaves:
+            links.append(topology.edge.link_up)
+        loss = max((resolve_profile(link.profile).loss for link in links), default=0.0)
+        if loss > 0 and node.settings.get("deadline") is None:
+            warnings.append(
+                f"{node.id}: its children's links lose messages (up to {loss:.1%}) and it has "
+                "no deadline, so a lost update stalls the round; set a deadline"
+            )
+    return warnings
+
+
 def plan(config: ExperimentConfig) -> list[dict[str, Any]]:
     """Dry run of every scenario: composition per leaf, roles and the groups on each link."""
     previews = []
@@ -126,6 +144,7 @@ def plan(config: ExperimentConfig) -> list[dict[str, Any]]:
                 "composition": placement.composition(),
                 "traffic": traffic(topology, policy, list(param_groups(state))),
                 "data": digests,
+                "warnings": link_warnings(topology),
             }
         )
     return previews

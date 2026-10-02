@@ -138,3 +138,6 @@ flower_client_*.log
 /multimodal_baseline_results.json
 
 federated_runs/*
+
+# Browser automation snapshots
+/.playwright-mcp/

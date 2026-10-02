@@ -382,3 +382,20 @@ def test_a_run_keeps_its_final_global_model(workspace: Path) -> None:
 
     with np.load(path / "model.npz", allow_pickle=False) as saved:
         assert "trunk.0.weight" in saved.files
+
+
+def test_plan_warns_about_lossy_links_without_deadline(workspace: Path) -> None:
+    lossy = {"profile": {"preset": "lan", "loss": 0.1}}
+    topology = TOPOLOGY | {
+        "fog": {"defaults": {"link_up": lossy}, "nodes": TOPOLOGY["fog"]["nodes"]},
+        "edge": {"link_up": lossy},
+    }
+
+    (preview,) = plan(parse_experiment(experiment(workspace, topology=topology)))
+    (safe,) = plan(parse_experiment(experiment(workspace)))
+
+    assert (
+        len(preview["warnings"]) == 3
+    )  # cloud (from the fogs) and each fog (from its edges)
+    assert all("deadline" in w for w in preview["warnings"])
+    assert safe["warnings"] == []
