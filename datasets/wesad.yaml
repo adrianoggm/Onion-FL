@@ -1,0 +1,35 @@
+# WESAD (Schmidt et al., 2018): wearable signals of 15 subjects; labels at 700 Hz
+# (1 baseline, 2 stress, 3 amusement, 4 meditation; the rest are transient).
+#
+# Windows of `window_rows` label samples (42000 = 60 s) with per-channel
+# statistics, as the previous loader. Windows with any row outside the chosen
+# classes are dropped. Wrist signals are held at the label rate, so their
+# statistics match the previous native-rate ones only approximately; chest
+# signals are sampled at 700 Hz and match exactly.
+#
+# NOT verified against the raw files yet (data/ is not in git).
+name: wesad
+description: WESAD, señales de pecho o muñeca en ventanas con estadísticos por canal.
+root: data/WESAD
+options:
+  location: wrist
+  signals: "BVP,EDA,ACC,TEMP"
+  window_rows: 42000
+  overlap: 0.5
+source:
+  reader: wesad_pickle
+  path: "{subject}/{subject}.pkl"
+  location: "{location}"
+  signals: "{signals}"
+steps:
+  - label:
+      default: binary
+      strategies:
+        binary: {task: stress_binary, column: condition, map: {1: 0, 2: 1}}
+        three_class: {task: affect_3class, column: condition, map: {1: 0, 2: 1, 3: 2}}
+  - window:
+      size: "{window_rows}"
+      overlap: "{overlap}"
+      label: mode               # equals the old round(mean) for two classes
+  - features:
+      regex: "_(mean|std|min|max|median)$"

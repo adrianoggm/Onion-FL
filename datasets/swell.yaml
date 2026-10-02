@@ -1,0 +1,67 @@
+# SWELL-KW (Koldijk et al., 2014): per-minute features of 25 knowledge workers
+# under three conditions. Only the computer-interaction file is required; the
+# other modalities are optional joins (spec §8.6).
+#
+# NOT verified against the raw files yet (data/ is not in git): before citing
+# results, run `onion_fl data inspect swell` with the options you use.
+# Unverified on purpose, so it fails loudly if wrong:
+#   - the optional joins assume every modality file has pp, blok, condition and
+#     timestamp and that rows align per minute on them;
+#   - 999 is treated as missing only in the facial file, as the file name says
+#     ("NaN is 999"); the computer counters also peak at exactly 999.
+name: swell
+description: SWELL-KW, features por minuto de 25 participantes; estrés según la condición (N, T, I, R).
+root: "data/SWELL/3 - Feature dataset/per sensor"
+options:
+  facial: false
+  posture: false
+  physiology: false
+source:
+  reader: csv
+  path: "A - Computer interaction features (Ulog - All Features per minute)-Sheet_1.csv"
+  sep: null
+  encoding: utf-8-sig
+  na_values: ["#VALUE!"]
+  normalize_columns: true
+steps:
+  - subject: {column: pp, regex: "(\\d+)"}
+  - join:
+      source:
+        reader: csv
+        path: "B - Facial expressions features (FaceReaderAllData_final (NaN is 999))-sheet_1.csv"
+        sep: null
+        encoding: utf-8-sig
+        na_values: ["999", "#VALUE!"]
+        normalize_columns: true
+      by: [pp, blok, condition, timestamp]
+    when: {facial: true}
+  - join:
+      source:
+        reader: csv
+        path: "C - Body posture features (Kinect C (position - per minute))- Sheet_1.csv"
+        sep: null
+        encoding: utf-8-sig
+        na_values: ["#VALUE!"]
+        normalize_columns: true
+      by: [pp, blok, condition, timestamp]
+    when: {posture: true}
+  - join:
+      source:
+        reader: csv
+        path: "D - Physiology features (HR_HRV_SCL - final).csv"
+        sep: null
+        encoding: utf-8-sig
+        na_values: ["#VALUE!"]
+        normalize_columns: true
+      by: [pp, blok, condition, timestamp]
+    when: {physiology: true}
+  - label:
+      default: binary
+      strategies:
+        # As the previous loaders: R counts as stress.
+        binary: {task: stress_binary, column: condition, map: {"N": 0, "T": 1, "I": 1, "R": 1}}
+        # R rows dropped, for those who read R as rest rather than stress.
+        binary_no_r: {task: stress_binary, column: condition, map: {"N": 0, "T": 1, "I": 1}}
+  - features:
+      regex: "^(?!unnamed)"     # empty spreadsheet columns
+      exclude: [blok, timestamp, c]
