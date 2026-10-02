@@ -10,6 +10,8 @@ from onion_fl.learning.model import ModularMLPConfig
 from onion_fl.learning.sharing import (
     SharingError,
     SharingPolicy,
+    keys_crossing,
+    keys_held_at,
     sharing,
     stored_at,
     traffic,
@@ -213,3 +215,39 @@ def test_each_level_stores_the_groups_scoped_to_it() -> None:
 def test_stored_at_rejects_the_edge_level() -> None:
     with pytest.raises(SharingError, match="edge"):
         stored_at(REGIONS, "edge", sharing.create("fedavg"), GROUPS)
+
+
+# --- keys for the round protocol (issue #91) -------------------------------------------
+
+LEVELS = ["global", "region", "fog", "edge"]
+KEYS = [
+    "adapter.a.0.weight",
+    "trunk.0.weight",
+    "head.stress.weight",
+    "head.stress.bias",
+]
+
+
+def test_keys_crossing_a_link_follow_the_scopes() -> None:
+    policy = sharing.create(
+        "custom", {"rules": {"head.*": "level:fog", "adapter.*": "local"}}
+    )
+
+    assert keys_crossing(KEYS, policy, LEVELS, "fog") == KEYS[1:]  # edge <-> fog
+    assert keys_crossing(KEYS, policy, LEVELS, "region") == ["trunk.0.weight"]
+    assert keys_crossing(KEYS, policy, LEVELS, "global") == ["trunk.0.weight"]
+
+
+def test_level_scoped_keys_travel_up_to_their_level() -> None:
+    policy = sharing.create("zone", {"level": "region"})
+
+    assert "head.stress.weight" in keys_crossing(KEYS, policy, LEVELS, "region")
+    assert "head.stress.weight" not in keys_crossing(KEYS, policy, LEVELS, "global")
+
+
+def test_keys_held_at_each_level() -> None:
+    policy = sharing.create("zone", {"level": "fog"})
+
+    assert keys_held_at(KEYS, policy, LEVELS, "fog") == KEYS[2:]
+    assert keys_held_at(KEYS, policy, LEVELS, "region") == []
+    assert keys_held_at(KEYS, policy, LEVELS, "global") == KEYS[:2]

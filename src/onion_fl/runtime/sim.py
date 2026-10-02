@@ -38,7 +38,7 @@ class _SimContext:
     def __init__(self, runtime: SimRuntime, node_id: str) -> None:
         self._runtime = runtime
         self.node_id = node_id
-        self.rng = node_rng(runtime.seed, node_id)
+        self.rng = runtime._rng(node_id)
         self.outbox: list[Message] = []
         self.work = 0.0
 
@@ -88,6 +88,7 @@ class SimRuntime:
         self._queue: list[tuple[float, int, str, tuple]] = []
         self._seq = 0
         self._processed = 0
+        self._rngs: dict[str, Any] = {}
         self._started = False
 
     # --- setup -------------------------------------------------------------
@@ -190,6 +191,12 @@ class SimRuntime:
             self._transmit(msg)
 
     # --- internals ---------------------------------------------------------
+
+    def _rng(self, node_id: str) -> Any:
+        """One stream per node for the whole run, not one per handler."""
+        if node_id not in self._rngs:
+            self._rngs[node_id] = node_rng(self.seed, node_id)
+        return self._rngs[node_id]
 
     def _push(self, t: float, kind: str, payload: tuple) -> None:
         self._seq += 1
