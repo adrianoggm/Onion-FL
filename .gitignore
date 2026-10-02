@@ -137,7 +137,8 @@ flower_client_*.log
 /swell_dataset_analysis.json
 /multimodal_baseline_results.json
 
-federated_runs/*
+# Run folders written by onion_fl run (results to cite go to results/)
+/runs/
 
 # Browser automation snapshots
 /.playwright-mcp/
