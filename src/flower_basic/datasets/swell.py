@@ -442,7 +442,7 @@ def load_swell_dataset(
 
         def _distribution(values: np.ndarray) -> dict[int, int]:
             unique, counts = np.unique(values, return_counts=True)
-            return {int(k): int(v) for k, v in zip(unique, counts)}
+            return {int(k): int(v) for k, v in zip(unique, counts, strict=False)}
 
         info: dict[str, object] = {
             "modalities": modalities,

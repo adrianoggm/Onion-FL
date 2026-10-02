@@ -236,7 +236,7 @@ class FederatedMQTTStrategyBase(fl.server.strategy.FedAvg):
             f"{self.tag} ║    │  Loss:     {loss:>10.4f}                        │        ║"
         )
         print(
-            f"{self.tag} ║    │  Accuracy: {accuracy:>10.4f}  ({accuracy*100:>6.2f}%)            │        ║"
+            f"{self.tag} ║    │  Accuracy: {accuracy:>10.4f}  ({accuracy * 100:>6.2f}%)            │        ║"
         )
         print(
             f"{self.tag} ║    └────────────────────────────────────────────────┘        ║"

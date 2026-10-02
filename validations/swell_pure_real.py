@@ -63,7 +63,9 @@ def swell_pure_real_evaluation():
     print(f"  Features: {X.shape[1]}")
     print(f"  Samples: {len(X)}")
     print(f"  Real participants: {len(subjects.unique())}")
-    print(f"  Class distribution: {dict(zip(*np.unique(y, return_counts=True)))}")
+    print(
+        f"  Class distribution: {dict(zip(*np.unique(y, return_counts=True), strict=False))}"
+    )
     print()
 
     # Subject-based split (NO DATA LEAKAGE)

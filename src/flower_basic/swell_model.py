@@ -40,7 +40,7 @@ def get_parameters(model: nn.Module) -> list[np.ndarray]:
 
 def set_parameters(model: nn.Module, parameters) -> None:
     state_dict = model.state_dict()
-    for (key, _), param in zip(state_dict.items(), parameters):
+    for (key, _), param in zip(state_dict.items(), parameters, strict=False):
         if isinstance(param, torch.Tensor):
             state_dict[key] = param
         else:

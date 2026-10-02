@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import time
 import traceback
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import flwr as fl
 import numpy as np

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
@@ -32,7 +32,7 @@ class CrossValidationResult:
 
 
 def _summarize(scores: Iterable[tuple[float, float]]) -> CrossValidationResult:
-    accuracies, macro_f1 = zip(*scores)
+    accuracies, macro_f1 = zip(*scores, strict=False)
     return CrossValidationResult(
         accuracy_mean=float(np.mean(accuracies)),
         accuracy_std=float(np.std(accuracies, ddof=1) if len(accuracies) > 1 else 0.0),

@@ -87,7 +87,7 @@ def swell_analysis_real_participants():
     y_pred_real = rf_real.predict(X_test_real_scaled)
     accuracy_real = accuracy_score(y_test_real, y_pred_real)
 
-    print(f"  🎯 ACCURACY REAL: {accuracy_real:.3f} ({accuracy_real*100:.1f}%)")
+    print(f"  🎯 ACCURACY REAL: {accuracy_real:.3f} ({accuracy_real * 100:.1f}%)")
     print()
 
     # === MÉTODO 2: PARTICIPANTES SINTÉTICOS (como el script original) ===
@@ -95,7 +95,7 @@ def swell_analysis_real_participants():
     print("-" * 40)
 
     # Simular lo que hace el script original - crear sujetos sintéticos
-    synthetic_subjects = [f"P{(i//100) + 1:02d}" for i in range(len(df))]
+    synthetic_subjects = [f"P{(i // 100) + 1:02d}" for i in range(len(df))]
 
     print(f"  Sujetos sintéticos creados: {len(set(synthetic_subjects))}")
     print(f"  Primeros 5: {list(set(synthetic_subjects))[:5]}")
@@ -132,7 +132,7 @@ def swell_analysis_real_participants():
     accuracy_synthetic = accuracy_score(y_test_synthetic, y_pred_synthetic)
 
     print(
-        f"  🎯 ACCURACY SINTÉTICO: {accuracy_synthetic:.3f} ({accuracy_synthetic*100:.1f}%)"
+        f"  🎯 ACCURACY SINTÉTICO: {accuracy_synthetic:.3f} ({accuracy_synthetic * 100:.1f}%)"
     )
     print()
 
@@ -140,10 +140,10 @@ def swell_analysis_real_participants():
     print("📊 COMPARACIÓN FINAL")
     print("-" * 20)
     print(
-        f"🧑‍🔬 Participantes REALES (25):    {accuracy_real:.3f} ({accuracy_real*100:.1f}%)"
+        f"🧑‍🔬 Participantes REALES (25):    {accuracy_real:.3f} ({accuracy_real * 100:.1f}%)"
     )
     print(
-        f"🤖 Participantes SINTÉTICOS (500): {accuracy_synthetic:.3f} ({accuracy_synthetic*100:.1f}%)"
+        f"🤖 Participantes SINTÉTICOS (500): {accuracy_synthetic:.3f} ({accuracy_synthetic * 100:.1f}%)"
     )
     print()
 
@@ -155,17 +155,19 @@ def swell_analysis_real_participants():
         print("   1. Cada 'sujeto sintético' tiene solo ~100 muestras consecutivas")
         print("   2. No hay variabilidad real entre 'sujetos'")
         print("   3. División temporal no es lo mismo que división por sujetos")
-        print(f"   4. El {accuracy_synthetic*100:.1f}% es ARTIFICIAL")
+        print(f"   4. El {accuracy_synthetic * 100:.1f}% es ARTIFICIAL")
     else:
         print("✅ DIAGNÓSTICO: Ambos métodos dan resultados similares")
         print("   Los datos SWELL son genuinamente buenos")
 
     print()
     print("💡 CONCLUSIÓN:")
-    print(f"   - Accuracy REAL con participantes reales: {accuracy_real*100:.1f}%")
-    print(f"   - Accuracy FALSO con sujetos sintéticos: {accuracy_synthetic*100:.1f}%")
+    print(f"   - Accuracy REAL con participantes reales: {accuracy_real * 100:.1f}%")
     print(
-        f"   - Diferencia: {abs(accuracy_synthetic - accuracy_real)*100:.1f} puntos porcentuales"
+        f"   - Accuracy FALSO con sujetos sintéticos: {accuracy_synthetic * 100:.1f}%"
+    )
+    print(
+        f"   - Diferencia: {abs(accuracy_synthetic - accuracy_real) * 100:.1f} puntos porcentuales"
     )
 
     if accuracy_synthetic > 0.95:

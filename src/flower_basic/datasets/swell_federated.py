@@ -32,9 +32,7 @@ class FederatedConfig:
     split_val: float = 0.2
     split_test: float = 0.3
     scaler: ScalerMode = "global"
-    split_strategy: SplitStrategy = (
-        "per_subject"  # "global" = subjects in one split, "per_subject" = each subject has own splits
-    )
+    split_strategy: SplitStrategy = "per_subject"  # "global" = subjects in one split, "per_subject" = each subject has own splits
     mode: Literal["manual", "auto"] = "manual"
     num_fog_nodes: int = 1
     manual_assignments: dict[str, list[int]] | None = None

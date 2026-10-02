@@ -263,7 +263,7 @@ class WESADBaselineEvaluator:
                         f"    ✓ Extracted {len(subject_features)} windows, {len(subject_features[0]) if subject_features else 0} features each"
                     )
                     print(
-                        f"    Class distribution: {dict(zip(*np.unique(subject_labels, return_counts=True)))}"
+                        f"    Class distribution: {dict(zip(*np.unique(subject_labels, return_counts=True), strict=False))}"
                     )
                 else:
                     print("    ✗ No valid windows extracted")
@@ -285,7 +285,7 @@ class WESADBaselineEvaluator:
         print(f"  Total samples: {len(X)}")
         print(f"  Feature dimensions: {X.shape[1]}")
         print(
-            f"  Overall class distribution: {dict(zip(*np.unique(y, return_counts=True)))}"
+            f"  Overall class distribution: {dict(zip(*np.unique(y, return_counts=True), strict=False))}"
         )
 
         return X, y, all_subjects

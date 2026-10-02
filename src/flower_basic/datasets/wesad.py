@@ -157,7 +157,7 @@ def load_wesad_dataset(
 
         def _distribution(values: np.ndarray) -> dict[int, int]:
             unique, counts = np.unique(values, return_counts=True)
-            return {int(k): int(v) for k, v in zip(unique, counts)}
+            return {int(k): int(v) for k, v in zip(unique, counts, strict=False)}
 
         logger.info("Loading WESAD dataset from %s", data_dir)
         logger.info(
