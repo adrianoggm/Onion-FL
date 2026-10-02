@@ -146,6 +146,7 @@ def test_the_schema_includes_the_plugin_catalogue() -> None:
         "pooled",
     }
     assert "params" in plugins["aggregator"][0]
+    assert {p["name"] for p in plugins["transport"]} == {"memory", "mqtt"}
 
 
 # --- sweeps ------------------------------------------------------------------------------------
