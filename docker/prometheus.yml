@@ -40,6 +40,13 @@ scrape_configs:
       - targets: ['otel-collector:8889']
     metrics_path: /metrics
 
+  # Onion-FL runs (observability.sinks.PrometheusSink.serve, default port 9464)
+  - job_name: 'onion-fl'
+    static_configs:
+      - targets: ['host.docker.internal:9464']
+    metrics_path: /metrics
+    scrape_interval: 5s
+
   # Flower Server - FL metrics (running on host)
   - job_name: 'flower-server'
     static_configs:
