@@ -10,7 +10,9 @@ which later feeds the ``data_id`` of a run.
 
 import hashlib
 import json
+import os
 import shutil
+import uuid
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -52,8 +54,9 @@ def prepare(
     subjects = ingest(spec, options, root=root)  # fails before touching the cache
     if not subjects:
         raise DataError(f"{spec.name}: no labelled rows")
-    tmp = out.with_name(f"{key}.tmp")
-    shutil.rmtree(tmp, ignore_errors=True)
+    # A private folder per writer, renamed into place: parallel runs may race
+    # for the same cache, and nobody ever reads a half-written one.
+    tmp = out.with_name(f"{key}.tmp-{os.getpid()}-{uuid.uuid4().hex[:8]}")
     tmp.mkdir(parents=True)
     first = subjects[0]
     meta = {
@@ -76,8 +79,14 @@ def prepare(
     (tmp / "meta.json").write_text(
         json.dumps(meta, indent=2, default=str), encoding="utf-8"
     )
-    shutil.rmtree(out, ignore_errors=True)
-    tmp.rename(out)
+    if force:
+        shutil.rmtree(out, ignore_errors=True)
+    try:
+        tmp.rename(out)
+    except OSError:  # another writer finished first: keep its cache, drop ours
+        shutil.rmtree(tmp, ignore_errors=True)
+        if not (out / "meta.json").exists():
+            raise
     return out
 
 

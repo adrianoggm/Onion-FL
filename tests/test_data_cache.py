@@ -150,3 +150,33 @@ def test_a_tampered_cache_is_detected(raw: Path, tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="digest"):
         load_prepared(out)
+
+
+def test_losing_a_race_to_another_process_keeps_its_cache(
+    raw: Path, tmp_path: Path, monkeypatch
+) -> None:
+    import onion_fl.data.cache as cache
+
+    real_ingest = cache.ingest
+
+    def ingest_while_another_process_finishes(*args, **kwargs):
+        monkeypatch.setattr(cache, "ingest", real_ingest)
+        won = prepare(
+            make_spec(raw), cache_dir=tmp_path / "cache"
+        )  # the other process wins
+        (won / "reader.lock").write_text(
+            "someone is reading this cache", encoding="utf-8"
+        )
+        return real_ingest(*args, **kwargs)
+
+    monkeypatch.setattr(cache, "ingest", ingest_while_another_process_finishes)
+
+    out = prepare(make_spec(raw), cache_dir=tmp_path / "cache")
+
+    assert (
+        out / "reader.lock"
+    ).exists()  # the winner's cache was not replaced under its readers
+    assert len(load_prepared(out)) == 2
+    assert sorted(p.name for p in out.parent.iterdir()) == [
+        out.name
+    ]  # no stray temp folder
