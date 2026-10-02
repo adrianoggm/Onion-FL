@@ -103,8 +103,8 @@ def main():
     success = extract_user_zips(source, target, args.force)
 
     if success:
-        print("\n✓ Ready to use with prepare_sweet_baseline.py:")
-        print(f"  python scripts/prepare_sweet_baseline.py --data-dir {target}")
+        print("\n✓ Ready to use with the sweet descriptor:")
+        print("  onion_fl data inspect sweet --option selection=selection1/users")
     else:
         print("\n❌ Extraction failed")
         return 1
