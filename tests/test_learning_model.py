@@ -143,6 +143,31 @@ def test_invalid_configs_are_rejected(fields: dict) -> None:
         ModularMLPConfig(**fields)
 
 
+# --- shared adapter (harmonized features) -------------------------------------
+
+
+SWELL_H = DataShape(dataset="swell", task="stress_binary", n_features=8, n_classes=2)
+SWEET_H = DataShape(dataset="sweet", task="stress_binary", n_features=8, n_classes=2)
+
+
+def test_a_shared_adapter_is_one_group_for_every_dataset() -> None:
+    model = build(SWELL_H, SWEET_H, adapters="shared")
+
+    assert groups(model) == {"adapter", "trunk", "head.stress_binary"}
+    assert "adapter.0.weight" in model.state_dict()
+
+
+def test_a_shared_adapter_serves_every_dataset() -> None:
+    model = build(SWELL_H, SWEET_H, adapters="shared").eval()
+
+    assert model(torch.zeros(2, 8), dataset="sweet").shape == (2, 2)
+
+
+def test_a_shared_adapter_needs_the_same_features_everywhere() -> None:
+    with pytest.raises(ValueError, match="n_features"):
+        build(SWELL, SWEET, adapters="shared")
+
+
 # --- deterministic initialisation --------------------------------------------
 
 
@@ -174,6 +199,7 @@ def _equal_states(a: ModularMLP, b: ModularMLP) -> bool:
     "key, group",
     [
         ("adapter.swell.0.weight", "adapter.swell"),
+        ("adapter.0.weight", "adapter"),
         ("trunk.0.weight", "trunk"),
         ("trunk.3.bias", "trunk"),
         ("trunk.swell.0.weight", "trunk.swell"),
