@@ -194,12 +194,20 @@ def build_federation(
         if node.parent is not None:
             link = node.link_up
             runtime.add_link(
-                node.id, node.parent, profile=link.profile, codec=link.codec
+                node.id,
+                node.parent,
+                profile=link.profile,
+                codec=link.codec,
+                transport=link.transport,
             )
     edge_link = topology.edge.link_up
     for leaf, specs in edges.items():
         for spec in specs:
             runtime.add_link(
-                spec.id, leaf, profile=edge_link.profile, codec=edge_link.codec
+                spec.id,
+                leaf,
+                profile=edge_link.profile,
+                codec=edge_link.codec,
+                transport=edge_link.transport,
             )
     return federation

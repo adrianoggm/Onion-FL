@@ -117,8 +117,12 @@ class SimRuntime:
         parent: str,
         profile: str | Mapping[str, Any] | LinkProfile = "lan",
         codec: str = "json",
+        transport: Any = None,
     ) -> None:
-        """Link ``child`` and ``parent`` in both directions (up = child -> parent)."""
+        """Link ``child`` and ``parent`` in both directions (up = child -> parent).
+
+        ``transport`` is for the real runtime: here the link layer is the transport.
+        """
         for node_id in (child, parent):
             if node_id not in self._nodes:
                 raise SimulationError(
