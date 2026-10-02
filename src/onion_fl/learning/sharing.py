@@ -16,14 +16,14 @@ above it.
 
 import fnmatch
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from onion_fl.core.registry import Registry
 from onion_fl.core.topology import Topology
-from onion_fl.learning.model import ModularMLPConfig
+from onion_fl.learning.model import ModularMLPConfig, group_of
 
 SCOPE = r"^(global|local|level:[A-Za-z0-9_.-]+)$"
 
@@ -82,13 +82,34 @@ class SharingPolicy(BaseModel):
                 )
 
 
-def _crosses(scope: str, parent_level: str, topology: Topology) -> bool:
+def crosses(scope: str, parent_level: str, levels: Sequence[str]) -> bool:
+    """Does a group with ``scope`` cross a link whose parent sits at ``parent_level``?"""
     if scope == "global":
         return True
     if scope == "local":
         return False
-    depth = topology.levels.index
+    depth = list(levels).index
     return depth(scope[len("level:") :]) <= depth(parent_level)
+
+
+def keys_crossing(
+    keys: Iterable[str],
+    policy: SharingPolicy,
+    levels: Sequence[str],
+    parent_level: str,
+) -> list[str]:
+    """State keys that travel on a link (both ways) whose parent is at ``parent_level``."""
+    return [
+        k for k in keys if crosses(policy.scope_of(group_of(k)), parent_level, levels)
+    ]
+
+
+def keys_held_at(
+    keys: Iterable[str], policy: SharingPolicy, levels: Sequence[str], level: str
+) -> list[str]:
+    """Keys an aggregator of ``level`` keeps: global at the root, ``level:<level>`` below."""
+    wanted = "global" if level == levels[0] else f"level:{level}"
+    return [k for k in keys if policy.scope_of(group_of(k)) == wanted]
 
 
 def traffic(
@@ -123,7 +144,7 @@ def traffic(
         entry["groups"] = [
             g
             for g in groups
-            if _crosses(policy.scope_of(g), entry["parent_level"], topology)
+            if crosses(policy.scope_of(g), entry["parent_level"], topology.levels)
         ]
     return entries
 

@@ -170,7 +170,7 @@ class ModularMLP(nn.Module):
 
 
 def group_of(key: str) -> str:
-    """Parameter group of a state key: ``adapter.swell``, ``trunk``, ``trunk.swell``, ``head.<task>``."""
+    """Parameter group of a key: ``adapter.<dataset>``, ``trunk``, ``trunk.<dataset>``, ``head.<task>``."""
     parts = key.split(".")
     if len(parts) < 2 or parts[0] not in NAMESPACES:
         raise ValueError(f"key {key!r} is outside the {'/'.join(NAMESPACES)} namespace")
