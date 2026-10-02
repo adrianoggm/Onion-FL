@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Onion-FL is a framework for hierarchical federated learning experiments (edge → fog → … → cloud) with a virtual-clock simulator and real runs over MQTT. Package `onion_fl` (`src/` layout), CLI `onion_fl`. Datasets: SWELL, SWEET, WESAD (in `data/`, not in git).
 
 - **Design.** `docs/architecture.md` describes what is built; the spec it implements, with the decisions, is `docs/superpowers/specs/2026-10-02-onion-fl-framework-design.md` (Spanish). Read the relevant part before structural changes.
-- **Tracking.** Work is tracked as GitHub issues, with milestone v0.3.0 (the front, #103) next.
+- **Tracking.** Work is tracked as GitHub issues; next come E5 (gRPC/Flower transports, #104) and E6 (deployment, #105). The Studio has its own spec, `docs/superpowers/specs/2026-10-03-onion-fl-studio-design.md`.
 - **Legacy.** `results/legacy/` holds results from before the redesign, with caveats in its `INDEX.md`.
 
 ## Commands
@@ -40,6 +40,7 @@ just check                            # ruff check, ruff format --check, pytest:
 | `transports` | `memory`, `mqtt` |
 | `observability` | Event schema and JSONL, `Run` (`runs/<run_id>/`, `run_hash`), diagnostics, `load_runs`/`compare`/report, Prometheus and OTEL sinks |
 | `experiment` | Config (pydantic), sweeps, `plan`/`run_scenario`, real launcher (one process per aggregator), CLI |
+| `studio` | `onion_fl serve`: FastAPI over the repository's files, dry-run previews, a dependency-free SPA in `static/` (DOM built with `h()`, never `innerHTML`) |
 
 Things that span several files:
 
