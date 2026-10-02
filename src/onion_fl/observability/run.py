@@ -136,6 +136,7 @@ class Run:
         }
         self.summary = _Summary()
         self._wall = time.perf_counter()
+        self._links: dict[tuple[str, str, Any], list[int]] = {}
         self._last_t = 0.0
 
     def attach(self, federation: Any) -> None:
@@ -172,6 +173,12 @@ class Run:
         for sink in self.sinks:
             sink.write(event)
         self.summary.add(event)
+        if event["name"] == "message.sent":
+            traffic = self._links.setdefault(
+                (raw["node"], tags.get("dst"), tags.get("round")), [0, 0]
+            )
+            traffic[0] += int(event["value"] or 0)
+            traffic[1] += 1
 
     def record(self, name: str, value: Any = None, **tags: Any) -> None:
         """An event of the experiment itself (placement composition, data cards...)."""
@@ -186,6 +193,25 @@ class Run:
         )
 
     def finish(self, status: str = "finished") -> dict[str, Any]:
+        # Communication per link and round, from the message events (spec §10.4).
+        for (src, dst, round), (size, count) in sorted(
+            self._links.items(),
+            key=lambda kv: (
+                kv[0][2] is not None,
+                kv[0][2] or 0,
+                kv[0][0],
+                str(kv[0][1]),
+            ),
+        ):
+            self.on_event(
+                {
+                    "t": self._last_t,
+                    "node": src,
+                    "name": "diagnostic.communication",
+                    "value": size,
+                    "tags": {"src": src, "dst": dst, "round": round, "messages": count},
+                }
+            )
         for sink in self.sinks:
             sink.close()
         _write_json(

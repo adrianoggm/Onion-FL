@@ -29,6 +29,7 @@ from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.metrics import evaluate as score
 from onion_fl.learning.sharing import SharingPolicy
 from onion_fl.learning.sharing import sharing as sharing_presets
+from onion_fl.observability.diagnostics import diagnostics as diagnostic_plugins
 from onion_fl.roles.nodes import Aggregator, Coordinator, Edge, Evaluate
 from onion_fl.roles.policies import (
     create,
@@ -71,6 +72,15 @@ def _sharing(value: str | Mapping[str, Any] | SharingPolicy | None) -> SharingPo
     return create(sharing_presets, value, default="fedavg")
 
 
+def _diagnostics(value: Any) -> list[Any] | None:
+    """``true`` (default) runs every diagnostic, ``false`` or ``[]`` none, a list those."""
+    if value is True:
+        return None
+    if not value:
+        return []
+    return [create(diagnostic_plugins, item) for item in value]
+
+
 def _round_settings(settings: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "aggregator": create(aggregators, settings.get("aggregator"), "fedavg"),
@@ -84,6 +94,7 @@ def _round_settings(settings: Mapping[str, Any]) -> dict[str, Any]:
             "aggregate_children", True
         ),
         "holdout": (settings.get("eval") or {}).get("holdout", True),
+        "diagnostics": _diagnostics(settings.get("diagnostics", True)),
     }
 
 
