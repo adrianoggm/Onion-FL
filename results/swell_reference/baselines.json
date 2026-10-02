@@ -1,0 +1,24 @@
+{
+  "swell": {
+    "lr": {
+      "train_samples": 2251,
+      "test": {
+        "accuracy": 0.6888544891640866,
+        "balanced_accuracy": 0.5273574113417225,
+        "f1_macro": 0.4629025252838618,
+        "n_samples": 646
+      },
+      "val": null
+    },
+    "rf": {
+      "train_samples": 2251,
+      "test": {
+        "accuracy": 0.6130030959752322,
+        "balanced_accuracy": 0.5064226180748488,
+        "f1_macro": 0.4952683359793982,
+        "n_samples": 646
+      },
+      "val": null
+    }
+  }
+}
