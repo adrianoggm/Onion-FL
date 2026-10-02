@@ -67,12 +67,15 @@ def dumps(event: Mapping[str, Any]) -> str:
 class JsonlSink:
     """One JSON event per line."""
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, flush: bool = False) -> None:
         self.path = Path(path)
+        self.flush = flush  # every line, so a killed process keeps what it wrote
         self._file = self.path.open("a", encoding="utf-8", newline="\n")
 
     def write(self, event: Mapping[str, Any]) -> None:
         self._file.write(dumps(event) + "\n")
+        if self.flush:
+            self._file.flush()
 
     def close(self) -> None:
         self._file.close()

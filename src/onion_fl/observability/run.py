@@ -52,6 +52,49 @@ def verify_run(path: str | Path) -> bool:
     return meta.get("run_hash") == compute_run_hash(path)
 
 
+def node_roles(
+    federation: Any, topology: Topology
+) -> dict[str, tuple[str | None, str]]:
+    """Level and role of every node of a federation."""
+    coordinator = federation.coordinator
+    out = {coordinator.id: (coordinator.level, "coordinator")}
+    for node in federation.aggregators.values():
+        out[node.id] = (node.level, "aggregator")
+    for node in federation.edges.values():
+        out[node.id] = (topology.levels[-1], "edge" if node.train else "evaluator")
+    return out
+
+
+def enrich(
+    raw: Mapping[str, Any],
+    *,
+    run_id: str,
+    topology_id: str,
+    scenario: str,
+    seed: int,
+    nodes: Mapping[str, tuple[str | None, str | None]],
+) -> dict[str, Any]:
+    """A runtime event in the schema of ``observability.events``."""
+    level, role = nodes.get(raw["node"], (None, None))
+    tags = dict(raw.get("tags") or {})
+    return {
+        "t_virtual": raw["t"],
+        "t_wall": time.time(),
+        "run_id": run_id,
+        "topology_id": topology_id,
+        "scenario": scenario,
+        "seed": seed,
+        "round": tags.get("round"),
+        "level": level,
+        "node": raw["node"],
+        "role": role,
+        "kind": kind_of(raw["name"]),
+        "name": raw["name"],
+        "value": raw.get("value"),
+        "tags": tags,
+    }
+
+
 class _Summary:
     def __init__(self) -> None:
         self.rounds = 0
@@ -141,41 +184,31 @@ class Run:
 
     def attach(self, federation: Any) -> None:
         """Learn each node's level and role and start receiving the runtime's events."""
-        levels = self.topology.levels
-        coordinator = federation.coordinator
-        self.nodes[coordinator.id] = (coordinator.level, "coordinator")
-        for node in federation.aggregators.values():
-            self.nodes[node.id] = (node.level, "aggregator")
-        for node in federation.edges.values():
-            self.nodes[node.id] = (levels[-1], "edge" if node.train else "evaluator")
+        self.nodes |= node_roles(federation, self.topology)
         federation.runtime.listeners.append(self.on_event)
 
     def on_event(self, raw: Mapping[str, Any]) -> None:
-        level, role = self.nodes.get(raw["node"], (None, None))
-        tags = dict(raw.get("tags") or {})
         self._last_t = raw["t"]
-        event = {
-            "t_virtual": raw["t"],
-            "t_wall": time.time(),
-            "run_id": self.run_id,
-            "topology_id": self.topology.topology_id,
-            "scenario": self.scenario,
-            "seed": self.seed,
-            "round": tags.get("round"),
-            "level": level,
-            "node": raw["node"],
-            "role": role,
-            "kind": kind_of(raw["name"]),
-            "name": raw["name"],
-            "value": raw.get("value"),
-            "tags": tags,
-        }
+        self.adopt(
+            enrich(
+                raw,
+                run_id=self.run_id,
+                topology_id=self.topology.topology_id,
+                scenario=self.scenario,
+                seed=self.seed,
+                nodes=self.nodes,
+            )
+        )
+
+    def adopt(self, event: Mapping[str, Any]) -> None:
+        """Record an event already in the schema (from a node process of a real run)."""
         for sink in self.sinks:
             sink.write(event)
         self.summary.add(event)
+        tags = event["tags"]
         if event["name"] == "message.sent":
             traffic = self._links.setdefault(
-                (raw["node"], tags.get("dst"), tags.get("round")), [0, 0]
+                (event["node"], tags.get("dst"), tags.get("round")), [0, 0]
             )
             traffic[0] += int(event["value"] or 0)
             traffic[1] += 1
