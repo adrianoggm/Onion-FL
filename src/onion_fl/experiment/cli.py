@@ -128,11 +128,13 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_node(args: argparse.Namespace) -> int:
-    print(
-        "onion_fl node needs the real runtime, which arrives with F8.1 (#99)",
-        file=sys.stderr,
+    from onion_fl.experiment.real import run_node
+
+    if not Path(args.config).exists():
+        raise FileNotFoundError(f"config not found: {args.config}")
+    return run_node(
+        args.id, args.run, args.config, scenario=args.scenario, seed=args.seed
     )
-    return 2
 
 
 def cmd_report(args: argparse.Namespace) -> int:
@@ -229,7 +231,13 @@ def parser() -> argparse.ArgumentParser:
     node = sub.add_parser("node", help="start one node of a real run")
     node.add_argument("--id", required=True)
     node.add_argument("--run", required=True)
-    node.add_argument("--config", required=True)
+    node.add_argument(
+        "--config",
+        required=True,
+        help="scenario.json of the run, or an experiment YAML",
+    )
+    node.add_argument("--scenario", help="with an experiment YAML: which scenario")
+    node.add_argument("--seed", type=int, help="with an experiment YAML: which seed")
     node.set_defaults(func=cmd_node)
 
     report = sub.add_parser("report", help="HTML report comparing runs")
@@ -274,7 +282,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         return args.func(args)
-    except (ValueError, TopologyError, FileNotFoundError, NotImplementedError) as exc:
+    except (ValueError, TopologyError, OSError, NotImplementedError) as exc:
         print(f"onion_fl {args.command}: {exc}", file=sys.stderr)
         return 2
 

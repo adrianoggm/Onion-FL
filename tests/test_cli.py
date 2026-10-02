@@ -200,21 +200,32 @@ def test_run_can_pick_one_scenario(capsys, workspace: Path) -> None:
     assert code == 0 and out.strip() == ""
 
 
-def test_the_real_mode_and_node_are_not_available_yet(capsys, workspace: Path) -> None:
-    code, _, err = run(capsys, "run", str(workspace / "exp.yaml"), "--mode", "real")
-    assert code == 2 and "real" in err
+def test_the_real_mode_needs_a_reachable_broker(capsys, workspace: Path) -> None:
+    exp = yaml.safe_load((workspace / "exp.yaml").read_text(encoding="utf-8"))
+    topology = yaml.safe_load(
+        (workspace / "topologies" / "two_fogs.yaml").read_text(encoding="utf-8")
+    )
+    nowhere = {"transport": {"name": "mqtt", "broker": "127.0.0.1:1"}}
+    topology["fog"]["defaults"]["link_up"] |= nowhere
+    topology["edge"]["link_up"] |= nowhere
+    real = exp | {"topology": topology}
+    (workspace / "exp_real.yaml").write_text(yaml.safe_dump(real), encoding="utf-8")
 
     code, _, err = run(
-        capsys,
-        "node",
-        "--id",
-        "fog_a",
-        "--run",
-        "x",
-        "--config",
-        str(workspace / "exp.yaml"),
+        capsys, "run", str(workspace / "exp_real.yaml"), "--mode", "real"
     )
-    assert code == 2 and "F8.1" in err
+
+    assert code == 2 and "127.0.0.1:1" in err
+
+
+def test_node_needs_its_config(capsys, workspace: Path) -> None:
+    missing = str(workspace / "nope.json")
+
+    code, _, err = run(
+        capsys, "node", "--id", "fog_a", "--run", "x", "--config", missing
+    )
+
+    assert code == 2 and "nope.json" in err
 
 
 def test_config_errors_name_their_path(capsys, workspace: Path) -> None:
