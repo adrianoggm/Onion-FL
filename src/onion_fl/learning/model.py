@@ -4,7 +4,7 @@ from __future__ import annotations
 
 ::
 
-    adapter.<dataset>.*                 n_features of the dataset -> common width
+    adapter.<dataset>.* | adapter.*     per dataset, or one over harmonized features
     trunk.*      | trunk.<dataset>.*    shared body, or one per dataset
     head.<task>.* | head.<dataset>.*    one head per task, or one per dataset
 
@@ -47,6 +47,10 @@ class ModularMLPConfig(BaseModel):
 
     adapter_width: PositiveInt = Field(
         64, description="Anchura común a la salida de cada adaptador"
+    )
+    adapters: Literal["per_dataset", "shared"] = Field(
+        "per_dataset",
+        description="Un adaptador por dataset, o uno común sobre features armonizadas",
     )
     trunk_hidden: list[PositiveInt] = Field(
         default_factory=lambda: [64, 32], description="Capas ocultas del tronco"
@@ -97,12 +101,23 @@ class ModularMLP(nn.Module):
                 )
 
         width, dims = config.adapter_width, [config.adapter_width, *config.trunk_hidden]
-        self.adapter = nn.ModuleDict(
-            {
-                s.dataset: nn.Sequential(*_block(s.n_features, width, config.dropout))
-                for s in shapes
-            }
-        )
+        if config.adapters == "shared":
+            features = {s.n_features for s in shapes}
+            if len(features) != 1:
+                raise ValueError(
+                    "adapters='shared' needs the same n_features in every dataset "
+                    f"(harmonized features), got {sorted(features)}"
+                )
+            self.adapter = nn.Sequential(*_block(features.pop(), width, config.dropout))
+        else:
+            self.adapter = nn.ModuleDict(
+                {
+                    s.dataset: nn.Sequential(
+                        *_block(s.n_features, width, config.dropout)
+                    )
+                    for s in shapes
+                }
+            )
 
         def trunk() -> nn.Sequential:
             layers: list[nn.Module] = []
@@ -144,7 +159,8 @@ class ModularMLP(nn.Module):
             raise ValueError(
                 f"unknown dataset {dataset!r}; this model holds {sorted(self.shapes)}"
             )
-        hidden = self.adapter[dataset](x)
+        shared = self.config.adapters == "shared"
+        hidden = self.adapter(x) if shared else self.adapter[dataset](x)
         hidden = (
             self.trunk(hidden)
             if self.config.trunk == "shared"
@@ -158,8 +174,8 @@ def group_of(key: str) -> str:
     parts = key.split(".")
     if len(parts) < 2 or parts[0] not in NAMESPACES:
         raise ValueError(f"key {key!r} is outside the {'/'.join(NAMESPACES)} namespace")
-    if parts[0] == "trunk" and parts[1][0].isdigit():
-        return "trunk"
+    if parts[0] in ("adapter", "trunk") and parts[1][0].isdigit():
+        return parts[0]  # shared adapter or trunk: no dataset in the key
     return f"{parts[0]}.{parts[1]}"
 
 

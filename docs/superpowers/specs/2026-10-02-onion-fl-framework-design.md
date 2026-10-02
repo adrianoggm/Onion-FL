@@ -175,13 +175,13 @@ Los agregadores ordenan las contribuciones por el id del nodo emisor antes de ag
 Las claves de los parámetros llevan espacio de nombres:
 
 ```
-adapter.<dataset>.*   entrada: n_features del dataset → ancho común
+adapter.<dataset>.* | adapter.*   entrada: n_features del dataset → ancho común (o uno común)
 trunk.* | trunk.<dataset>.*
 head.<tarea>.* | head.<dataset>.*
 ```
 
 - La config del modelo `modular_mlp` decide:
-  - la anchura del adaptador;
+  - la anchura del adaptador, y `adapters: per_dataset | shared` (uno común exige las mismas features en todos los datasets);
   - las capas ocultas del tronco;
   - `trunk: shared | per_dataset`;
   - `heads: per_task | per_dataset`;
@@ -199,15 +199,17 @@ Una política asigna a cada grupo de parámetros un alcance:
 | `level:<nombre>` | Se agrega hasta ese nivel; el agregador de ese nivel lo guarda y lo inyecta en el global que reenvía a sus hijos |
 | `local` | No sale del edge |
 
+Un grupo cruza el enlace entre un hijo y su padre, en los dos sentidos, si su alcance es `global` o `level:X` con X en el nivel del padre o por encima. `level:<nombre>` solo admite niveles de agregación intermedios (ni la raíz ni el edge). `traffic()` devuelve qué grupos cruzan cada enlace, para la previsualización del front.
+
 **Presets:**
 
 | Preset | Configuración | Equivale a |
 |---|---|---|
 | `fedavg` | Todo `global` | — |
 | `fedper` | Tronco y adaptadores `global`, cabezas `local` | — |
-| `zone` | Tronco `global`, cabezas `level:fog` | — |
-| `independent` | `trunk: per_dataset`, todo `global` | Un modelo por dataset sobre la misma infraestructura |
-| `harmonized` | Un adaptador común sobre features armonizadas | — |
+| `zone(level="fog")` | Tronco y adaptadores `global`, cabezas `level:<level>` | — |
+| `independent` | Todo `global`; exige `trunk` y `heads` por dataset | Un modelo por dataset sobre la misma infraestructura |
+| `harmonized` | Todo `global`; exige `adapters: shared` | Un único modelo FedAvg sobre features armonizadas |
 
 ### 7.3 Plugins de serie
 
