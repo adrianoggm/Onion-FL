@@ -23,6 +23,11 @@ class DataError(ValueError):
     """Data does not follow the contract, or a dataset description is wrong."""
 
 
+def natural_key(text: str) -> list[Any]:
+    """Sort key that puts S2 before S10."""
+    return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", text)]
+
+
 @dataclass(frozen=True, eq=False)
 class SubjectData:
     X: np.ndarray
