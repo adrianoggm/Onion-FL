@@ -263,7 +263,7 @@ class Placement:
         }
 
 
-def _leaves(topology: Topology, datasets: list[str]) -> list[Leaf]:
+def resolve_leaves(topology: Topology, datasets: list[str]) -> list[Leaf]:
     specs = sorted(topology.leaves(), key=lambda n: natural_key(n.id))
     declared: dict[str, str | None] = {}
     for spec in specs:
@@ -337,7 +337,7 @@ def place(
     datasets = sorted(
         {c.dataset for c in split.clients} | {v.dataset for v in split.val}
     )
-    leaves = _leaves(topology, datasets)
+    leaves = resolve_leaves(topology, datasets)
     clients = {c.id: c for c in split.clients}
     evaluators = {f"{v.dataset}-{v.subject}": v for v in split.val}
     unknown = sorted(getattr(plugin, "ids", set()) - set(clients) - set(evaluators))
