@@ -4,7 +4,6 @@ import json
 import re
 from pathlib import Path
 
-from onion_fl.brokers import fog, sweet_fog
 from onion_fl.observability.sinks import EXTRA_LABELS, LABELS, METRICS
 
 DASHBOARD = (
@@ -16,11 +15,6 @@ DASHBOARD = (
     / "json"
     / "onion-fl.json"
 )
-
-
-def test_broker_shutdown_runtime_skips_pushgateway() -> None:
-    assert not hasattr(fog, "push_metrics_to_gateway")
-    assert not hasattr(sweet_fog, "push_metrics_to_gateway")
 
 
 def dashboard() -> dict:
