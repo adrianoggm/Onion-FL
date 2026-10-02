@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Run subject-aware cross-validation for WESAD, SWELL, combined, and SWEET datasets."""
 
 from __future__ import annotations
@@ -6,8 +6,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 import numpy as np
 import pandas as pd
@@ -204,8 +204,10 @@ def run_subject_cv(
         "wesad": _load_wesad_full,
         "swell": _load_swell_full,
         "combined": _load_combined_full,
-        "sweet_samples": lambda ls=sweet_label_strategy, th=sweet_threshold, ms=sweet_min_samples: _load_sweet_samples_full(  # noqa: E501
-            label_strategy=ls, threshold=th, min_samples=ms
+        "sweet_samples": lambda ls=sweet_label_strategy, th=sweet_threshold, ms=sweet_min_samples: (
+            _load_sweet_samples_full(  # noqa: E501
+                label_strategy=ls, threshold=th, min_samples=ms
+            )
         ),
     }
 
@@ -270,7 +272,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("subject_cv_results"),
+        default=Path("results/subject_cv_results"),
         help="Directory where CSV/JSON metrics will be written.",
     )
     parser.add_argument(

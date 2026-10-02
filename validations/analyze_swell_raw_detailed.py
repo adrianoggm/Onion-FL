@@ -137,7 +137,7 @@ def analyze_rri_files():
 
             print(f"   ✓ {len(rri_values):,} muestras")
             print(
-                f"   ✓ Duración: {duration_min:.1f} min ({duration_min/60:.2f} horas)"
+                f"   ✓ Duración: {duration_min:.1f} min ({duration_min / 60:.2f} horas)"
             )
             print(f"   ✓ RRI: {rri_mean:.1f} ± {rri_std:.1f} ms")
             print(f"   ✓ HR: {hr_estimated.mean():.1f} ± {hr_estimated.std():.1f} bpm")
@@ -155,7 +155,7 @@ def create_visualizations(df_stats):
     print("📊 CREANDO VISUALIZACIONES")
     print("=" * 80)
 
-    output_dir = Path("swell_plots")
+    output_dir = Path("results/swell_plots")
     output_dir.mkdir(exist_ok=True)
 
     # Figura 1: Estadísticas generales
@@ -252,7 +252,7 @@ def create_visualizations(df_stats):
         df_stats["rri_mean"].mean(),
         color="red",
         linestyle="--",
-        label=f'Media: {df_stats["rri_mean"].mean():.1f}',
+        label=f"Media: {df_stats['rri_mean'].mean():.1f}",
     )
     ax.legend()
     ax.grid(True, alpha=0.3)
@@ -267,7 +267,7 @@ def create_visualizations(df_stats):
         df_stats["hr_mean"].mean(),
         color="red",
         linestyle="--",
-        label=f'Media: {df_stats["hr_mean"].mean():.1f}',
+        label=f"Media: {df_stats['hr_mean'].mean():.1f}",
     )
     ax.legend()
     ax.grid(True, alpha=0.3)
@@ -288,7 +288,7 @@ def create_visualizations(df_stats):
         df_stats["duration_hours"].mean(),
         color="red",
         linestyle="--",
-        label=f'Media: {df_stats["duration_hours"].mean():.2f}h',
+        label=f"Media: {df_stats['duration_hours'].mean():.2f}h",
     )
     ax.legend()
     ax.grid(True, alpha=0.3)
@@ -306,7 +306,7 @@ def plot_example_signals():
     print("📈 GRAFICANDO SEÑALES DE EJEMPLO")
     print("=" * 80)
 
-    output_dir = Path("swell_plots")
+    output_dir = Path("results/swell_plots")
 
     # Seleccionar 6 sujetos
     subjects = ["p1", "p2", "p3", "p10", "p15", "p20"]
@@ -377,7 +377,7 @@ def print_summary(df_stats):
     print(f"  Total sujetos: {len(df_stats)}")
     print(f"  Total muestras RRI: {df_stats['num_samples'].sum():,}")
     print(
-        f"  Duración total: {df_stats['duration_hours'].sum():.1f} horas ({df_stats['duration_hours'].sum()/24:.1f} días)"
+        f"  Duración total: {df_stats['duration_hours'].sum():.1f} horas ({df_stats['duration_hours'].sum() / 24:.1f} días)"
     )
 
     print("\n⏱️  Duración por Sujeto:")
@@ -446,7 +446,7 @@ def main():
     print("\n" + "=" * 80)
     print("✅ ANÁLISIS COMPLETADO")
     print("=" * 80)
-    print("\n📁 Visualizaciones guardadas en: swell_plots/")
+    print("\n📁 Visualizaciones guardadas en: results/swell_plots/")
     print("   - swell_raw_analysis.png")
     print("   - swell_raw_distributions.png")
     print("   - swell_raw_signals.png")

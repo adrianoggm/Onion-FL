@@ -88,7 +88,9 @@ def _swell_missing_by_subject(
         total_per_row = np.full(len(features), len(feature_cols), dtype=np.int64)
         subjects = chunk[subject_col].astype(str).to_numpy()
 
-        for subj, miss, total in zip(subjects, missing_per_row, total_per_row):
+        for subj, miss, total in zip(
+            subjects, missing_per_row, total_per_row, strict=False
+        ):
             subject_counts[subj] = subject_counts.get(subj, 0) + 1
             missing_counts[subj] = missing_counts.get(subj, 0) + int(miss)
             total_counts[subj] = total_counts.get(subj, 0) + int(total)
@@ -215,7 +217,7 @@ def main() -> int:
     )
     parser.add_argument("--wesad-dir", default="data/WESAD")
     parser.add_argument("--swell-dir", default="data/SWELL")
-    parser.add_argument("--output-dir", default="comparativa_completa")
+    parser.add_argument("--output-dir", default="results/legacy/comparativa_completa")
     parser.add_argument(
         "--signals",
         default="ACC,BVP,EDA,TEMP,HR",

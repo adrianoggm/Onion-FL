@@ -30,8 +30,8 @@ federated_architecture:
   # Pre-trained model (transfer learning)
   pretrained:
     enabled: true
-    model_path: baseline_models/sweet/xgboost_tuned_model.json
-    scaler_path: baseline_models/sweet/scaler.json
+    model_path: results/legacy/baseline_models/sweet/xgboost_tuned_model.json
+    scaler_path: results/legacy/baseline_models/sweet/scaler.json
     # If clients don't have the model, they request it from server
     request_from_server: true
     freeze_initial_weights: false

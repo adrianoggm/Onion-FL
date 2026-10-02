@@ -73,7 +73,7 @@ def create_comprehensive_visualization():
     print()
 
     # Create output directory
-    output_dir = Path("swell_plots")
+    output_dir = Path("results/swell_plots")
     output_dir.mkdir(exist_ok=True)
 
     # ==================== VISUALIZATION 1: Overview ====================
@@ -140,7 +140,7 @@ def create_comprehensive_visualization():
             df[df["Stress_Label"] == "Stress"][feature],
         ]
         bp = ax.boxplot(data_to_plot, labels=["No Stress", "Stress"], patch_artist=True)
-        for patch, color in zip(bp["boxes"], colors_stress):
+        for patch, color in zip(bp["boxes"], colors_stress, strict=False):
             patch.set_facecolor(color)
             patch.set_alpha(0.6)
         ax.set_title(f"{feature} by Stress", fontweight="bold", fontsize=9)
@@ -170,7 +170,9 @@ def create_comprehensive_visualization():
     # 10. Feature 1 vs Feature 2 (Scatter)
     ax10 = plt.subplot(3, 4, 10)
     feat1, feat2 = key_features[0], key_features[1]
-    for stress_label, color in zip(["No Stress", "Stress"], colors_stress):
+    for stress_label, color in zip(
+        ["No Stress", "Stress"], colors_stress, strict=False
+    ):
         mask = df["Stress_Label"] == stress_label
         ax10.scatter(
             df.loc[mask, feat1],
@@ -207,15 +209,13 @@ def create_comprehensive_visualization():
     # 12. Feature Statistics Summary
     ax12 = plt.subplot(3, 4, 12)
     # Show basic statistics
-    stats_text = f"Dataset Statistics\n{'='*30}\n"
+    stats_text = f"Dataset Statistics\n{'=' * 30}\n"
     stats_text += f"Total Samples: {len(df):,}\n"
     stats_text += f"Features: {len(features_cols)}\n"
-    stats_text += f"Stress: {df['label'].sum():,} ({df['label'].mean()*100:.1f}%)\n"
-    stats_text += (
-        f"No Stress: {(df['label']==0).sum():,} ({(1-df['label'].mean())*100:.1f}%)\n\n"
-    )
-    stats_text += f"Train: {(df['split']=='Train').sum():,}\n"
-    stats_text += f"Test: {(df['split']=='Test').sum():,}\n\n"
+    stats_text += f"Stress: {df['label'].sum():,} ({df['label'].mean() * 100:.1f}%)\n"
+    stats_text += f"No Stress: {(df['label'] == 0).sum():,} ({(1 - df['label'].mean()) * 100:.1f}%)\n\n"
+    stats_text += f"Train: {(df['split'] == 'Train').sum():,}\n"
+    stats_text += f"Test: {(df['split'] == 'Test').sum():,}\n\n"
     stats_text += "Class Balance:\n"
     stats_text += (
         f"{'Balanced' if abs(df['label'].mean() - 0.5) < 0.1 else 'Imbalanced'}"

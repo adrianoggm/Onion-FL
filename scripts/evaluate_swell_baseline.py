@@ -233,7 +233,7 @@ class SWELLBaselineEvaluator:
         print(f"    Starting with {dataframes[0].shape} (first modality)")
 
         for i, df in enumerate(dataframes[1:], 1):
-            print(f"    Merging modality {i+1}: {df.shape}")
+            print(f"    Merging modality {i + 1}: {df.shape}")
             print(f"      Available columns: {list(df.columns)}")
 
             # Find ALL common merge columns including participant/subject info
@@ -356,7 +356,7 @@ class SWELLBaselineEvaluator:
             )
             # Create subject IDs based on data rows (realistic for merged data)
             merged_df["participant"] = [
-                f"P{(i//100) + 1:02d}" for i in range(len(merged_df))
+                f"P{(i // 100) + 1:02d}" for i in range(len(merged_df))
             ]
             subject_col = "participant"
 
@@ -481,7 +481,9 @@ class SWELLBaselineEvaluator:
         print(f"  Total samples: {len(X)}")
         print(f"  Feature dimensions: {X.shape[1]}")
         print(f"  Unique subjects: {len(set(subjects))}")
-        print(f"  Class distribution: {dict(zip(*np.unique(y, return_counts=True)))}")
+        print(
+            f"  Class distribution: {dict(zip(*np.unique(y, return_counts=True), strict=False))}"
+        )
 
         return X, y, subjects, merged_df
 
@@ -538,7 +540,7 @@ class SWELLBaselineEvaluator:
             print("  Condition distribution:")
             condition_counts = df["condition"].value_counts()
             for cond, count in condition_counts.items():
-                print(f"    '{cond}': {count} samples ({count/len(df)*100:.1f}%)")
+                print(f"    '{cond}': {count} samples ({count / len(df) * 100:.1f}%)")
 
             # Mapped stress levels
             condition_mapping = {
@@ -582,7 +584,7 @@ class SWELLBaselineEvaluator:
             stress_counts = pd.Series(stress_labels).value_counts()
             print("  Mapped stress distribution:")
             for label, count in stress_counts.items():
-                print(f"    {label}: {count} samples ({count/len(df)*100:.1f}%)")
+                print(f"    {label}: {count} samples ({count / len(df) * 100:.1f}%)")
 
         # Feature columns analysis
         non_feature_cols = [
@@ -618,7 +620,7 @@ class SWELLBaselineEvaluator:
             if missing.sum() > 0:
                 print("\nMissing Values in Numeric Columns:")
                 for col, count in missing[missing > 0].items():
-                    print(f"  {col}: {count} missing ({count/len(df)*100:.1f}%)")
+                    print(f"  {col}: {count} missing ({count / len(df) * 100:.1f}%)")
 
         # Modality breakdown (if prefixed)
         modalities = {}
@@ -696,7 +698,7 @@ class SWELLBaselineEvaluator:
         print("\n📊 Creating visualizations...")
 
         # Create plots directory
-        plots_dir = Path("swell_plots")
+        plots_dir = Path("results/swell_plots")
         plots_dir.mkdir(exist_ok=True)
 
         # 1. Correlation Matrix
@@ -1035,7 +1037,7 @@ class SWELLBaselineEvaluator:
                 )
                 disp.plot(ax=axes[i], cmap="Blues", colorbar=False)
                 axes[i].set_title(
-                    f'{model_name}\nAccuracy: {results[model_name]["test"]["accuracy"]:.3f}'
+                    f"{model_name}\nAccuracy: {results[model_name]['test']['accuracy']:.3f}"
                 )
             else:
                 axes[i].text(
@@ -1063,12 +1065,12 @@ class SWELLBaselineEvaluator:
                 )
                 disp.plot(cmap="Blues")
                 plt.title(
-                    f'{model_name} - Confusion Matrix\nAccuracy: {results[model_name]["test"]["accuracy"]:.3f}'
+                    f"{model_name} - Confusion Matrix\nAccuracy: {results[model_name]['test']['accuracy']:.3f}"
                 )
                 plt.tight_layout()
                 plt.savefig(
                     plots_dir
-                    / f'confusion_matrix_{model_name.lower().replace(" ", "_")}.png',
+                    / f"confusion_matrix_{model_name.lower().replace(' ', '_')}.png",
                     dpi=300,
                     bbox_inches="tight",
                 )

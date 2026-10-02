@@ -1263,7 +1263,7 @@ def _write_feature_table(
         "    \\textbf{WESAD} & \\textbf{SWELL (fisiol\\'ogico)} \\\\",
         "    \\hline",
     ]
-    for w, s in zip(wesad_padded, swell_padded):
+    for w, s in zip(wesad_padded, swell_padded, strict=False):
         lines.append(f"    {w} & {s} \\\\")
     lines.extend(["    \\hline", "  \\end{tabular}", "\\end{table}"])
     (out_dir / "wesad_swell_feature_table.tex").write_text(
@@ -1274,7 +1274,7 @@ def _write_feature_table(
     fig, ax = plt.subplots(figsize=(8, max(4, max_len * 0.25)))
     ax.axis("off")
     table = ax.table(
-        cellText=list(zip(wesad_padded, swell_padded)),
+        cellText=list(zip(wesad_padded, swell_padded, strict=False)),
         colLabels=["WESAD", "SWELL (fisiologico)"],
         cellLoc="center",
         loc="center",
@@ -1443,7 +1443,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--output-dir",
-        default="comparativa_completa",
+        default="results/legacy/comparativa_completa",
         help="Output directory for plots and summary",
     )
     parser.add_argument(

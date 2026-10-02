@@ -7,9 +7,9 @@ Usage:
     python scripts/train_sweet_baseline_selection1.py
 
 Output:
-    - baseline_models/sweet/xgboost_tuned_model.json: Pre-trained XGBoost model
-    - baseline_models/sweet/scaler.json: Fitted StandardScaler
-    - baseline_models/sweet/training_report.json: Training metrics and configuration
+    - results/baseline_models/sweet/xgboost_tuned_model.json: Pre-trained XGBoost model
+    - results/baseline_models/sweet/scaler.json: Fitted StandardScaler
+    - results/baseline_models/sweet/training_report.json: Training metrics and configuration
 """
 
 from __future__ import annotations
@@ -39,10 +39,10 @@ def main():
     # Configuration
     DATA_DIR = "data/SWEET/selection1/users"
     LABEL_STRATEGY = "ordinal_3class"
-    OUTPUT_DIR = Path("baseline_models/sweet")
+    OUTPUT_DIR = Path("results/baseline_models/sweet")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # XGBoost optimal hyperparameters from hypertuning_results/XGBoost_Tuned_tuning.json
+    # XGBoost optimal hyperparameters from results/legacy/hypertuning_results/XGBoost_Tuned_tuning.json
     XGBOOST_PARAMS = {
         "max_depth": 4,
         "n_estimators": 300,
