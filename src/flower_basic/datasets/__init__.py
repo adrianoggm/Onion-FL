@@ -11,11 +11,6 @@ from importlib import import_module
 from typing import Any
 
 _LAZY_EXPORTS = {
-    "load_ecg5000_dataset": ("flower_basic.datasets.ecg5000", "load_ecg5000_dataset"),
-    "partition_ecg5000_by_subjects": (
-        "flower_basic.datasets.ecg5000",
-        "partition_ecg5000_by_subjects",
-    ),
     "plan_and_materialize_sweet_federated": (
         "flower_basic.datasets.sweet_federated",
         "plan_and_materialize_sweet_federated",

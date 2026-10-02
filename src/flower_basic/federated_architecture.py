@@ -14,11 +14,11 @@ import json
 import os
 import sys
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 try:
     import yaml  # type: ignore
@@ -46,7 +46,7 @@ class MQTTConfig:
 class ModelConfig:
     """Global model settings."""
 
-    type: str = "ecg_cnn"
+    type: str = "swell_mlp"
     input_dim: int | None = None
 
 
@@ -237,7 +237,7 @@ def parse_architecture_config(raw: Mapping[str, Any]) -> FederatedArchitecture:
 
     model_raw = _as_mapping(root.get("model"))
     model = ModelConfig(
-        type=str(model_raw.get("type", "ecg_cnn")),
+        type=str(model_raw.get("type", "swell_mlp")),
         input_dim=model_raw.get("input_dim"),
     )
 
@@ -676,6 +676,11 @@ def plan_runtime_commands(
     mqtt = arch.orchestrator.mqtt
     topics = mqtt.topics
     primary = infer_primary_workflow(arch)
+    if primary != "swell":
+        raise ValueError(
+            f"Workflow no soportado por este lanzador: {primary}. "
+            "SWEET se lanza con scripts/run_sweet_architecture.py"
+        )
     py_path = str(repo_root / "src")
     if python_path:
         py_path = py_path + os.pathsep + python_path
@@ -714,48 +719,29 @@ def plan_runtime_commands(
         broker_k_arg = next(iter(k_map.values())) if k_map else 1
 
     commands: list[RuntimeCommand] = []
-    if primary == "swell":
-        if arch.model.input_dim is None:
-            raise ValueError(
-                "model.input_dim es obligatorio para ejecutar el flujo SWELL"
-            )
-        server_cmd = [
-            python_exec,
-            "-m",
-            "flower_basic.servers.swell",
-            "--input_dim",
-            str(int(arch.model.input_dim)),
-            "--rounds",
-            str(arch.orchestrator.rounds),
-            "--mqtt-broker",
-            mqtt.broker,
-            "--mqtt-port",
-            str(mqtt.port),
-            "--topic-global",
-            topics.global_model,
-            "--min-fit-clients",
-            str(len(active_fogs)),
-            "--min-available-clients",
-            str(len(active_fogs)),
-        ]
-        if manifest_path is not None:
-            server_cmd.extend(["--manifest", str(manifest_path)])
-    else:
-        server_cmd = [
-            python_exec,
-            "-m",
-            "flower_basic.server",
-            "--server_addr",
-            arch.orchestrator.address,
-            "--rounds",
-            str(arch.orchestrator.rounds),
-            "--mqtt-broker",
-            mqtt.broker,
-            "--mqtt-port",
-            str(mqtt.port),
-            "--topic-global",
-            topics.global_model,
-        ]
+    if arch.model.input_dim is None:
+        raise ValueError("model.input_dim es obligatorio para ejecutar el flujo SWELL")
+    server_cmd = [
+        python_exec,
+        "-m",
+        "flower_basic.servers.swell",
+        "--input_dim",
+        str(int(arch.model.input_dim)),
+        "--rounds",
+        str(arch.orchestrator.rounds),
+        "--mqtt-broker",
+        mqtt.broker,
+        "--mqtt-port",
+        str(mqtt.port),
+        "--topic-global",
+        topics.global_model,
+        "--min-fit-clients",
+        str(len(active_fogs)),
+        "--min-available-clients",
+        str(len(active_fogs)),
+    ]
+    if manifest_path is not None:
+        server_cmd.extend(["--manifest", str(manifest_path)])
     commands.append(
         RuntimeCommand(
             role="server",
@@ -765,44 +751,17 @@ def plan_runtime_commands(
         )
     )
 
-    if primary == "swell":
-        if arch.model.input_dim is None:
-            raise ValueError(
-                "model.input_dim es obligatorio para ejecutar el flujo SWELL"
-            )
-        for fog in active_fogs:
-            bridge_cmd = [
-                python_exec,
-                "-m",
-                "flower_basic.clients.fog_bridge_swell",
-                "--input_dim",
-                str(int(arch.model.input_dim)),
-                "--server",
-                arch.orchestrator.address,
-                "--region",
-                fog.id,
-                "--mqtt-broker",
-                mqtt.broker,
-                "--mqtt-port",
-                str(mqtt.port),
-                "--topic-partial",
-                topics.partial,
-            ]
-            commands.append(
-                RuntimeCommand(
-                    role=f"fog_bridge_{fog.id}",
-                    cmd=bridge_cmd,
-                    cwd=str(repo_root),
-                    env=_merge_env(),
-                )
-            )
-    else:
-        bridge_script = repo_root / "src" / "flower_basic" / "fog_flower_client.py"
+    for fog in active_fogs:
         bridge_cmd = [
             python_exec,
-            str(bridge_script),
+            "-m",
+            "flower_basic.clients.fog_bridge_swell",
+            "--input_dim",
+            str(int(arch.model.input_dim)),
             "--server",
             arch.orchestrator.address,
+            "--region",
+            fog.id,
             "--mqtt-broker",
             mqtt.broker,
             "--mqtt-port",
@@ -812,7 +771,7 @@ def plan_runtime_commands(
         ]
         commands.append(
             RuntimeCommand(
-                role="fog_bridge",
+                role=f"fog_bridge_{fog.id}",
                 cmd=bridge_cmd,
                 cwd=str(repo_root),
                 env=_merge_env(),
@@ -914,23 +873,6 @@ def plan_runtime_commands(
                     )
                 )
                 client_index += 1
-            elif workflow == "wesad":
-                client_script = repo_root / "src" / "flower_basic" / "client.py"
-                commands.append(
-                    RuntimeCommand(
-                        role=f"client_{client.id}",
-                        cmd=[
-                            python_exec,
-                            str(client_script),
-                            "--rounds",
-                            str(client.rounds),
-                            "--region",
-                            fog.id,
-                        ],
-                        env=_merge_env(env_client),
-                        cwd=str(repo_root),
-                    )
-                )
             else:
                 raise ValueError(f"Workflow no soportado aún: {workflow}")
 
