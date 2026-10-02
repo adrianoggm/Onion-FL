@@ -1,0 +1,14 @@
+flowchart TD
+    cloud["cloud<br/>global · coordinator"]
+    fog_a1["fog_a1<br/>fog · aggregator"]
+    fog_a2["fog_a2<br/>fog · aggregator"]
+    fog_b1["fog_b1<br/>fog · aggregator"]
+    fog_b2["fog_b2<br/>fog · aggregator"]
+    fog_a1 -->|mqtt/json/wifi| cloud
+    fog_a2 -->|mqtt/json/wifi| cloud
+    fog_b1 -->|mqtt/json/wifi| cloud
+    fog_b2 -->|mqtt/json/wifi| cloud
+    edges_fog_a1(["edges (edge)"]) -->|mqtt/json/4g| fog_a1
+    edges_fog_a2(["edges (edge)"]) -->|mqtt/json/4g| fog_a2
+    edges_fog_b1(["edges (edge)"]) -->|mqtt/json/4g| fog_b1
+    edges_fog_b2(["edges (edge)"]) -->|mqtt/json/4g| fog_b2

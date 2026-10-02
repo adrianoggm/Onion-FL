@@ -1,0 +1,112 @@
+{
+  "topology_id": "9033d1cf2c9e348b4067c92173a36fd151b3077cf0c93b5a592d8d188df05f32",
+  "name": "four_fogs",
+  "levels": [
+    "global",
+    "fog",
+    "edge"
+  ],
+  "nodes": [
+    {
+      "id": "cloud",
+      "level": "global",
+      "role": "coordinator",
+      "parent": null,
+      "settings": {
+        "aggregator": "fedavg",
+        "server_optimizer": "replace"
+      }
+    },
+    {
+      "id": "fog_a1",
+      "level": "fog",
+      "role": "aggregator",
+      "parent": "cloud",
+      "settings": {
+        "aggregator": "fedavg",
+        "quorum": 1.0,
+        "deadline": "120s",
+        "home": "swell"
+      }
+    },
+    {
+      "id": "fog_a2",
+      "level": "fog",
+      "role": "aggregator",
+      "parent": "cloud",
+      "settings": {
+        "aggregator": "fedavg",
+        "quorum": 1.0,
+        "deadline": "120s",
+        "home": "swell"
+      }
+    },
+    {
+      "id": "fog_b1",
+      "level": "fog",
+      "role": "aggregator",
+      "parent": "cloud",
+      "settings": {
+        "aggregator": "fedavg",
+        "quorum": 1.0,
+        "deadline": "120s",
+        "home": "sweet"
+      }
+    },
+    {
+      "id": "fog_b2",
+      "level": "fog",
+      "role": "aggregator",
+      "parent": "cloud",
+      "settings": {
+        "aggregator": "fedavg",
+        "quorum": 1.0,
+        "deadline": "120s",
+        "home": "sweet"
+      }
+    }
+  ],
+  "links": [
+    {
+      "src": "fog_a1",
+      "dst": "cloud",
+      "transport": "mqtt",
+      "codec": "json",
+      "profile": "wifi"
+    },
+    {
+      "src": "fog_a2",
+      "dst": "cloud",
+      "transport": "mqtt",
+      "codec": "json",
+      "profile": "wifi"
+    },
+    {
+      "src": "fog_b1",
+      "dst": "cloud",
+      "transport": "mqtt",
+      "codec": "json",
+      "profile": "wifi"
+    },
+    {
+      "src": "fog_b2",
+      "dst": "cloud",
+      "transport": "mqtt",
+      "codec": "json",
+      "profile": "wifi"
+    }
+  ],
+  "edge": {
+    "level": "edge",
+    "link_up": {
+      "transport": "mqtt",
+      "codec": "json",
+      "profile": "4g"
+    },
+    "settings": {
+      "device": {
+        "samples_per_second": 2000
+      }
+    }
+  }
+}
