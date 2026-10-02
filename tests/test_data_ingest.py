@@ -1,0 +1,510 @@
+"""Tests for declarative ingestion: readers and steps (issue #86).
+
+Every file here is a tiny format fixture written to ``tmp_path`` to check
+parsing; nothing is trained or evaluated with it.
+"""
+
+from __future__ import annotations
+
+import pickle
+import textwrap
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from onion_fl.data.contract import DataError
+from onion_fl.data.ingest import DatasetSpec, ingest, load_spec, readers, steps
+
+
+def write(path: Path, text: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(textwrap.dedent(text).lstrip(), encoding="utf-8")
+    return path
+
+
+def spec(root: Path, source: dict, steps: list[dict], **extra) -> DatasetSpec:
+    return DatasetSpec(name="demo", root=str(root), source=source, steps=steps, **extra)
+
+
+BASIC = [
+    {"subject": {"column": "pp"}},
+    {"label": {"task": "stress", "column": "cond", "map": {"N": 0, "T": 1}}},
+    {"features": {"exclude": ["blok"]}},
+]
+
+
+@pytest.fixture
+def table(tmp_path: Path) -> Path:
+    write(
+        tmp_path / "table.csv",
+        """
+        pp,blok,cond,keys,mouse
+        1,1,N,10,0.5
+        1,2,T,20,0.7
+        2,1,N,30,0.1
+        2,2,T,40,0.2
+        2,3,X,50,0.3
+        """,
+    )
+    return tmp_path
+
+
+# --- the whole pipeline -------------------------------------------------------------
+
+
+def test_a_table_becomes_one_subject_data_per_subject(table: Path) -> None:
+    subjects = ingest(spec(table, {"reader": "csv", "path": "table.csv"}, BASIC))
+
+    assert [s.subject for s in subjects] == ["1", "2"]
+    first = subjects[0]
+    assert first.feature_names == ["keys", "mouse"]
+    np.testing.assert_allclose(first.X, [[10, 0.5], [20, 0.7]])
+    assert first.y.tolist() == [0, 1]
+    assert first.meta["n_classes"] == 2 and first.task == "stress"
+
+
+def test_rows_without_a_class_are_dropped(table: Path) -> None:
+    subjects = ingest(spec(table, {"reader": "csv", "path": "table.csv"}, BASIC))
+
+    assert subjects[1].n_samples == 2  # the 'X' row has no class in the map
+
+
+def test_a_spec_loads_from_yaml(table: Path) -> None:
+    path = write(
+        table / "demo.yaml",
+        f"""
+        name: demo
+        root: {table.as_posix()}
+        source: {{reader: csv, path: table.csv}}
+        steps:
+          - subject: {{column: pp}}
+          - label: {{task: stress, column: cond, map: {{N: 0, T: 1}}}}
+          - features: {{include: [keys]}}
+        """,
+    )
+
+    (first, _) = ingest(load_spec(path))
+
+    assert first.feature_names == ["keys"]
+
+
+def test_the_root_can_be_overridden(table: Path, tmp_path_factory) -> None:
+    elsewhere = spec(
+        tmp_path_factory.mktemp("x"), {"reader": "csv", "path": "table.csv"}, BASIC
+    )
+
+    assert len(ingest(elsewhere, root=table)) == 2
+
+
+def test_a_features_step_is_required(table: Path) -> None:
+    with pytest.raises(DataError, match="features"):
+        ingest(spec(table, {"reader": "csv", "path": "table.csv"}, BASIC[:2]))
+
+
+def test_a_subject_is_required(table: Path) -> None:
+    with pytest.raises(DataError, match="subject"):
+        ingest(spec(table, {"reader": "csv", "path": "table.csv"}, BASIC[1:]))
+
+
+def test_a_step_entry_has_exactly_one_step(table: Path) -> None:
+    with pytest.raises(DataError, match="one step"):
+        ingest(
+            spec(
+                table,
+                {"reader": "csv", "path": "table.csv"},
+                [{"subject": {"column": "pp"}, "features": {}}],
+            )
+        )
+
+
+def test_unknown_steps_and_readers_are_plugin_errors(table: Path) -> None:
+    with pytest.raises(ValueError, match="explode"):
+        ingest(spec(table, {"reader": "csv", "path": "table.csv"}, [{"explode": {}}]))
+    with pytest.raises(ValueError, match="xml"):
+        ingest(spec(table, {"reader": "xml", "path": "table.csv"}, BASIC))
+
+
+# --- sources -----------------------------------------------------------------------
+
+
+def test_subject_placeholders_read_one_file_per_subject(tmp_path: Path) -> None:
+    for user in ("user01", "user02"):
+        for day in (1, 2):
+            write(
+                tmp_path / user / f"{user}_Day{day}.csv",
+                f"""
+                hr,stress
+                {day},1
+                """,
+            )
+    write(tmp_path / "user03" / "other_Day1.csv", "hr,stress\n9,1\n")  # name mismatch
+
+    subjects = ingest(
+        spec(
+            tmp_path,
+            {"reader": "csv", "path": "{subject}/{subject}_Day*.csv"},
+            [
+                {"label": {"task": "s", "column": "stress", "n_classes": 2}},
+                {"features": {"include": ["hr"]}},
+            ],
+        )
+    )
+
+    assert [s.subject for s in subjects] == ["user01", "user02"]
+    assert sorted(subjects[0].X[:, 0].tolist()) == [1.0, 2.0]
+
+
+def test_a_source_that_matches_nothing_names_the_path(tmp_path: Path) -> None:
+    with pytest.raises(DataError, match="missing.csv"):
+        ingest(spec(tmp_path, {"reader": "csv", "path": "missing.csv"}, BASIC))
+
+
+def test_csv_reader_options(tmp_path: Path) -> None:
+    path = write(tmp_path / "t.csv", "a;b\n1,5;x\n")
+
+    df = readers.create("csv", {"sep": ";", "decimal": ","}).read(path)
+
+    assert df["a"].tolist() == [1.5]
+
+
+def test_npz_reader_expands_matrices_into_columns(tmp_path: Path) -> None:
+    path = tmp_path / "s.npz"
+    np.savez(path, acc=np.arange(6).reshape(3, 2), label=np.array([1, 1, 2]))
+
+    df = readers.create("npz").read(path)
+
+    assert list(df.columns) == ["acc_0", "acc_1", "label"]
+    assert df["acc_1"].tolist() == [1, 3, 5]
+
+
+def test_pickle_reader_follows_a_key_path(tmp_path: Path) -> None:
+    path = tmp_path / "s.pkl"
+    frame = pd.DataFrame({"a": [1, 2]})
+    path.write_bytes(pickle.dumps({"computer": {"data": frame}}))
+
+    df = readers.create("pickle", {"key": "computer.data"}).read(path)
+
+    assert df["a"].tolist() == [1, 2]
+
+
+def test_pickle_reader_needs_a_table(tmp_path: Path) -> None:
+    path = tmp_path / "s.pkl"
+    path.write_bytes(pickle.dumps({"computer": [1, 2]}))
+
+    with pytest.raises(DataError, match="computer"):
+        readers.create("pickle", {"key": "computer"}).read(path)
+
+
+def test_excel_reader(tmp_path: Path) -> None:
+    pytest.importorskip("openpyxl")
+    path = tmp_path / "t.xlsx"
+    pd.DataFrame({"a": [1, 2]}).to_excel(path, index=False)
+
+    assert readers.create("excel").read(path)["a"].tolist() == [1, 2]
+
+
+def test_parquet_reader(tmp_path: Path) -> None:
+    pytest.importorskip("pyarrow")
+    path = tmp_path / "t.parquet"
+    pd.DataFrame({"a": [1, 2]}).to_parquet(path)
+
+    assert readers.create("parquet").read(path)["a"].tolist() == [1, 2]
+
+
+# --- steps, one by one ---------------------------------------------------------------
+
+
+def run(step: str, params: dict, df: pd.DataFrame) -> pd.DataFrame:
+    return steps.create(step, params).apply(df, ctx=None)
+
+
+def test_subject_step_extracts_with_a_regex() -> None:
+    df = run(
+        "subject",
+        {"column": "pp", "regex": r"(\d+)"},
+        pd.DataFrame({"pp": ["PP1", "pp12"]}),
+    )
+
+    assert df["subject"].tolist() == ["1", "12"]
+
+
+def test_subject_step_rejects_values_that_do_not_match() -> None:
+    with pytest.raises(DataError, match="PPx"):
+        run(
+            "subject",
+            {"column": "pp", "regex": r"(\d+)"},
+            pd.DataFrame({"pp": ["PPx"]}),
+        )
+
+
+def test_replace_turns_codes_into_missing_values() -> None:
+    df = pd.DataFrame({"a": [999, 1], "b": ["#VALUE!", "2"]})
+
+    out = run("replace", {"values": {999: None, "#VALUE!": None}}, df)
+
+    assert out["a"].isna().tolist() == [True, False]
+    assert out["b"].isna().tolist() == [True, False]
+
+
+def test_replace_can_be_limited_to_some_columns() -> None:
+    df = pd.DataFrame({"a": [999], "b": [999]})
+
+    out = run("replace", {"values": {999: None}, "columns": ["a"]}, df)
+
+    assert out["a"].isna().all() and out["b"].tolist() == [999]
+
+
+def test_select_keeps_the_rows_of_a_query() -> None:
+    out = run(
+        "select", {"query": "cond != 'X'"}, pd.DataFrame({"cond": ["N", "X", "T"]})
+    )
+
+    assert out["cond"].tolist() == ["N", "T"]
+
+
+@pytest.mark.parametrize(
+    "rule, values, expected",
+    [
+        ({"map": {"N": 0, "T": 1, "I": 1}}, ["N", "I", "?"], [0, 1, None]),
+        ({"map": {1: 0, 2: 1}}, ["1", "2", "3"], [0, 1, None]),  # keys match text too
+        ({"threshold": 3}, [1, 3, 5], [0, 1, 1]),
+        ({"bins": [1.5, 2.5]}, [1, 2, 4], [0, 1, 2]),
+        ({"round": True, "map": {1: 0, 2: 1, 3: 2}}, [1.2, 2.4, 2.6], [0, 1, 2]),
+        ({"n_classes": 3}, [0, 2, 1], [0, 2, 1]),
+    ],
+)
+def test_label_rules(rule: dict, values: list, expected: list) -> None:
+    out = run(
+        "label", {"task": "t", "column": "c", **rule}, pd.DataFrame({"c": values})
+    )
+
+    got = [None if pd.isna(v) else int(v) for v in out["label"]]
+    assert got == expected
+
+
+def test_label_needs_a_rule_or_n_classes() -> None:
+    with pytest.raises(ValueError, match="n_classes"):
+        steps.create("label", {"task": "t", "column": "c"})
+
+
+def test_label_strategies_are_chosen_by_option(table: Path) -> None:
+    label = {
+        "label": {
+            "default": "binary",
+            "strategies": {
+                "binary": {"task": "stress", "column": "keys", "threshold": 25},
+                "three": {"task": "stress_3", "column": "keys", "bins": [15, 35]},
+            },
+        }
+    }
+    s = spec(
+        table,
+        {"reader": "csv", "path": "table.csv"},
+        [BASIC[0], label, {"features": {"include": ["mouse"]}}],
+    )
+
+    binary = ingest(s)
+    three = ingest(s, options={"label": "three"})
+
+    assert binary[1].y.tolist() == [1, 1, 1] and binary[1].n_classes == 2
+    assert three[1].y.tolist() == [1, 2, 2] and three[1].task == "stress_3"
+    with pytest.raises(DataError, match="ordinal"):
+        ingest(s, options={"label": "ordinal"})
+
+
+def test_features_include_exclude_and_regex() -> None:
+    df = pd.DataFrame(
+        {"subject": ["1"], "label": [0], "hr_mean": [1], "hr_std": [2], "blok": [3]}
+    )
+
+    assert list(run("features", {"regex": "^hr_"}, df).columns) == [
+        "subject",
+        "label",
+        "hr_mean",
+        "hr_std",
+    ]
+    assert list(run("features", {"exclude": ["blok"]}, df).columns)[2:] == [
+        "hr_mean",
+        "hr_std",
+    ]
+    with pytest.raises(DataError, match="nope"):
+        run("features", {"include": ["nope"]}, df)
+
+
+def test_features_reject_timestamps() -> None:
+    df = pd.DataFrame(
+        {"subject": ["1"], "label": [0], "t": pd.to_datetime(["2020-01-01"])}
+    )
+
+    with pytest.raises(DataError, match="'t'"):
+        run("features", {}, df)
+
+
+def test_features_reject_text_columns() -> None:
+    df = pd.DataFrame({"subject": ["1"], "label": [0], "note": ["hello"]})
+
+    with pytest.raises(DataError, match="note"):
+        run("features", {}, df)
+
+
+def test_features_keep_missing_values_for_later_imputation() -> None:
+    df = pd.DataFrame({"subject": ["1", "1"], "label": [0, 1], "hr": [1.0, None]})
+
+    assert run("features", {}, df)["hr"].isna().tolist() == [False, True]
+
+
+# --- join ------------------------------------------------------------------------------
+
+
+def test_join_on_keys(tmp_path: Path) -> None:
+    write(tmp_path / "a.csv", "pp,blok,keys\n1,1,10\n1,2,20\n")
+    write(tmp_path / "b.csv", "pp,blok,hr\n1,1,60\n1,2,70\n")
+    out = steps.create(
+        "join", {"source": {"reader": "csv", "path": "b.csv"}, "on": ["pp", "blok"]}
+    ).apply(pd.read_csv(tmp_path / "a.csv"), ctx=_ctx(tmp_path))
+
+    assert out["hr"].tolist() == [60, 70]
+
+
+def test_join_by_time_floors_both_sides(tmp_path: Path) -> None:
+    write(
+        tmp_path / "u1" / "labels.csv",
+        "TS,stress\n2020-01-01 10:00:40,3\n2020-01-01 10:00:50,4\n",
+    )
+    left = pd.DataFrame(
+        {
+            "subject": ["u1", "u1"],
+            "timestamp": ["2020-01-01 10:00:05", "2020-01-01 10:01:05"],
+            "hr": [1, 2],
+        }
+    )
+
+    out = steps.create(
+        "join",
+        {
+            "source": {"reader": "csv", "path": "{subject}/labels.csv"},
+            "on": ["subject"],
+            "time": {"left": "timestamp", "right": "TS", "floor": "min"},
+            "deduplicate": True,
+        },
+    ).apply(left, ctx=_ctx(tmp_path))
+
+    assert out["hr"].tolist() == [1]
+    assert out["stress"].tolist() == [3]  # the first annotation of that minute
+
+
+def _ctx(root: Path):
+    from onion_fl.data.ingest import IngestContext
+
+    return IngestContext(root=root, options={})
+
+
+# --- window -------------------------------------------------------------------------------
+
+
+def test_window_computes_stats_per_channel_and_subject() -> None:
+    df = pd.DataFrame(
+        {
+            "subject": ["a"] * 4 + ["b"] * 4,
+            "x": [1.0, 2.0, 3.0, 4.0, 10.0, 10.0, 10.0, 10.0],
+            "label": [0, 0, 1, 1, 1, 1, 1, 1],
+        }
+    )
+
+    out = run(
+        "window",
+        {"size": 2, "overlap": 0.5, "stats": ["mean", "max"], "columns": ["x"]},
+        df,
+    )
+
+    assert list(out.columns) == ["subject", "label", "x_mean", "x_max"]
+    a = out[out["subject"] == "a"]
+    assert a["x_mean"].tolist() == [1.5, 2.5, 3.5]
+    assert a["label"].tolist() == [0, 0, 1]  # round(mean), half to even
+    assert len(out[out["subject"] == "b"]) == 3
+
+
+def test_window_drops_windows_with_rows_outside_the_classes() -> None:
+    df = pd.DataFrame(
+        {"subject": ["a"] * 4, "x": [1.0, 2.0, 3.0, 4.0], "label": [0, None, 1, 1]}
+    )
+
+    out = run("window", {"size": 2, "overlap": 0.0, "columns": ["x"]}, df)
+
+    assert out["x_mean"].tolist() == [3.5]
+
+
+def test_window_stat_names_follow_channel_then_stat() -> None:
+    df = pd.DataFrame(
+        {"subject": ["a"] * 2, "x": [1.0, 3.0], "y": [0.0, 0.0], "label": [0, 0]}
+    )
+
+    out = run("window", {"size": 2}, df)
+
+    assert list(out.columns)[2:] == [
+        f"{c}_{s}" for c in ("x", "y") for s in ("mean", "std", "min", "max", "median")
+    ]
+    assert out["x_std"].tolist() == [1.0]  # population std, as before
+
+
+def test_window_needs_subjects() -> None:
+    with pytest.raises(DataError, match="subject"):
+        run("window", {"size": 2}, pd.DataFrame({"x": [1.0, 2.0]}))
+
+
+# --- options and when -------------------------------------------------------------------
+
+
+def test_steps_can_depend_on_options(table: Path) -> None:
+    s = spec(
+        table,
+        {"reader": "csv", "path": "table.csv"},
+        [
+            {"select": {"query": "pp == 2"}, "when": {"only_two": True}},
+            *BASIC,
+        ],
+        options={"only_two": False},
+    )
+
+    assert len(ingest(s)) == 2
+    assert [x.subject for x in ingest(s, options={"only_two": True})] == ["2"]
+
+
+def test_when_accepts_a_list_of_values(table: Path) -> None:
+    s = spec(
+        table,
+        {"reader": "csv", "path": "table.csv"},
+        [{"select": {"query": "pp == 2"}, "when": {"mode": ["b", "c"]}}, *BASIC],
+        options={"mode": "a"},
+    )
+
+    assert len(ingest(s, options={"mode": "c"})) == 1
+
+
+def test_unknown_options_are_rejected(table: Path) -> None:
+    with pytest.raises(DataError, match="colour"):
+        ingest(
+            spec(table, {"reader": "csv", "path": "table.csv"}, BASIC),
+            options={"colour": 1},
+        )
+
+
+def test_when_must_name_a_declared_option(table: Path) -> None:
+    with pytest.raises(DataError, match="mode"):
+        ingest(
+            spec(
+                table,
+                {"reader": "csv", "path": "table.csv"},
+                [{"select": {"query": "pp == 2"}, "when": {"mode": "b"}}, *BASIC],
+            )
+        )
+
+
+def test_subjects_come_in_natural_order(tmp_path: Path) -> None:
+    write(tmp_path / "t.csv", "pp,cond,keys\n10,N,1\n2,T,2\n")
+
+    subjects = ingest(spec(tmp_path, {"reader": "csv", "path": "t.csv"}, BASIC))
+
+    assert [s.subject for s in subjects] == ["2", "10"]

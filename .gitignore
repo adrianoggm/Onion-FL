@@ -129,8 +129,7 @@ flower_server.log
 flower_client_*.log
 
 # Raw and processed data
-data/
-data/**
+/data/
 
 # Generated reports (baseline scripts write to the working directory)
 /wesad_baseline_results.json
