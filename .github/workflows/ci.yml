@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
 
@@ -12,29 +13,24 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Cache pip
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
+          # CPU-only torch: the default Linux wheel pulls CUDA (several GB)
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dev]"
 
-      - name: Format check (black)
-        run: black --check src/ scripts/ --exclude tests/
+      - name: Lint
+        run: ruff check .
 
-      - name: Lint (flake8)
-        run: flake8 src/ scripts/ --exclude tests/
+      - name: Format check
+        run: ruff format --check .
 
       - name: Tests
         run: pytest -q
