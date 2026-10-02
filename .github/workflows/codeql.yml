@@ -1,12 +1,10 @@
 name: "CodeQL"
 
+# Runs only on develop -> main release PRs (and on demand) to save CI minutes.
 on:
-  push:
-    branches: ["main", "develop"]
   pull_request:
-    branches: ["main", "develop"]
-  schedule:
-    - cron: "0 6 * * 1" # Every Monday at 6 AM UTC
+    branches: ["main"]
+  workflow_dispatch:
 
 jobs:
   analyze:

@@ -1,4 +1,4 @@
-﻿"""Tests for dataset loaders.
+"""Tests for dataset loaders.
 
 This module tests the dataset loading functionality for WESAD and SWELL datasets,
 ensuring proper data preprocessing, validation, and federated partitioning.
@@ -20,13 +20,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from flower_basic.datasets import load_swell_dataset, load_wesad_dataset
-from flower_basic.datasets.swell import (
+from onion_fl.datasets import load_swell_dataset, load_wesad_dataset
+from onion_fl.datasets.swell import (
     SWELLDatasetError,
     get_swell_info,
     partition_swell_by_subjects,
 )
-from flower_basic.datasets.wesad import WESADDatasetError, partition_wesad_by_subjects
+from onion_fl.datasets.wesad import WESADDatasetError, partition_wesad_by_subjects
 
 
 class TestWESADDataset:
@@ -126,10 +126,10 @@ class TestSWELLDataset:
 
     def test_load_swell_dataset_with_mock_data(self):
         """Test SWELL dataset loading with mocked data files."""
-        with patch("pandas.read_csv") as mock_read_csv, patch(
-            "pathlib.Path.exists", return_value=True
+        with (
+            patch("pandas.read_csv") as mock_read_csv,
+            patch("pathlib.Path.exists", return_value=True),
         ):
-
             # Mock computer interaction features
             computer_df = pd.DataFrame(
                 {
@@ -185,10 +185,10 @@ class TestSWELLDataset:
 
     def test_load_swell_dataset_with_subject_info(self):
         """Test SWELL dataset loading with subject information return."""
-        with patch("pandas.read_csv") as mock_read_csv, patch(
-            "pathlib.Path.exists", return_value=True
+        with (
+            patch("pandas.read_csv") as mock_read_csv,
+            patch("pathlib.Path.exists", return_value=True),
         ):
-
             # Mock single modality data
             mock_df = pd.DataFrame(
                 {
@@ -222,7 +222,7 @@ class TestSWELLDataset:
 
     def test_partition_swell_by_subjects(self):
         """Test SWELL dataset partitioning by subjects."""
-        with patch("flower_basic.datasets.swell.load_swell_dataset") as mock_load:
+        with patch("onion_fl.datasets.swell.load_swell_dataset") as mock_load:
             # Mock different partitions with different subjects
             def mock_load_side_effect(*args, **kwargs):
                 subjects = kwargs.get("subjects", [1, 2, 3])
@@ -279,10 +279,10 @@ class TestSWELLDataset:
 
     def test_swell_modality_selection(self):
         """Test SWELL dataset loading with different modality combinations."""
-        with patch("pandas.read_csv") as mock_read_csv, patch(
-            "pathlib.Path.exists", return_value=True
+        with (
+            patch("pandas.read_csv") as mock_read_csv,
+            patch("pathlib.Path.exists", return_value=True),
         ):
-
             # Mock data for each modality
             base_data = {
                 "subject": [1, 2, 3] * 2,
@@ -312,7 +312,7 @@ class TestSWELLDataset:
 
     def test_get_swell_info(self):
         """Test SWELL dataset information retrieval."""
-        with patch("flower_basic.datasets.swell.load_swell_dataset") as mock_load:
+        with patch("onion_fl.datasets.swell.load_swell_dataset") as mock_load:
             mock_load.return_value = (
                 np.random.randn(100, 50),  # X_train
                 np.random.randn(25, 50),  # X_test
@@ -338,7 +338,7 @@ class TestSWELLDataset:
     @pytest.mark.parametrize("n_partitions", [2, 5, 10])
     def test_swell_partition_sizes(self, n_partitions):
         """Test SWELL partitioning with different partition counts."""
-        with patch("flower_basic.datasets.swell.load_swell_dataset") as mock_load:
+        with patch("onion_fl.datasets.swell.load_swell_dataset") as mock_load:
 
             def mock_load_side_effect(*args, **kwargs):
                 subjects = kwargs.get("subjects", list(range(1, 26)))

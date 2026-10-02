@@ -1,10 +1,10 @@
 version: "3.9"
 
 # ============================================================================
-# OpenTelemetry Observability Stack for Flower-Basic Federated Learning
+# Onion-FL infrastructure: MQTT broker, tracing and metrics
 # ============================================================================
 # This compose file provides a complete observability stack:
-# - Mosquitto: MQTT broker for FL communication
+# - Mosquitto: MQTT broker for real runs (onion_fl run --mode real)
 # - Jaeger: Distributed tracing backend and UI
 # - OpenTelemetry Collector: Central telemetry pipeline
 # - Prometheus: Metrics collection and storage
@@ -27,7 +27,7 @@ services:
   # --------------------------------------------------------------------------
   mosquitto:
     image: eclipse-mosquitto:2
-    container_name: flower-mosquitto
+    container_name: onionfl-mosquitto
     restart: unless-stopped
     ports:
       - "${MQTT_PORT:-1883}:1883"     # MQTT default port
@@ -37,13 +37,13 @@ services:
       - mosquitto-data:/mosquitto/data
       - mosquitto-log:/mosquitto/log
     networks:
-      - flower-otel
+      - onionfl
   # --------------------------------------------------------------------------
   # Jaeger - Distributed Tracing
   # --------------------------------------------------------------------------
   jaeger:
     image: jaegertracing/all-in-one:latest
-    container_name: flower-jaeger
+    container_name: onionfl-jaeger
     restart: unless-stopped
     ports:
       - "16686:16686"   # Jaeger UI
@@ -64,7 +64,7 @@ services:
       - PROMETHEUS_QUERY_NORMALIZE_CALLS=true
       - PROMETHEUS_QUERY_NORMALIZE_DURATION=true
     networks:
-      - flower-otel
+      - onionfl
     depends_on:
       - prometheus
 
@@ -73,7 +73,7 @@ services:
   # --------------------------------------------------------------------------
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.113.0
-    container_name: flower-otel-collector
+    container_name: onionfl-otel-collector
     restart: unless-stopped
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
@@ -88,14 +88,14 @@ services:
       - jaeger
       - prometheus
     networks:
-      - flower-otel
+      - onionfl
 
   # --------------------------------------------------------------------------
   # Prometheus - Metrics Storage
   # --------------------------------------------------------------------------
   prometheus:
     image: prom/prometheus:v2.48.1
-    container_name: flower-prometheus
+    container_name: onionfl-prometheus
     restart: unless-stopped
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -109,26 +109,14 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - flower-otel
-
-  # --------------------------------------------------------------------------
-  # Prometheus Pushgateway - Persistent Metrics for Short-Lived Jobs
-  # --------------------------------------------------------------------------
-  pushgateway:
-    image: prom/pushgateway:v1.6.2
-    container_name: flower-pushgateway
-    restart: unless-stopped
-    ports:
-      - "9091:9091"
-    networks:
-      - flower-otel
+      - onionfl
 
   # --------------------------------------------------------------------------
   # Grafana - Visualization
   # --------------------------------------------------------------------------
   grafana:
     image: grafana/grafana:10.2.3
-    container_name: flower-grafana
+    container_name: onionfl-grafana
     restart: unless-stopped
     environment:
       - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER:-admin}
@@ -141,13 +129,12 @@ services:
       - "3000:3000"
     depends_on:
       - prometheus
-      - pushgateway
     networks:
-      - flower-otel
+      - onionfl
 
 networks:
-  flower-otel:
-    name: flower-otel-network
+  onionfl:
+    name: onionfl-network
     driver: bridge
 
 volumes:

@@ -1,0 +1,47 @@
+# SWEET: per-minute physiological features and self-reported stress, one folder
+# per user. The three selections share the layout:
+#   sample_subjects     curated subset for quick baselines
+#   selection1/users    pretraining users
+#   selection2/users    federated users
+#
+# Each feature row is matched with the self-report of the same minute. Missing
+# and infinite values stay missing: imputation is fitted on the training bag
+# only (spec §8.6), not here.
+#
+# NOT verified against the raw files yet (data/ is not in git). One known
+# difference with the previous loader: it dropped self-reports without a stress
+# value before keeping the first report of each minute; here the first report
+# is kept and then dropped if it has no stress value.
+name: sweet
+description: SWEET, features por minuto y estrés autodeclarado (1-5), una carpeta por usuario.
+root: "data/SWEET/{selection}"
+options:
+  selection: sample_subjects
+min_samples_per_subject: 5
+source:
+  reader: csv
+  path: "{subject}/{subject}_Features_Day*.csv"
+steps:
+  - replace: {values: {.inf: null, -.inf: null}}
+  - join:
+      source: {reader: csv, path: "{subject}/current_stress.csv"}
+      by: [subject]
+      time: {left: "Unnamed: 0", right: TS, floor: min}
+      deduplicate: true
+  - label:
+      default: binary
+      strategies:
+        binary: {task: stress_binary, column: MAXIMUM_STRESS, threshold: 2}
+        ordinal: {task: stress_ordinal, column: MAXIMUM_STRESS, round: true, map: {1: 0, 2: 1, 3: 2, 4: 3, 5: 4}}
+        three_class: {task: stress_3class, column: MAXIMUM_STRESS, round: true, map: {1: 0, 2: 1, 3: 2, 4: 2, 5: 2}}
+  - features:
+      exclude:
+        - "Unnamed: 0"          # feature timestamp
+        - TS                    # self-report timestamp
+        - PLEASURE              # other self-reported answers: not sensor features
+        - AROUSAL
+        - DOMINANCE_CONTROL
+        - CONSUMPTION
+        - ACTIVITY
+        - respondent_id
+        - "('ECG_mean_heart_rate', 'raw0')"   # empty in the exports

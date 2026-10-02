@@ -1,0 +1,36 @@
+# The reference SWELL federated run from before the redesign
+# (configs/swell_federated_10runs.yaml with federated_architecture.example.yaml,
+# removed in F9.1), on the new framework: physiology only, three fogs, the same
+# held-out test subjects and the same subjects per fog, a global scaler fitted on
+# the training subjects, 12 rounds of 14 local epochs, ten executions.
+#
+# Subjects 8 and 11 were in no fog of the reference, so they take no role here.
+name: swell_reference
+description: Reference SWELL run (physiology, 3 fogs, fixed test subjects) on the new framework.
+topology: swell_three_fogs
+data:
+  datasets:
+    swell: {descriptor: datasets/swell_physiology.yaml}
+  roles:
+    seed: 67
+    scaler: global
+    overrides:
+      swell:
+        test: ["19", "20", "23", "24", "25"]
+        val: []
+        exclude: ["8", "11"]
+  placement:
+    name: explicit
+    assignment:
+      fog_0: [swell-1, swell-2, swell-3, swell-4, swell-5, swell-6]
+      fog_1: [swell-7, swell-9, swell-10, swell-12, swell-13, swell-14, swell-22]
+      fog_2: [swell-15, swell-16, swell-17, swell-18, swell-21]
+learning:
+  model: {name: modular_mlp, adapter_width: 128, trunk_hidden: [64], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, local_epochs: 14, lr: 0.001, batch_size: 32}
+rounds: 12
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  global: {every: 1}
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]

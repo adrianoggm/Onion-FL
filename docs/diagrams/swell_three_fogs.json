@@ -1,0 +1,83 @@
+{
+  "topology_id": "38ee627b304aa62b196ccc8ebe1474f2eeac815b1a008b635a357ad0a5d9eb33",
+  "name": "swell_three_fogs",
+  "levels": [
+    "global",
+    "fog",
+    "edge"
+  ],
+  "nodes": [
+    {
+      "id": "cloud",
+      "level": "global",
+      "role": "coordinator",
+      "parent": null,
+      "settings": {
+        "aggregator": "fedavg",
+        "server_optimizer": "replace"
+      }
+    },
+    {
+      "id": "fog_0",
+      "level": "fog",
+      "role": "aggregator",
+      "parent": "cloud",
+      "settings": {
+        "aggregator": "fedavg",
+        "quorum": 1.0
+      }
+    },
+    {
+      "id": "fog_1",
+      "level": "fog",
+      "role": "aggregator",
+      "parent": "cloud",
+      "settings": {
+        "aggregator": "fedavg",
+        "quorum": 1.0
+      }
+    },
+    {
+      "id": "fog_2",
+      "level": "fog",
+      "role": "aggregator",
+      "parent": "cloud",
+      "settings": {
+        "aggregator": "fedavg",
+        "quorum": 1.0
+      }
+    }
+  ],
+  "links": [
+    {
+      "src": "fog_0",
+      "dst": "cloud",
+      "transport": "mqtt",
+      "codec": "json",
+      "profile": "lan"
+    },
+    {
+      "src": "fog_1",
+      "dst": "cloud",
+      "transport": "mqtt",
+      "codec": "json",
+      "profile": "lan"
+    },
+    {
+      "src": "fog_2",
+      "dst": "cloud",
+      "transport": "mqtt",
+      "codec": "json",
+      "profile": "lan"
+    }
+  ],
+  "edge": {
+    "level": "edge",
+    "link_up": {
+      "transport": "mqtt",
+      "codec": "json",
+      "profile": "lan"
+    },
+    "settings": {}
+  }
+}

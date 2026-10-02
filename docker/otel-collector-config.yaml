@@ -71,7 +71,7 @@ processors:
         value: development
         action: upsert
       - key: service.namespace
-        value: flower-basic
+        value: onion-fl
         action: upsert
 
 exporters:
