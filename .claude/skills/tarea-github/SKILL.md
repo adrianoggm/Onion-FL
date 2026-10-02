@@ -34,7 +34,7 @@ Habla con la API REST de GitHub usando la credencial que ya guarda git (Git Cred
 | `issues [--milestone vX.Y.Z] [--state open\|closed\|all]` | Lista las issues |
 | `issue N` | Muestra la issue y el estado de sus dependencias (`**Depende de:**`) |
 | `backlog fichero.md [--dry-run]` | Crea etiquetas, milestones e issues desde un backlog; si un título ya existe, no lo duplica |
-| `pr N [--draft]` | Abre el PR de `task/#N` hacia `develop` |
+| `pr N [--draft]` | Abre o actualiza el PR de `task/#N` hacia `develop`, con las etiquetas, el milestone y el enlace de la issue |
 | `pr-status N` | Estado del PR y de los checks del CI |
 | `merge P` | Mergea con merge commit (nunca squash) |
 | `close N --pr P` | Comenta, cierra la issue y borra la rama remota |
@@ -89,8 +89,11 @@ git branch --set-upstream-to="origin/task/#N"
 ```
 
 **6. PR.** Solo con confirmación. Ejecuta `gh.py pr N`, que crea el PR con:
-- título igual al nombre de la rama, `task/#N`;
-- cuerpo con los asuntos de los commits sin formatear, más `Refs #N`.
+- base `develop` y título igual al nombre de la rama, `task/#N`;
+- las **mismas etiquetas y el mismo milestone que la issue**, asignado a quien lo abre;
+- un cuerpo que empieza por `Refs #N — <título de la issue>` (o `Closes`, si `develop` es la rama por defecto), seguido de los asuntos de los commits sin formatear.
+
+Si las etiquetas de la issue no son las adecuadas, corrígelas en la issue antes de abrir el PR. Si el PR ya existe, `gh.py pr N` lo actualiza en lugar de duplicarlo; úsalo también para arreglar un PR al que le falten metadatos.
 
 Después ejecuta `gh.py pr-status N` cada minuto o dos hasta que todos los checks terminen, y devuelve la URL.
 

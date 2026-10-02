@@ -221,25 +221,46 @@ def cmd_backlog(a) -> None:
         time.sleep(1.5)  # GitHub secondary rate limit on content creation
 
 
+def _open_pr(number: int) -> dict | None:
+    owner = REPO.split("/")[0]
+    pulls = paged(f"{R}/pulls?state=open&head={owner}:task/%23{number}")
+    return pulls[0] if pulls else None
+
+
 def cmd_pr(a) -> None:
+    """Open (or refresh) the PR of task/#N with the issue's labels, milestone and link."""
     branch = f"task/#{a.number}"
+    issue, _ = api("GET", f"{R}/issues/{a.number}")
     _git("fetch", "origin", a.base)
     subjects = _git("log", f"origin/{a.base}..{branch}", "--reverse", "--format=%s")
     if not subjects:
         raise SystemExit(f"{branch} has no commits ahead of origin/{a.base}")
-    body = f"{subjects}\n\nRefs #{a.number}"
-    pr, _ = api(
-        "POST",
-        f"{R}/pulls",
-        {
+    repo, _ = api("GET", R)
+    # Closing keywords only link/close issues when the PR targets the default branch
+    keyword = "Closes" if a.base == repo["default_branch"] else "Refs"
+    body = f"{keyword} #{a.number} — {issue['title']}\n\n{subjects}"
+    pr = _open_pr(a.number)
+    if pr:
+        pr, _ = api("PATCH", f"{R}/pulls/{pr['number']}", {"body": body})
+    else:
+        payload = {
             "title": branch,
             "head": branch,
             "base": a.base,
             "body": body,
             "draft": a.draft,
-        },
+        }
+        pr, _ = api("POST", f"{R}/pulls", payload)
+    user, _ = api("GET", "/user")
+    labels = [lab["name"] for lab in issue["labels"]]
+    milestone = issue["milestone"]["number"] if issue["milestone"] else None
+    meta = {"labels": labels, "milestone": milestone, "assignees": [user["login"]]}
+    api("PATCH", f"{R}/issues/{pr['number']}", meta)
+    ms = issue["milestone"]["title"] if issue["milestone"] else "—"
+    print(f"PR #{pr['number']} -> {pr['base']['ref']}: {pr['html_url']}")
+    print(
+        f"  labels={labels} milestone={ms} assignee={user['login']} body: {keyword} #{a.number}"
     )
-    print(f"PR #{pr['number']}: {pr['html_url']}")
 
 
 def cmd_pr_status(a) -> None:
@@ -355,7 +376,8 @@ def main() -> None:
     s.add_argument("file")
     s.add_argument("--dry-run", action="store_true")
     s = sub.add_parser(
-        "pr", help="open a PR from task/#N (title = branch, body = commit subjects)"
+        "pr",
+        help="open or refresh the PR of task/#N: issue labels, milestone, assignee, issue link + commit subjects",
     )
     s.add_argument("number", type=int)
     s.add_argument("--base", default="develop")
