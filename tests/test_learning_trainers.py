@@ -361,3 +361,19 @@ def test_fedprox_stays_closer_to_the_received_state(swell) -> None:
         )
 
     assert distance(prox) < distance(plain)
+
+
+def test_the_stub_can_add_seeded_noise_per_node() -> None:
+    def shifted(seed: int) -> dict:
+        model = build()
+        trainers.create("stub", {"shift": 0.0, "noise": 0.1}).train(
+            model, ctx=ctx(seed)
+        )
+        return state_arrays(model)
+
+    a, b, c = shifted(1), shifted(1), shifted(2)
+
+    for key in a:
+        np.testing.assert_array_equal(a[key], b[key])
+    assert any(not np.array_equal(a[k], c[k]) for k in a)
+    assert any(not np.array_equal(a[k], state_arrays(build())[k]) for k in a)
