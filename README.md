@@ -464,10 +464,12 @@ just format             # ruff check --fix + ruff format
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` | Pushes to `main`/`develop` and every PR | `ruff check`, `ruff format --check` and `pytest` on Python 3.11 |
-| `pr-review.yml` | PRs to `main`/`develop` | Trivy filesystem scan, uploaded to GitHub code scanning |
-| `codeql.yml` | Weekly + pushes to `main` | CodeQL analysis. GitHub disabled it for inactivity; it has to be re-enabled from the Actions tab. |
-| Dependabot | Weekly | Dependency and action updates |
+| `ci.yml` | PRs into `main` (`develop` → `main` releases) and manual dispatch | `ruff check`, `ruff format --check` and `pytest` on Python 3.11 |
+| `pr-review.yml` | PRs into `main` | Trivy filesystem scan, uploaded to GitHub code scanning |
+| `codeql.yml` | PRs into `main` and manual dispatch | CodeQL analysis. GitHub disabled it for inactivity; it has to be re-enabled from the Actions tab. |
+| Dependabot | Weekly | Dependency and action updates, opened against `develop` |
+
+To save CI minutes, workflows only run on release PRs into `main`. Task PRs into `develop` are gated by running the same checks locally (`just lint` and `just test`).
 
 ---
 

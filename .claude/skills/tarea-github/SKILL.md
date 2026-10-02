@@ -47,6 +47,7 @@ Habla con la API REST de GitHub usando la credencial que ya guarda git (Git Cred
 3. **El push y el merge solo se hacen con una orden explícita.** Commitear no da permiso para empujar.
 4. **GitHub no cierra la issue al mergear en `develop`**, porque no es la rama por defecto. `Closes #N` no basta: cierra con `gh.py close N --pr P`.
 5. **Verifica tú y reporta la evidencia.** Si algo no se ha podido comprobar, dilo con todas las letras.
+6. **El CI de GitHub solo corre en los PR hacia `main`**, para no gastar minutos. En los PR de tarea hacia `develop`, la verificación local de la etapa 3 es la garantía: repórtala en el PR antes de pedir el merge.
 
 ## Etapas
 
@@ -95,9 +96,9 @@ git branch --set-upstream-to="origin/task/#N"
 
 Si las etiquetas de la issue no son las adecuadas, corrígelas en la issue antes de abrir el PR. Si el PR ya existe, `gh.py pr N` lo actualiza en lugar de duplicarlo; úsalo también para arreglar un PR al que le falten metadatos.
 
-Después ejecuta `gh.py pr-status N` cada minuto o dos hasta que todos los checks terminen, y devuelve la URL.
+Devuelve la URL junto con el resultado de la verificación local: lint, formato y tests, con sus recuentos. Los PR hacia `develop` no tienen checks de GitHub, por diseño.
 
-Si el CI falla, arréglalo con un commit nuevo en la rama, sin `--amend` ni force push, y vuelve a empujar cuando se pida.
+Si algo falla, arréglalo con un commit nuevo en la rama, sin `--amend` ni force push, y vuelve a empujar cuando se pida.
 
 **7. Merge y cierre.** Solo con la orden:
 
@@ -107,13 +108,13 @@ python .claude/skills/tarea-github/scripts/gh.py close N --pr P
 git switch develop && git pull --ff-only origin develop && git fetch --prune origin && git branch -d "task/#N"
 ```
 
-`merge` se niega a mergear si el CI no está en verde. No uses `--force` sin una orden expresa.
+En los PR hacia `main`, `merge` se niega a mergear si el CI no está en verde; no uses `--force` sin una orden expresa. En los PR hacia `develop` no hay CI, y `merge` solo avisa.
 
 Al terminar, informa de lo integrado y propón la siguiente issue del milestone que ya no tenga dependencias abiertas.
 
 **8. Release.** Cuando el milestone esté completo y se pida:
 1. `gh.py release-pr vX.Y.Z`;
-2. esperar a que el CI esté en verde;
+2. esperar a que el CI esté en verde (`gh.py pr-status` sobre el PR de release); es el único momento en que corre el CI de GitHub;
 3. pedir aprobación y ejecutar `gh.py merge P`;
 4. `gh.py release vX.Y.Z`.
 

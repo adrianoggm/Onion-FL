@@ -19,7 +19,7 @@ python -m pytest                      # full suite; no MQTT broker needed (MQTT 
 python -m pytest tests/test_runtime_protocol.py::test_name -q   # single test
 python -m pytest -m "not slow"        # markers: slow, integration
 
-ruff check .                          # CI gate
+ruff check .                          # CI gate (CI only runs on PRs into main; run these locally before every task PR)
 ruff format --check .                 # CI gate
 just format                           # ruff check --fix + ruff format
 ```

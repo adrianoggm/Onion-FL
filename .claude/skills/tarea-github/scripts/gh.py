@@ -284,7 +284,13 @@ def cmd_merge(a) -> None:
         for r in runs["check_runs"]
         if r["conclusion"] not in {"success", "skipped", "neutral"}
     ]
-    if (bad or not runs["check_runs"]) and not a.force:
+    # CI only runs on PRs into main; task PRs into develop are gated by local verification
+    no_ci_expected = pr["base"]["ref"] != "main" and not runs["check_runs"]
+    if no_ci_expected:
+        print(
+            f"PR #{a.pr} -> {pr['base']['ref']}: no CI by design; local verification is the gate"
+        )
+    elif (bad or not runs["check_runs"]) and not a.force:
         raise SystemExit(
             f"PR #{a.pr} checks not green: {bad or 'no checks yet'} (use --force to override)"
         )
@@ -386,7 +392,7 @@ def main() -> None:
     s.add_argument("number", type=int)
     s = sub.add_parser(
         "merge",
-        help="merge a PR with a merge commit (never squash); refuses unless CI is green",
+        help="merge a PR with a merge commit (never squash); PRs into main need green CI",
     )
     s.add_argument("pr", type=int)
     s.add_argument(
