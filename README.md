@@ -6,7 +6,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
-> **About this README.** It describes v0.2.0, the redesigned framework (October 2026). Every number in it comes from a file in the repository, cited next to it. The datasets are not in git, so **no experiment of the new framework has been run on real data in this repository yet**; [§1](#1-status) says exactly what is verified and how.
+> **About this README.** It describes the redesigned framework as of v0.3.0 (October 2026), which adds Onion-FL Studio to v0.2.0. Every number in it comes from a file in the repository, cited next to it. The datasets are not in git, so **no experiment of the new framework has been run on real data in this repository yet**; [§1](#1-status) says exactly what is verified and how.
 
 ## Contents
 
@@ -39,10 +39,10 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Simulation | ✅ | Virtual clock; links with latency, jitter, bandwidth and loss; compute and availability models; deterministic for a seed |
 | Real runs | ✅ | One process per aggregator over MQTT; a manual `onion_fl node` start for several machines. Verified locally against Mosquitto: 3 processes, every message delivered, latencies measured, and the same final model as the simulation |
 | Observability | ✅ | `runs/<run_id>/` with signed events, summary and final model. Diagnostics at every aggregator; analysis API with mean ± CI over seeds; HTML report; Prometheus and OpenTelemetry sinks; Grafana dashboard |
-| CLI | ✅ | `onion_fl data · topology · plan · run · node · report · baseline · schema` |
-| Front (Onion-FL Studio) | ❌ | Planned for v0.3.0 ([#103](https://github.com/adrianoggm/Onion-FL/issues/103)) |
+| CLI | ✅ | `onion_fl data · topology · plan · run · node · report · baseline · schema · serve` |
+| Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
-| Tests | ✅ | 657 pass and 20 skip locally: the skips need `data/` or an MQTT broker. The CI starts a broker, so only the data-dependent ones skip there |
+| Tests | ✅ | 690 pass and 20 skip locally: the skips need `data/` or an MQTT broker. The CI starts a broker, so only the data-dependent ones skip there |
 
 ### What the results can and can't support today
 
@@ -89,6 +89,20 @@ onion_fl baseline experiments/mix_ab.yaml     # LR, RF, XGBoost on the same test
 ```
 
 For a real run over MQTT, start the stack (`just docker-up`, [docker/README.md](docker/README.md)), point the links at the broker and run `onion_fl run <experiment> --mode real`.
+
+### Studio
+
+```bash
+uv pip install --python .venv -e ".[studio]"   # FastAPI and uvicorn (already in dev)
+onion_fl serve                                  # http://127.0.0.1:8765
+```
+
+The Studio reads and writes the same files as the command line (`topologies/`, `experiments/`, `runs/`). It has five areas:
+- **Topologies:** the library, the graph and an editor that validates as you type.
+- **Experiments:** scenarios, the dry-run plan (composition per fog, groups per link, warnings) and a launch button.
+- **Runs:** status, identity, metrics per level and live events.
+- **Compare:** mean ± CI over seeds, by topology, scenario or dataset.
+- **Tutorial:** every plugin explained, with previews of sharing, placement and network profiles.
 
 ---
 
@@ -198,6 +212,7 @@ Every runtime event is enriched into one schema and written to `events.jsonl`, t
   - Drift across rounds, participation (with late updates and time to quorum) and fairness of the edge scores per dataset.
   - Traffic per link and round, which the run recorder adds.
 - **Analysis.** `load_runs("runs/").compare(level="fog", metric="accuracy", by=["topology_id"])` gives the mean ± 95% CI over seeds per round, plus the spread across the nodes of the level. `onion_fl report` builds an HTML page from it.
+- **Studio.** `onion_fl serve` gives the same views in the browser, and follows running runs live.
 - **Live.**
   - The `prometheus` sink serves `onionfl_*` series on port 9464 for the Grafana dashboard.
   - The `otel` sink creates one span per send and per receive, linked by the message id. It exports them to the collector of the Docker stack.
@@ -259,6 +274,7 @@ src/onion_fl/
 ├── transports/      memory, mqtt
 ├── observability/   events, run, diagnostics, analysis (+ report), sinks
 ├── experiment/      config, sweep, runner, real (processes), cli
+├── studio/          the web app: FastAPI API, dry-run previews, static single-page app
 ├── baselines.py     LR, RF, XGBoost and subject cross-validation
 └── datasets/        loaders from before the redesign, kept as the parity reference
 datasets/            dataset descriptors (YAML)
@@ -303,6 +319,8 @@ The workflows run only on release PRs into `main`, to save CI minutes; task PRs 
   - WESAD wrist signals are held at the label rate (700 Hz), so their statistics match the previous loader only approximately; chest signals match exactly.
   - The SWEET minute deduplication can keep a report that has no stress value.
 - **Global evaluation with personal or zone heads.** With `fedper` or `zone` sharing, the global model has no trained heads. Use the edge and zone scores.
+- **Lossy links need deadlines.** The simulator drops messages on lossy profiles (`wifi`, `4g`, `lora`) without retransmitting them. An aggregator without a `deadline` then waits for a lost update for ever, and the run ends `incomplete`. `onion_fl plan` and the Studio warn about it.
+- **The Studio is local.** It listens on `127.0.0.1` with no authentication; don't expose it.
 - **Security.** MQTT runs without TLS or authentication, the broker sees every update, and there is no secure aggregation or differential privacy.
 - **Real-run latency** across machines needs NTP-synchronised clocks.
 - **Manual deployments** across machines need the same data and cache on each machine, because every process rebuilds the scenario.
@@ -314,7 +332,7 @@ The workflows run only on release PRs into `main`, to save CI minutes; task PRs 
 
 | Milestone | Content |
 |---|---|
-| v0.3.0 | Onion-FL Studio: topology library and editor, run monitor, comparisons between topologies and scenarios, tutorial with dry-run previews, `onion_fl serve` ([#103](https://github.com/adrianoggm/Onion-FL/issues/103)) |
+| v0.3.0 | ✅ Onion-FL Studio: topology library and editor, run monitor, comparisons between topologies and scenarios, tutorial with dry-run previews, `onion_fl serve` ([#103](https://github.com/adrianoggm/Onion-FL/issues/103)) |
 | Later | gRPC and Flower transports and richer network emulation (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104)); real distributed deployment (E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)); secure aggregation, TLS and differential privacy |
 
 ---
@@ -329,7 +347,7 @@ The workflows run only on release PRs into `main`, to save CI minutes; task PRs 
 | 2025-11 | First working federated SWELL run; `clients/`, `brokers/`, `servers/` structure |
 | 2025-12 | OpenTelemetry, Jaeger, Prometheus and Grafana; SWEET baselines |
 | 2026-03 / 04 | `justfile`; `accept`/`strict` stale-update policy; pure-function refactor |
-| 2026-10 | v0.2.0: redesign into a framework (spec in `docs/superpowers/specs/`), old runtime removed |
+| 2026-10 | v0.2.0: redesign into a framework (spec in `docs/superpowers/specs/`), old runtime removed; v0.3.0: Onion-FL Studio |
 
 ---
 

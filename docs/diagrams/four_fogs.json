@@ -14,7 +14,8 @@
       "parent": null,
       "settings": {
         "aggregator": "fedavg",
-        "server_optimizer": "replace"
+        "server_optimizer": "replace",
+        "deadline": "300s"
       }
     },
     {

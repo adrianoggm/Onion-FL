@@ -6,6 +6,7 @@ root:
   id: cloud
   aggregator: fedavg
   server_optimizer: replace
+  deadline: 300s          # the wifi links lose messages: never wait for ever
 fog:
   defaults:
     aggregator: fedavg
