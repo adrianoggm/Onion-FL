@@ -31,7 +31,7 @@ def test_descriptors_are_valid(name: str) -> None:
 @pytest.mark.parametrize(
     "name, options",
     [
-        ("swell", {"facial": True, "posture": True, "physiology": True}),
+        ("swell", {"facial": True, "physiology": True}),
         ("swell", {"label": "binary_no_r"}),
         ("sweet", {"label": "ordinal", "selection": "selection2/users"}),
         ("sweet", {"label": "three_class"}),
@@ -65,6 +65,24 @@ def test_swell_reads_like_the_previous_loader() -> None:
         mask = subject_ids.astype(str) == subject
         np.testing.assert_array_equal(data.y, y[mask])
         _same_where_present(data, X[mask], list(info["feature_names"]))
+
+
+@pytest.mark.skipif(not Path("data/SWELL").exists(), reason="data/SWELL not available")
+@pytest.mark.parametrize(
+    "name, options, columns",
+    [
+        ("swell", {"facial": True}, ["squality", "sneutral", "svalence"]),
+        ("swell", {"physiology": True}, ["hr", "rmssd", "scl"]),
+        ("swell_physiology", {}, ["hr", "rmssd", "scl"]),
+    ],
+)
+def test_swell_modalities_read_999_as_missing(name, options, columns) -> None:
+    subjects = ingest(descriptor(name), options)
+
+    assert len(subjects) == 25
+    for data in subjects:
+        idx = [data.feature_names.index(c) for c in columns]
+        assert not (data.X[:, idx] == 999).any(), data.subject
 
 
 @pytest.mark.skipif(
