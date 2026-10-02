@@ -92,7 +92,8 @@ A partir de esa declaración, la herramienta ejecuta los experimentos en simulac
   - `set_timer(retardo, nombre)` y `cancel_timer(nombre)` para los temporizadores;
   - `now()` para consultar el reloj;
   - `rng` para obtener aleatoriedad con semilla derivada del experimento y del id del nodo;
-  - `emit(nombre, value=…, **tags)` para la instrumentación.
+  - `emit(nombre, value=…, **tags)` para la instrumentación;
+  - `compute(muestras)` para declarar el trabajo hecho en el manejador. El runtime lo convierte en tiempo ocupado con el modelo de cómputo del nodo, y los mensajes enviados en ese manejador salen al terminar.
 - **`Runtime`:** contiene los nodos, entrega los mensajes, dispara los temporizadores y lleva el reloj. Hay dos implementaciones: `SimRuntime` (§9.1) y `RealRuntime` (§9.2).
 - **`Transport`:** `start()`, `send(dirección, bytes)`, `on_receive(callback)` y `stop()`. Cada enlace elige el suyo en la topología.
 - **`Topology`:** árbol validado. Cada nodo tiene `id`, `parent`, `level`, rol y ajustes, y cada enlace tiene transporte, codec y perfil de red. Expone `topology_id` (§10.1) y `to_graph()` (§11).
@@ -105,7 +106,7 @@ src/onion_fl/
 ├── core/           message, codec, node, context, topology, registry, ids
 ├── roles/          coordinator, aggregator, edge (incluye el modo evaluador)
 ├── runtime/        sim (reloj virtual, enlaces, cómputo, disponibilidad), real
-├── transports/     memory, mqtt
+├── transports/     mqtt (en simulación, el transporte en memoria es la capa de enlaces de runtime/sim)
 ├── learning/       model, sharing, aggregators, trainers, server_optimizers, init
 ├── data/           contract, ingest (lectores y pasos), cache, roles, placement
 ├── observability/  events, sinks/{jsonl,prometheus,otel}, diagnostics, metrics, analysis, report
@@ -465,7 +466,7 @@ Al final de cada fase, `develop` funciona y los tests pasan. Cada fase tiene su 
 
 **Fase 1. Renombrado:** `flower_basic` pasa a `onion_fl`.
 
-**Fase 2. Núcleo:** `core/` y `runtime/sim` con `transports/memory`.
+**Fase 2. Núcleo:** `core/` y `runtime/sim`, cuya capa de enlaces es el transporte en memoria.
 
 **Fase 3. Aprendizaje:** `learning/`.
 

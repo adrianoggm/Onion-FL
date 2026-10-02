@@ -34,6 +34,13 @@ class Context(Protocol):
     def emit(self, name: str, value: float | None = None, **tags: Any) -> None:
         """Record an instrumentation event tagged with this node."""
 
+    def compute(self, samples: float) -> None:
+        """Declare work done in this handler (e.g. training samples x epochs).
+
+        The runtime turns it into busy time with the node's compute model; the
+        messages sent in this handler leave when that time has passed.
+        """
+
 
 def node_rng(seed: int, node_id: str) -> np.random.Generator:
     """Random generator of one node, derived from the experiment seed and the node id.
