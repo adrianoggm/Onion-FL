@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from flower_basic.federated_architecture import (
+from onion_fl.federated_architecture import (
     ClientSpec,
     FederatedArchitecture,
     FogNodeSpec,

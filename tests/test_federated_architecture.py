@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from flower_basic.federated_architecture import (
+from onion_fl.federated_architecture import (
     build_runtime_plan,
     infer_primary_workflow,
     load_architecture_config,

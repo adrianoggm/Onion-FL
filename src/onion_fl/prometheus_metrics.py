@@ -4,7 +4,7 @@ This module provides Prometheus metrics for monitoring the federated learning
 system in Grafana. Metrics are exposed via HTTP endpoint that Prometheus scrapes.
 
 Usage:
-    from flower_basic.prometheus_metrics import (
+    from onion_fl.prometheus_metrics import (
         start_metrics_server,
         FL_ROUNDS, FL_ACCURACY, FL_LOSS, ...
     )

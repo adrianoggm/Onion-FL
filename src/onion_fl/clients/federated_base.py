@@ -9,19 +9,19 @@ from typing import Any
 
 import torch
 
-from flower_basic.clients.baseclient import BaseMQTTComponent
-from flower_basic.datasets.federated_common import ClientDataLoaders
-from flower_basic.runtime_protocol import (
+from onion_fl.clients.baseclient import BaseMQTTComponent
+from onion_fl.datasets.federated_common import ClientDataLoaders
+from onion_fl.runtime_protocol import (
     GlobalModelEnvelope,
     build_client_update_payload,
     decode_global_model_message,
 )
-from flower_basic.telemetry import (
+from onion_fl.telemetry import (
     start_linked_consumer_span,
     start_linked_producer_span,
     start_span,
 )
-from flower_basic.training.local import (
+from onion_fl.training.local import (
     EvalResult,
     TrainRoundResult,
     evaluate_classifier,

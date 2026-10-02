@@ -19,17 +19,17 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from flower_basic.clients.federated_base import (
+from onion_fl.clients.federated_base import (
     ClientDataLoaders,
     FederatedMQTTClientBase,
 )
-from flower_basic.datasets.federated_common import (
+from onion_fl.datasets.federated_common import (
     build_client_data,
     resolve_split_paths,
 )
-from flower_basic.datasets.swell_federated import load_node_split
-from flower_basic.logging_utils import enable_timestamped_print
-from flower_basic.prometheus_metrics import (
+from onion_fl.datasets.swell_federated import load_node_split
+from onion_fl.logging_utils import enable_timestamped_print
+from onion_fl.prometheus_metrics import (
     CLIENT_LOCAL_ACCURACY,
     CLIENT_LOCAL_LOSS,
     CLIENT_TEST_SAMPLES,
@@ -41,9 +41,9 @@ from flower_basic.prometheus_metrics import (
     push_metrics_to_gateway,
     start_metrics_server,
 )
-from flower_basic.runtime_protocol import GlobalModelEnvelope
-from flower_basic.swell_model import SwellMLP
-from flower_basic.telemetry import (
+from onion_fl.runtime_protocol import GlobalModelEnvelope
+from onion_fl.swell_model import SwellMLP
+from onion_fl.telemetry import (
     create_counter,
     create_gauge,
     create_histogram,
@@ -51,7 +51,7 @@ from flower_basic.telemetry import (
     record_metric,
     shutdown_telemetry,
 )
-from flower_basic.training.local import EvalResult, TrainRoundResult
+from onion_fl.training.local import EvalResult, TrainRoundResult
 
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))

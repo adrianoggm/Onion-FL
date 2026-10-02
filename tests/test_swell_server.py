@@ -7,13 +7,13 @@ from unittest.mock import Mock, patch
 import flwr as fl
 import numpy as np
 
-from flower_basic.servers.swell import (
+from onion_fl.servers.swell import (
     MQTTFedAvgSwell,
     _evaluate_global,
     _load_eval_data,
     _load_manifest_split_counts,
 )
-from flower_basic.swell_model import SwellMLP
+from onion_fl.swell_model import SwellMLP
 
 
 def _write_split(path: Path, n_samples: int, n_features: int) -> None:

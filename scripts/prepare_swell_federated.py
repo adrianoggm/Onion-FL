@@ -20,7 +20,7 @@ src_dir = repo_root / "src"
 if src_dir.exists() and str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
-from flower_basic.datasets.swell_federated import plan_and_materialize_swell_federated
+from onion_fl.datasets.swell_federated import plan_and_materialize_swell_federated
 
 
 def main() -> None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
-from flower_basic import prometheus_metrics
+from onion_fl import prometheus_metrics
 
 
 def test_get_metrics_port_from_env_priority(monkeypatch) -> None:

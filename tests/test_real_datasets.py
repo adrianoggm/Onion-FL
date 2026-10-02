@@ -8,8 +8,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from flower_basic.datasets.multimodal import load_real_multimodal_dataset
-from flower_basic.datasets.samples import (
+from onion_fl.datasets.multimodal import load_real_multimodal_dataset
+from onion_fl.datasets.samples import (
     load_swell_sample_features,
     load_wesad_sample_windows,
 )
@@ -75,11 +75,11 @@ def test_multimodal_combination_uses_real_samples(
         return swell_split
 
     monkeypatch.setattr(
-        "flower_basic.datasets.multimodal.load_wesad_dataset",
+        "onion_fl.datasets.multimodal.load_wesad_dataset",
         _wesad_loader,
     )
     monkeypatch.setattr(
-        "flower_basic.datasets.multimodal.load_swell_dataset",
+        "onion_fl.datasets.multimodal.load_swell_dataset",
         _swell_loader,
     )
 

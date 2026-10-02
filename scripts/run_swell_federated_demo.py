@@ -2,10 +2,10 @@
 """Run an end-to-end SWELL federated demo from an existing manifest.
 
 This launcher uses the current module layout:
-  - `flower_basic.servers.swell`
-  - `flower_basic.clients.fog_bridge_swell`
-  - `flower_basic.brokers.fog`
-  - `flower_basic.clients.swell`
+  - `onion_fl.servers.swell`
+  - `onion_fl.clients.fog_bridge_swell`
+  - `onion_fl.brokers.fog`
+  - `onion_fl.clients.swell`
 """
 
 from __future__ import annotations
@@ -139,7 +139,7 @@ def build_launch_plan(
     server_cmd = [
         python_exec,
         "-m",
-        "flower_basic.servers.swell",
+        "onion_fl.servers.swell",
         "--server_addr",
         server_addr,
         "--input_dim",
@@ -165,7 +165,7 @@ def build_launch_plan(
         bridge_cmd = [
             python_exec,
             "-m",
-            "flower_basic.clients.fog_bridge_swell",
+            "onion_fl.clients.fog_bridge_swell",
             "--server",
             server_addr,
             "--input_dim",
@@ -188,7 +188,7 @@ def build_launch_plan(
     broker_cmd = [
         python_exec,
         "-m",
-        "flower_basic.brokers.fog",
+        "onion_fl.brokers.fog",
         "--mqtt-broker",
         mqtt_broker,
         "--mqtt-port",
@@ -212,7 +212,7 @@ def build_launch_plan(
             client_cmd = [
                 python_exec,
                 "-m",
-                "flower_basic.clients.swell",
+                "onion_fl.clients.swell",
                 "--node_dir",
                 str(node_dir),
                 "--region",

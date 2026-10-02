@@ -51,7 +51,7 @@ SRC_PATH = Path(__file__).resolve().parents[1] / "src"
 if SRC_PATH.exists() and str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-from flower_basic.datasets import load_sweet_sample_dataset
+from onion_fl.datasets import load_sweet_sample_dataset
 
 
 def _build_models(random_state: int) -> dict[str, ClassifierMixin]:

@@ -21,8 +21,8 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
-from flower_basic.datasets.multimodal import load_real_multimodal_dataset
-from flower_basic.evaluation import group_cross_validation
+from onion_fl.datasets.multimodal import load_real_multimodal_dataset
+from onion_fl.evaluation import group_cross_validation
 
 OUTPUT_PATH = Path("multimodal_baseline_results.json")
 

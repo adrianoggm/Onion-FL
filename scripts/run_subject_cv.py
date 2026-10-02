@@ -22,10 +22,10 @@ SRC_PATH = PROJECT_ROOT / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-from flower_basic.datasets.multimodal import load_real_multimodal_dataset
-from flower_basic.datasets.sweet_samples import load_sweet_sample_full
-from flower_basic.datasets.swell import load_swell_dataset
-from flower_basic.datasets.wesad import WESAD_SUBJECTS, load_wesad_dataset
+from onion_fl.datasets.multimodal import load_real_multimodal_dataset
+from onion_fl.datasets.sweet_samples import load_sweet_sample_full
+from onion_fl.datasets.swell import load_swell_dataset
+from onion_fl.datasets.wesad import WESAD_SUBJECTS, load_wesad_dataset
 
 
 def _stack_split(

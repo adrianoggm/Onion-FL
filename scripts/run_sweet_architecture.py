@@ -88,7 +88,7 @@ def dispatch_config(config: dict[str, Any]) -> Path:
     )
 
     # Import and run materialization
-    from flower_basic.datasets.sweet_federated import (
+    from onion_fl.datasets.sweet_federated import (
         plan_and_materialize_sweet_federated,
     )
 
@@ -194,7 +194,7 @@ def launch_federated_system(
     server_cmd = [
         sys.executable,
         "-m",
-        "flower_basic.servers.sweet",
+        "onion_fl.servers.sweet",
         "--input-dim",
         str(input_dim),
         "--num-classes",
@@ -242,7 +242,7 @@ def launch_federated_system(
     broker_cmd = [
         sys.executable,
         "-m",
-        "flower_basic.brokers.sweet_fog",
+        "onion_fl.brokers.sweet_fog",
         "--mqtt-broker",
         mqtt_cfg["broker"],
         "--mqtt-port",
@@ -269,7 +269,7 @@ def launch_federated_system(
         bridge_cmd = [
             sys.executable,
             "-m",
-            "flower_basic.clients.fog_bridge_sweet",
+            "onion_fl.clients.fog_bridge_sweet",
             "--server",
             server_connect_addr,
             "--region",
@@ -308,7 +308,7 @@ def launch_federated_system(
             client_cmd = [
                 sys.executable,
                 "-m",
-                "flower_basic.clients.sweet",
+                "onion_fl.clients.sweet",
                 "--node-dir",
                 str(node_dir),
                 "--region",

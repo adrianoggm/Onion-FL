@@ -29,7 +29,7 @@ try:
         repo_root / "docker" / ".env",  # project/docker/.env
         Path.cwd() / ".env",  # cwd/.env
         Path.cwd() / "docker" / ".env",  # cwd/docker/.env
-        Path.home() / "flower-basic" / ".env",  # home/flower-basic/.env
+        Path.home() / "onion-fl" / ".env",  # home/onion-fl/.env
     ]
 
     for env_path in possible_env_paths:

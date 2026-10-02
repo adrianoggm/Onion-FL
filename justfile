@@ -72,12 +72,12 @@ default:
     self_pid="$$"; \
     parent_pid="$PPID"; \
     patterns=( \
-      "$repo_root/.venv/bin/python -m flower_basic." \
+      "$repo_root/.venv/bin/python -m onion_fl." \
       "$repo_root/.venv/bin/python scripts/run_architecture_from_config.py" \
       "$repo_root/.venv/bin/python scripts/run_sweet_architecture.py" \
       "$repo_root/.venv/bin/python scripts/run_swell_federated_demo.py" \
       "$repo_root/.venv/bin/python scripts/run_sweet_federated_demo.py" \
-      "python -m flower_basic." \
+      "python -m onion_fl." \
       "python scripts/run_architecture_from_config.py" \
       "python scripts/run_sweet_architecture.py" \
       "python scripts/run_swell_federated_demo.py" \

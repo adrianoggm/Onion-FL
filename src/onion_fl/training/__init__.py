@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Training helpers shared by federated clients and servers."""
 
-from flower_basic.training.local import (
+from onion_fl.training.local import (
     DetailedEvalResult,
     EvalResult,
     TrainRoundResult,

@@ -1,13 +1,13 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from flower_basic.clients.baseclient import BaseMQTTComponent
+from onion_fl.clients.baseclient import BaseMQTTComponent
 
 
 def test_baseclient_subscribes_and_publishes():
     mock_client = MagicMock()
 
-    with patch("flower_basic.clients.baseclient.mqtt.Client", return_value=mock_client):
+    with patch("onion_fl.clients.baseclient.mqtt.Client", return_value=mock_client):
         comp = BaseMQTTComponent(
             tag="[TEST]",
             mqtt_broker="localhost",

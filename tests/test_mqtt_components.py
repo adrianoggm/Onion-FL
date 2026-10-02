@@ -26,11 +26,11 @@ class TestBrokerFog:
             "conv1.bias": np.random.randn(16).tolist(),
         }
 
-    @patch("flower_basic.brokers.fog.weighted_average")
-    @patch("flower_basic.brokers.fog.buffers")
+    @patch("onion_fl.brokers.fog.weighted_average")
+    @patch("onion_fl.brokers.fog.buffers")
     def test_on_update_accumulation(self, mock_buffers, mock_weighted_avg):
         """Test that updates are correctly accumulated in buffers."""
-        from flower_basic.brokers.fog import on_update
+        from onion_fl.brokers.fog import on_update
 
         # Setup mock buffers to simulate a list
         test_buffer = []
@@ -61,11 +61,11 @@ class TestBrokerFog:
         # Buffer should have the new weights added
         assert len(test_buffer) == 2  # 1 existing + 1 new
 
-    @patch("flower_basic.brokers.fog.weighted_average")
-    @patch("flower_basic.brokers.fog.buffers")
+    @patch("onion_fl.brokers.fog.weighted_average")
+    @patch("onion_fl.brokers.fog.buffers")
     def test_on_update_triggers_aggregation(self, mock_buffers, mock_weighted_avg):
         """Test that aggregation is triggered when buffer is full."""
-        from flower_basic.brokers.fog import K, on_update
+        from onion_fl.brokers.fog import K, on_update
 
         # Create a realistic buffer with items that can be iterated
         buffer_items = [
@@ -111,7 +111,7 @@ class TestBrokerFog:
 
     def test_weighted_average_computation(self):
         """Test the weighted average computation."""
-        from flower_basic.brokers.fog import weighted_average
+        from onion_fl.brokers.fog import weighted_average
 
         # Create test updates
         updates = [
@@ -137,7 +137,7 @@ class TestBrokerFog:
 
     def test_weighted_average_with_custom_weights(self):
         """Test weighted average with custom weights."""
-        from flower_basic.brokers.fog import weighted_average
+        from onion_fl.brokers.fog import weighted_average
 
         updates = [{"param1": [1.0, 2.0]}, {"param1": [3.0, 4.0]}]
         weights = [0.7, 0.3]
@@ -154,7 +154,7 @@ class TestBrokerFog:
 
     def test_malformed_message_handling(self):
         """Test handling of malformed MQTT messages."""
-        from flower_basic.brokers.fog import on_update
+        from onion_fl.brokers.fog import on_update
 
         # Test with invalid JSON
         mock_msg = Mock()
@@ -168,7 +168,7 @@ class TestBrokerFog:
 
     def test_missing_fields_handling(self):
         """Test handling of messages with missing required fields."""
-        from flower_basic.brokers.fog import on_update
+        from onion_fl.brokers.fog import on_update
 
         # Test with missing weights
         test_payload = {
@@ -188,7 +188,7 @@ class TestBrokerFog:
 
     def test_on_update_strict_policy_drops_out_of_round_updates(self):
         """Strict policy should discard updates that do not match the expected round."""
-        from flower_basic.brokers import fog
+        from onion_fl.brokers import fog
 
         original_policy = fog.STALE_UPDATE_POLICY
         original_round = fog.LATEST_GLOBAL_ROUND
@@ -224,7 +224,7 @@ class TestBrokerFog:
 
     def test_on_update_accept_policy_keeps_stale_updates(self):
         """Accept policy should keep stale updates and defer the study to aggregation."""
-        from flower_basic.brokers import fog
+        from onion_fl.brokers import fog
 
         original_policy = fog.STALE_UPDATE_POLICY
         original_round = fog.LATEST_GLOBAL_ROUND
@@ -261,7 +261,7 @@ class TestBrokerFog:
 
     def test_on_update_publishes_round_delay_metadata(self):
         """Published partials should expose round/delay metadata for later analysis."""
-        from flower_basic.brokers import fog
+        from onion_fl.brokers import fog
 
         original_policy = fog.STALE_UPDATE_POLICY
         original_round = fog.LATEST_GLOBAL_ROUND
@@ -307,7 +307,7 @@ class TestBrokerFog:
 
     def test_buffer_size_otel_metric_tracks_current_value(self):
         """Broker OTEL buffer metric should emit deltas for the current buffer size."""
-        from flower_basic.brokers.federated_base import (
+        from onion_fl.brokers.federated_base import (
             BrokerCallbacks,
             BrokerConfig,
             BrokerTelemetryHandles,

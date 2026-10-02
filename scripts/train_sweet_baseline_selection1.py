@@ -28,7 +28,7 @@ from sklearn.preprocessing import StandardScaler
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from flower_basic.datasets.sweet_samples import load_sweet_sample_full
+from onion_fl.datasets.sweet_samples import load_sweet_sample_full
 
 
 def main():

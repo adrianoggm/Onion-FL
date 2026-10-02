@@ -17,7 +17,7 @@ class TestSweetBroker:
         }
 
     def test_on_update_accumulates(self):
-        from flower_basic.brokers import sweet_fog
+        from onion_fl.brokers import sweet_fog
 
         original_k = sweet_fog.K
         try:
@@ -43,7 +43,7 @@ class TestSweetBroker:
             sweet_fog.K = original_k
 
     def test_on_update_publishes_partial(self):
-        from flower_basic.brokers import sweet_fog
+        from onion_fl.brokers import sweet_fog
 
         original_k = sweet_fog.K
         try:

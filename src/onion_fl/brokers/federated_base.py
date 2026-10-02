@@ -11,12 +11,12 @@ from typing import Any
 
 import numpy as np
 
-from flower_basic.runtime_protocol import (
+from onion_fl.runtime_protocol import (
     build_partial_aggregate_payload,
     decode_client_update_message,
     summarize_update_batch,
 )
-from flower_basic.telemetry import (
+from onion_fl.telemetry import (
     record_metric,
     start_linked_consumer_span,
     start_linked_producer_span,

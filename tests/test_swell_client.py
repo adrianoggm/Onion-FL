@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 import torch
 
-from flower_basic.clients.swell import SwellFLClientMQTT
+from onion_fl.clients.swell import SwellFLClientMQTT
 
 
 def _write_split(path: Path, n_samples: int, n_features: int, subject: str = "1"):
@@ -33,7 +33,7 @@ def _mock_mqtt_init(self, tag, mqtt_broker, mqtt_port, subscriptions=None) -> No
 
 def test_init_raises_on_empty_train(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
 
     node_dir = tmp_path / "node"
@@ -46,7 +46,7 @@ def test_init_raises_on_empty_train(tmp_path: Path, monkeypatch) -> None:
 
 def test_val_and_test_counts(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
 
     node_dir = tmp_path / "node"
@@ -63,7 +63,7 @@ def test_val_and_test_counts(tmp_path: Path, monkeypatch) -> None:
 
 def test_evaluate_val_empty_without_val(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
 
     node_dir = tmp_path / "node"
@@ -76,7 +76,7 @@ def test_evaluate_val_empty_without_val(tmp_path: Path, monkeypatch) -> None:
 
 def test_publish_update_payload(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
 
     node_dir = tmp_path / "node"
@@ -107,7 +107,7 @@ def test_publish_update_payload(tmp_path: Path, monkeypatch) -> None:
 
 def test_train_one_round_returns_loss(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
 
     node_dir = tmp_path / "node"
@@ -121,7 +121,7 @@ def test_train_one_round_returns_loss(tmp_path: Path, monkeypatch) -> None:
 
 def test_on_message_sets_pending_global(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
 
     node_dir = tmp_path / "node"
@@ -146,7 +146,7 @@ def test_on_message_sets_pending_global(tmp_path: Path, monkeypatch) -> None:
 
 def test_on_message_ignores_invalid_json(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
 
     node_dir = tmp_path / "node"
@@ -163,7 +163,7 @@ def test_on_message_ignores_invalid_json(tmp_path: Path, monkeypatch) -> None:
 
 def test_wait_for_global_timeout(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
     monkeypatch.setattr(time, "sleep", lambda _s: None)
 
@@ -177,7 +177,7 @@ def test_wait_for_global_timeout(tmp_path: Path, monkeypatch) -> None:
 
 def test_wait_for_global_immediate(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
 
     node_dir = tmp_path / "node"
@@ -192,7 +192,7 @@ def test_wait_for_global_immediate(tmp_path: Path, monkeypatch) -> None:
 
 def test_evaluate_val_returns_metrics(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
 
     node_dir = tmp_path / "node"
@@ -208,7 +208,7 @@ def test_evaluate_val_returns_metrics(tmp_path: Path, monkeypatch) -> None:
 
 def test_run_applies_pending_state(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
     monkeypatch.setattr(time, "sleep", lambda _s: None)
 

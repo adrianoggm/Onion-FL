@@ -31,8 +31,8 @@ SRC_PATH = Path(__file__).resolve().parents[1] / "src"
 if SRC_PATH.exists() and str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-from flower_basic.datasets.sweet_samples import load_sweet_sample_dataset
-from flower_basic.sweet_model import SweetMLP
+from onion_fl.datasets.sweet_samples import load_sweet_sample_dataset
+from onion_fl.sweet_model import SweetMLP
 
 
 def train_baseline(

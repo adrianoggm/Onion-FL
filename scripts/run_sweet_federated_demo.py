@@ -120,7 +120,7 @@ def build_launch_plan(
     server_cmd = [
         python_exec,
         "-m",
-        "flower_basic.servers.sweet",
+        "onion_fl.servers.sweet",
         "--input-dim",
         str(int(input_dim)),
         "--hidden-dims",
@@ -148,7 +148,7 @@ def build_launch_plan(
     broker_cmd = [
         python_exec,
         "-m",
-        "flower_basic.brokers.sweet_fog",
+        "onion_fl.brokers.sweet_fog",
         "--mqtt-broker",
         mqtt_broker,
         "--mqtt-port",
@@ -164,7 +164,7 @@ def build_launch_plan(
         bridge_cmd = [
             python_exec,
             "-m",
-            "flower_basic.clients.fog_bridge_sweet",
+            "onion_fl.clients.fog_bridge_sweet",
             "--server",
             server_addr,
             "--region",
@@ -188,7 +188,7 @@ def build_launch_plan(
             client_cmd = [
                 python_exec,
                 "-m",
-                "flower_basic.clients.sweet",
+                "onion_fl.clients.sweet",
                 "--node-dir",
                 str(node_dir),
                 "--region",

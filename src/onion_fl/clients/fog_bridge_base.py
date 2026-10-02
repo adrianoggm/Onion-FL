@@ -11,12 +11,12 @@ import flwr as fl
 import numpy as np
 import torch
 
-from flower_basic.clients.baseclient import BaseMQTTComponent
-from flower_basic.runtime_protocol import (
+from onion_fl.clients.baseclient import BaseMQTTComponent
+from onion_fl.runtime_protocol import (
     PartialAggregateEnvelope,
     decode_partial_aggregate_message,
 )
-from flower_basic.telemetry import (
+from onion_fl.telemetry import (
     start_linked_client_span,
     start_linked_consumer_span,
 )

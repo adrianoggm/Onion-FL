@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from flower_basic.datasets.swell_federated import (
+from onion_fl.datasets.swell_federated import (
     _auto_assign_nodes,
     _read_config,
     _split_subjects,
@@ -93,7 +93,7 @@ def test_auto_assign_nodes_percentages() -> None:
 
 def test_plan_and_materialize_per_subject(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.datasets.swell_federated.load_swell_all_samples",
+        "onion_fl.datasets.swell_federated.load_swell_all_samples",
         _mock_load_swell_all_samples,
     )
 
@@ -132,7 +132,7 @@ def test_plan_and_materialize_per_subject(tmp_path: Path, monkeypatch) -> None:
 
 def test_plan_and_materialize_global_strategy(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.datasets.swell_federated.load_swell_all_samples",
+        "onion_fl.datasets.swell_federated.load_swell_all_samples",
         _mock_load_swell_all_samples,
     )
 
