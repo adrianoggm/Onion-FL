@@ -25,7 +25,7 @@ from onion_fl.core.topology import Topology
 from onion_fl.experiment.config import parse_experiment
 from onion_fl.experiment.sweep import Scenario, identity
 from onion_fl.observability.events import JsonlSink, read_events
-from onion_fl.observability.run import Run, enrich, node_roles
+from onion_fl.observability.run import Run, enrich, node_roles, save_model
 from onion_fl.runtime.real import RealRuntime
 
 PART = "events.{group}.jsonl"
@@ -210,6 +210,10 @@ def run_node(
         runtime.run(timeout=chosen.config.runtime.timeout)
     finally:
         part.close()
+    if group == topology.root.id:
+        save_model(
+            Path(chosen.config.paths.runs) / run_id, federation.coordinator.state
+        )
     return 0 if runtime._all_stopped() else 3
 
 

@@ -26,7 +26,7 @@ from onion_fl.experiment.sweep import Scenario, identity, scenarios
 from onion_fl.learning.model import models, param_groups, state_arrays
 from onion_fl.learning.sharing import sharing, traffic
 from onion_fl.learning.trainers import inits, trainers
-from onion_fl.observability.run import Run
+from onion_fl.observability.run import Run, save_model
 from onion_fl.observability.sinks import OtelSink, PrometheusSink
 from onion_fl.roles import EdgeSpec, build_federation
 from onion_fl.roles.policies import create
@@ -246,6 +246,7 @@ def run_scenario(
         )
         run.attach(federation)
         federation.run()
+        save_model(run.path, federation.coordinator.state)
     except BaseException:
         run.finish(status="failed")
         raise

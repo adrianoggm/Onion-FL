@@ -34,6 +34,15 @@ def _write_json(path: Path, value: Mapping[str, Any]) -> None:
     path.write_text(json.dumps(value, indent=2, default=str) + "\n", encoding="utf-8")
 
 
+def save_model(path: str | Path, state: Mapping[str, Any]) -> Path:
+    """The final global model as ``model.npz`` (no pickles); ``run_hash`` covers it."""
+    import numpy as np
+
+    target = Path(path) / "model.npz"
+    np.savez(target, **{key: np.asarray(value) for key, value in state.items()})
+    return target
+
+
 def compute_run_hash(path: str | Path) -> str:
     path = Path(path)
     meta = json.loads((path / "run.json").read_text(encoding="utf-8"))
@@ -43,6 +52,8 @@ def compute_run_hash(path: str | Path) -> str:
         sha256((path / "events.jsonl").read_bytes()),
         sha256((path / "summary.json").read_bytes()),
     ]
+    if (path / "model.npz").exists():
+        parts.append(sha256((path / "model.npz").read_bytes()))
     return sha256("\n".join(parts))
 
 
