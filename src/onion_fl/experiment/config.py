@@ -61,12 +61,14 @@ from onion_fl.roles.policies import (
 )
 from onion_fl.runtime.devices import availability_models, compute_models
 from onion_fl.runtime.network import link_profiles
+from onion_fl.transports import transports
 
 PluginRef = str | dict[str, Any]
 SINKS = ("prometheus", "otel")
 
 REGISTRIES: dict[str, Registry] = {
     "codec": codecs,
+    "transport": transports,
     "link_profile": link_profiles,
     "compute_model": compute_models,
     "availability_model": availability_models,

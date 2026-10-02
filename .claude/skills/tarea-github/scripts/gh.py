@@ -335,8 +335,17 @@ def _milestone_notes(title: str) -> tuple[int, str]:
     return ms[title], notes or "- (no closed issues)"
 
 
+def _release_body(a, issues: str) -> str:
+    """Hand-written notes (``--notes FILE``) first, then the milestone's issues."""
+    if not getattr(a, "notes", None):
+        return issues
+    text = Path(a.notes).read_text(encoding="utf-8").strip()
+    return f"{text}\n\n## Issues\n\n{issues}"
+
+
 def cmd_release_pr(a) -> None:
     _, notes = _milestone_notes(a.version)
+    notes = _release_body(a, notes)
     pr, _ = api(
         "POST",
         f"{R}/pulls",
@@ -352,6 +361,7 @@ def cmd_release_pr(a) -> None:
 
 def cmd_release(a) -> None:
     number, notes = _milestone_notes(a.version)
+    notes = _release_body(a, notes)
     rel, _ = api(
         "POST",
         f"{R}/releases",
@@ -411,11 +421,17 @@ def main() -> None:
         "release-pr", help="open the develop -> main PR for a milestone version"
     )
     s.add_argument("version")
+    s.add_argument(
+        "--notes", help="Markdown release notes to put before the issue list"
+    )
     s = sub.add_parser(
         "release",
         help="after the release PR is merged: tag main, publish notes, close the milestone",
     )
     s.add_argument("version")
+    s.add_argument(
+        "--notes", help="Markdown release notes to put before the issue list"
+    )
     a = p.parse_args()
     {
         "whoami": cmd_whoami,

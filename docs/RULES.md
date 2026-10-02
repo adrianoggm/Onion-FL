@@ -14,7 +14,7 @@ Estas reglas protegen la validez científica de los resultados. Cada una existe 
 ## 2. Evaluación sin fugas
 
 - **El test global se hace sobre sujetos completos reservados**, y esos sujetos son los mismos en todos los escenarios que se comparan.
-- **El split `per_subject` no separa sujetos.** Divide las muestras de cada sujeto entre train, val y test, así que solo sirve como validación local en el edge, nunca como test global.
+- **La validación local no es un test.** La cola `local_val` de cada sujeto de entrenamiento solo sirve para validar en el edge, nunca como test global: el test global se hace con los sujetos del rol `test`. (El antiguo split `per_subject` tenía el mismo límite.)
 - **Ninguna estadística de preprocesado se ajusta con datos de val o test.** Escalado, imputación y filtrado de varianza se calculan con la bolsa de entrenamiento.
 - **Las columnas meta no son features.** Identificadores de bloque, sesión, tiempo o sujeto (`blok`, `timestamp`, `PP`, …) se excluyen de forma explícita. La columna `blok` infló los baselines de SWELL hasta ~0,99 antes del commit `002246f`. Antes de usar un dataset nuevo, revisa su ficha (`data inspect`), que avisa de las features con una correlación casi perfecta con la etiqueta.
 

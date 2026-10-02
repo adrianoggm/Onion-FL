@@ -27,7 +27,6 @@ dependencies = [
     "numpy>=1.24,<3",
     "pandas>=1.5,<3",
     "scikit-learn>=1.2,<2",
-    "flwr>=1.8,<2",
     "paho-mqtt>=2.0,<3",
     "pyyaml>=6,<7",
     "opentelemetry-sdk>=1.24,<2",
