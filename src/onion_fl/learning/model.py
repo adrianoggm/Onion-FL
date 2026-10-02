@@ -133,12 +133,12 @@ class ModularMLP(nn.Module):
         self.head = nn.ModuleDict(
             {key: nn.Linear(dims[-1], n) for key, n in classes.items()}
         )
-        self._init_parameters(seed)
+        self.init_parameters(seed)
 
     def _head_key(self, shape: DataShape) -> str:
         return shape.task if self.config.heads == "per_task" else shape.dataset
 
-    def _init_parameters(self, seed: int) -> None:
+    def init_parameters(self, seed: int) -> None:
         # Every layer gets its own generator, seeded by (seed, layer path): a part
         # starts identical in an edge model and in the coordinator's global model.
         for name, module in self.named_modules():
