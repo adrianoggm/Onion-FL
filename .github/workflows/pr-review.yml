@@ -3,7 +3,7 @@ name: PR - Security scan
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    branches: [main, develop]
+    branches: [main]  # release PRs only, to save CI minutes
 
 permissions:
   contents: read

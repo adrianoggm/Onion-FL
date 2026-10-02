@@ -1,9 +1,10 @@
 name: CI
 
+# Runs only on develop -> main release PRs (and on demand) to save CI minutes.
+# Task PRs into develop are gated by local verification (see .claude/skills/tarea-github).
 on:
-  push:
-    branches: [main, develop]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
