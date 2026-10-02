@@ -386,3 +386,22 @@ def test_a_sweep_path_through_a_value_is_rejected(workspace: Path) -> None:
 
     with pytest.raises(ConfigError, match="rounds is not a mapping"):
         scenarios(config)
+
+
+def test_a_run_that_never_finishes_its_rounds_is_incomplete(workspace: Path) -> None:
+    lossy = {"profile": {"preset": "lan", "loss": 0.9}}
+    topology = TOPOLOGY | {
+        "fog": {
+            "defaults": {"link_up": lossy, "hello_retry": None},
+            "nodes": TOPOLOGY["fog"]["nodes"],
+        },
+        "edge": {"link_up": lossy, "hello_retry": None},
+    }
+    (scenario,) = scenarios(parse_experiment(experiment(workspace, topology=topology)))
+
+    path = run_scenario(scenario, evaluate=stub_score)
+
+    assert (
+        json.loads((path / "run.json").read_text(encoding="utf-8"))["status"]
+        == "incomplete"
+    )
