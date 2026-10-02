@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Turn a scenario into a recorded run, or into a dry-run plan (spec §11, §12).
+"""Turn a scenario into a recorded run, or into a dry-run plan (spec §11, §12, §9.2).
 
 1. Topology: from ``topologies/<name>.yaml``, a path or inline; the runtime
    codec and the evaluation settings are applied (node settings win).
@@ -157,15 +157,78 @@ def _sinks(config: ExperimentConfig) -> list[Any]:
     return out
 
 
+def edge_specs(
+    scenario: Scenario, topology: Topology, split: DataSplit, placement: Placement
+) -> tuple[dict[str, list[EdgeSpec]], dict[str, Any]]:
+    """Edges and zone evaluators under each leaf, test evaluators under the root."""
+    config = scenario.config
+    family, initial = _initial_state(config, _shapes(split), scenario.seed)
+    create(sharing, config.learning.sharing).check_model(family.config)
+    device = _edge_runtime(topology)
+
+    def evaluator(prefix: str, data: Any) -> EdgeSpec:
+        return EdgeSpec(
+            f"{prefix}-{data.dataset}-{data.subject}",
+            family.build([data.shape], seed=scenario.seed),
+            data=data,
+            train=False,
+            tags={"dataset": data.dataset},
+        )
+
+    edges: dict[str, list[EdgeSpec]] = {}
+    for leaf, clients in placement.edges.items():
+        edges[leaf] = [
+            EdgeSpec(
+                client.id,
+                family.build([client.train.shape], seed=scenario.seed),
+                data=client.train,
+                trainer=create(trainers, config.learning.trainer),
+                val_data=client.local_val,
+                tags={"dataset": client.dataset},
+                **device,
+            )
+            for client in clients
+        ] + [evaluator("val", data) for data in placement.zone_evaluators.get(leaf, [])]
+    edges[topology.root.id] = [evaluator("test", data) for data in placement.test]
+    return edges, initial
+
+
+def build_scenario(
+    scenario: Scenario,
+    topology: Topology,
+    split: DataSplit,
+    placement: Placement,
+    *,
+    evaluate: Callable[..., Any] | None = None,
+    runtime: Any = None,
+) -> Any:
+    """The federation of a scenario, on ``runtime`` (a new SimRuntime by default)."""
+    config = scenario.config
+    edges, initial = edge_specs(scenario, topology, split, placement)
+    return build_federation(
+        topology,
+        edges,
+        initial_state=initial,
+        rounds=config.rounds,
+        sharing=config.learning.sharing,
+        seed=scenario.seed,
+        metrics=config.evaluation.metrics,
+        evaluate=evaluate,
+        runtime=runtime,
+    )
+
+
 def run_scenario(
     scenario: Scenario, evaluate: Callable[..., Any] | None = None
 ) -> Path:
-    """Run one scenario in simulation and return its ``runs/<run_id>/`` folder."""
+    """Run one scenario and return its ``runs/<run_id>/`` folder."""
     config = scenario.config
-    if config.runtime.mode != "sim":
-        raise NotImplementedError(
-            "runtime.mode 'real' arrives with the MQTT runtime (F8.1)"
-        )
+    if config.runtime.mode == "real":
+        if evaluate is not None:
+            raise ValueError("a custom evaluate cannot be sent to the node processes")
+        from onion_fl.experiment.real import run_real
+
+        return run_real(scenario)
     topology, split, placement, digests = _scenario_data(scenario)
     run = Run(
         config.paths.runs,
@@ -177,52 +240,9 @@ def run_scenario(
         sinks=_sinks(config),
     )
     try:
-        run.record("data.roles", None, roles=split.roles)
-        for leaf, composition in placement.composition().items():
-            run.record(
-                "data.composition", composition["samples"], leaf=leaf, **composition
-            )
-        shapes = _shapes(split)
-        family, initial = _initial_state(config, shapes, scenario.seed)
-        create(sharing, config.learning.sharing).check_model(family.config)
-        device = _edge_runtime(topology)
-
-        def evaluator(prefix: str, data: Any) -> EdgeSpec:
-            return EdgeSpec(
-                f"{prefix}-{data.dataset}-{data.subject}",
-                family.build([data.shape], seed=scenario.seed),
-                data=data,
-                train=False,
-                tags={"dataset": data.dataset},
-            )
-
-        edges: dict[str, list[EdgeSpec]] = {}
-        for leaf, clients in placement.edges.items():
-            edges[leaf] = [
-                EdgeSpec(
-                    client.id,
-                    family.build([client.train.shape], seed=scenario.seed),
-                    data=client.train,
-                    trainer=create(trainers, config.learning.trainer),
-                    val_data=client.local_val,
-                    tags={"dataset": client.dataset},
-                    **device,
-                )
-                for client in clients
-            ] + [
-                evaluator("val", data)
-                for data in placement.zone_evaluators.get(leaf, [])
-            ]
-        edges[topology.root.id] = [evaluator("test", data) for data in placement.test]
-        federation = build_federation(
-            topology,
-            edges,
-            initial_state=initial,
-            rounds=config.rounds,
-            sharing=config.learning.sharing,
-            seed=scenario.seed,
-            metrics=config.evaluation.metrics,
-            evaluate=evaluate,
+        record_data(run, split, placement)
+        federation = build_scenario(
+            scenario, topology, split, placement, evaluate=evaluate
         )
         run.attach(federation)
         federation.run()
@@ -232,6 +252,12 @@ def run_scenario(
     # The queue can run dry before the last round (lost messages, no deadlines).
     run.finish(status="finished" if federation.coordinator.finished else "incomplete")
     return run.path
+
+
+def record_data(run: Run, split: DataSplit, placement: Placement) -> None:
+    run.record("data.roles", None, roles=split.roles)
+    for leaf, composition in placement.composition().items():
+        run.record("data.composition", composition["samples"], leaf=leaf, **composition)
 
 
 def run_experiment(

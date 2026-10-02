@@ -397,12 +397,29 @@ class _Collector(Node):
         """Hook for the coordinator, which waits for the last evaluation to finish."""
 
 
+def _stop_children(node: _Collector, ctx: Context) -> None:
+    """The run is over: tell every registered child, so their processes can exit."""
+    for child in sorted(node.registered):
+        ctx.send(Message(kind="control", src=node.id, dst=child, meta={"stop": True}))
+
+
 class _Greeter:
-    """A child repeats its hello every ``hello_retry`` seconds until the parent acknowledges it."""
+    """A child repeats its hello every ``hello_retry`` seconds until the parent acknowledges it.
+
+    It also stops (``stopped``) when the parent says the run is over.
+    """
 
     id: str
     parent: str
     hello_retry: float | None = 5.0
+    stopped: bool = False
+
+    def _stop_requested(self, msg: Message) -> bool:
+        return (
+            msg.src == self.parent
+            and msg.kind == "control"
+            and bool(msg.meta.get("stop"))
+        )
 
     def _say_hello(self, meta: Mapping[str, Any], ctx: Context) -> None:
         self._hello_meta, self.acknowledged = dict(meta), False
@@ -466,6 +483,11 @@ class Coordinator(_Collector):
         if not self.finished:
             self.finished = True
             ctx.emit("run.finished", self.round)
+            _stop_children(self, ctx)
+
+    @property
+    def stopped(self) -> bool:
+        return self.finished
 
     def _closed(self, aggregated: Contribution, metrics: dict, ctx: Context) -> None:
         held = keys_held_at(aggregated.state, self.sharing, self.levels, self.level)
@@ -523,6 +545,11 @@ class Aggregator(_Greeter, _Collector):
 
     def _other(self, msg: Message, ctx: Context) -> None:
         if self._acknowledged(msg, ctx):
+            return
+        if self._stop_requested(msg):
+            _stop_children(self, ctx)
+            self.stopped = True
+            ctx.cancel_timer("hello")
             return
         if msg.src != self.parent or msg.kind != "global_model" or msg.round is None:
             _reject(ctx, msg, "unexpected sender or kind")
@@ -607,6 +634,10 @@ class Edge(_Greeter, Node):
 
     def on_message(self, msg: Message, ctx: Context) -> None:
         if self._acknowledged(msg, ctx):
+            return
+        if self._stop_requested(msg):
+            self.stopped = True
+            ctx.cancel_timer("hello")
             return
         if msg.src != self.parent or msg.round is None:
             _reject(ctx, msg, "unexpected sender")

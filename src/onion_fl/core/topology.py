@@ -45,7 +45,9 @@ class LinkSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    transport: str = "mqtt"
+    transport: str | dict[str, Any] = Field(
+        "mqtt", description="mqtt, memory, or {name: mqtt, broker: host:port, qos: 1}"
+    )
     codec: str = "json"
     profile: str | dict[str, Any] = "lan"
 

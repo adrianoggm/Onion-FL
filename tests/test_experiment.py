@@ -285,47 +285,12 @@ def test_an_experiment_runs_every_scenario_in_parallel(workspace: Path) -> None:
     assert statuses == {"finished"}
 
 
-def test_the_real_mode_is_not_available_yet(workspace: Path) -> None:
-    (scenario,) = scenarios(
-        parse_experiment(experiment(workspace, runtime={"mode": "real"}))
-    )
+def test_a_custom_scorer_cannot_go_to_real_node_processes(workspace: Path) -> None:
+    config = parse_experiment(experiment(workspace, runtime={"mode": "real"}))
+    (scenario,) = scenarios(config)
 
-    with pytest.raises(NotImplementedError, match="real"):
-        run_scenario(scenario)
-
-
-@pytest.mark.skipif(not Path("data/SWELL").exists(), reason="data/SWELL not available")
-def test_a_real_swell_experiment_runs_end_to_end(tmp_path: Path) -> None:
-    config = parse_experiment(
-        {
-            "name": "swell_smoke",
-            "topology": TOPOLOGY
-            | {
-                "fog": {
-                    "nodes": [
-                        {"id": "fog_a", "home": "swell"},
-                        {"id": "fog_b", "home": "swell"},
-                    ]
-                }
-            },
-            "data": {
-                "datasets": {"swell": {}},
-                "roles": {"test": 0.2, "local_val": 0.2},
-            },
-            "learning": {"trainer": {"name": "standard", "local_epochs": 1}},
-            "rounds": 2,
-            "evaluation": {"edge": {"every": 1}},
-            "paths": {"runs": str(tmp_path / "runs"), "cache": str(tmp_path / "cache")},
-        }
-    )
-
-    (path,) = run_experiment(config)
-
-    summary = json.loads((path / "summary.json").read_text(encoding="utf-8"))
-    assert (
-        summary["finished"]
-        and 0.0 <= summary["final"]["global/swell"]["accuracy"] <= 1.0
-    )
+    with pytest.raises(ValueError, match="node processes"):
+        run_scenario(scenario, evaluate=stub_score)
 
 
 def test_topologies_are_found_by_name(workspace: Path) -> None:

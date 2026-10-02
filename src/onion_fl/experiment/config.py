@@ -167,6 +167,10 @@ class EvaluationConfig(Strict):
 
 class RuntimeConfig(Strict):
     mode: Literal["sim", "real"] = "sim"
+    timeout: float = Field(3600.0, gt=0, description="Límite de una ejecución real (s)")
+    heartbeat: float | None = Field(
+        10.0, gt=0, description="Cada cuánto emite node.heartbeat cada nodo real (s)"
+    )
     codec: str | None = Field(
         None, description="Codec de todos los enlaces; cambia el topology_id"
     )
