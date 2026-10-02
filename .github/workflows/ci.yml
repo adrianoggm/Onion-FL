@@ -33,5 +33,12 @@ jobs:
       - name: Format check
         run: ruff format --check .
 
+      - name: Start an MQTT broker
+        # The real-runtime tests (one process per group, sim vs MQTT equivalence)
+        # skip without a broker; this runs them.
+        run: docker run -d --name mosquitto -p 1883:1883 eclipse-mosquitto:2 mosquitto -c /mosquitto-no-auth.conf
+
       - name: Tests
+        env:
+          ONIONFL_MQTT: localhost:1883
         run: pytest -q

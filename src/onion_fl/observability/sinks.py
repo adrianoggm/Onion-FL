@@ -130,6 +130,21 @@ class PrometheusSink:
         pass
 
 
+def otlp_provider(
+    endpoint: str = "http://localhost:4320", service: str = "onion-fl"
+) -> Any:
+    """A tracer provider that exports over OTLP/HTTP, e.g. to the collector of ``docker/``."""
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+    provider = TracerProvider(resource=Resource.create({"service.name": service}))
+    exporter = OTLPSpanExporter(endpoint=f"{endpoint.rstrip('/')}/v1/traces")
+    provider.add_span_processor(BatchSpanProcessor(exporter))
+    return provider
+
+
 class OtelSink:
     def __init__(self, tracer_provider: Any = None, base_ns: int | None = None) -> None:
         self.provider = tracer_provider or trace.get_tracer_provider()

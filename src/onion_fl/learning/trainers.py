@@ -193,6 +193,11 @@ class StubParams(BaseModel):
 
     shift: float = Field(1.0, description="Lo que se suma a cada peso")
     examples: PositiveInt = Field(10, description="Muestras que declara")
+    noise: float = Field(
+        0.0,
+        ge=0,
+        description="Desviación de un ruido por nodo (rng del nodo); 0 sin ruido",
+    )
 
 
 @trainers.register(
@@ -213,9 +218,15 @@ class Stub:
         received: Mapping[str, np.ndarray] | None = None,
         ctx: Any = None,
     ) -> TrainResult:
+        rng = ctx.rng if ctx is not None else np.random.default_rng(0)
         with torch.no_grad():
             for tensor in model.parameters():
                 tensor.add_(self.params.shift)
+                if (
+                    self.params.noise
+                ):  # differs per node and round, still learns nothing
+                    draw = rng.normal(0.0, self.params.noise, size=tuple(tensor.shape))
+                    tensor.add_(torch.as_tensor(draw, dtype=tensor.dtype))
         n = self.params.examples
         return TrainResult(loss=0.0, samples=n, examples=n, batches=1)
 

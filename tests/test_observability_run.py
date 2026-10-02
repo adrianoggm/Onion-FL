@@ -282,3 +282,25 @@ def test_numpy_values_are_written_as_plain_json() -> None:
     line = dumps({"a": np.float32(1.5), "b": np.arange(2), "c": Path("x")})
 
     assert json.loads(line) == {"a": 1.5, "b": [0, 1], "c": "x"}
+
+
+def test_the_final_model_is_saved_and_signed(tmp_path: Path) -> None:
+    import numpy as np
+
+    from onion_fl.observability.run import save_model
+
+    fed = federation(0)
+    run = Run(tmp_path, config={}, topology=TOPOLOGY, seed=0)
+    run.attach(fed)
+    fed.run()
+    save_model(run.path, fed.coordinator.state)
+    run.finish()
+
+    with np.load(run.path / "model.npz", allow_pickle=False) as saved:
+        for key, value in fed.coordinator.state.items():
+            np.testing.assert_array_equal(saved[key], value)
+    assert verify_run(run.path)
+    np.savez(
+        run.path / "model.npz", **{k: v + 1 for k, v in fed.coordinator.state.items()}
+    )
+    assert not verify_run(run.path)

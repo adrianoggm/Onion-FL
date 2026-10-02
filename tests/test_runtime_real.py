@@ -371,6 +371,7 @@ def test_a_real_run_over_mqtt_with_one_process_per_group(tmp_path: Path) -> None
     assert meta["processes"] == {"groups": 3, "exit_codes": [0, 0, 0]}
     assert sorted(p.name for p in path.iterdir()) == [
         "events.jsonl",
+        "model.npz",
         "run.json",
         "scenario.json",
         "summary.json",
@@ -453,7 +454,12 @@ def test_every_group_can_be_started_by_hand_from_the_experiment(tmp_path: Path) 
 
     assert codes == {"fog_a": 0, "fog_b": 0, "cloud": 0}
     parts = sorted(p.name for p in (tmp_path / "runs" / "manual-run").iterdir())
-    assert parts == ["events.cloud.jsonl", "events.fog_a.jsonl", "events.fog_b.jsonl"]
+    assert parts == [
+        "events.cloud.jsonl",
+        "events.fog_a.jsonl",
+        "events.fog_b.jsonl",
+        "model.npz",  # the root group keeps the final global model
+    ]
     cloud = (tmp_path / "runs" / "manual-run" / "events.cloud.jsonl").read_text(
         encoding="utf-8"
     )

@@ -370,3 +370,14 @@ def test_a_run_that_never_finishes_its_rounds_is_incomplete(workspace: Path) -> 
         json.loads((path / "run.json").read_text(encoding="utf-8"))["status"]
         == "incomplete"
     )
+
+
+def test_a_run_keeps_its_final_global_model(workspace: Path) -> None:
+    import numpy as np
+
+    (scenario,) = scenarios(parse_experiment(experiment(workspace)))
+
+    path = run_scenario(scenario, evaluate=stub_score)
+
+    with np.load(path / "model.npz", allow_pickle=False) as saved:
+        assert "trunk.0.weight" in saved.files

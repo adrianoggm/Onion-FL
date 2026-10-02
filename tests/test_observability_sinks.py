@@ -225,3 +225,14 @@ def test_the_declared_series_are_the_exported_ones(prometheus) -> None:
     }
 
     assert exported == set(METRICS)
+
+
+def test_an_otlp_provider_points_at_the_collector() -> None:
+    from onion_fl.observability.sinks import otlp_provider
+
+    provider = otlp_provider("http://collector:4320", service="onion-fl-test")
+
+    (processor,) = provider._active_span_processor._span_processors
+    assert processor.span_exporter._endpoint == "http://collector:4320/v1/traces"
+    assert provider.resource.attributes["service.name"] == "onion-fl-test"
+    provider.shutdown()
