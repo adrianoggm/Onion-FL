@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from onion_fl.core.codec import get_codec
+from onion_fl.core.context import node_rng
 from onion_fl.core.message import Message, Payload
 from onion_fl.core.node import Node
 from onion_fl.runtime.devices import availability_models, compute_models
@@ -496,3 +497,30 @@ def test_messages_that_cannot_be_encoded_are_node_errors() -> None:
     (error,) = rt.events
     assert error["name"] == "node.error"
     assert error["tags"]["handler"] == "send"
+
+
+class Drawer(Node):
+    """Draws from its rng in two separate handlers."""
+
+    def __init__(self, node_id: str) -> None:
+        super().__init__(node_id)
+        self.draws: list[float] = []
+
+    def on_start(self, ctx) -> None:
+        self.draws.append(float(ctx.rng.random()))
+        ctx.set_timer(1.0, "again")
+
+    def on_timer(self, name, ctx) -> None:
+        self.draws.append(float(ctx.rng.random()))
+
+
+def test_a_nodes_rng_is_one_stream_across_handlers() -> None:
+    sim = SimRuntime(seed=3)
+    node = Drawer("n")
+    sim.add_node(node)
+
+    sim.run()
+
+    assert node.draws[0] != node.draws[1]
+    stream = node_rng(3, "n")
+    assert node.draws == [float(stream.random()), float(stream.random())]
