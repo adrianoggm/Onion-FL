@@ -56,7 +56,7 @@ Onion-FL is a research prototype developed as a master's thesis (TFM). The Pytho
 - **Only one SWELL split setup holds out whole subjects.** The code default, `per_subject`, splits each subject's own samples into train/val/test, so every test subject also appears in training. `global` combined with `test_assignments` is subject-disjoint; this is the setup in `configs/swell_federated_10runs.yaml`.
 - **Cloud aggregation weights every fog equally.** Fog bridges report a fixed `num_samples=1000` to the Flower server instead of the region's real sample count.
 - **SWEET models perform at the majority-class rate.** Every SWEET selection1 baseline lands at about 0.55 accuracy, which is the share of the largest class.
-- **Two deleted preprocessing scripts generated synthetic data.** `process_swell_rri.py` and `process_swell_labels.py` filled most SWELL features with `np.random` values and saved them under the real SWELL file names in `data/SWELL/`. This broke the project's real-data-only rule ([docs/RULES.md](docs/RULES.md)). Both have been deleted. If either was ever run on your machine, restore `data/SWELL/` from the original download. The scripts in `validations/` check SWELL data integrity.
+- **Two deleted preprocessing scripts generated synthetic data.** `process_swell_rri.py` and `process_swell_labels.py` filled most SWELL features with `np.random` values and saved them under the real SWELL file names in `data/SWELL/`. This broke the project's real-data-only rule ([docs/RULES.md](docs/RULES.md)). Both have been deleted. If either was ever run on your machine, restore `data/SWELL/` from the original download. The dataset card (`onion_fl.data.cache.inspect`) flags any feature whose correlation with the label is above 0.95.
 
 The full list is in [§10 Known issues](#10-known-issues).
 
@@ -431,7 +431,6 @@ scripts/                # launchers, data preparation, baselines (table below)
 configs/                # architecture and split configs (§5)
 docker/                 # observability stack, Grafana provisioning, Prometheus and collector configs
 tests/                  # pytest suite (24 files)
-validations/            # SWELL data-integrity checks (real vs synthetic)
 results/legacy/         # committed experiment outputs from before the redesign, with INDEX.md
 docs/                   # RULES.md and the redesign spec and backlog (docs/superpowers/)
 ```
