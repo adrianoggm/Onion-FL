@@ -12,6 +12,7 @@ from __future__ import annotations
     onion_fl report <experiment.yaml | runs_dir>... [--out FILE] [--metric NAME]... [--by TAG]...
     onion_fl baseline <experiment.yaml> [--models lr rf xgboost] [--cv K]
     onion_fl schema [--out FILE]
+    onion_fl serve [--root .] [--host 127.0.0.1] [--port 8765]
 
 Results go to stdout as JSON (or a path per line); errors to stderr with
 exit code 2.
@@ -205,6 +206,22 @@ def cmd_baseline(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_serve(args: argparse.Namespace) -> int:
+    try:
+        import uvicorn
+
+        from onion_fl.studio.api import create_app
+    except ImportError as exc:
+        raise ValueError(
+            f"Studio needs its extra: pip install 'onion-fl[studio]' ({exc})"
+        ) from None
+    print(
+        f"Onion-FL Studio on http://{args.host}:{args.port}  (root {Path(args.root).resolve()})"
+    )
+    uvicorn.run(create_app(args.root), host=args.host, port=args.port)
+    return 0
+
+
 def cmd_schema(args: argparse.Namespace) -> int:
     from onion_fl.experiment.config import experiment_schema
 
@@ -289,6 +306,16 @@ def parser() -> argparse.ArgumentParser:
         "--cv", type=int, help="subject-level k-fold instead of the test role"
     )
     baseline.set_defaults(func=cmd_baseline)
+
+    serve = sub.add_parser(
+        "serve", help="Onion-FL Studio: the web app over the repository"
+    )
+    serve.add_argument(
+        "--root", default=".", help="folder with topologies/, experiments/ and runs/"
+    )
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8765)
+    serve.set_defaults(func=cmd_serve)
 
     schema = sub.add_parser(
         "schema", help="JSON Schema of the experiment config and plugins"
