@@ -35,7 +35,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, model_validator
 
 from onion_fl.core.registry import Registry
-from onion_fl.data.contract import DataError, SubjectData
+from onion_fl.data.contract import DataError, SubjectData, natural_key
 from onion_fl.learning.model import NAME
 
 
@@ -737,10 +737,6 @@ def _active(when: Mapping[str, Any], options: Mapping[str, Any]) -> bool:
     return True
 
 
-def _natural(text: str) -> list[Any]:
-    return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", text)]
-
-
 def _fill(value: Any, options: Mapping[str, Any]) -> Any:
     """Replace ``{option}`` in strings; a string that is only ``{option}`` takes its value."""
     if isinstance(value, dict):
@@ -830,7 +826,7 @@ def ingest(
             feature_names=[str(c) for c in features],
         )
         for subject, part in sorted(
-            df.groupby("subject"), key=lambda kv: _natural(kv[0])
+            df.groupby("subject"), key=lambda kv: natural_key(kv[0])
         )
         if len(part) >= spec.min_samples_per_subject
     ]
