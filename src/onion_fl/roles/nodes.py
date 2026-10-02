@@ -171,7 +171,10 @@ class _Collector(Node):
         self.responses = {}
         self.participants = self.participation.select(self.trainers(), round, ctx.rng)
         ctx.emit(
-            "round.participants", len(self.participants), children=self.participants
+            "round.participants",
+            len(self.participants),
+            children=self.participants,
+            round=round,
         )
         down = (
             state
@@ -236,7 +239,11 @@ class _Collector(Node):
         stale = [c for s, c in sorted(self.stale.items()) if s not in fresh]
         self.stale = {}
         needed = quorum_needed(self.quorum, len(self.participants))
-        tags = {"responded": len(fresh), "participants": len(self.participants)}
+        tags = {
+            "responded": len(fresh),
+            "participants": len(self.participants),
+            "round": self.round,
+        }
         if not fresh or len(fresh) < needed:
             ctx.emit("round.quorum_failed", self.round, needed=needed, **tags)
             self._failed(ctx)
@@ -371,7 +378,7 @@ class Coordinator(_Collector):
             if not self.pending_eval:
                 self._finish(ctx)
             return
-        ctx.emit("round.started", self.round + 1)
+        ctx.emit("round.started", self.round + 1, round=self.round + 1)
         self._open(self.round + 1, self.state, ctx, bootstrap=self.round == 0)
 
     def _finish(self, ctx: Context) -> None:
@@ -389,6 +396,7 @@ class Coordinator(_Collector):
                 "round.train_loss",
                 metrics["train_loss"],
                 examples=metrics["train_examples"],
+                round=self.round,
             )
         last = self.round == self.rounds
         if self.eval_every and (_due(self.eval_every, self.round) or last):
