@@ -1,0 +1,18 @@
+# The three fogs of the reference SWELL runs, under one cloud.
+name: swell_three_fogs
+levels: [global, fog, edge]
+root:
+  id: cloud
+  aggregator: fedavg
+  server_optimizer: replace
+fog:
+  defaults:
+    aggregator: fedavg
+    quorum: 1.0
+    link_up: {transport: mqtt, codec: json, profile: lan}
+  nodes:
+    - {id: fog_0}
+    - {id: fog_1}
+    - {id: fog_2}
+edge:
+  link_up: {transport: mqtt, codec: json, profile: lan}

@@ -1,0 +1,25 @@
+# SWELL-KW, physiology only (file D: heart rate, RMSSD and skin conductance per
+# minute), as in the reference federated runs before the redesign. The dataset is
+# still "swell": an experiment picks this file with `descriptor:`.
+#
+# NOT verified against the raw file yet (data/ is not in git): run
+# `onion_fl data inspect swell --datasets-dir ...` on it before citing results.
+name: swell
+description: SWELL-KW, solo fisiología (HR, RMSSD y SCL por minuto).
+root: "data/SWELL/3 - Feature dataset/per sensor"
+source:
+  reader: csv
+  path: "D - Physiology features (HR_HRV_SCL - final).csv"
+  sep: null
+  encoding: utf-8-sig
+  na_values: ["#VALUE!"]
+  normalize_columns: true
+steps:
+  - subject: {column: pp, regex: '(\d+)'}
+  - label:
+      default: binary
+      strategies:
+        binary: {task: stress_binary, column: condition, map: {"N": 0, "T": 1, "I": 1, "R": 1}}
+  - features:
+      regex: "^(?!unnamed)"     # empty spreadsheet columns
+      exclude: [blok, timestamp, c]
