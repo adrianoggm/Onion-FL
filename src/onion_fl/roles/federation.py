@@ -11,8 +11,11 @@ Each aggregation node reads its round settings from the topology::
     participation: all | {name: fraction, p: 0.5}
     staleness: drop | {name: next_round, weighting: {name: polynomial, a: 0.5}}
     register_timeout: 10s
+    eval: {every: 1, aggregate_children: true, holdout: true}
 
-Edges hang from the leaf aggregators and use the topology's edge link.
+The edge template takes ``eval: {every: 1, models: [received, local]}``.
+Edges hang from the leaf aggregators and use the topology's edge link; the
+root takes evaluators only (the global ``test`` subjects).
 """
 
 from collections.abc import Mapping, Sequence
@@ -23,9 +26,10 @@ import numpy as np
 
 from onion_fl.core.topology import Topology
 from onion_fl.learning.aggregators import aggregators, server_optimizers
+from onion_fl.learning.metrics import evaluate as score
 from onion_fl.learning.sharing import SharingPolicy
 from onion_fl.learning.sharing import sharing as sharing_presets
-from onion_fl.roles.nodes import Aggregator, Coordinator, Edge
+from onion_fl.roles.nodes import Aggregator, Coordinator, Edge, Evaluate
 from onion_fl.roles.policies import (
     create,
     parse_duration,
@@ -37,7 +41,7 @@ from onion_fl.runtime.sim import SimRuntime
 
 @dataclass
 class EdgeSpec:
-    """One edge (or evaluator) under a leaf aggregator."""
+    """One edge (or evaluator) under a leaf aggregator, or an evaluator under the root."""
 
     id: str
     model: Any
@@ -46,6 +50,8 @@ class EdgeSpec:
     train: bool = True
     compute: Any = None
     availability: Any = None
+    val_data: Any = None
+    tags: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -73,6 +79,11 @@ def _round_settings(settings: Mapping[str, Any]) -> dict[str, Any]:
         "participation": create(participations, settings.get("participation"), "all"),
         "staleness": create(stalenesses, settings.get("staleness"), "drop"),
         "register_timeout": parse_duration(settings.get("register_timeout")),
+        "eval_every": (settings.get("eval") or {}).get("every"),
+        "aggregate_children": (settings.get("eval") or {}).get(
+            "aggregate_children", True
+        ),
+        "holdout": (settings.get("eval") or {}).get("holdout", True),
     }
 
 
@@ -85,17 +96,34 @@ def build_federation(
     sharing: str | Mapping[str, Any] | SharingPolicy | None = None,
     seed: int = 0,
     runtime: Any = None,
+    metrics: Sequence[str] = ("loss", "accuracy"),
+    evaluate: Evaluate | None = None,
 ) -> Federation:
-    """Coordinator, aggregators and edges of ``topology`` on ``runtime`` (a new SimRuntime)."""
+    """Coordinator, aggregators and edges of ``topology`` on ``runtime`` (a new SimRuntime).
+
+    ``evaluate(model, data) -> (scores, samples)`` defaults to the ``metrics`` plugins.
+    """
     policy = _sharing(sharing)
     policy.validate_for(topology)
     runtime = runtime or SimRuntime(seed=seed)
+    root = topology.root
     leaves = {leaf.id for leaf in topology.leaves()}
-    stray = sorted(set(edges) - leaves)
+    stray = sorted(set(edges) - leaves - {root.id})
     if stray:
         raise ValueError(f"edges under {stray}, which are not leaf aggregators")
+    trainers_at_root = [e.id for e in edges.get(root.id, []) if e.train]
+    if trainers_at_root:
+        raise ValueError(
+            f"the root {root.id!r} takes evaluators only, not {trainers_at_root}"
+        )
+    if evaluate is None:
+        names = list(metrics)
+
+        def evaluate(model: Any, data: Any) -> tuple[dict[str, float], int]:
+            return score(model, data, names)
+
+    edge_eval = topology.edge.settings.get("eval") or {}
     common = {"levels": topology.levels, "sharing": policy}
-    root = topology.root
     children = {
         node.id: [c.id for c in topology.children(node.id)]
         + [e.id for e in edges.get(node.id, [])]
@@ -137,6 +165,11 @@ def build_federation(
                 data=spec.data,
                 trainer=spec.trainer,
                 train=spec.train,
+                val_data=spec.val_data,
+                evaluate=evaluate,
+                eval_every=edge_eval.get("every"),
+                eval_models=edge_eval.get("models", ("received", "local")),
+                tags=spec.tags,
                 **common,
             )
             federation.edges[spec.id] = node
