@@ -4,10 +4,10 @@
 apiVersion: 1
 
 providers:
-  - name: 'Flower Basic Dashboards'
+  - name: 'Onion-FL Dashboards'
     orgId: 1
-    folder: 'Flower FL'
-    folderUid: flower-fl
+    folder: 'Onion-FL'
+    folderUid: onion-fl
     type: file
     disableDeletion: false
     updateIntervalSeconds: 30
