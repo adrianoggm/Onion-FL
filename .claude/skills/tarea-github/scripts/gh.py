@@ -239,6 +239,8 @@ def cmd_pr(a) -> None:
     # Closing keywords only link/close issues when the PR targets the default branch
     keyword = "Closes" if a.base == repo["default_branch"] else "Refs"
     body = f"{keyword} #{a.number} — {issue['title']}\n\n{subjects}"
+    if a.note:
+        body += f"\n\n**Verificación local:** {a.note}"
     pr = _open_pr(a.number)
     if pr:
         pr, _ = api("PATCH", f"{R}/pulls/{pr['number']}", {"body": body})
@@ -388,6 +390,7 @@ def main() -> None:
     s.add_argument("number", type=int)
     s.add_argument("--base", default="develop")
     s.add_argument("--draft", action="store_true")
+    s.add_argument("--note", help="local verification result, appended to the body")
     s = sub.add_parser("pr-status", help="PR state and CI check runs for task/#N")
     s.add_argument("number", type=int)
     s = sub.add_parser(

@@ -96,7 +96,7 @@ git branch --set-upstream-to="origin/task/#N"
 
 Si las etiquetas de la issue no son las adecuadas, corrígelas en la issue antes de abrir el PR. Si el PR ya existe, `gh.py pr N` lo actualiza en lugar de duplicarlo; úsalo también para arreglar un PR al que le falten metadatos.
 
-Devuelve la URL junto con el resultado de la verificación local: lint, formato y tests, con sus recuentos. Los PR hacia `develop` no tienen checks de GitHub, por diseño.
+Pasa el resultado de la verificación local con `--note`, por ejemplo `gh.py pr N --note "ruff ok; pytest 136 passed, 4 skipped (Python 3.11)"`, para que quede en el PR. Devuelve la URL. Los PR hacia `develop` no tienen checks de GitHub, por diseño.
 
 Si algo falla, arréglalo con un commit nuevo en la rama, sin `--amend` ni force push, y vuelve a empujar cuando se pida.
 
