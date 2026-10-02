@@ -34,9 +34,9 @@ default:
     echo ""
     just swell-launch
 
-# Full SWELL demo with physiology-only (lighter setup)
+# SWELL demo on the subject-disjoint split (held-out test subjects, recommended)
 @swell-demo-light:
-    echo "{{GREEN}}🚀 Starting SWELL Federated Demo (physiology-only){{NC}}"
+    echo "{{GREEN}}🚀 Starting SWELL Federated Demo (subject-disjoint split){{NC}}"
     just docker-up
     sleep 3
     just swell-prepare-physio
@@ -77,13 +77,11 @@ default:
       "$repo_root/.venv/bin/python scripts/run_sweet_architecture.py" \
       "$repo_root/.venv/bin/python scripts/run_swell_federated_demo.py" \
       "$repo_root/.venv/bin/python scripts/run_sweet_federated_demo.py" \
-      "$repo_root/.venv/bin/python run_multi_dataset_demo.py" \
       "python -m flower_basic." \
       "python scripts/run_architecture_from_config.py" \
       "python scripts/run_sweet_architecture.py" \
       "python scripts/run_swell_federated_demo.py" \
       "python scripts/run_sweet_federated_demo.py" \
-      "python run_multi_dataset_demo.py" \
     ); \
     found=0; \
     target_pids=""; \
@@ -132,15 +130,15 @@ default:
 # 📊 SWELL PREPARATION
 # ============================================================================
 
-# Prepare SWELL splits (full modalities: computer + facial + posture + physiology)
+# Prepare SWELL splits (physiology, per_subject split: NOT subject-disjoint)
 @swell-prepare:
-    echo "{{BLUE}}📊 Preparing SWELL federated splits (full modalities)...{{NC}}"
+    echo "{{BLUE}}📊 Preparing SWELL federated splits (physiology, per_subject)...{{NC}}"
     python scripts/prepare_swell_federated.py --config configs/swell_federated.example.yaml
     echo "{{GREEN}}✅ SWELL splits prepared at federated_runs/swell/example_manual/{{NC}}"
 
-# Prepare SWELL splits (physiology only - lighter)
+# Prepare SWELL splits (physiology, global split with held-out test subjects)
 @swell-prepare-physio:
-    echo "{{BLUE}}📊 Preparing SWELL federated splits (physiology-only)...{{NC}}"
+    echo "{{BLUE}}📊 Preparing SWELL federated splits (subject-disjoint)...{{NC}}"
     python scripts/prepare_swell_federated.py --config configs/swell_federated_10runs.yaml
     echo "{{GREEN}}✅ SWELL splits prepared at federated_runs/swell/10_executions_physiology/{{NC}}"
 
@@ -148,9 +146,9 @@ default:
 # 🚀 LAUNCH FEDERATED SYSTEM
 # ============================================================================
 
-# Launch full federated system (full modalities)
+# Launch federated system on the example_manual manifest (per_subject split)
 @swell-launch:
-    echo "{{GREEN}}🚀 Launching federated system (full modalities)...{{NC}}"
+    echo "{{GREEN}}🚀 Launching federated system (example_manual)...{{NC}}"
     MQTT_BROKER=localhost MQTT_PORT=1883 \
     OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4320 \
     OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4320 \
@@ -160,9 +158,9 @@ default:
       --launch \
       --delay 0.1
 
-# Launch federated system (physiology-only)
+# Launch federated system on the subject-disjoint manifest
 @swell-launch-physio:
-    echo "{{GREEN}}🚀 Launching federated system (physiology-only)...{{NC}}"
+    echo "{{GREEN}}🚀 Launching federated system (subject-disjoint)...{{NC}}"
     MQTT_BROKER=localhost MQTT_PORT=1883 \
     OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4320 \
     OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4320 \
@@ -221,12 +219,12 @@ default:
 # Run all tests
 @test:
     echo "{{BLUE}}🧪 Running tests...{{NC}}"
-    python run_tests.py
+    python -m pytest
 
 # Run tests with coverage
 @test-cov:
     echo "{{BLUE}}🧪 Running tests with coverage...{{NC}}"
-    python -m pytest --cov=src --cov-report=html --cov-report=term-missing
+    python -m pytest --cov --cov-report=html --cov-report=term-missing
 
 # Evaluate WESAD baseline
 @eval-wesad:
@@ -243,11 +241,6 @@ default:
     echo "{{BLUE}}📊 Evaluating multimodal baseline...{{NC}}"
     python scripts/evaluate_multimodal_baseline.py
 
-# Run multi-dataset demo
-@demo-multidataset:
-    echo "{{BLUE}}🎬 Running multi-dataset demo...{{NC}}"
-    python scripts/demo_multidataset_fl.py
-
 # ============================================================================
 # 🔧 DEVELOPMENT & QUALITY
 # ============================================================================
@@ -256,30 +249,25 @@ default:
 @install-dev:
     echo "{{BLUE}}📦 Installing development environment...{{NC}}"
     python -m venv .venv
-    source .venv/bin/activate && pip install -e ".[dev,test]"
+    source .venv/bin/activate && pip install -e ".[dev]"
     echo "{{GREEN}}✅ Dev environment ready{{NC}}"
 
 # Format code
 @format:
     echo "{{BLUE}}🎨 Formatting code...{{NC}}"
-    black .
-    isort .
+    ruff check . --fix
+    ruff format .
     echo "{{GREEN}}✅ Code formatted{{NC}}"
 
 # Lint code
 @lint:
     echo "{{BLUE}}🔍 Linting code...{{NC}}"
     ruff check .
+    ruff format --check .
     echo "{{GREEN}}✅ Linting complete{{NC}}"
 
-# Type check
-@type-check:
-    echo "{{BLUE}}📋 Type checking...{{NC}}"
-    mypy src/ || true
-    echo "{{GREEN}}✅ Type check complete{{NC}}"
-
 # Run all quality checks
-@quality: format lint type-check
+@quality: format lint
     echo "{{GREEN}}✅ All quality checks passed{{NC}}"
 
 # ============================================================================

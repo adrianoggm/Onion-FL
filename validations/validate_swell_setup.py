@@ -86,7 +86,7 @@ def check_mqtt_broker(broker: str = "localhost", port: int = 1883) -> tuple[bool
             False,
             f"❌ MQTT broker not accessible at {broker}:{port}\n"
             f"   Error: {e}\n"
-            f"   Start with: mosquitto -c mosquitto.conf",
+            f"   Start with: just docker-up",
         )
 
 
