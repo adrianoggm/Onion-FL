@@ -10,7 +10,7 @@ This script:
 Usage:
     python scripts/prepare_sweet_baseline.py \\
         --data-dir data/SWEET/selection1 \\
-        --output-dir baseline_models/sweet \\
+        --output-dir results/baseline_models/sweet \\
         --epochs 50
 """
 
@@ -118,7 +118,7 @@ def train_baseline(
 
         if (epoch + 1) % 10 == 0 or epoch == 0:
             print(
-                f"Epoch {epoch+1:3d}/{epochs} | "
+                f"Epoch {epoch + 1:3d}/{epochs} | "
                 f"Train Loss: {train_loss:.4f} Acc: {train_acc:.4f} | "
                 f"Val Loss: {val_loss:.4f} Acc: {val_acc:.4f}"
             )
@@ -140,7 +140,7 @@ def main():
     )
     parser.add_argument(
         "--output-dir",
-        default="baseline_models/sweet",
+        default="results/baseline_models/sweet",
         help="Output directory for baseline model",
     )
     parser.add_argument(
