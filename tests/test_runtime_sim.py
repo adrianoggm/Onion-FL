@@ -524,3 +524,23 @@ def test_a_nodes_rng_is_one_stream_across_handlers() -> None:
     assert node.draws[0] != node.draws[1]
     stream = node_rng(3, "n")
     assert node.draws == [float(stream.random()), float(stream.random())]
+
+
+class Emitter(Node):
+    def on_start(self, ctx) -> None:
+        ctx.emit("hello.world", 1.0, colour="blue")
+        ctx.set_timer(1.0, "again")
+
+    def on_timer(self, name, ctx) -> None:
+        ctx.emit("hello.again")
+
+
+def test_listeners_receive_every_recorded_event() -> None:
+    seen: list[dict] = []
+    sim = SimRuntime(seed=0, listeners=[seen.append])
+    sim.add_node(Emitter("n"))
+
+    sim.run()
+
+    assert seen == sim.events
+    assert [e["name"] for e in seen] == ["hello.world", "hello.again"]

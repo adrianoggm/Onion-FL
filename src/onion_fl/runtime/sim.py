@@ -74,8 +74,14 @@ class _SimContext:
 class SimRuntime:
     """Hosts nodes and links on a virtual clock."""
 
-    def __init__(self, seed: int = 0, max_events: int = 1_000_000) -> None:
+    def __init__(
+        self,
+        seed: int = 0,
+        max_events: int = 1_000_000,
+        listeners: list[Any] | None = None,
+    ) -> None:
         self.seed = seed
+        self.listeners = list(listeners or [])  # called with every recorded event
         self.max_events = max_events
         self.now = 0.0
         self.events: list[dict[str, Any]] = []
@@ -272,12 +278,13 @@ class SimRuntime:
     def _record(
         self, node_id: str, name: str, value: Any, tags: Mapping[str, Any]
     ) -> None:
-        self.events.append(
-            {
-                "t": self.now,
-                "node": node_id,
-                "name": name,
-                "value": value,
-                "tags": dict(tags),
-            }
-        )
+        event = {
+            "t": self.now,
+            "node": node_id,
+            "name": name,
+            "value": value,
+            "tags": dict(tags),
+        }
+        self.events.append(event)
+        for listener in self.listeners:
+            listener(event)
