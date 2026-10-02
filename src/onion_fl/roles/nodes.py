@@ -29,6 +29,8 @@ from onion_fl.learning.aggregators import Contribution
 from onion_fl.learning.metrics import reduce_reports
 from onion_fl.learning.model import load_arrays, state_arrays
 from onion_fl.learning.sharing import SharingPolicy, keys_crossing, keys_held_at
+from onion_fl.observability.diagnostics import RoundView
+from onion_fl.observability.diagnostics import diagnostics as diagnostic_plugins
 from onion_fl.roles.policies import AllChildren, Drop, quorum_needed
 
 State = dict[str, np.ndarray]
@@ -92,6 +94,7 @@ class _Collector(Node):
         eval_every: int | None = None,
         aggregate_children: bool = True,
         holdout: bool = True,
+        diagnostics: Sequence[Any] | None = None,
     ) -> None:
         super().__init__(node_id)
         self.children = set(children)
@@ -110,6 +113,14 @@ class _Collector(Node):
         self.responses: dict[str, tuple[Contribution, Mapping[str, float]]] = {}
         self.stale: dict[str, Contribution] = {}
         self.pending_eval: dict[int, dict[str, Any]] = {}
+        self.diagnostics = (
+            [diagnostic_plugins.create(n) for n in diagnostic_plugins.names()]
+            if diagnostics is None
+            else list(diagnostics)
+        )
+        self.sent: State = {}
+        self.previous: State | None = None
+        self.late, self.quorum_at = 0, None
 
     # --- registration ------------------------------------------------------------
 
@@ -168,7 +179,7 @@ class _Collector(Node):
 
     def _open(self, round: int, state: State, ctx: Context, bootstrap: bool) -> None:
         self.round, self.open, self.opened_at = round, True, ctx.now()
-        self.responses = {}
+        self.responses, self.late, self.quorum_at = {}, 0, None
         self.participants = self.participation.select(self.trainers(), round, ctx.rng)
         ctx.emit(
             "round.participants",
@@ -183,6 +194,7 @@ class _Collector(Node):
                 state, keys_crossing(state, self.sharing, self.levels, self.level)
             )
         )
+        self.sent = down
         payload = Payload(state=down)
         for child in self.participants:
             ctx.send(
@@ -208,6 +220,10 @@ class _Collector(Node):
         current = self.open and r == self.round
         if current and msg.src in self.participants and msg.src not in self.responses:
             self.responses[msg.src] = (contribution, dict(msg.payload.metrics))
+            answered = sum(1 for c, _ in self.responses.values() if c.state)
+            needed = quorum_needed(self.quorum, len(self.participants))
+            if self.quorum_at is None and answered >= max(needed, 1):
+                self.quorum_at = ctx.now() - self.opened_at
             if len(self.responses) == len(self.participants):
                 self._close(ctx)
             return
@@ -215,6 +231,7 @@ class _Collector(Node):
             target = self.round if self.open else self.round + 1
             factor = self.staleness.weight(target - r)
             action = "drop" if factor is None or not contribution.state else "buffered"
+            self.late += 1
             ctx.emit("update.late", target - r, src=msg.src, round=r, action=action)
             if action == "buffered":
                 weights = {k: w * factor for k, w in contribution.weights.items()}
@@ -244,19 +261,50 @@ class _Collector(Node):
             "participants": len(self.participants),
             "round": self.round,
         }
+        reports = {s: m for s, (_, m) in sorted(self.responses.items()) if s in fresh}
         if not fresh or len(fresh) < needed:
             ctx.emit("round.quorum_failed", self.round, needed=needed, **tags)
+            self._diagnose(fresh, {}, reports, ctx, failed=True)
             self._failed(ctx)
             return
         aggregated = self.aggregator.aggregate(
             [*fresh.values(), *stale], source=self.id
         )
-        reports = [m for s, (_, m) in sorted(self.responses.items()) if s in fresh]
+        self._diagnose(fresh, aggregated.state, reports, ctx, failed=False)
+        self.previous = dict(aggregated.state)
+        reports = list(reports.values())
         metrics = _train_metrics(reports)
         if self.aggregate_children:
             metrics |= self._children_scores(reports, ctx)
         ctx.emit("round.closed", ctx.now() - self.opened_at, stale=len(stale), **tags)
         self._closed(aggregated, metrics, ctx)
+
+    def _diagnose(
+        self, fresh, aggregated: State, reports, ctx: Context, failed: bool
+    ) -> None:
+        if not self.diagnostics:
+            return
+        view = RoundView(
+            round=self.round,
+            sent=self.sent,
+            contributions=fresh,
+            aggregated=aggregated,
+            previous=self.previous,
+            received=getattr(self, "received", {}),
+            datasets={
+                c: meta["tags"]["dataset"]
+                for c, meta in self.registered.items()
+                if "dataset" in (meta.get("tags") or {})
+            },
+            reports=reports,
+            participants=self.participants,
+            late=self.late,
+            quorum_failed=failed,
+            time_to_quorum=self.quorum_at,
+        )
+        for plugin in self.diagnostics:
+            for name, value, tags in plugin.compute(view):
+                ctx.emit(f"diagnostic.{name}", value, round=self.round, **tags)
 
     def _closed(self, aggregated: Contribution, metrics: dict, ctx: Context) -> None:
         raise NotImplementedError
