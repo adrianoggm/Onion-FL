@@ -1,0 +1,29 @@
+# SWELL and SWEET over four fogs: from segregated (alpha 0, each fog sees only
+# its home dataset) to fully mixed (alpha 1), three seeds each.
+#
+#   onion_fl plan experiments/mix_ab.yaml      # composition and traffic, no training
+#   onion_fl run experiments/mix_ab.yaml --workers 3
+#   onion_fl report experiments/mix_ab.yaml --by topology_id --by scenario
+name: mix_ab
+description: SWELL and SWEET over four fogs, from segregated to fully mixed placement.
+topology: four_fogs
+data:
+  datasets:
+    swell: {}
+    sweet: {options: {label: binary}}
+  roles: {test: 0.2, val: 0.1, local_val: 0.2, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, local_epochs: 1, batch_size: 32, lr: 0.001}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge: {every: 5}
+  aggregators: {every: 5}
+  global: {every: 1}
+seeds: [0, 1, 2]
+sweep:
+  data.placement.alpha: [0.0, 0.5, 1.0]

@@ -1,0 +1,22 @@
+# Four fogs, two per home dataset, under one cloud (compact form).
+# `home` tells the mixing placement which dataset each fog hosts at alpha = 0.
+name: four_fogs
+levels: [global, fog, edge]
+root:
+  id: cloud
+  aggregator: fedavg
+  server_optimizer: replace
+fog:
+  defaults:
+    aggregator: fedavg
+    quorum: 1.0
+    deadline: 120s
+    link_up: {transport: mqtt, codec: json, profile: wifi}
+  nodes:
+    - {id: fog_a1, home: swell}
+    - {id: fog_a2, home: swell}
+    - {id: fog_b1, home: sweet}
+    - {id: fog_b2, home: sweet}
+edge:
+  link_up: {transport: mqtt, codec: json, profile: 4g}
+  device: {samples_per_second: 2000}
