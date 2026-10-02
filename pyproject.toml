@@ -43,7 +43,7 @@ dev = [
     "pytest-cov>=5,<8",
     "pre-commit>=3,<5",
 ]
-# Centralised baselines and analysis scripts (scripts/, validations/, results/legacy/)
+# XGBoost baseline (onion_fl.baselines) and analysis scripts (scripts/, results/legacy/)
 analysis = [
     "matplotlib>=3.5,<4",
     "seaborn>=0.12,<1",
