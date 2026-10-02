@@ -313,3 +313,28 @@ def test_an_empty_evaluator_is_kept_with_local_scaling() -> None:
     split = split_subjects(train + [empty], config)
 
     assert split.test[0].n_samples == 0
+
+
+def test_excluded_subjects_take_no_role() -> None:
+    config = RolesConfig(
+        test=0.0, overrides={"swell": {"test": ["1"], "exclude": ["8", "9"]}}
+    )
+
+    split = split_subjects(cohort(10), config)
+    roles = roles_of(split)
+
+    assert roles["excluded"] == ["8", "9"]
+    assert not {"8", "9"} & set(roles["test"] + roles["val"] + roles["train"])
+    assert all("8" not in c.subjects for c in split.clients)
+
+
+def test_excluding_an_unknown_subject_is_an_error() -> None:
+    with pytest.raises(DataError, match="99"):
+        split_subjects(cohort(4), RolesConfig(overrides={"swell": {"exclude": ["99"]}}))
+
+
+def test_a_test_subject_cannot_also_be_excluded() -> None:
+    config = RolesConfig(overrides={"swell": {"test": ["1"], "exclude": ["1"]}})
+
+    with pytest.raises(DataError, match="1"):
+        split_subjects(cohort(4), config)

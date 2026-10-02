@@ -112,18 +112,6 @@ services:
       - onionfl
 
   # --------------------------------------------------------------------------
-  # Prometheus Pushgateway - only the legacy runtime pushes here (removed in F9.1)
-  # --------------------------------------------------------------------------
-  pushgateway:
-    image: prom/pushgateway:v1.6.2
-    container_name: onionfl-pushgateway
-    restart: unless-stopped
-    ports:
-      - "9091:9091"
-    networks:
-      - onionfl
-
-  # --------------------------------------------------------------------------
   # Grafana - Visualization
   # --------------------------------------------------------------------------
   grafana:
@@ -141,7 +129,6 @@ services:
       - "3000:3000"
     depends_on:
       - prometheus
-      - pushgateway
     networks:
       - onionfl
 

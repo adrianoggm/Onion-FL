@@ -37,6 +37,9 @@ class RoleOverride(BaseModel):
 
     test: Share | list[str] | None = None
     val: Share | list[str] | None = None
+    exclude: list[str] = Field(
+        default_factory=list, description="Sujetos que no toman ningún rol"
+    )
 
 
 class RolesConfig(BaseModel):
@@ -151,16 +154,30 @@ def _assign(
     names: list[str], dataset: str, config: RolesConfig
 ) -> dict[str, list[str]]:
     override = config.overrides.get(dataset, RoleOverride())
+    excluded = sorted(set(override.exclude), key=natural_key)
+    unknown = [s for s in excluded if s not in names]
+    if unknown:
+        raise DataError(f"{dataset}: excluded subjects {unknown} do not exist")
+    for role in ("test", "val"):
+        listed = getattr(override, role)
+        clash = (
+            sorted(set(listed) & set(excluded), key=natural_key)
+            if isinstance(listed, list)
+            else []
+        )
+        if clash:
+            raise DataError(f"{dataset}: subjects {clash} are both {role} and excluded")
     rng = node_rng(config.seed, f"roles/{dataset}")
-    order = [names[i] for i in rng.permutation(len(names))]
+    # Draw over every subject, then drop the excluded: the others keep their order.
+    order = [names[i] for i in rng.permutation(len(names)) if names[i] not in excluded]
     test_share = config.test if override.test is None else override.test
     val_share = config.val if override.val is None else override.val
     test = _pick(test_share, order, set(), "test", dataset)
     val = _pick(val_share, order, set(test), "val", dataset)
-    train = [s for s in names if s not in set(test) | set(val)]
+    train = [s for s in names if s not in set(test) | set(val) | set(excluded)]
     if not train:
         raise DataError(f"{dataset}: no training subjects left after test and val")
-    return {"test": test, "val": val, "train": train}
+    return {"test": test, "val": val, "train": train, "excluded": excluded}
 
 
 def _like(data: SubjectData, X, y, subject: str, names: list[str]) -> SubjectData:

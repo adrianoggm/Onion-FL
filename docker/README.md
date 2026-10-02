@@ -13,8 +13,7 @@ just docker-clean    # also removes volumes
 | Mosquitto | 1883 (websockets 9001) | MQTT broker for `onion_fl run --mode real` (`mosquitto/mosquitto.conf`, anonymous, no TLS) |
 | OTEL Collector | **4320** (OTLP HTTP), 4319 (OTLP gRPC) | Receives the spans of the `otel` sink, derives span metrics, exports to Jaeger and Prometheus |
 | Jaeger | 16686 (UI) | Traces: one span per send and per receive, linked through the message id |
-| Prometheus | 9090 | Scrapes the `prometheus` sink on the host (`host.docker.internal:9464`), the collector and the legacy jobs (`prometheus.yml`) |
-| Pushgateway | 9091 | Only for the legacy runtime, until it is removed (F9.1) |
+| Prometheus | 9090 | Scrapes the `prometheus` sink on the host (`host.docker.internal:9464`) and the collector (`prometheus.yml`) |
 | Grafana | 3000 (admin/admin) | "Onion-FL" dashboard (`grafana/provisioning/dashboards/json/onion-fl.json`) |
 
 ## A run against the stack
