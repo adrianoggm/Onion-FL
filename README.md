@@ -453,7 +453,7 @@ The analysis scripts that produced the WESAD-vs-SWELL comparison live next to th
 
 ```bash
 ruff check .            # CI gate
-ruff format --check .   # CI gate (ruff also formats Python code blocks in Markdown)
+ruff format --check .   # CI gate
 python -m pytest        # CI gate
 just format             # ruff check --fix + ruff format
 ```

@@ -20,13 +20,13 @@ python -m pytest tests/test_runtime_protocol.py::test_name -q   # single test
 python -m pytest -m "not slow"        # markers: slow, integration
 
 ruff check .                          # CI gate
-ruff format --check .                 # CI gate; ruff also formats Python code blocks inside .md files
+ruff format --check .                 # CI gate
 just format                           # ruff check --fix + ruff format
 ```
 
 - pytest runs with `filterwarnings = error` (only `UserWarning`/`DeprecationWarning` are ignored), so any new warning class fails the suite.
 - Tests that need real data (`data/SWELL`, `data/WESAD`, `data/samples/*.pkl`) skip when it's missing. `data/` and `federated_runs/` are gitignored.
-- ruff is pinned to 0.16.x in `pyproject.toml` and `.pre-commit-config.yaml`. Keep them in sync, or formatting will differ between local and CI.
+- ruff is pinned to 0.16.x in `pyproject.toml` and `.pre-commit-config.yaml`; keep them in sync. Markdown files are excluded from ruff.
 - The `justfile` is the task runner. Its recipes use bash (`source .venv/bin/activate`, `pgrep`), so on Windows run them from Git Bash or WSL.
 
 ### Running the federated stack
