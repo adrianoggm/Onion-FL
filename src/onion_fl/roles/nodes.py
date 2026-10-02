@@ -129,8 +129,11 @@ class _Collector(Node):
             ctx.set_timer(self.register_timeout, "register")
 
     def _hello(self, msg: Message, ctx: Context) -> None:
+        if msg.src not in self.registered:
+            ctx.emit("node.registered", child=msg.src, role=msg.meta.get("role"))
         self.registered[msg.src] = dict(msg.meta)
-        ctx.emit("node.registered", child=msg.src, role=msg.meta.get("role"))
+        ack = Message(kind="control", src=self.id, dst=msg.src, meta={"ack": "hello"})
+        ctx.send(ack)  # every hello, so a lost ack is answered by the next retry
         if not self.ready and self.children <= set(self.registered):
             self._finish_registration(ctx)
 
@@ -394,6 +397,36 @@ class _Collector(Node):
         """Hook for the coordinator, which waits for the last evaluation to finish."""
 
 
+class _Greeter:
+    """A child repeats its hello every ``hello_retry`` seconds until the parent acknowledges it."""
+
+    id: str
+    parent: str
+    hello_retry: float | None = 5.0
+
+    def _say_hello(self, meta: Mapping[str, Any], ctx: Context) -> None:
+        self._hello_meta, self.acknowledged = dict(meta), False
+        self._send_hello(ctx)
+
+    def _send_hello(self, ctx: Context) -> None:
+        ctx.send(
+            Message(kind="hello", src=self.id, dst=self.parent, meta=self._hello_meta)
+        )
+        if self.hello_retry:
+            ctx.set_timer(self.hello_retry, "hello")
+
+    def _acknowledged(self, msg: Message, ctx: Context) -> bool:
+        if (
+            msg.src == self.parent
+            and msg.kind == "control"
+            and msg.meta.get("ack") == "hello"
+        ):
+            self.acknowledged = True
+            ctx.cancel_timer("hello")
+            return True
+        return False
+
+
 class Coordinator(_Collector):
     """The root: owns the global model, runs the rounds and applies the server optimizer."""
 
@@ -460,23 +493,37 @@ class Coordinator(_Collector):
             self._finish(ctx)
 
 
-class Aggregator(_Collector):
+class Aggregator(_Greeter, _Collector):
     """Any level below the root: forwards the model, aggregates its zone and reports up."""
 
     def __init__(
-        self, node_id: str, children: Sequence[str], *, parent: str, **kw: Any
+        self,
+        node_id: str,
+        children: Sequence[str],
+        *,
+        parent: str,
+        hello_retry: float | None = 5.0,
+        **kw: Any,
     ) -> None:
         super().__init__(node_id, children, **kw)
-        self.parent = parent
+        self.parent, self.hello_retry = parent, hello_retry
         self.zone: State = {}
         self.received: State = {}
         self.parent_level = self.levels[self.levels.index(self.level) - 1]
 
     def _registered(self, ctx: Context) -> None:
-        meta = {"role": "aggregator", "edges": self.edges_below()}
-        ctx.send(Message(kind="hello", src=self.id, dst=self.parent, meta=meta))
+        self._say_hello({"role": "aggregator", "edges": self.edges_below()}, ctx)
+
+    def on_timer(self, name: str, ctx: Context) -> None:
+        if name == "hello":
+            if not self.acknowledged:
+                self._send_hello(ctx)
+        else:
+            super().on_timer(name, ctx)
 
     def _other(self, msg: Message, ctx: Context) -> None:
+        if self._acknowledged(msg, ctx):
+            return
         if msg.src != self.parent or msg.kind != "global_model" or msg.round is None:
             _reject(ctx, msg, "unexpected sender or kind")
             return
@@ -515,7 +562,7 @@ class Aggregator(_Collector):
         ctx.send(Message(kind="update", src=self.id, dst=self.parent, round=self.round))
 
 
-class Edge(Node):
+class Edge(_Greeter, Node):
     """Trains when the model arrives; an evaluator (``train=False``) only answers eval requests."""
 
     def __init__(
@@ -534,8 +581,10 @@ class Edge(Node):
         eval_every: int | None = None,
         eval_models: Sequence[str] = ("received", "local"),
         tags: Mapping[str, Any] | None = None,
+        hello_retry: float | None = 5.0,
     ) -> None:
         super().__init__(node_id)
+        self.hello_retry = hello_retry
         self.parent, self.model, self.data = parent, model, data
         self.trainer, self.train = trainer, train
         self.sharing, self.levels = sharing, list(levels)
@@ -550,9 +599,15 @@ class Edge(Node):
             "edges": int(self.train),
             "tags": self.tags,
         }
-        ctx.send(Message(kind="hello", src=self.id, dst=self.parent, meta=meta))
+        self._say_hello(meta, ctx)
+
+    def on_timer(self, name: str, ctx: Context) -> None:
+        if name == "hello" and not self.acknowledged:
+            self._send_hello(ctx)
 
     def on_message(self, msg: Message, ctx: Context) -> None:
+        if self._acknowledged(msg, ctx):
+            return
         if msg.src != self.parent or msg.round is None:
             _reject(ctx, msg, "unexpected sender")
         elif msg.kind == "eval_request" and not self.train:

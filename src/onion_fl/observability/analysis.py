@@ -72,7 +72,7 @@ class Runs:
     def metrics(
         self, level: str | None = None, name: str | None = None, **tags: Any
     ) -> pd.DataFrame:
-        """Metric and diagnostic events; ``name`` matches ``eval.<name>`` or the full name."""
+        """Metric and diagnostic events; ``name`` is the full name or ``eval.``, ``round.`` or ``diagnostic.`` plus it."""
         df = self.events()
         if df.empty:
             return df
@@ -80,7 +80,9 @@ class Runs:
         if level is not None:
             keep &= df["level"] == level
         if name is not None:
-            keep &= df["name"].isin([name, f"eval.{name}"])
+            keep &= df["name"].isin(
+                [name, *(f"{p}.{name}" for p in ("eval", "round", "diagnostic"))]
+            )
         for key, value in tags.items():
             keep &= (df[key] == value) if key in df.columns else False
         return df[keep].reset_index(drop=True)

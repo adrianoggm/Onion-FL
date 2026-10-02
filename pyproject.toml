@@ -50,6 +50,9 @@ analysis = [
     "xgboost>=2,<4",
 ]
 
+[project.scripts]
+onion_fl = "onion_fl.experiment.cli:main"
+
 [project.urls]
 Repository = "https://github.com/adrianoggm/Onion-FL"
 Issues = "https://github.com/adrianoggm/Onion-FL/issues"

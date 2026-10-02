@@ -229,7 +229,8 @@ def run_scenario(
     except BaseException:
         run.finish(status="failed")
         raise
-    run.finish()
+    # The queue can run dry before the last round (lost messages, no deadlines).
+    run.finish(status="finished" if federation.coordinator.finished else "incomplete")
     return run.path
 
 

@@ -137,7 +137,7 @@ Shared building blocks:
 |---|---|---|---|---|
 | **SWELL** | Federated + baselines | `data/SWELL/` (or `data/SWELL/3 - Feature dataset/per sensor/`), holding the feature CSV of each modality you use: A (computer interaction), B (facial expressions), C (body posture), D (physiology). | Binary: N (no stress) = 0; T (time pressure), I (interruptions) and R (both) = 1 | 25 participants (IDs 1–25). The federated configs use the physiology modality only. In the facial CSV, the value 999 means missing. |
 | **SWEET** | Federated (partial) + baselines | `data/SWEET/selection{1,2}/users/userXXXX/`, extracted from `selection{1,2}_zip/` with `scripts/extract_sweet_selection{1,2}.py`; or `data/SWEET/sample_subjects/` | Self-reported `MAXIMUM_STRESS`, mapped by one of three strategies: `binary` (≥2 means stress), `ordinal`, or `ordinal_3class` (1 / 2 / ≥3) | 14 features (7 ECG heart-rate-variability, 7 accelerometer). selection1 (102 subjects) is used for centralised baselines; selection2 for federated training. |
-| **WESAD** | Baselines only | `data/WESAD/S{N}/S{N}.pkl` for subjects S2–S17 (S1 and S12 aren't in the dataset) | Binary: baseline vs stress | 15 subjects; wrist BVP, EDA, ACC and TEMP; 60 s windows with 50% overlap; 30 features (`datasets/wesad.py`). `evaluate_wesad_baseline.py` uses its own 22-feature loader. |
+| **WESAD** | Baselines only | `data/WESAD/S{N}/S{N}.pkl` for subjects S2–S17 (S1 and S12 aren't in the dataset) | Binary: baseline vs stress | 15 subjects; wrist BVP, EDA, ACC and TEMP; 60 s windows with 50% overlap; 30 features (`datasets/wesad.py`). The removed `evaluate_wesad_baseline.py` used its own 22-feature loader. |
 | Test samples | Tests | `data/samples/{wesad,swell}_real_sample.pkl` | — | Real extracts created by `scripts/create_real_samples.py`. Tests that need them skip when they're missing. |
 
 ### Federated splits
@@ -239,13 +239,11 @@ Here `--dispatch-config` generates the splits; it doesn't publish anything over 
 ### Run the baselines
 
 ```bash
-python scripts/evaluate_wesad_baseline.py
-python scripts/evaluate_swell_baseline.py
-python scripts/evaluate_multimodal_baseline.py
-python scripts/run_subject_cv.py --datasets wesad swell combined   # GroupKFold by subject → results/subject_cv_results/
+onion_fl baseline experiments/mix_ab.yaml          # LR, RF, XGBoost on the experiment's test subjects
+onion_fl baseline experiments/mix_ab.yaml --cv 5   # subject-level 5-fold instead
 ```
 
-The first three scripts write their JSON results to the current directory. They need the `analysis` extra.
+The results go to stdout as JSON. XGBoost needs the `analysis` extra. The previous `scripts/evaluate_*` and `scripts/run_subject_cv.py` were removed in F7.2; their outputs stay in `results/legacy/`.
 
 ---
 
@@ -375,7 +373,7 @@ Source: `results/legacy/subject_cv_results/subject_cv_summary.json` (`scripts/ru
 | WESAD | Logistic Regression | 0.829 ± 0.056 | 0.811 ± 0.074 |
 | WESAD | Random Forest | 0.809 ± 0.111 | 0.786 ± 0.127 |
 
-Re-run `scripts/run_subject_cv.py` and commit the output before citing either table.
+That script was removed in F7.2: re-run with `onion_fl baseline <experiment> --cv 5` and commit the output before citing either table.
 
 ### SWELL: four-modality holdout
 
@@ -425,8 +423,7 @@ src/onion_fl/
 ├── datasets/           # swell, swell_federated, sweet_samples, sweet_federated, wesad, multimodal, federated_common, samples
 ├── training/local.py   # pure train/eval loops
 ├── federated_architecture.py, runtime_protocol.py, telemetry.py, prometheus_metrics.py
-├── swell_model.py, sweet_model.py
-└── evaluation.py       # subject-level CV helper for the multimodal baseline
+└── swell_model.py, sweet_model.py
 scripts/                # launchers, data preparation, baselines (table below)
 configs/                # architecture and split configs (§5)
 docker/                 # observability stack, Grafana provisioning, Prometheus and collector configs
@@ -441,7 +438,7 @@ docs/                   # RULES.md and the redesign spec and backlog (docs/super
 |---|---|---|
 | Federated, main path | `prepare_swell_federated.py`, `run_architecture_from_config.py` | ✅ Used by the `just` recipes |
 | Federated, alternatives | `run_swell_federated_demo.py`; SWEET: `prepare_sweet_federated.py`, `run_sweet_architecture.py`, `run_sweet_federated_demo.py` | ✅ Run |
-| Baselines | `evaluate_{wesad,swell,multimodal,sweet_sample}_baseline.py`, `run_subject_cv.py`, `train_sweet_baseline_selection1.py`, `prepare_sweet_baseline.py` | ✅ Run with the `analysis` extra. `prepare_sweet_baseline.py` needs `--data-dir data/SWEET/selection1/users`. They will become the `onion_fl baseline` command in the redesign. |
+| Baselines | — | Removed in F7.2; use `onion_fl baseline` (see above). |
 | Data extraction | `extract_sweet_selection{1,2}.py`, `create_real_samples.py` | ✅ |
 
 The analysis scripts that produced the WESAD-vs-SWELL comparison live next to their outputs in `results/legacy/comparativa_completa/`.
