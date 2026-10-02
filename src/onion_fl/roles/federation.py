@@ -11,6 +11,7 @@ Each aggregation node reads its round settings from the topology::
     participation: all | {name: fraction, p: 0.5}
     staleness: drop | {name: next_round, weighting: {name: polynomial, a: 0.5}}
     register_timeout: 10s
+    hello_retry: 5s                  # repeat the hello until acknowledged (null: never)
     eval: {every: 1, aggregate_children: true, holdout: true}
 
 The edge template takes ``eval: {every: 1, models: [received, local]}``.
@@ -161,6 +162,7 @@ def build_federation(
             node.id,
             children[node.id],
             parent=node.parent,
+            hello_retry=parse_duration(node.settings.get("hello_retry", 5.0)),
             level=node.level,
             **common,
             **_round_settings(node.settings),
@@ -181,6 +183,9 @@ def build_federation(
                 eval_every=edge_eval.get("every"),
                 eval_models=edge_eval.get("models", ("received", "local")),
                 tags=spec.tags,
+                hello_retry=parse_duration(
+                    topology.edge.settings.get("hello_retry", 5.0)
+                ),
                 **common,
             )
             federation.edges[spec.id] = node

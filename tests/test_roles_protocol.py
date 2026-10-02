@@ -681,3 +681,48 @@ def test_a_fresh_update_replaces_a_stale_one_from_the_same_edge() -> None:
     sent = ctx.sent[-1]
     np.testing.assert_allclose(sent.payload.state[KEY], (3 * 1 + 7 * 2) / 3, rtol=1e-6)
     assert sent.payload.weights[KEY] == 3.0
+
+
+# --- registration over lossy links ------------------------------------------------------------
+
+
+def lossy_tree(**settings):
+    lossy = {"profile": {"preset": "lan", "loss": 0.5}}
+    return parse_topology(
+        {
+            "name": "t",
+            "levels": ["global", "fog", "edge"],
+            "root": {"id": "cloud"},
+            "fog": {
+                "defaults": {"link_up": lossy, **settings},
+                "nodes": [{"id": "fog_0"}],
+            },
+            "edge": {"link_up": lossy, **settings},
+        }
+    )
+
+
+def test_hellos_are_repeated_until_the_parent_acknowledges_them() -> None:
+    edges = {"fog_0": [edge(f"e{i}") for i in range(4)]}
+
+    federation = run(lossy_tree(), edges, seed=1)
+
+    assert any(
+        e["name"] == "link.dropped" and e["tags"]["kind"] == "hello"
+        for e in federation.runtime.events
+    )
+    assert len(names(federation, "federation.registered")) == 1
+    acks = [
+        e
+        for e in names(federation, "message.sent", "fog_0")
+        if e["tags"]["kind"] == "control"
+    ]
+    assert acks  # the fog answers every hello it gets
+
+
+def test_without_retries_a_lost_hello_stalls_the_registration() -> None:
+    edges = {"fog_0": [edge(f"e{i}") for i in range(4)]}
+
+    federation = run(lossy_tree(hello_retry=None), edges, seed=1)
+
+    assert names(federation, "federation.registered") == []
