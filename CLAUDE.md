@@ -4,90 +4,74 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Hierarchical (edge → fog → cloud) federated learning for stress detection, built on Flower + MQTT. Package name is `onion_fl` (`src/` layout; it was `flower_basic` until issue #77). Active datasets: **SWELL** (main workflow), **SWEET**, **WESAD**.
+Onion-FL is a framework for hierarchical federated learning experiments (edge → fog → … → cloud) with a virtual-clock simulator and real runs over MQTT. Package `onion_fl` (`src/` layout), CLI `onion_fl`. Datasets: SWELL, SWEET, WESAD (in `data/`, not in git).
 
-**A redesign is in progress.** Read the spec before structural changes: `docs/superpowers/specs/2026-10-02-onion-fl-framework-design.md`. It turns this into a transport-agnostic framework: state-machine nodes, a virtual-clock simulator plus MQTT, a modular model with per-key aggregation, declarative dataset ingestion, and pluggable placement, sharing and aggregation. Work is tracked as GitHub issues #73–#105 (milestones v0.2.0–v0.5.0; issue titles carry the phase, e.g. `[F2.3]`). Phase 0 (#73–#76) covers clean-up and tooling; check `gh.py issues --milestone v0.2.0` for what is integrated. The architecture below is the current, pre-redesign code.
-
-`results/legacy/` holds committed experiment outputs from before the redesign. Its `INDEX.md` lists their caveats.
+- **Design.** `docs/architecture.md` describes what is built; the spec it implements, with the decisions, is `docs/superpowers/specs/2026-10-02-onion-fl-framework-design.md` (Spanish). Read the relevant part before structural changes.
+- **Tracking.** Work is tracked as GitHub issues, with milestone v0.3.0 (the front, #103) next.
+- **Legacy.** `results/legacy/` holds results from before the redesign, with caveats in its `INDEX.md`.
 
 ## Commands
 
+The repo `.venv` (Python 3.11, created with uv) is the environment. The global Python lacks `onion_fl`.
+
 ```bash
-pip install -e ".[dev]"               # add ,analysis for scripts/ (matplotlib, seaborn, xgboost)
-
-python -m pytest                      # full suite; no MQTT broker needed (MQTT is mocked)
-python -m pytest tests/test_runtime_protocol.py::test_name -q   # single test
-python -m pytest -m "not slow"        # markers: slow, integration
-
-ruff check .                          # CI gate (CI only runs on PRs into main; run these locally before every task PR)
-ruff format --check .                 # CI gate
-just format                           # ruff check --fix + ruff format
+just install-dev                      # uv venv + CPU torch + -e ".[dev]"
+just check                            # ruff check, ruff format --check, pytest: what every PR needs
+.venv/Scripts/python -m pytest tests/test_roles_protocol.py -q -k quorum    # one test (bin/ on Linux)
+.venv/Scripts/python -m onion_fl plan experiments/mix_ab.yaml               # dry run, no training
 ```
 
 - pytest runs with `filterwarnings = error` (only `UserWarning`/`DeprecationWarning` are ignored), so any new warning class fails the suite.
-- Tests that need real data (`data/SWELL`, `data/WESAD`, `data/samples/*.pkl`) skip when it's missing. `data/` and `federated_runs/` are gitignored.
-- ruff is pinned to 0.16.x in `pyproject.toml` and `.pre-commit-config.yaml`; keep them in sync. Markdown files are excluded from ruff.
-- The `justfile` is the task runner. Its recipes use bash (`source .venv/bin/activate`, `pgrep`), so on Windows run them from Git Bash or WSL.
+- **Skipped tests.** Some tests need `data/` (`data/SWELL`, `data/samples/*.pkl`…) or an MQTT broker (`ONIONFL_MQTT=host:port`, default `localhost:1883`), and skip without them.
+  - Local broker: `docker run -d -p 1883:1883 eclipse-mosquitto:2 mosquitto -c /mosquitto-no-auth.conf`.
+  - In Git Bash, prefix it with `MSYS_NO_PATHCONV=1`.
+- ruff is pinned to 0.16.x in `pyproject.toml` and `.pre-commit-config.yaml`; keep them in sync. Markdown is excluded from ruff.
+- **CI** runs only on PRs into `main`, with a Mosquitto broker. Task PRs into `develop` are gated by `just check` locally.
 
-### Running the federated stack
+## Architecture
 
-```bash
-just docker-up        # MQTT :1883, OTEL collector :4320, Jaeger :16686, Prometheus :9090, Pushgateway :9091, Grafana :3000
-just swell-prepare-physio   # scripts/prepare_swell_federated.py -> federated_runs/swell/<run>/manifest.json + NPZ splits
-just swell-launch-physio    # scripts/run_architecture_from_config.py --config ... --manifest ... --launch
-just stop-all
-```
+| Package | What lives there |
+|---|---|
+| `core` | `Message`/`Payload` and codecs, `Node` + `Context` (the only way a node acts), `Topology` (`topology_id`, `to_graph`), `Registry`, `ids` |
+| `data` | `SubjectData` contract, declarative `ingest` (readers, steps, `{option}` placeholders, `when`), signed `cache`, subject `roles`, `placement` plugins |
+| `learning` | `modular_mlp` with namespaced keys, sharing scopes, per-key aggregators and server optimizers, trainers and inits, metrics |
+| `roles` | `Coordinator`, `Aggregator`, `Edge` state machines; round policies; `build_federation` (topology + edges → nodes and links on a runtime) |
+| `runtime` | `SimRuntime` (virtual clock, link channels, compute and availability models), `RealRuntime` (wall clock, hosted subset) |
+| `transports` | `memory`, `mqtt` |
+| `observability` | Event schema and JSONL, `Run` (`runs/<run_id>/`, `run_hash`), diagnostics, `load_runs`/`compare`/report, Prometheus and OTEL sinks |
+| `experiment` | Config (pydantic), sweeps, `plan`/`run_scenario`, real launcher (one process per aggregator), CLI |
 
-`run_architecture_from_config.py --plan-only` prints the exact per-process commands without launching anything. It's the quickest way to see how a YAML in `configs/` turns into processes. It supports SWELL only. SWEET has its own launcher: `scripts/run_sweet_architecture.py --config configs/sweet_architecture_5nodes.yaml --dispatch-config --launch`.
+Things that span several files:
 
-## Architecture (current code)
-
-### Topology and message flow
-
-Each role runs as its own OS process (`python -m onion_fl.<pkg>.<module>`). Each process is configured through CLI flags plus env vars (`MQTT_BROKER`, `MQTT_PORT`, `MQTT_TOPIC_*`, `MQTT_REGION`, `FOG_K_MAP`):
-
-```
-clients/<ds>.py  --MQTT fl/updates-->  brokers/fog.py (buffers K updates per region, weighted avg)
-                 --MQTT fl/partial-->  clients/fog_bridge_<ds>.py (Flower NumPyClient, one per fog)
-                 --Flower gRPC----->   servers/<ds>.py (FedAvg strategy)
-                 --MQTT fl/global_model--> clients (next round) + broker (round tracking)
-```
-
-The fog bridge is what plugs the MQTT world into Flower. `fit()` waits for a partial aggregate from its region and returns it to the server as if it had trained it.
-
-### Code layout: shared base + dataset-specific leaf
-
-| Role | Shared logic | Leaves |
-|---|---|---|
-| Client | `clients/federated_base.py` `FederatedMQTTClientBase` (round loop, wait for global, publish) | `clients/swell.py`, `clients/sweet.py` |
-| Fog bridge | `clients/fog_bridge_base.py` `BaseFogBridgeClient` | `fog_bridge_swell.py`, `fog_bridge_sweet.py` |
-| Server | `servers/federated_base.py` `FederatedMQTTStrategyBase(FedAvg)` | `servers/swell.py`, `servers/sweet.py` |
-| Broker | `brokers/federated_base.py` `handle_client_update(...)` + `BrokerConfig`/`BrokerCallbacks` | `brokers/fog.py`, `brokers/sweet_fog.py` |
-
-Brokers are module-level functions with module state, not classes. Each broker module builds a `BrokerConfig` and callbacks, then delegates to `handle_client_update`.
-
-Keep pure functions with I/O at the edges:
-- `runtime_protocol.py` owns every MQTT payload build/decode (`build_*_payload`, `decode_*_message`, envelopes). Change wire formats only there.
-- `training/local.py` contains pure train/eval loops. `datasets/federated_common.py` contains split/manifest loading.
-- `federated_architecture.py` pipeline: `parse_architecture_config` → `apply_manifest_paths` / `plan_manifest_application` → `resolve_runtime_architecture` → `plan_runtime_commands`. `plan_*` functions do no I/O. `materialize_*` functions write files.
-
-### Things that span multiple files
-
-- **Manifest drives spawning.** For SWELL, clients are rebuilt from `manifest.json` (`fog_<id>/subject_<id>/{train,val,test}.npz`). Subjects with no train data are skipped. A fog node's `k` is clamped to its number of spawned clients. `model.input_dim` comes from the manifest or the first `train.npz`.
-- **Parameter names must match** across client, bridge and server. Weights travel as name→array dicts and are ordered by name, which is why each dataset has a single model class (`SwellMLP`, `SweetMLP`) that all three roles import.
-- **Stale-update policy** (`orchestrator.stale_update_policy`: `accept` | `strict`, see `configs/federated_architecture_{accept,strict}.yaml`). The broker learns the latest round from `fl/global_model` and expects `latest + 1`. `strict` drops stale and future updates. `accept` buffers them and records staleness metrics.
-- **Observability.** OTEL trace context is injected into MQTT payloads, and spans are linked across processes (`telemetry.start_linked_*_span`). Each process serves Prometheus `/metrics` (`METRICS_PORT_<COMPONENT>` / `METRICS_PORT`). Clients and server also push to Pushgateway, but brokers deliberately don't, so live `/metrics` stays the single source of broker metrics. The new runtime exports through `observability.sinks` (`PrometheusSink` on port 9464, `OtelSink`); `tests/test_grafana_dashboard.py` checks that `docker/grafana/.../onion-fl.json` only queries series and labels that `PrometheusSink` exports, so update both together.
-- **Multi-spawn guard.** Several fixes target duplicate child processes and orphaned processes. Components register `atexit`/signal cleanup. `run_architecture_from_config.py` stops everything once the server exits; `run_sweet_architecture.py` doesn't. Keep that cleanup intact when touching entrypoints. It has little test coverage: `tests/test_demo_launchers.py` only checks the module plans the launchers build.
+- **Every axis is a plugin.** Registries map a name, or `pkg.mod:Name`, to a factory with a pydantic params model. The config validates through them, and `onion_fl schema` exports them for the front. A new plugin is one decorated class.
+- **Keys decide everything.** Parameter keys are namespaced (`adapter.<ds>`, `trunk`, `head.<task>`).
+  - `group_of` maps a key to its group, and `SharingPolicy.scope_of` gives the group's scope.
+  - `keys_crossing` says what travels on each link; `keys_held_at` says what an aggregator keeps.
+  - Aggregators combine per key, sorted by sender; weights are samples per key.
+- **Round 1 bootstraps.** The coordinator's first `global_model` carries the full initial state (`meta.bootstrap`), so aggregators can seed the zone groups they keep without building a model.
+- **Determinism.**
+  - Each node keeps one RNG stream for the whole run (`node_rng(seed, id)`).
+  - Roles have their own seed, so test subjects are identical across scenarios.
+  - The placement uses the run seed.
+  - `tests/test_runtime_equivalence.py` checks that sim, the in-process real runtime and multi-process MQTT give the same final model.
+- **Lifecycle.**
+  - Children repeat `hello` until acknowledged.
+  - When the coordinator finishes, a `control` stop travels down the tree.
+  - The real launcher merges the per-process event files and signs the run.
+  - A run whose coordinator never finished is `incomplete`.
+- **Observability contract.** `docker/grafana/.../onion-fl.json` may only query series and labels that `PrometheusSink` exports; `tests/test_grafana_dashboard.py` checks it, so update both together.
+- **Old loaders.** `onion_fl.datasets` keeps the loaders from before the redesign only as the parity reference for the descriptors in `datasets/`.
 
 ## Project rules (`docs/RULES.md`)
 
-- **No synthetic data for ML.** Don't use `np.random`-generated datasets or fake features for training or evaluation. Protocol/runtime tests may use a stub trainer that learns nothing. Tests that train or evaluate use real extracts (`data/samples/`) and skip when absent. Mocking MQTT or Flower is fine.
-- **Splits must be subject-disjoint** for global test. Only the `global` split strategy with `test_assignments` (`configs/swell_federated_10runs.yaml`) guarantees this. The code default, `per_subject`, splits each subject's own samples, so it doesn't.
-- **Meta columns are never features** (`blok`, `timestamp`, subject IDs…). `blok` inflated SWELL baselines to ~0.99 before commit `002246f`.
-- **README results must cite a committed artifact.** `federated_runs/` is gitignored, so no federated result is currently backed by a file. Keep the README "Known issues" section in sync when fixing them.
+- **No synthetic data for ML.** Anything that trains or evaluates learning uses real extracts and skips without them. Protocol tests use the `stub` trainer, optionally with seeded `noise`, plus stub scorers. Format fixtures (small CSVs) are fine for parsing tests.
+- **Subject-disjoint evaluation.** Test subjects are reserved per dataset. Imputation, scaling and constant-feature removal are fitted on the training portions only.
+- **Meta columns are never features.** `blok`, timestamps and subject IDs must not become features: descriptors exclude them explicitly, and the subject and label source columns are always excluded. `blok` inflated SWELL baselines to ~0.99 before commit `002246f`.
+- **Results cite a committed artifact,** signed with `topology_id`, `config_id`, `run_id` and `run_hash`. Keep the README status honest about what has and hasn't been run on real data.
 - **Workflow:**
-  - Each GitHub issue gets a `task/#N` branch from `develop`, merged back by PR. `main` only gets tagged working versions.
-  - Commit messages follow `type(scope): Imperative summary in English`. Commits are atomic and carry no `Co-Authored-By`.
-  - For any issue, branch, PR, merge, release or backlog work, use the project skill `tarea-github` (`.claude/skills/tarea-github/`). Its `scripts/gh.py` talks to the GitHub API with the git credential, so no `gh` CLI is needed.
-- **Style:** ruff, 88 columns. Modules start with `from __future__ import annotations`, often above the docstring (E402 is ignored for this). Log, error and CLI help strings are mostly in Spanish, so match the surrounding file.
-- **Python ≥ 3.11**, which CI uses.
+  - Each issue gets a `task/#N` branch from `develop` and a PR back into `develop`; `main` only gets tagged releases.
+  - Commits follow `type(scope): Imperative summary in English`, are atomic and carry no `Co-Authored-By`.
+  - Use the project skill `tarea-github` (`.claude/skills/tarea-github/scripts/gh.py`, GitHub API via the git credential, no `gh` CLI) for issues, PRs, merges and releases.
+  - `git rm` stages at once, so check `git diff --cached --name-only` before each commit.
+- **Style:** ruff, 88 columns. Modules start with `from __future__ import annotations`, often above the docstring (E402 is ignored for this). Plugin titles and descriptions are in Spanish (the front's language); code, comments and docs are in English.
+- **Python ≥ 3.11.**
