@@ -109,6 +109,7 @@ def test_sent_messages_record_their_encoded_size() -> None:
         "kind": "update",
         "round": 0,
         "codec": "json",
+        "msg_id": "edge_1>fog_0#1",
     }
 
 
@@ -544,3 +545,14 @@ def test_listeners_receive_every_recorded_event() -> None:
 
     assert seen == sim.events
     assert [e["name"] for e in seen] == ["hello.world", "hello.again"]
+
+
+def test_each_message_gets_an_id_seen_at_both_ends() -> None:
+    rt, _, _ = pair(pinger=Pinger("edge_1", "fog_0", rounds=(0, 1)))
+
+    rt.run()
+
+    sent = [e["tags"]["msg_id"] for e in rt.events if e["name"] == "message.sent"]
+    delivered = [e["tags"]["msg_id"] for e in rt.events if e["name"] == "message.delivered"]
+    assert len(set(sent)) == len(sent) == 4
+    assert sorted(delivered) == sorted(sent)

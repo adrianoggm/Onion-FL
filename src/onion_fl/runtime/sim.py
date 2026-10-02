@@ -11,6 +11,7 @@ it busy: what it sent in that handler leaves when the work ends
 """
 
 import heapq
+import itertools
 import time
 from collections.abc import Mapping
 from typing import Any
@@ -95,6 +96,7 @@ class SimRuntime:
         self._seq = 0
         self._processed = 0
         self._rngs: dict[str, Any] = {}
+        self._msg_ids = itertools.count(1)
         self._started = False
 
     # --- setup -------------------------------------------------------------
@@ -156,8 +158,8 @@ class SimRuntime:
         if self._is_up(node_id, None):
             self._handle(node_id, "on_start", lambda node, ctx: node.on_start(ctx))
 
-    def _on_deliver(self, src: str, dst: str, data: bytes) -> None:
-        if self._defer_if_busy(dst, "deliver", (src, dst, data)):
+    def _on_deliver(self, src: str, dst: str, data: bytes, msg_id: str) -> None:
+        if self._defer_if_busy(dst, "deliver", (src, dst, data, msg_id)):
             return
         msg = self._links[(src, dst)].codec.decode(data)
         if not self._is_up(dst, msg.round):
@@ -165,14 +167,14 @@ class SimRuntime:
                 dst,
                 "message.dropped_offline",
                 None,
-                {"src": src, "kind": msg.kind, "round": msg.round},
+                {"src": src, "kind": msg.kind, "round": msg.round, "msg_id": msg_id},
             )
             return
         self._record(
             dst,
             "message.delivered",
             None,
-            {"src": src, "kind": msg.kind, "round": msg.round},
+            {"src": src, "kind": msg.kind, "round": msg.round, "msg_id": msg_id},
         )
         self._handle(dst, "on_message", lambda node, ctx: node.on_message(msg, ctx))
 
@@ -267,13 +269,15 @@ class SimRuntime:
             "kind": msg.kind,
             "round": msg.round,
             "codec": link.codec.name,
+            # the same id is seen on delivery: it links send and receive (spans, latency)
+            "msg_id": f"{msg.src}>{msg.dst}#{next(self._msg_ids)}",
         }
         self._record(msg.src, "message.sent", len(data), tags)
         arrival = link.channel.schedule(self.now, len(data))
         if arrival is None:
             self._record(msg.src, "link.dropped", len(data), tags)
             return
-        self._push(arrival, "deliver", (msg.src, msg.dst, data))
+        self._push(arrival, "deliver", (msg.src, msg.dst, data, tags["msg_id"]))
 
     def _record(
         self, node_id: str, name: str, value: Any, tags: Mapping[str, Any]
