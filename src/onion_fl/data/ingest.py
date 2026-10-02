@@ -10,7 +10,7 @@ from __future__ import annotations
     options: {modality: all}            # declared options and their defaults
     steps:
       - join: {source: {reader: csv, path: "{subject}/current_stress.csv"},
-               on: [subject], time: {left: "Unnamed: 0", right: TS, floor: min}}
+               by: [subject], time: {left: "Unnamed: 0", right: TS, floor: min}}
       - label: {default: binary, strategies: {binary: {task: stress_binary,
                 column: MAXIMUM_STRESS, threshold: 3}}}
       - features: {exclude: [TS, "Unnamed: 0"]}
@@ -22,6 +22,7 @@ column; the ``subject`` and ``label`` steps record their source columns so
 columns are excluded on purpose, not by luck (docs/RULES.md).
 """
 
+import pickle
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -45,6 +46,10 @@ class SourceSpec(BaseModel):
 
     reader: str
     path: str
+    normalize_columns: bool = Field(
+        False,
+        description="Columnas sin espacios de borde, '_' por espacio y en minúscula",
+    )
 
     def reader_params(self) -> dict[str, Any]:
         return dict(self.model_extra or {})
@@ -59,6 +64,7 @@ class DatasetSpec(BaseModel):
     source: SourceSpec
     options: dict[str, Any] = Field(default_factory=dict)
     steps: list[dict[str, Any]]
+    min_samples_per_subject: PositiveInt = 1
 
 
 def load_spec(path: str | Path) -> DatasetSpec:
@@ -194,21 +200,119 @@ def _glob_regex(pattern: str) -> re.Pattern[str]:
     return re.compile("".join(parts))
 
 
+WESAD_RATES = {
+    "chest": {"ACC": 700, "ECG": 700, "EMG": 700, "EDA": 700, "TEMP": 700, "RESP": 700},
+    "wrist": {"ACC": 32, "BVP": 64, "EDA": 4, "TEMP": 4},
+}
+WESAD_LABEL_RATE = 700
+
+
+class WesadParams(BaseModel):
+    location: Literal["chest", "wrist"] = "wrist"
+    signals: list[str] | str | None = Field(
+        None,
+        description="Señales (lista o 'A,B'); por defecto todas las de la ubicación",
+    )
+
+    @model_validator(mode="after")
+    def _known(self) -> WesadParams:
+        available = WESAD_RATES[self.location]
+        unknown = [s for s in _split(self.signals) or [] if s not in available]
+        if unknown:
+            raise ValueError(
+                f"{self.location} has no signals {unknown}; available {list(available)}"
+            )
+        return self
+
+
+def _split(value: list[str] | str | None) -> list[str] | None:
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()]
+    return value
+
+
+@readers.register(
+    "wesad_pickle",
+    title="WESAD",
+    description="Fichero S<n>.pkl de WESAD: señales de pecho o muñeca y etiqueta a 700 Hz.",
+    params=WesadParams,
+    explain=(
+        "Las señales de muñeca se mantienen a la frecuencia de la etiqueta (muestra "
+        "y retención); la columna condition trae la etiqueta original (0-7)."
+    ),
+)
+class WesadPickleReader:
+    def __init__(self, location: str = "wrist", signals=None) -> None:
+        self.location = location
+        self.signals = _split(signals) or list(WESAD_RATES[location])
+
+    def read(self, path: Path) -> pd.DataFrame:
+        with open(path, "rb") as handle:  # the dataset's own format; trusted files only
+            data = pickle.load(handle, encoding="latin1")
+        labels = np.asarray(data["label"])
+        rates = WESAD_RATES[self.location]
+        arrays = {}
+        for name in self.signals:
+            values = np.asarray(data["signal"][self.location][name], dtype=np.float64)
+            arrays[name] = values.reshape(len(values), -1)
+        # Keep the label rows every signal covers, as the old windows did.
+        n = min(
+            [len(labels)]
+            + [len(a) * WESAD_LABEL_RATE // rates[k] for k, a in arrays.items()]
+        )
+        held = np.arange(n)
+        columns = {}
+        for name, values in arrays.items():
+            index = held * rates[name] // WESAD_LABEL_RATE  # sample and hold
+            for i in range(values.shape[1]):
+                columns[f"{name.lower()}_{i}"] = values[index, i]
+        columns["condition"] = labels[:n]
+        return pd.DataFrame(columns)
+
+
+def _glob_regex(pattern: str) -> re.Pattern[str]:
+    parts, seen = [], False
+    for token in re.split(r"(\{subject\}|\*|\?)", pattern):
+        if token == "{subject}":
+            parts.append("(?P=subject)" if seen else "(?P<subject>[^/]+)")
+            seen = True
+        elif token == "*":
+            parts.append("[^/]*")
+        elif token == "?":
+            parts.append("[^/]")
+        else:
+            parts.append(re.escape(token))
+    return re.compile("".join(parts))
+
+
+def source_files(source: SourceSpec, root: Path) -> list[tuple[Path, str | None]]:
+    """Files the path matches, with the subject that ``{subject}`` captured."""
+    regex = _glob_regex(source.path)
+    found = []
+    for path in sorted(root.glob(source.path.replace("{subject}", "*"))):
+        match = regex.fullmatch(path.relative_to(root).as_posix())
+        if match is not None:
+            found.append((path, match.groupdict().get("subject")))
+    if not found:
+        raise DataError(f"no file matches {(root / source.path).as_posix()}")
+    return found
+
+
+def read_file(reader: Any, source: SourceSpec, path: Path, subject: str | None):
+    frame = reader.read(path)
+    if source.normalize_columns:
+        frame.columns = [
+            str(c).strip().replace(" ", "_").lower() for c in frame.columns
+        ]
+    if subject is not None:
+        frame["subject"] = subject
+    return frame
+
+
 def read_source(source: SourceSpec, root: Path) -> pd.DataFrame:
     """Read every file the path matches; ``{subject}`` becomes the ``subject`` column."""
     reader = readers.create(source.reader, source.reader_params())
-    regex = _glob_regex(source.path)
-    frames = []
-    for path in sorted(root.glob(source.path.replace("{subject}", "*"))):
-        match = regex.fullmatch(path.relative_to(root).as_posix())
-        if match is None:
-            continue
-        frame = reader.read(path)
-        if "subject" in regex.groupindex:
-            frame["subject"] = match.group("subject")
-        frames.append(frame)
-    if not frames:
-        raise DataError(f"no file matches {(root / source.path).as_posix()}")
+    frames = [read_file(reader, source, *found) for found in source_files(source, root)]
     return pd.concat(frames, ignore_index=True)
 
 
@@ -311,7 +415,10 @@ class TimeJoin(BaseModel):
 
 class JoinParams(BaseModel):
     source: SourceSpec
-    on: list[str] = Field(default_factory=list)
+    by: list[str] = Field(
+        default_factory=list,
+        description="Columnas clave (no 'on': YAML lo lee como true)",
+    )
     time: TimeJoin | None = None
     how: Literal["inner", "left"] = "inner"
     deduplicate: bool = Field(
@@ -326,14 +433,17 @@ class JoinParams(BaseModel):
     params=JoinParams,
 )
 class JoinStep:
-    def __init__(self, source, on, time, how, deduplicate) -> None:
+    def __init__(self, source, by, time, how, deduplicate) -> None:
         self.source = SourceSpec.model_validate(source)
-        self.on, self.how, self.deduplicate = list(on), how, deduplicate
+        self.by, self.how, self.deduplicate = list(by), how, deduplicate
         self.time = None if time is None else TimeJoin.model_validate(time)
+        self._right: pd.DataFrame | None = None
 
     def apply(self, df: pd.DataFrame, ctx: IngestContext) -> pd.DataFrame:
-        left, right = df.copy(), read_source(self.source, ctx.root)
-        keys = list(self.on)
+        if self._right is None:  # read once, then joined with every source file
+            self._right = read_source(self.source, ctx.root)
+        left, right = df.copy(), self._right.copy()
+        keys = list(self.by)
         _require(left, keys, "join")
         _require(right, keys, "join")
         for key in keys:
@@ -349,7 +459,7 @@ class JoinStep:
             right = right.dropna(subset=["_time"])
             keys.append("_time")
         if not keys:
-            raise DataError("join needs 'on' keys or 'time'")
+            raise DataError("join needs 'by' columns or 'time'")
         if self.deduplicate:
             right = right.drop_duplicates(subset=keys)
         out = left.merge(right, on=keys, how=self.how, suffixes=("", "_right"))
@@ -398,10 +508,11 @@ class WindowStep:
     def apply(self, df: pd.DataFrame, ctx: IngestContext | None) -> pd.DataFrame:
         if "subject" not in df.columns:
             raise DataError("window runs per subject: put a subject step before it")
+        reserved = {"subject", "label"} | (ctx.meta_columns if ctx else set())
         columns = self.columns or [
             c
             for c in df.columns
-            if c not in ("subject", "label") and pd.api.types.is_numeric_dtype(df[c])
+            if c not in reserved and pd.api.types.is_numeric_dtype(df[c])
         ]
         _require(df, columns, "window")
         names = [f"{c}_{s}" for c in columns for s in self.stats]
@@ -601,6 +712,8 @@ def _require(df: pd.DataFrame, columns: list[str], step: str) -> None:
 
 def resolve_options(spec: DatasetSpec, options: Mapping[str, Any] | None) -> dict:
     """Declared defaults plus the given options; ``label`` picks a label strategy."""
+    if "subject" in spec.options:
+        raise DataError("'subject' is reserved for {subject} in paths, not an option")
     given = dict(options or {})
     unknown = sorted(set(given) - set(spec.options) - {"label"})
     if unknown:
@@ -628,25 +741,73 @@ def _natural(text: str) -> list[Any]:
     return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", text)]
 
 
+def _fill(value: Any, options: Mapping[str, Any]) -> Any:
+    """Replace ``{option}`` in strings; a string that is only ``{option}`` takes its value."""
+    if isinstance(value, dict):
+        return {k: _fill(v, options) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_fill(v, options) for v in value]
+    if not isinstance(value, str):
+        return value
+    for name, option in options.items():
+        if value == f"{{{name}}}":
+            return option
+        value = value.replace(f"{{{name}}}", str(option))
+    return value
+
+
+def _compile(spec: DatasetSpec, options: Mapping[str, Any] | None):
+    """Resolve options and build the reader and the active steps, without reading data."""
+    resolved = resolve_options(spec, options)
+    source = SourceSpec.model_validate(_fill(spec.source.model_dump(), resolved))
+    reader = readers.create(source.reader, source.reader_params())
+    active = []
+    for entry in spec.steps:
+        names = [k for k in entry if k != "when"]
+        if len(names) != 1:
+            raise DataError(f"each steps entry needs exactly one step, got {names}")
+        if _active(entry.get("when") or {}, resolved):
+            params = _fill(entry[names[0]] or {}, resolved)
+            active.append((names[0], steps.create(names[0], params)))
+    return resolved, source, reader, active
+
+
+def check_spec(spec: DatasetSpec, options: Mapping[str, Any] | None = None) -> None:
+    """Validate a description and its options without touching the data."""
+    _compile(spec, options)
+
+
 def ingest(
     spec: DatasetSpec,
     options: Mapping[str, Any] | None = None,
     root: str | Path | None = None,
 ) -> list[SubjectData]:
-    """Run the description and return one ``SubjectData`` per subject, in natural order."""
+    """Run the description and return one ``SubjectData`` per subject, in natural order.
+
+    Each source file goes through the steps on its own (a subject's day, a WESAD
+    recording), so memory stays bounded and windows never span two files.
+    """
+    resolved, source, reader, active = _compile(spec, options)
     ctx = IngestContext(
-        root=Path(root or spec.root), options=resolve_options(spec, options)
+        root=Path(_fill(str(root or spec.root), resolved)), options=resolved
     )
-    df = read_source(spec.source, ctx.root)
-    ran = set()
-    for entry in spec.steps:
-        names = [k for k in entry if k != "when"]
-        if len(names) != 1:
-            raise DataError(f"each steps entry needs exactly one step, got {names}")
-        if not _active(entry.get("when") or {}, ctx.options):
-            continue
-        df = steps.create(names[0], entry[names[0]] or {}).apply(df, ctx)
-        ran.add(names[0])
+    frames, first = [], None
+    for path, subject in source_files(source, ctx.root):
+        df = read_file(reader, source, path, subject)
+        for _, step in active:
+            df = step.apply(df, ctx)
+        if first is None:
+            first = (path, list(df.columns))
+        elif list(df.columns) != first[1]:
+            missing = sorted(set(first[1]) - set(df.columns))
+            extra = sorted(set(df.columns) - set(first[1]))
+            raise DataError(
+                f"{path} ends with other columns than {first[0]}: "
+                f"missing {missing}, extra {extra}"
+            )
+        frames.append(df)
+    df = pd.concat(frames, ignore_index=True)
+    ran = {name for name, _ in active}
 
     if "subject" not in df.columns:
         raise DataError(
@@ -671,4 +832,5 @@ def ingest(
         for subject, part in sorted(
             df.groupby("subject"), key=lambda kv: _natural(kv[0])
         )
+        if len(part) >= spec.min_samples_per_subject
     ]

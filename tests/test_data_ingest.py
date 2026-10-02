@@ -362,7 +362,7 @@ def test_join_on_keys(tmp_path: Path) -> None:
     write(tmp_path / "a.csv", "pp,blok,keys\n1,1,10\n1,2,20\n")
     write(tmp_path / "b.csv", "pp,blok,hr\n1,1,60\n1,2,70\n")
     out = steps.create(
-        "join", {"source": {"reader": "csv", "path": "b.csv"}, "on": ["pp", "blok"]}
+        "join", {"source": {"reader": "csv", "path": "b.csv"}, "by": ["pp", "blok"]}
     ).apply(pd.read_csv(tmp_path / "a.csv"), ctx=_ctx(tmp_path))
 
     assert out["hr"].tolist() == [60, 70]
@@ -385,7 +385,7 @@ def test_join_by_time_floors_both_sides(tmp_path: Path) -> None:
         "join",
         {
             "source": {"reader": "csv", "path": "{subject}/labels.csv"},
-            "on": ["subject"],
+            "by": ["subject"],
             "time": {"left": "timestamp", "right": "TS", "floor": "min"},
             "deduplicate": True,
         },
@@ -449,6 +449,25 @@ def test_window_stat_names_follow_channel_then_stat() -> None:
     assert out["x_std"].tolist() == [1.0]  # population std, as before
 
 
+def test_window_never_summarises_the_label_source(tmp_path: Path) -> None:
+    # The raw label column is numeric: without care it would become condition_mean.
+    write(tmp_path / "S2" / "s.csv", "x,condition\n1,1\n2,1\n3,2\n4,2\n")
+
+    (s,) = ingest(
+        spec(
+            tmp_path,
+            {"reader": "csv", "path": "{subject}/s.csv"},
+            [
+                {"label": {"task": "t", "column": "condition", "map": {1: 0, 2: 1}}},
+                {"window": {"size": 2, "stats": ["mean"]}},
+                {"features": {}},
+            ],
+        )
+    )
+
+    assert s.feature_names == ["x_mean"]
+
+
 def test_window_needs_subjects() -> None:
     with pytest.raises(DataError, match="subject"):
         run("window", {"size": 2}, pd.DataFrame({"x": [1.0, 2.0]}))
@@ -508,3 +527,165 @@ def test_subjects_come_in_natural_order(tmp_path: Path) -> None:
     subjects = ingest(spec(tmp_path, {"reader": "csv", "path": "t.csv"}, BASIC))
 
     assert [s.subject for s in subjects] == ["2", "10"]
+
+
+# --- source extras, per-file processing and descriptor checks (issue #87) ---------------
+
+
+def test_source_can_normalize_column_names(tmp_path: Path) -> None:
+    write(tmp_path / "t.csv", " PP ,Condition,Key Strokes\n1,N,3\n")
+
+    (s,) = ingest(
+        spec(
+            tmp_path,
+            {"reader": "csv", "path": "t.csv", "normalize_columns": True},
+            [
+                {"subject": {"column": "pp"}},
+                {
+                    "label": {
+                        "task": "t",
+                        "column": "condition",
+                        "map": {"N": 0, "T": 1},
+                    }
+                },
+                {"features": {}},
+            ],
+        )
+    )
+
+    assert s.feature_names == ["key_strokes"]
+
+
+def test_options_fill_placeholders_in_root_and_paths(tmp_path: Path) -> None:
+    write(tmp_path / "selection2" / "t.csv", "pp,cond,keys\n1,N,3\n")
+    s = DatasetSpec(
+        name="demo",
+        root=str(tmp_path / "{selection}"),
+        source={"reader": "csv", "path": "t.csv"},
+        options={"selection": "selection1"},
+        steps=BASIC,
+    )
+
+    assert len(ingest(s, options={"selection": "selection2"})) == 1
+    with pytest.raises(DataError, match="selection1"):
+        ingest(s)
+
+
+def test_each_file_runs_the_steps_on_its_own(tmp_path: Path) -> None:
+    # Windows never span two files: each one is processed separately.
+    for day in (1, 2):
+        write(tmp_path / "u1" / f"d{day}.csv", "x,label\n1,0\n2,0\n3,0\n")
+
+    (s,) = ingest(
+        spec(
+            tmp_path,
+            {"reader": "csv", "path": "{subject}/d*.csv"},
+            [
+                {"label": {"task": "t", "column": "label", "n_classes": 2}},
+                {"window": {"size": 2, "overlap": 0.5, "stats": ["mean"]}},
+                {"features": {}},
+            ],
+        )
+    )
+
+    assert s.X[:, 0].tolist() == [1.5, 2.5, 1.5, 2.5]
+
+
+def test_files_must_end_with_the_same_columns(tmp_path: Path) -> None:
+    write(tmp_path / "a" / "f.csv", "pp,cond,keys\n1,N,3\n")
+    write(tmp_path / "b" / "f.csv", "pp,cond,mouse\n2,N,3\n")
+
+    with pytest.raises(DataError, match="mouse"):
+        ingest(spec(tmp_path, {"reader": "csv", "path": "*/f.csv"}, BASIC))
+
+
+def test_subjects_with_too_few_samples_are_dropped(table: Path) -> None:
+    s = spec(
+        table,
+        {"reader": "csv", "path": "table.csv"},
+        BASIC,
+        min_samples_per_subject=3,
+    )
+
+    assert ingest(s) == []
+
+
+def test_check_spec_builds_every_step_without_data(tmp_path: Path) -> None:
+    from onion_fl.data.ingest import check_spec
+
+    good = spec(tmp_path, {"reader": "csv", "path": "nothing.csv"}, BASIC)
+    bad = spec(tmp_path, {"reader": "csv", "path": "x.csv"}, [{"window": {"size": 0}}])
+
+    check_spec(good)
+    with pytest.raises(ValueError, match="size"):
+        check_spec(bad)
+
+
+def test_option_names_cannot_clash_with_subject(tmp_path: Path) -> None:
+    with pytest.raises(DataError, match="subject"):
+        ingest(
+            spec(
+                tmp_path,
+                {"reader": "csv", "path": "t.csv"},
+                BASIC,
+                options={"subject": 1},
+            )
+        )
+
+
+# --- wesad_pickle (format fixture: the structure of a WESAD subject file) ----------------
+
+
+def wesad_file(path: Path, seconds: int = 2) -> Path:
+    n = 700 * seconds
+    data = {
+        "label": np.repeat([1, 2], n // 2),
+        "signal": {
+            "chest": {"ECG": np.arange(n, dtype=float).reshape(-1, 1)},
+            "wrist": {
+                "ACC": np.arange(32 * seconds * 3, dtype=float).reshape(-1, 3),
+                "EDA": np.arange(4 * seconds, dtype=float).reshape(-1, 1),
+            },
+        },
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(pickle.dumps(data))
+    return path
+
+
+def test_wesad_reader_holds_wrist_signals_at_the_label_rate(tmp_path: Path) -> None:
+    path = wesad_file(tmp_path / "S2" / "S2.pkl")
+    reader = readers.create(
+        "wesad_pickle", {"location": "wrist", "signals": ["ACC", "EDA"]}
+    )
+
+    df = reader.read(path)
+
+    assert list(df.columns) == ["acc_0", "acc_1", "acc_2", "eda_0", "condition"]
+    assert len(df) == 1400
+    assert df["eda_0"].iloc[[0, 174, 175, 1399]].tolist() == [0, 0, 1, 7]  # 4 Hz held
+    assert df["acc_1"].iloc[700] == 32 * 3 + 1  # sample 32 of the 32 Hz signal
+    assert df["condition"].iloc[[0, 1399]].tolist() == [1, 2]
+
+
+def test_wesad_reader_chest_is_sample_aligned(tmp_path: Path) -> None:
+    path = wesad_file(tmp_path / "S2" / "S2.pkl")
+    reader = readers.create("wesad_pickle", {"location": "chest", "signals": ["ECG"]})
+
+    assert reader.read(path)["ecg_0"].tolist() == list(range(1400))
+
+
+def test_wesad_reader_truncates_to_the_shortest_signal(tmp_path: Path) -> None:
+    path = wesad_file(tmp_path / "S2" / "S2.pkl")
+    data = pickle.loads(path.read_bytes())
+    data["signal"]["wrist"]["EDA"] = data["signal"]["wrist"]["EDA"][:6]  # 1.5 s
+    path.write_bytes(pickle.dumps(data))
+
+    df = readers.create("wesad_pickle", {"signals": ["EDA"]}).read(path)
+
+    assert len(df) == 1050
+
+
+def test_wesad_reader_rejects_unknown_signals() -> None:
+    with pytest.raises(ValueError, match="BVP"):
+        readers.create("wesad_pickle", {"location": "chest", "signals": ["BVP"]})
