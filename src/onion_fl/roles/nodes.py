@@ -1,14 +1,23 @@
 from __future__ import annotations
 
-"""Coordinator, aggregator and edge state machines (spec §6).
+"""Coordinator, aggregator and edge state machines (spec §6, §10.3).
 
 Every role only talks through ``Context``; none of them knows which dataset
 an edge holds. Round 1 carries the full initial state (``meta.bootstrap``) so
 aggregators can seed the groups they keep without building a model; later
 rounds send each link only the groups its sharing scope lets through.
+
+Evaluation happens at three levels:
+
+- an edge scores the model it received and the one it trained on its
+  ``local_val`` and sends the results up inside its update;
+- every aggregator combines those reports by samples (``source=children``) and
+  asks its evaluators (``val`` subjects) to score the zone model;
+- the coordinator asks its evaluators (``test`` subjects) to score the global
+  model, and reports per dataset tag.
 """
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
 import numpy as np
@@ -17,11 +26,13 @@ from onion_fl.core.context import Context
 from onion_fl.core.message import Message, Payload
 from onion_fl.core.node import Node
 from onion_fl.learning.aggregators import Contribution
+from onion_fl.learning.metrics import reduce_reports
 from onion_fl.learning.model import load_arrays, state_arrays
 from onion_fl.learning.sharing import SharingPolicy, keys_crossing, keys_held_at
 from onion_fl.roles.policies import AllChildren, Drop, quorum_needed
 
 State = dict[str, np.ndarray]
+Evaluate = Callable[[Any, Any], tuple[Mapping[str, float], int]]
 
 
 def _reject(ctx: Context, msg: Message, reason: str) -> None:
@@ -32,6 +43,10 @@ def _reject(ctx: Context, msg: Message, reason: str) -> None:
 
 def _subset(state: Mapping[str, np.ndarray], keys: Iterable[str]) -> State:
     return {k: state[k] for k in keys if k in state}
+
+
+def _due(every: int | None, round: int) -> bool:
+    return bool(every) and round % every == 0
 
 
 def _train_metrics(reports: Iterable[Mapping[str, float]]) -> dict[str, float]:
@@ -45,8 +60,20 @@ def _train_metrics(reports: Iterable[Mapping[str, float]]) -> dict[str, float]:
     return {"train_loss": float(loss), "train_examples": float(examples)}
 
 
+def _eval_part(metrics: Mapping[str, float], model: str) -> tuple[dict, float]:
+    """``eval.<model>.*`` of an update: the scores and their sample count."""
+    prefix = f"eval.{model}."
+    values = {k[len(prefix) :]: v for k, v in metrics.items() if k.startswith(prefix)}
+    return values, values.pop("samples", 0)
+
+
+def _emit_scores(ctx: Context, scores: Mapping[str, float], **tags: Any) -> None:
+    for name, value in scores.items():
+        ctx.emit(f"eval.{name}", value, **tags)
+
+
 class _Collector(Node):
-    """What the coordinator and the aggregators share: registration and round closing."""
+    """What the coordinator and the aggregators share: registration, rounds, evaluation."""
 
     def __init__(
         self,
@@ -62,6 +89,9 @@ class _Collector(Node):
         participation: Any = None,
         staleness: Any = None,
         register_timeout: float | None = None,
+        eval_every: int | None = None,
+        aggregate_children: bool = True,
+        holdout: bool = True,
     ) -> None:
         super().__init__(node_id)
         self.children = set(children)
@@ -71,12 +101,15 @@ class _Collector(Node):
         self.participation = participation or AllChildren()
         self.staleness = staleness or Drop()
         self.register_timeout = register_timeout
+        self.eval_every, self.aggregate_children = eval_every, aggregate_children
+        self.holdout = holdout
         self.registered: dict[str, Mapping[str, Any]] = {}
         self.ready = False
         self.round, self.open, self.opened_at = 0, False, 0.0
         self.participants: list[str] = []
         self.responses: dict[str, tuple[Contribution, Mapping[str, float]]] = {}
         self.stale: dict[str, Contribution] = {}
+        self.pending_eval: dict[int, dict[str, Any]] = {}
 
     # --- registration ------------------------------------------------------------
 
@@ -106,6 +139,11 @@ class _Collector(Node):
             if meta.get("role") != "evaluator" and meta.get("edges", 1) > 0
         )
 
+    def evaluators(self) -> list[str]:
+        return sorted(
+            c for c, meta in self.registered.items() if meta.get("role") == "evaluator"
+        )
+
     def edges_below(self) -> int:
         return sum(
             int(meta.get("edges", 1))
@@ -120,6 +158,8 @@ class _Collector(Node):
             self._hello(msg, ctx)
         elif msg.src in self.children and msg.kind == "update":
             self._update(msg, ctx)
+        elif msg.src in self.children and msg.kind == "eval_report":
+            self._eval_report(msg, ctx)
         else:
             self._other(msg, ctx)
 
@@ -184,6 +224,10 @@ class _Collector(Node):
             self._finish_registration(ctx)
         elif name == "deadline" and self.open:
             self._close(ctx)
+        elif name.startswith("eval/"):
+            round = int(name.split("/", 1)[1])
+            if round in self.pending_eval:
+                self._eval_done(round, ctx)
 
     def _close(self, ctx: Context) -> None:
         ctx.cancel_timer("deadline")
@@ -200,9 +244,10 @@ class _Collector(Node):
         aggregated = self.aggregator.aggregate(
             [*fresh.values(), *stale], source=self.id
         )
-        metrics = _train_metrics(
-            m for s, (_, m) in self.responses.items() if s in fresh
-        )
+        reports = [m for s, (_, m) in sorted(self.responses.items()) if s in fresh]
+        metrics = _train_metrics(reports)
+        if self.aggregate_children:
+            metrics |= self._children_scores(reports, ctx)
         ctx.emit("round.closed", ctx.now() - self.opened_at, stale=len(stale), **tags)
         self._closed(aggregated, metrics, ctx)
 
@@ -211,6 +256,87 @@ class _Collector(Node):
 
     def _failed(self, ctx: Context) -> None:
         raise NotImplementedError
+
+    # --- evaluation -----------------------------------------------------------------
+
+    def _children_scores(
+        self, reports: Sequence[Mapping[str, float]], ctx: Context
+    ) -> dict[str, float]:
+        """Edge scores carried in the updates, combined by samples; they go up too."""
+        up: dict[str, float] = {}
+        models = sorted(
+            {k.split(".")[1] for r in reports for k in r if k.startswith("eval.")}
+        )
+        for model in models:
+            scores, samples = reduce_reports([_eval_part(r, model) for r in reports])
+            if not samples:
+                continue
+            _emit_scores(
+                ctx,
+                scores,
+                model=model,
+                source="children",
+                round=self.round,
+                samples=samples,
+            )
+            up |= {f"eval.{model}.{k}": v for k, v in scores.items()}
+            up[f"eval.{model}.samples"] = float(samples)
+        return up
+
+    def _request_eval(self, round: int, state: State, model: str, ctx: Context) -> bool:
+        evaluators = self.evaluators()
+        if not evaluators:
+            return False
+        self.pending_eval[round] = {
+            "model": model,
+            "waiting": set(evaluators),
+            "reports": [],
+        }
+        payload = Payload(state=dict(state))
+        for child in evaluators:
+            ctx.send(
+                Message(
+                    kind="eval_request",
+                    src=self.id,
+                    dst=child,
+                    round=round,
+                    payload=payload,
+                    meta={"model": model},
+                )
+            )
+        if self.deadline is not None:
+            ctx.set_timer(self.deadline, f"eval/{round}")
+        return True
+
+    def _eval_report(self, msg: Message, ctx: Context) -> None:
+        entry = self.pending_eval.get(msg.round)
+        if entry is None or msg.src not in entry["waiting"]:
+            _reject(ctx, msg, "eval report nobody asked for")
+            return
+        metrics = dict(msg.payload.metrics)
+        samples = metrics.pop("samples", 0)
+        tags = dict(self.registered.get(msg.src, {}).get("tags") or {})
+        entry["reports"].append((metrics, samples, tags.get("dataset")))
+        entry["waiting"].discard(msg.src)
+        if not entry["waiting"]:
+            self._eval_done(msg.round, ctx)
+
+    def _eval_done(self, round: int, ctx: Context) -> None:
+        entry = self.pending_eval.pop(round)
+        ctx.cancel_timer(f"eval/{round}")
+        tags = {"model": entry["model"], "source": "evaluators", "round": round}
+        reports = entry["reports"]
+        scores, samples = reduce_reports([(m, n) for m, n, _ in reports])
+        if samples:
+            _emit_scores(ctx, scores, samples=samples, **tags)
+        for dataset in sorted({d for _, _, d in reports if d is not None}):
+            part, n = reduce_reports([(m, s) for m, s, d in reports if d == dataset])
+            if n:
+                _emit_scores(ctx, part, dataset=dataset, samples=n, **tags)
+        self._eval_finished(round, ctx)
+
+    def _eval_finished(self, round: int, ctx: Context) -> None:
+        """Hook for the coordinator, which waits for the last evaluation to finish."""
 
 
 class Coordinator(_Collector):
@@ -242,27 +368,40 @@ class Coordinator(_Collector):
 
     def _next(self, ctx: Context) -> None:
         if self.round >= self.rounds:
-            self.finished = True
-            ctx.emit("run.finished", self.round)
+            if not self.pending_eval:
+                self._finish(ctx)
             return
         ctx.emit("round.started", self.round + 1)
         self._open(self.round + 1, self.state, ctx, bootstrap=self.round == 0)
+
+    def _finish(self, ctx: Context) -> None:
+        if not self.finished:
+            self.finished = True
+            ctx.emit("run.finished", self.round)
 
     def _closed(self, aggregated: Contribution, metrics: dict, ctx: Context) -> None:
         held = keys_held_at(aggregated.state, self.sharing, self.levels, self.level)
         self.state = self.server_optimizer.apply(
             self.state, _subset(aggregated.state, held)
         )
-        if metrics:
+        if "train_loss" in metrics:
             ctx.emit(
                 "round.train_loss",
                 metrics["train_loss"],
                 examples=metrics["train_examples"],
             )
+        last = self.round == self.rounds
+        if self.eval_every and (_due(self.eval_every, self.round) or last):
+            self._request_eval(self.round, self.state, "global", ctx)
         self._next(ctx)
 
     def _failed(self, ctx: Context) -> None:
         self._next(ctx)
+
+    def _eval_finished(self, round: int, ctx: Context) -> None:
+        last_round_closed = self.round >= self.rounds and not self.open
+        if last_round_closed and not self.pending_eval:
+            self._finish(ctx)
 
 
 class Aggregator(_Collector):
@@ -274,6 +413,7 @@ class Aggregator(_Collector):
         super().__init__(node_id, children, **kw)
         self.parent = parent
         self.zone: State = {}
+        self.received: State = {}
         self.parent_level = self.levels[self.levels.index(self.level) - 1]
 
     def _registered(self, ctx: Context) -> None:
@@ -284,13 +424,12 @@ class Aggregator(_Collector):
         if msg.src != self.parent or msg.kind != "global_model" or msg.round is None:
             _reject(ctx, msg, "unexpected sender or kind")
             return
-        state = dict(msg.payload.state)
+        self.received = dict(msg.payload.state)
         bootstrap = bool(msg.meta.get("bootstrap"))
         if bootstrap:
-            self.zone = _subset(
-                state, keys_held_at(state, self.sharing, self.levels, self.level)
-            )
-        self._open(msg.round, {**state, **self.zone}, ctx, bootstrap)
+            held = keys_held_at(self.received, self.sharing, self.levels, self.level)
+            self.zone = _subset(self.received, held)
+        self._open(msg.round, {**self.received, **self.zone}, ctx, bootstrap)
 
     def _closed(self, aggregated: Contribution, metrics: dict, ctx: Context) -> None:
         held = keys_held_at(aggregated.state, self.sharing, self.levels, self.level)
@@ -312,13 +451,16 @@ class Aggregator(_Collector):
                 payload=payload,
             )
         )
+        if self.holdout and _due(self.eval_every, self.round):
+            zone_model = {**self.received, **self.zone, **aggregated.state}
+            self._request_eval(self.round, zone_model, "zone", ctx)
 
     def _failed(self, ctx: Context) -> None:
         ctx.send(Message(kind="update", src=self.id, dst=self.parent, round=self.round))
 
 
 class Edge(Node):
-    """Trains on its data when the model arrives; an evaluator (``train=False``) only evaluates."""
+    """Trains when the model arrives; an evaluator (``train=False``) only answers eval requests."""
 
     def __init__(
         self,
@@ -331,25 +473,69 @@ class Edge(Node):
         data: Any = None,
         trainer: Any = None,
         train: bool = True,
+        val_data: Any = None,
+        evaluate: Evaluate | None = None,
+        eval_every: int | None = None,
+        eval_models: Sequence[str] = ("received", "local"),
+        tags: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__(node_id)
         self.parent, self.model, self.data = parent, model, data
         self.trainer, self.train = trainer, train
         self.sharing, self.levels = sharing, list(levels)
         self.parent_level = self.levels[-2]
+        self.val_data, self.evaluate = val_data, evaluate
+        self.eval_every, self.eval_models = eval_every, tuple(eval_models)
+        self.tags = dict(tags or {})
 
     def on_start(self, ctx: Context) -> None:
-        meta = {"role": "edge" if self.train else "evaluator", "edges": int(self.train)}
+        meta = {
+            "role": "edge" if self.train else "evaluator",
+            "edges": int(self.train),
+            "tags": self.tags,
+        }
         ctx.send(Message(kind="hello", src=self.id, dst=self.parent, meta=meta))
 
     def on_message(self, msg: Message, ctx: Context) -> None:
-        if msg.src != self.parent or msg.kind != "global_model" or msg.round is None:
-            _reject(ctx, msg, "unexpected sender or kind")
-            return
-        if not self.train:
-            return
+        if msg.src != self.parent or msg.round is None:
+            _reject(ctx, msg, "unexpected sender")
+        elif msg.kind == "eval_request" and not self.train:
+            self._answer_eval(msg, ctx)
+        elif msg.kind == "global_model" and self.train:
+            self._train(msg, ctx)
+        else:
+            _reject(
+                ctx,
+                msg,
+                f"a {'trainer' if self.train else 'evaluator'} does not take {msg.kind}",
+            )
+
+    def _score(self, model: str, round: int, ctx: Context) -> dict[str, float]:
+        scores, samples = self.evaluate(self.model, self.val_data)
+        _emit_scores(
+            ctx,
+            scores,
+            model=model,
+            source="edge",
+            round=round,
+            samples=samples,
+            **self.tags,
+        )
+        return {f"eval.{model}.{k}": float(v) for k, v in scores.items()} | {
+            f"eval.{model}.samples": float(samples)
+        }
+
+    def _train(self, msg: Message, ctx: Context) -> None:
         received = dict(msg.payload.state)
         load_arrays(self.model, received)
+        scoring = (
+            self.evaluate is not None
+            and self.val_data is not None
+            and _due(self.eval_every, msg.round)
+        )
+        metrics: dict[str, float] = {}
+        if scoring and "received" in self.eval_models:
+            metrics |= self._score("received", msg.round, ctx)
         try:
             result = self.trainer.train(
                 self.model, self.data, received=received, ctx=ctx
@@ -362,6 +548,8 @@ class Edge(Node):
             )
             return
         ctx.compute(result.samples)
+        if scoring and "local" in self.eval_models:
+            metrics |= self._score("local", msg.round, ctx)
         arrays = state_arrays(self.model)
         up = keys_crossing(arrays, self.sharing, self.levels, self.parent_level)
         ctx.emit("edge.trained", result.loss, round=msg.round, examples=result.examples)
@@ -371,6 +559,7 @@ class Edge(Node):
             metrics={
                 "train_loss": float(result.loss),
                 "train_examples": float(result.examples),
+                **metrics,
             },
         )
         ctx.send(
@@ -380,5 +569,24 @@ class Edge(Node):
                 dst=self.parent,
                 round=msg.round,
                 payload=payload,
+            )
+        )
+
+    def _answer_eval(self, msg: Message, ctx: Context) -> None:
+        metrics: dict[str, float] = {"samples": 0.0}
+        if self.evaluate is not None and self.data is not None:
+            load_arrays(self.model, dict(msg.payload.state))
+            scores, samples = self.evaluate(self.model, self.data)
+            metrics = {k: float(v) for k, v in scores.items()} | {
+                "samples": float(samples)
+            }
+        ctx.send(
+            Message(
+                kind="eval_report",
+                src=self.id,
+                dst=self.parent,
+                round=msg.round,
+                payload=Payload(metrics=metrics),
+                meta={"model": msg.meta.get("model")},
             )
         )
