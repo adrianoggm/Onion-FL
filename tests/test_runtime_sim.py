@@ -553,6 +553,8 @@ def test_each_message_gets_an_id_seen_at_both_ends() -> None:
     rt.run()
 
     sent = [e["tags"]["msg_id"] for e in rt.events if e["name"] == "message.sent"]
-    delivered = [e["tags"]["msg_id"] for e in rt.events if e["name"] == "message.delivered"]
+    delivered = [
+        e["tags"]["msg_id"] for e in rt.events if e["name"] == "message.delivered"
+    ]
     assert len(set(sent)) == len(sent) == 4
     assert sorted(delivered) == sorted(sent)
