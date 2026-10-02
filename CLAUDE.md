@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Hierarchical (edge → fog → cloud) federated learning for stress detection, built on Flower + MQTT. Package name is `flower_basic` (`src/` layout; renaming to `onion_fl` is backlog item F1.1). Active datasets: **SWELL** (main workflow), **SWEET**, **WESAD**.
+Hierarchical (edge → fog → cloud) federated learning for stress detection, built on Flower + MQTT. Package name is `onion_fl` (`src/` layout; it was `flower_basic` until issue #77). Active datasets: **SWELL** (main workflow), **SWEET**, **WESAD**.
 
 **A redesign is in progress.** Read the spec before structural changes: `docs/superpowers/specs/2026-10-02-onion-fl-framework-design.md`. It turns this into a transport-agnostic framework: state-machine nodes, a virtual-clock simulator plus MQTT, a modular model with per-key aggregation, declarative dataset ingestion, and pluggable placement, sharing and aggregation. Work is tracked as GitHub issues #73–#105 (milestones v0.2.0–v0.5.0; issue titles carry the phase, e.g. `[F2.3]`). Phase 0 (#73–#76) covers clean-up and tooling; check `gh.py issues --milestone v0.2.0` for what is integrated. The architecture below is the current, pre-redesign code.
 
@@ -44,7 +44,7 @@ just stop-all
 
 ### Topology and message flow
 
-Each role runs as its own OS process (`python -m flower_basic.<pkg>.<module>`). Each process is configured through CLI flags plus env vars (`MQTT_BROKER`, `MQTT_PORT`, `MQTT_TOPIC_*`, `MQTT_REGION`, `FOG_K_MAP`):
+Each role runs as its own OS process (`python -m onion_fl.<pkg>.<module>`). Each process is configured through CLI flags plus env vars (`MQTT_BROKER`, `MQTT_PORT`, `MQTT_TOPIC_*`, `MQTT_REGION`, `FOG_K_MAP`):
 
 ```
 clients/<ds>.py  --MQTT fl/updates-->  brokers/fog.py (buffers K updates per region, weighted avg)

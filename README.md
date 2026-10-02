@@ -2,7 +2,7 @@
 
 Hierarchical federated learning (edge → fog → cloud) for stress detection from wearable and workplace data, built on [Flower](https://flower.ai) and MQTT. Clients train locally on their own subject's data. Fog brokers aggregate each region over MQTT, and a Flower server aggregates the fog regions into one global model.
 
-Onion-FL is a research prototype developed as a master's thesis (TFM). The Python package is called `flower_basic` (`src/` layout), because the repository used to be named `flower-basic`.
+Onion-FL is a research prototype developed as a master's thesis (TFM). The Python package is `onion_fl` (`src/` layout); it was called `flower_basic` until the redesign.
 
 [![CI](https://github.com/adrianoggm/Onion-FL/actions/workflows/ci.yml/badge.svg)](https://github.com/adrianoggm/Onion-FL/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
@@ -44,7 +44,7 @@ Onion-FL is a research prototype developed as a master's thesis (TFM). The Pytho
 | Combined WESAD + SWELL | ⚠️ Baselines only | scikit-learn only; no federated runtime. |
 | ECG5000 | 🗑️ Removed | The original demo dataset had leaky splits. Its code, tests and results were deleted. |
 | Observability | ✅ Working, with caveats | OpenTelemetry traces are linked across MQTT hops and shown in Jaeger. Prometheus collects metrics and a Grafana dashboard displays them. [§6](#6-observability) covers the possible duplicate series. |
-| Tests | ✅ 140 tests | 136 pass; 4 skip when `data/` is absent. No MQTT broker is needed. Line coverage of `src/flower_basic` is 63%, with nothing excluded. |
+| Tests | ✅ 140 tests | 136 pass; 4 skip when `data/` is absent. No MQTT broker is needed. Line coverage of `src/onion_fl` is 63%, with nothing excluded. |
 | CI | ✅ Active | `ci.yml` runs `ruff check`, `ruff format --check` and `pytest` on Python 3.11. `pr-review.yml` runs a Trivy scan on PRs ([§9](#9-development-and-ci)). |
 | Containerised app stack | ❌ Not available | Only the observability stack (`docker/docker-compose.otel.yml`) is containerised. Real deployment is a planned sub-project. |
 | Roadmap features | ❌ Not implemented | The node registry, heartbeats, secure aggregation, signed manifests and audit trail are not built ([§11](#11-roadmap)). |
@@ -88,7 +88,7 @@ flowchart LR
   S -.->|"fl/global_model (round number)"| B
 ```
 
-Each box is a separate OS process, started as `python -m flower_basic.<package>.<module>`. One broker process serves every region. There is one bridge per fog node, and each bridge is a Flower `NumPyClient`. The bridges connect the MQTT side to Flower: to the server, each fog region looks like a single Flower client.
+Each box is a separate OS process, started as `python -m onion_fl.<package>.<module>`. One broker process serves every region. There is one bridge per fog node, and each bridge is a Flower `NumPyClient`. The bridges connect the MQTT side to Flower: to the server, each fog region looks like a single Flower client.
 
 ### One training round
 
@@ -418,7 +418,7 @@ Source: `results/legacy/comparativa_completa/wesad_swell_summary.json`.
 ## 8. Repository map
 
 ```
-src/flower_basic/
+src/onion_fl/
 ├── clients/            # federated_base, fog_bridge_base, swell, sweet, fog_bridge_{swell,sweet}, baseclient
 ├── brokers/            # federated_base, fog (SWELL), sweet_fog
 ├── servers/            # federated_base, swell, sweet
