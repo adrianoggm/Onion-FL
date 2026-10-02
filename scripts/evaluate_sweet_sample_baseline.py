@@ -6,7 +6,7 @@ This script mirrors the baseline studies created for WESAD and SWELL, but it
 operates on the curated ``data/SWEET/sample_subjects`` subset. Key aspects:
 
 - Subject-level splits: train/val/test partitions respect subject boundaries,
-  as mandated in ``docs/Context.md`` to avoid leakage between splits.
+  as mandated in ``docs/RULES.md`` to avoid leakage between splits.
 - Lightweight classical models (Logistic Regression, Random Forest) to
   establish a reference before launching federated experiments.
 - Binary stress detection by default (MAXIMUM_STRESS >= 2 is treated as
@@ -90,7 +90,8 @@ def _distribution_summary(y: np.ndarray) -> dict[str, float]:
     if total == 0:
         return {}
     return {
-        str(int(cls)): float(count) / float(total) for cls, count in zip(unique, counts)
+        str(int(cls)): float(count) / float(total)
+        for cls, count in zip(unique, counts, strict=False)
     }
 
 
@@ -263,7 +264,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Baseline models for SWEET sample subjects with subject-disjoint splits "
-            "(see docs/Context.md for the rationale)."
+            "(see docs/RULES.md for the rationale)."
         )
     )
     parser.add_argument(
