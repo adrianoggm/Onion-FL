@@ -5,7 +5,7 @@ from __future__ import annotations
 ::
 
     onion_fl data prepare|inspect <dataset> [--option key=value]...
-    onion_fl topology show <file> [--graph]
+    onion_fl topology show <file> [--graph | --mermaid]
     onion_fl plan <experiment.yaml>
     onion_fl run <experiment.yaml> [--scenario NAME] [--mode sim|real] [--workers N]
     onion_fl node --id <node> --run <run_id> --config <experiment.yaml>
@@ -89,10 +89,38 @@ def _tree(topology: Topology) -> str:
     return "\n".join(lines)
 
 
+def _link_label(link: Any) -> str:
+    transport = link.transport
+    if not isinstance(transport, str):
+        transport = transport.get("name", "custom")
+    profile = link.profile if isinstance(link.profile, str) else "custom"
+    return f"{transport}/{link.codec}/{profile}"
+
+
+def _mermaid(topology: Topology) -> str:
+    """Mermaid flowchart of the tree; the edges of each leaf drawn as one box."""
+    lines = ["flowchart TD"]
+    for node in topology.nodes:
+        role = topology.role(node.id)
+        lines.append(f'    {node.id}["{node.id}<br/>{node.level} · {role}"]')
+    for node in topology.nodes:
+        if node.parent is not None:
+            lines.append(
+                f"    {node.id} -->|{_link_label(node.link_up)}| {node.parent}"
+            )
+    edge = _link_label(topology.edge.link_up)
+    for leaf in topology.leaves():
+        box = f'edges_{leaf.id}(["edges ({topology.levels[-1]})"])'
+        lines.append(f"    {box} -->|{edge}| {leaf.id}")
+    return "\n".join(lines)
+
+
 def cmd_topology(args: argparse.Namespace) -> int:
     topology = load_topology(args.file)
     if args.graph:
         _print_json(topology.to_graph())
+    elif args.mermaid:
+        print(_mermaid(topology))
     else:
         print(_tree(topology))
     return 0
@@ -210,6 +238,9 @@ def parser() -> argparse.ArgumentParser:
     )
     topology.add_argument("action", choices=["show"])
     topology.add_argument("file")
+    topology.add_argument(
+        "--mermaid", action="store_true", help="print a Mermaid flowchart instead"
+    )
     topology.add_argument(
         "--graph", action="store_true", help="print the JSON graph instead"
     )

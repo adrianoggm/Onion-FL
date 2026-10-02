@@ -273,3 +273,15 @@ def test_the_example_experiment_plans_on_real_data(capsys) -> None:
     code, out, _ = run(capsys, "plan", "experiments/mix_ab.yaml")
 
     assert code == 0 and len(json.loads(out)) == 9
+
+
+def test_topology_show_draws_mermaid(capsys, workspace: Path) -> None:
+    file = str(workspace / "topologies" / "two_fogs.yaml")
+
+    code, out, _ = run(capsys, "topology", "show", file, "--mermaid")
+
+    lines = out.strip().splitlines()
+    assert code == 0 and lines[0] == "flowchart TD"
+    assert '    cloud["cloud<br/>global · coordinator"]' in lines
+    assert "    fog_a -->|mqtt/json/wifi| cloud" in lines
+    assert any(line.strip().startswith("edges_fog_a") for line in lines)
