@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Evaluate multimodal baseline on real WESAD + SWELL data."""
 
 from __future__ import annotations

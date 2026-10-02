@@ -37,7 +37,11 @@ HIST_WAIT_TIME = None
 def _init_telemetry():
     """Initialize telemetry. Called from main() to ensure proper service name."""
     global TRACER, METER
-    global COUNTER_PARTIALS_RECEIVED, COUNTER_FORWARDS_TO_SERVER, COUNTER_TIMEOUTS, HIST_WAIT_TIME
+    global \
+        COUNTER_PARTIALS_RECEIVED, \
+        COUNTER_FORWARDS_TO_SERVER, \
+        COUNTER_TIMEOUTS, \
+        HIST_WAIT_TIME
 
     TRACER, METER = init_otel("fog-bridge")
 

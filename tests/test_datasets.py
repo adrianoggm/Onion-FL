@@ -1,4 +1,4 @@
-﻿"""Tests for dataset loaders.
+"""Tests for dataset loaders.
 
 This module tests the dataset loading functionality for WESAD and SWELL datasets,
 ensuring proper data preprocessing, validation, and federated partitioning.
@@ -126,10 +126,10 @@ class TestSWELLDataset:
 
     def test_load_swell_dataset_with_mock_data(self):
         """Test SWELL dataset loading with mocked data files."""
-        with patch("pandas.read_csv") as mock_read_csv, patch(
-            "pathlib.Path.exists", return_value=True
+        with (
+            patch("pandas.read_csv") as mock_read_csv,
+            patch("pathlib.Path.exists", return_value=True),
         ):
-
             # Mock computer interaction features
             computer_df = pd.DataFrame(
                 {
@@ -185,10 +185,10 @@ class TestSWELLDataset:
 
     def test_load_swell_dataset_with_subject_info(self):
         """Test SWELL dataset loading with subject information return."""
-        with patch("pandas.read_csv") as mock_read_csv, patch(
-            "pathlib.Path.exists", return_value=True
+        with (
+            patch("pandas.read_csv") as mock_read_csv,
+            patch("pathlib.Path.exists", return_value=True),
         ):
-
             # Mock single modality data
             mock_df = pd.DataFrame(
                 {
@@ -279,10 +279,10 @@ class TestSWELLDataset:
 
     def test_swell_modality_selection(self):
         """Test SWELL dataset loading with different modality combinations."""
-        with patch("pandas.read_csv") as mock_read_csv, patch(
-            "pathlib.Path.exists", return_value=True
+        with (
+            patch("pandas.read_csv") as mock_read_csv,
+            patch("pathlib.Path.exists", return_value=True),
         ):
-
             # Mock data for each modality
             base_data = {
                 "subject": [1, 2, 3] * 2,

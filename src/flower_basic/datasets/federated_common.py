@@ -3,9 +3,9 @@ from __future__ import annotations
 """Shared helpers for federated split loading and manifest aggregation."""
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 import numpy as np
 import torch

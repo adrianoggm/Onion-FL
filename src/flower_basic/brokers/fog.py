@@ -84,8 +84,15 @@ GAUGE_CLIENTS_PER_REGION = None
 def _init_telemetry():
     """Initialize telemetry. Called from main() to ensure proper service name."""
     global TRACER, METER
-    global COUNTER_UPDATES_RECEIVED, COUNTER_PARTIALS_PUBLISHED, HIST_AGGREGATION_TIME, GAUGE_BUFFER_SIZE
-    global GAUGE_CLIENT_CONTRIBUTION, COUNTER_AGGREGATIONS_TOTAL, GAUGE_CLIENTS_PER_REGION
+    global \
+        COUNTER_UPDATES_RECEIVED, \
+        COUNTER_PARTIALS_PUBLISHED, \
+        HIST_AGGREGATION_TIME, \
+        GAUGE_BUFFER_SIZE
+    global \
+        GAUGE_CLIENT_CONTRIBUTION, \
+        COUNTER_AGGREGATIONS_TOTAL, \
+        GAUGE_CLIENTS_PER_REGION
 
     TRACER, METER = init_otel("fog-broker")
 

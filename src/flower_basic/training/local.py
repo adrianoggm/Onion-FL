@@ -171,7 +171,7 @@ def evaluate_classifier_arrays(
 
         label_index = {label: idx for idx, label in enumerate(label_values)}
         confusion_matrix = np.zeros((len(label_values), len(label_values)), dtype=int)
-        for true_label, pred_label in zip(y_true, y_pred):
+        for true_label, pred_label in zip(y_true, y_pred, strict=False):
             confusion_matrix[label_index[true_label], label_index[pred_label]] += 1
 
     return DetailedEvalResult(

@@ -3,7 +3,7 @@ from __future__ import annotations
 """Base MQTT component used by federated clients and bridges."""
 
 import json
-from typing import Iterable
+from collections.abc import Iterable
 
 import paho.mqtt.client as mqtt
 

@@ -22,8 +22,9 @@ class TestSweetBroker:
         original_k = sweet_fog.K
         try:
             sweet_fog.K = 2
-            with patch.object(sweet_fog, "buffers", defaultdict(list)), patch.object(
-                sweet_fog, "clients_per_region", defaultdict(set)
+            with (
+                patch.object(sweet_fog, "buffers", defaultdict(list)),
+                patch.object(sweet_fog, "clients_per_region", defaultdict(set)),
             ):
                 payload = {
                     "region": self.test_region,
@@ -47,8 +48,9 @@ class TestSweetBroker:
         original_k = sweet_fog.K
         try:
             sweet_fog.K = 1
-            with patch.object(sweet_fog, "buffers", defaultdict(list)), patch.object(
-                sweet_fog, "clients_per_region", defaultdict(set)
+            with (
+                patch.object(sweet_fog, "buffers", defaultdict(list)),
+                patch.object(sweet_fog, "clients_per_region", defaultdict(set)),
             ):
                 payload = {
                     "region": self.test_region,

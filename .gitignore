@@ -89,9 +89,6 @@ ehthumbs.db
 Thumbs.db
 
 # Project specific
-comparison_results/
-quick_comparison_results/
-quick_baseline_test/
 *.log
 logs/
 
@@ -135,10 +132,10 @@ flower_client_*.log
 data/
 data/**
 
-# Generated reports
-multi_dataset_demo_report.json
-WESAD_BASELINE_RESULTS.md
-SWELL_BASELINE_RESULTS.md
-multimodal_baseline_results.json
+# Generated reports (baseline scripts write to the working directory)
+/wesad_baseline_results.json
+/swell_baseline_results.json
+/swell_dataset_analysis.json
+/multimodal_baseline_results.json
 
 federated_runs/*
