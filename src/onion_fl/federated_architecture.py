@@ -724,7 +724,7 @@ def plan_runtime_commands(
     server_cmd = [
         python_exec,
         "-m",
-        "flower_basic.servers.swell",
+        "onion_fl.servers.swell",
         "--input_dim",
         str(int(arch.model.input_dim)),
         "--rounds",
@@ -755,7 +755,7 @@ def plan_runtime_commands(
         bridge_cmd = [
             python_exec,
             "-m",
-            "flower_basic.clients.fog_bridge_swell",
+            "onion_fl.clients.fog_bridge_swell",
             "--input_dim",
             str(int(arch.model.input_dim)),
             "--server",
@@ -781,7 +781,7 @@ def plan_runtime_commands(
     broker_cmd = [
         python_exec,
         "-m",
-        "flower_basic.brokers.fog",
+        "onion_fl.brokers.fog",
         "--mqtt-broker",
         mqtt.broker,
         "--mqtt-port",
@@ -830,7 +830,7 @@ def plan_runtime_commands(
                 cmd = [
                     python_exec,
                     "-m",
-                    "flower_basic.clients.swell",
+                    "onion_fl.clients.swell",
                     "--node_dir",
                     str(client.data_dir),
                     "--region",

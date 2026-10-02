@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from flower_basic.datasets.swell import (
+from onion_fl.datasets.swell import (
     _coerce_numeric_dataframe,
     _normalize_subject_series,
     _try_read_csv,

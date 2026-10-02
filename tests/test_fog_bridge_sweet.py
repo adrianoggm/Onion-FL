@@ -7,8 +7,8 @@ from unittest.mock import Mock
 
 import numpy as np
 
-from flower_basic.clients.fog_bridge_sweet import FogClientSweet
-from flower_basic.sweet_model import get_parameters
+from onion_fl.clients.fog_bridge_sweet import FogClientSweet
+from onion_fl.sweet_model import get_parameters
 
 
 def _mock_mqtt_init(self, tag, mqtt_broker, mqtt_port, subscriptions=None) -> None:
@@ -19,7 +19,7 @@ def _mock_mqtt_init(self, tag, mqtt_broker, mqtt_port, subscriptions=None) -> No
 
 def test_on_message_filters_region(monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
 
     client = FogClientSweet(
@@ -41,7 +41,7 @@ def test_on_message_filters_region(monkeypatch) -> None:
 
 def test_on_message_sets_partial(monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
 
     client = FogClientSweet(
@@ -69,7 +69,7 @@ def test_on_message_sets_partial(monkeypatch) -> None:
 
 def test_fit_forwards_partial(monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
 
     client = FogClientSweet(
@@ -93,7 +93,7 @@ def test_fit_forwards_partial(monkeypatch) -> None:
 
 def test_fit_times_out_without_partial(monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
     monkeypatch.setattr(time, "sleep", lambda _s: None)
 

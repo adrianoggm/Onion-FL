@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from flower_basic.runtime_protocol import (
+from onion_fl.runtime_protocol import (
     build_client_update_payload,
     build_global_model_payload,
     build_partial_aggregate_payload,

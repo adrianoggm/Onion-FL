@@ -12,31 +12,31 @@ from typing import Any
 
 _LAZY_EXPORTS = {
     "plan_and_materialize_sweet_federated": (
-        "flower_basic.datasets.sweet_federated",
+        "onion_fl.datasets.sweet_federated",
         "plan_and_materialize_sweet_federated",
     ),
     "load_sweet_sample_dataset": (
-        "flower_basic.datasets.sweet_samples",
+        "onion_fl.datasets.sweet_samples",
         "load_sweet_sample_dataset",
     ),
     "load_sweet_sample_full": (
-        "flower_basic.datasets.sweet_samples",
+        "onion_fl.datasets.sweet_samples",
         "load_sweet_sample_full",
     ),
-    "get_swell_info": ("flower_basic.datasets.swell", "get_swell_info"),
-    "load_swell_all_samples": ("flower_basic.datasets.swell", "load_swell_all_samples"),
-    "load_swell_dataset": ("flower_basic.datasets.swell", "load_swell_dataset"),
+    "get_swell_info": ("onion_fl.datasets.swell", "get_swell_info"),
+    "load_swell_all_samples": ("onion_fl.datasets.swell", "load_swell_all_samples"),
+    "load_swell_dataset": ("onion_fl.datasets.swell", "load_swell_dataset"),
     "partition_swell_by_subjects": (
-        "flower_basic.datasets.swell",
+        "onion_fl.datasets.swell",
         "partition_swell_by_subjects",
     ),
     "plan_and_materialize_swell_federated": (
-        "flower_basic.datasets.swell_federated",
+        "onion_fl.datasets.swell_federated",
         "plan_and_materialize_swell_federated",
     ),
-    "load_wesad_dataset": ("flower_basic.datasets.wesad", "load_wesad_dataset"),
+    "load_wesad_dataset": ("onion_fl.datasets.wesad", "load_wesad_dataset"),
     "partition_wesad_by_subjects": (
-        "flower_basic.datasets.wesad",
+        "onion_fl.datasets.wesad",
         "partition_wesad_by_subjects",
     ),
 }

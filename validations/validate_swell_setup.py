@@ -52,7 +52,7 @@ def check_swell_dataset() -> tuple[bool, list[str]]:
     # Try to load dataset
     try:
         sys.path.insert(0, str(repo_root / "src"))
-        from flower_basic.datasets.swell import load_swell_dataset
+        from onion_fl.datasets.swell import load_swell_dataset
 
         X_train, X_test, y_train, y_test, info = load_swell_dataset(
             data_dir=str(swell_dir),
@@ -158,10 +158,10 @@ def check_scripts_exist(repo_root: Path) -> tuple[bool, list[str]]:
     """Check if required scripts exist."""
     messages = []
     scripts = [
-        "src/flower_basic/servers/swell.py",
-        "src/flower_basic/clients/swell.py",
-        "src/flower_basic/brokers/fog.py",
-        "src/flower_basic/clients/fog_bridge_swell.py",
+        "src/onion_fl/servers/swell.py",
+        "src/onion_fl/clients/swell.py",
+        "src/onion_fl/brokers/fog.py",
+        "src/onion_fl/clients/fog_bridge_swell.py",
         "scripts/prepare_swell_federated.py",
     ]
 

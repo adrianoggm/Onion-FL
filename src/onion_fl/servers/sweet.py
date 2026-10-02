@@ -16,23 +16,23 @@ import numpy as np
 import paho.mqtt.client as mqtt
 import torch
 
-from flower_basic.datasets.federated_common import load_manifest_eval_data
-from flower_basic.datasets.sweet_federated import load_node_split
-from flower_basic.prometheus_metrics import (
+from onion_fl.datasets.federated_common import load_manifest_eval_data
+from onion_fl.datasets.sweet_federated import load_node_split
+from onion_fl.prometheus_metrics import (
     get_metrics_port_from_env,
     push_metrics_to_gateway,
     start_metrics_server,
 )
-from flower_basic.servers.federated_base import FederatedMQTTStrategyBase
-from flower_basic.sweet_model import SweetMLP
-from flower_basic.telemetry import (
+from onion_fl.servers.federated_base import FederatedMQTTStrategyBase
+from onion_fl.sweet_model import SweetMLP
+from onion_fl.telemetry import (
     create_counter,
     create_gauge,
     create_histogram,
     init_otel,
     shutdown_telemetry,
 )
-from flower_basic.training.local import evaluate_classifier_arrays
+from onion_fl.training.local import evaluate_classifier_arrays
 
 MODEL_TOPIC = os.getenv("MQTT_TOPIC_GLOBAL", "fl/global_model")
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")

@@ -7,12 +7,12 @@ from unittest.mock import Mock, patch
 import flwr as fl
 import numpy as np
 
-from flower_basic.servers.sweet import (
+from onion_fl.servers.sweet import (
     MQTTFedAvgSweet,
     _evaluate_global,
     _load_eval_data,
 )
-from flower_basic.sweet_model import SweetMLP
+from onion_fl.sweet_model import SweetMLP
 
 
 def _write_split(path: Path, n_samples: int, n_features: int) -> None:

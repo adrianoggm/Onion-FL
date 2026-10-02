@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 """
-Fog bridge client for SWEET model.
+Fog bridge client for SWELL model.
 
-Receives partial aggregates over MQTT (from sweet_fog broker) and forwards them
-to the Flower server as a NumPyClient. Uses SweetMLP to keep parameter
+Receives partial aggregates over MQTT (from broker_fog) and forwards them
+to the Flower server as a NumPyClient. Uses SwellMLP to keep parameter
 names consistent for ordering.
 """
 
@@ -13,10 +13,11 @@ import os
 
 import flwr as fl
 
-from flower_basic.clients.fog_bridge_base import BaseFogBridgeClient
-from flower_basic.runtime_protocol import PartialAggregateEnvelope
-from flower_basic.sweet_model import SweetMLP, get_parameters, set_parameters
-from flower_basic.telemetry import (
+from onion_fl.clients.fog_bridge_base import BaseFogBridgeClient
+from onion_fl.logging_utils import enable_timestamped_print
+from onion_fl.runtime_protocol import PartialAggregateEnvelope
+from onion_fl.swell_model import SwellMLP, get_parameters, set_parameters
+from onion_fl.telemetry import (
     create_counter,
     create_histogram,
     init_otel,
@@ -42,7 +43,7 @@ def _init_telemetry():
         COUNTER_TIMEOUTS, \
         HIST_WAIT_TIME
 
-    TRACER, METER = init_otel("sweet-fog-bridge")
+    TRACER, METER = init_otel("fog-bridge")
 
     COUNTER_PARTIALS_RECEIVED = create_counter(
         METER,
@@ -65,13 +66,11 @@ MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 PARTIAL_TOPIC = os.getenv("MQTT_TOPIC_PARTIAL", "fl/partial")
 
 
-class FogClientSweet(BaseFogBridgeClient):
+class FogClientSwell(BaseFogBridgeClient):
     def __init__(
         self,
         server_address: str,
         input_dim: int,
-        hidden_dims: list[int],
-        num_classes: int,
         region: str,
         mqtt_broker: str = MQTT_BROKER,
         mqtt_port: int = MQTT_PORT,
@@ -79,56 +78,57 @@ class FogClientSweet(BaseFogBridgeClient):
     ):
         super().__init__(
             server_address=server_address,
-            model=SweetMLP(
-                input_dim=input_dim,
-                hidden_dims=hidden_dims,
-                num_classes=num_classes,
-            ),
+            model=SwellMLP(input_dim=input_dim),
             get_parameters_fn=get_parameters,
             set_parameters_fn=set_parameters,
             region=region,
-            tag=f"[SWEET_BRIDGE {region}]",
+            tag=f"[BRIDGE {region}]",
             mqtt_broker=mqtt_broker,
             mqtt_port=mqtt_port,
             partial_topic=partial_topic,
             tracer=TRACER,
-            partial_source_service="sweet-fog-broker",
-            server_target_service="server-sweet",
+            partial_source_service="fog-broker",
+            server_target_service="server-swell",
         )
 
+    def build_partial_metadata(
+        self, envelope: PartialAggregateEnvelope
+    ) -> dict[str, object]:
+        return {
+            "expected_round": envelope.expected_round or 0,
+            "round_min": envelope.round_min or 0,
+            "round_max": envelope.round_max or 0,
+            "stale_update_count": envelope.stale_update_count,
+            "future_update_count": envelope.future_update_count,
+            "max_delay_seconds": envelope.max_delay_seconds,
+            "mean_delay_seconds": envelope.mean_delay_seconds,
+            "stale_policy": envelope.stale_policy or "accept",
+        }
+
+    def build_timeout_metrics(self) -> dict[str, object]:
+        return {"timeout": True, "region": self.region}
+
     def on_partial_received(self, envelope: PartialAggregateEnvelope) -> None:
-        if COUNTER_PARTIALS_RECEIVED:
-            record_metric(COUNTER_PARTIALS_RECEIVED, 1, {"region": self.region})
+        record_metric(COUNTER_PARTIALS_RECEIVED, 1, {"region": self.region})
 
     def on_wait_completed(self, wait_duration: float) -> None:
         if HIST_WAIT_TIME:
             HIST_WAIT_TIME.record(wait_duration, {"region": self.region})
 
     def on_timeout(self) -> None:
-        if COUNTER_TIMEOUTS:
-            record_metric(COUNTER_TIMEOUTS, 1, {"region": self.region})
+        record_metric(COUNTER_TIMEOUTS, 1, {"region": self.region})
 
     def on_forwarded(self, num_samples: int) -> None:
-        if COUNTER_FORWARDS_TO_SERVER:
-            record_metric(COUNTER_FORWARDS_TO_SERVER, 1, {"region": self.region})
+        record_metric(COUNTER_FORWARDS_TO_SERVER, 1, {"region": self.region})
 
 
 def main():
+    enable_timestamped_print()
     _init_telemetry()
 
-    ap = argparse.ArgumentParser(description="Fog bridge client for SWEET")
+    ap = argparse.ArgumentParser(description="Fog bridge client for SWELL")
     ap.add_argument(
-        "--input-dim", type=int, required=True, help="Feature dimension (from manifest)"
-    )
-    ap.add_argument(
-        "--hidden-dims",
-        type=int,
-        nargs="+",
-        default=[64, 32],
-        help="Hidden layer dimensions",
-    )
-    ap.add_argument(
-        "--num-classes", type=int, default=3, help="Number of output classes"
+        "--input_dim", type=int, required=True, help="Feature dimension (from manifest)"
     )
     ap.add_argument("--server", default="localhost:8080")
     ap.add_argument(
@@ -141,14 +141,12 @@ def main():
     ap.add_argument("--topic-partial", default=PARTIAL_TOPIC)
     args = ap.parse_args()
 
-    print("[SWEET_FOG_BRIDGE] Starting bridge client...")
+    print("[FOG_CLIENT_SWELL] Starting bridge client...")
     fl.client.start_numpy_client(
         server_address=args.server,
-        client=FogClientSweet(
+        client=FogClientSwell(
             args.server,
             args.input_dim,
-            args.hidden_dims,
-            args.num_classes,
             region=args.region,
             mqtt_broker=args.mqtt_broker,
             mqtt_port=args.mqtt_port,

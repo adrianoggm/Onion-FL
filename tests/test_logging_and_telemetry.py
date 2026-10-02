@@ -4,8 +4,8 @@ import builtins
 import re
 from types import SimpleNamespace
 
-from flower_basic import telemetry
-from flower_basic.logging_utils import enable_timestamped_print
+from onion_fl import telemetry
+from onion_fl.logging_utils import enable_timestamped_print
 
 
 def _reset_timestamp_print(monkeypatch) -> None:

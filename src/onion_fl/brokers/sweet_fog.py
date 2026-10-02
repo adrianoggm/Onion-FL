@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fog broker (regional aggregator)."""
+"""SWEET Fog broker (regional aggregator)."""
 
 from __future__ import annotations
 
@@ -11,17 +11,15 @@ from collections import defaultdict
 
 import paho.mqtt.client as mqtt
 
-from flower_basic.brokers.federated_base import (
+from onion_fl.brokers.federated_base import (
     BrokerCallbacks,
     BrokerConfig,
     BrokerTelemetryHandles,
     handle_client_update,
-    handle_global_model_round_update,
     parse_k_map,
     weighted_average,
 )
-from flower_basic.logging_utils import enable_timestamped_print
-from flower_basic.prometheus_metrics import (
+from onion_fl.prometheus_metrics import (
     BROKER_AGGREGATIONS,
     BROKER_BUFFER_SIZE,
     BROKER_CLIENT_CONTRIBUTION,
@@ -35,7 +33,7 @@ from flower_basic.prometheus_metrics import (
     get_metrics_port_from_env,
     start_metrics_server,
 )
-from flower_basic.telemetry import (
+from onion_fl.telemetry import (
     create_counter,
     create_gauge,
     create_histogram,
@@ -49,14 +47,12 @@ GLOBAL_TOPIC = "fl/global_model"
 
 MQTT_BROKER = "localhost"
 MQTT_PORT = 1883
-STALE_UPDATE_POLICY = "accept"
 
-K = 3
+K = 1
 K_MAP: dict[str, int] = {}
 
 buffers = defaultdict(list)
 clients_per_region: dict[str, set] = defaultdict(set)
-LATEST_GLOBAL_ROUND = 0
 
 try:
     UPDATE_TOPIC = os.getenv("MQTT_TOPIC_UPDATES", UPDATE_TOPIC)
@@ -65,8 +61,7 @@ try:
     MQTT_BROKER = os.getenv("MQTT_BROKER", MQTT_BROKER)
     MQTT_PORT = int(os.getenv("MQTT_PORT", str(MQTT_PORT)))
     K = int(os.getenv("FOG_K", str(K)))
-    STALE_UPDATE_POLICY = os.getenv("FOG_STALE_UPDATE_POLICY", STALE_UPDATE_POLICY)
-    K_MAP = parse_k_map(os.getenv("FOG_K_MAP"), broker_tag="[BROKER]")
+    K_MAP = parse_k_map(os.getenv("FOG_K_MAP"), broker_tag="[SWEET_FOG_BROKER]")
 except Exception:
     pass
 
@@ -94,7 +89,7 @@ def _init_telemetry():
         COUNTER_AGGREGATIONS_TOTAL, \
         GAUGE_CLIENTS_PER_REGION
 
-    TRACER, METER = init_otel("fog-broker")
+    TRACER, METER = init_otel("sweet-fog-broker")
 
     COUNTER_UPDATES_RECEIVED = create_counter(
         METER, "fl_broker_updates_received_total", "Local updates received from clients"
@@ -137,14 +132,13 @@ def shutdown_broker_runtime() -> None:
 
 def _broker_config() -> BrokerConfig:
     return BrokerConfig(
-        broker_tag="[BROKER]",
-        source_service="swell-client",
-        target_service="fog-bridge",
+        broker_tag="[SWEET_FOG_BROKER]",
+        source_service="sweet-client",
+        target_service="sweet-fog-bridge",
         partial_topic=PARTIAL_TOPIC,
         default_k=K,
         k_map=K_MAP,
-        use_round_metadata=True,
-        stale_update_policy=STALE_UPDATE_POLICY,
+        use_round_metadata=False,
     )
 
 
@@ -199,16 +193,6 @@ def _broker_callbacks() -> BrokerCallbacks:
     )
 
 
-def on_global_model(client, userdata, msg):
-    """Track the latest global round to classify stale client updates."""
-    global LATEST_GLOBAL_ROUND
-    LATEST_GLOBAL_ROUND = handle_global_model_round_update(
-        msg.payload,
-        latest_global_round=LATEST_GLOBAL_ROUND,
-        broker_tag="[BROKER]",
-    )
-
-
 def on_update(client, userdata, msg):
     """Handle local client updates and emit partial aggregates per region."""
     handle_client_update(
@@ -220,31 +204,21 @@ def on_update(client, userdata, msg):
         buffers=buffers,
         clients_per_region=clients_per_region,
         weighted_average_fn=weighted_average,
-        latest_global_round=LATEST_GLOBAL_ROUND,
     )
 
 
-def on_message(client, userdata, msg):
-    """Route MQTT messages to the appropriate handler."""
-    if msg.topic == UPDATE_TOPIC:
-        on_update(client, userdata, msg)
-        return
-    if msg.topic == GLOBAL_TOPIC:
-        on_global_model(client, userdata, msg)
-
-
 def main():
-    """Start fog broker MQTT loop."""
+    """Start SWEET fog broker MQTT loop."""
     global K, MQTT_BROKER, MQTT_PORT, UPDATE_TOPIC, PARTIAL_TOPIC, GLOBAL_TOPIC
-    global STALE_UPDATE_POLICY
 
-    enable_timestamped_print()
     _init_telemetry()
 
-    metrics_port = get_metrics_port_from_env(default=8001, component="BROKER")
+    metrics_port = get_metrics_port_from_env(default=8001, component="SWEET_BROKER")
     start_metrics_server(port=metrics_port)
 
-    parser = argparse.ArgumentParser(description="Fog broker (regional aggregator)")
+    parser = argparse.ArgumentParser(
+        description="SWEET Fog broker (regional aggregator)"
+    )
     parser.add_argument(
         "--k",
         type=int,
@@ -283,39 +257,31 @@ def main():
         default=os.getenv("MQTT_TOPIC_GLOBAL", GLOBAL_TOPIC),
         help="Topic for global model publish",
     )
-    parser.add_argument(
-        "--stale-update-policy",
-        default=os.getenv("FOG_STALE_UPDATE_POLICY", STALE_UPDATE_POLICY),
-        choices=("accept", "strict"),
-        help="How to handle updates whose round does not match the expected round",
-    )
     args = parser.parse_args()
 
     K = max(1, int(args.k))
     K_MAP.clear()
-    K_MAP.update(parse_k_map(args.k_map, broker_tag="[BROKER]"))
+    K_MAP.update(parse_k_map(args.k_map, broker_tag="[SWEET_FOG_BROKER]"))
 
     MQTT_BROKER = args.mqtt_broker
     MQTT_PORT = int(args.mqtt_port)
     UPDATE_TOPIC = args.topic_updates
     PARTIAL_TOPIC = args.topic_partial
     GLOBAL_TOPIC = args.topic_global
-    STALE_UPDATE_POLICY = str(args.stale_update_policy).lower()
 
     mqttc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-    mqttc.on_connect = lambda c, u, f, rc, p=None: c.subscribe(
-        [(UPDATE_TOPIC, 0), (GLOBAL_TOPIC, 0)]
-    )
-    mqttc.on_message = on_message
+    mqttc.on_connect = lambda c, u, f, rc, p=None: c.subscribe(UPDATE_TOPIC)
+    mqttc.on_message = on_update
     mqttc.connect(MQTT_BROKER, MQTT_PORT)
-    print(f"[BROKER] Broker fog iniciado. Escuchando actualizaciones en {UPDATE_TOPIC}")
     print(
-        f"[BROKER] Agregando K={K} actualizaciones por región antes de enviar al servidor central"
+        f"[SWEET_FOG_BROKER] Broker fog iniciado. Escuchando actualizaciones en {UPDATE_TOPIC}"
     )
-    print(f"[BROKER] Stale update policy: {STALE_UPDATE_POLICY}")
+    print(
+        f"[SWEET_FOG_BROKER] Agregando K={K} actualizaciones por región antes de enviar al servidor central"
+    )
 
     def cleanup(*_args):
-        print("[BROKER] Shutting down telemetry...")
+        print("[SWEET_FOG_BROKER] Shutting down telemetry...")
         shutdown_broker_runtime()
 
     atexit.register(cleanup)
@@ -325,7 +291,7 @@ def main():
     try:
         mqttc.loop_forever()
     except KeyboardInterrupt:
-        print("[BROKER] Shutting down...")
+        print("[SWEET_FOG_BROKER] Shutting down...")
     finally:
         cleanup()
 

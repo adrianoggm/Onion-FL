@@ -76,18 +76,18 @@ def test_run_swell_demo_builds_current_module_plan(tmp_path: Path) -> None:
     assert set(active_nodes.keys()) == {"fog_0", "fog_1"}
 
     server_cmd = commands[0].cmd
-    assert server_cmd[:3] == ["python", "-m", "flower_basic.servers.swell"]
+    assert server_cmd[:3] == ["python", "-m", "onion_fl.servers.swell"]
     assert server_cmd[server_cmd.index("--server_addr") + 1] == "localhost:8080"
     assert "--manifest" in server_cmd
 
     broker_cmd = next(cmd.cmd for cmd in commands if cmd.role == "broker")
-    assert broker_cmd[:3] == ["python", "-m", "flower_basic.brokers.fog"]
+    assert broker_cmd[:3] == ["python", "-m", "onion_fl.brokers.fog"]
     assert "--k-map" in broker_cmd
 
     client_cmd = next(
         cmd.cmd for cmd in commands if cmd.role == "client_fog_0_client_1"
     )
-    assert client_cmd[:3] == ["python", "-m", "flower_basic.clients.swell"]
+    assert client_cmd[:3] == ["python", "-m", "onion_fl.clients.swell"]
     assert str(fog0_subj1) in client_cmd
     assert "fog_0_client_1" in client_cmd
 
@@ -139,18 +139,18 @@ def test_run_sweet_demo_builds_current_module_plan(tmp_path: Path) -> None:
     assert total_clients == 1
 
     server_cmd = commands[0].cmd
-    assert server_cmd[:3] == ["python", "-m", "flower_basic.servers.sweet"]
+    assert server_cmd[:3] == ["python", "-m", "onion_fl.servers.sweet"]
     assert "--num-classes" in server_cmd
     assert server_cmd[server_cmd.index("--num-classes") + 1] == "2"
     assert server_cmd[server_cmd.index("--min-fit-clients") + 1] == "1"
 
     broker_cmd = commands[1].cmd
-    assert broker_cmd[:3] == ["python", "-m", "flower_basic.brokers.sweet_fog"]
+    assert broker_cmd[:3] == ["python", "-m", "onion_fl.brokers.sweet_fog"]
 
     client_cmd = next(
         cmd.cmd for cmd in commands if cmd.role == "client_fog_0_user0001"
     )
-    assert client_cmd[:3] == ["python", "-m", "flower_basic.clients.sweet"]
+    assert client_cmd[:3] == ["python", "-m", "onion_fl.clients.sweet"]
     assert "--enable-telemetry" in client_cmd
     assert "--enable-prometheus" in client_cmd
 
@@ -212,20 +212,20 @@ def test_run_sweet_architecture_skips_empty_nodes(tmp_path: Path, monkeypatch) -
     )
 
     assert len(procs) == 4
-    assert popen_calls[0][:3] == [sys.executable, "-m", "flower_basic.servers.sweet"]
+    assert popen_calls[0][:3] == [sys.executable, "-m", "onion_fl.servers.sweet"]
     assert popen_calls[0][popen_calls[0].index("--server-addr") + 1] == "0.0.0.0:9090"
     assert popen_calls[1][:3] == [
         sys.executable,
         "-m",
-        "flower_basic.brokers.sweet_fog",
+        "onion_fl.brokers.sweet_fog",
     ]
     assert popen_calls[2][:3] == [
         sys.executable,
         "-m",
-        "flower_basic.clients.fog_bridge_sweet",
+        "onion_fl.clients.fog_bridge_sweet",
     ]
     assert popen_calls[2][popen_calls[2].index("--server") + 1] == "localhost:9090"
     assert "fog_0" in popen_calls[2]
-    assert popen_calls[3][:3] == [sys.executable, "-m", "flower_basic.clients.sweet"]
+    assert popen_calls[3][:3] == [sys.executable, "-m", "onion_fl.clients.sweet"]
     assert "user0001" in popen_calls[3]
     assert "fog_1" not in " ".join(" ".join(cmd) for cmd in popen_calls[2:])

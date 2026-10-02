@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from flower_basic.brokers import fog, sweet_fog
+from onion_fl.brokers import fog, sweet_fog
 
 
 def test_broker_shutdown_runtime_skips_pushgateway() -> None:

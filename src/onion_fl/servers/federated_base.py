@@ -11,7 +11,7 @@ import flwr as fl
 import numpy as np
 import paho.mqtt.client as mqtt
 
-from flower_basic.prometheus_metrics import (
+from onion_fl.prometheus_metrics import (
     FL_ACCURACY,
     FL_ACTIVE_CLIENTS,
     FL_AGGREGATIONS,
@@ -19,11 +19,11 @@ from flower_basic.prometheus_metrics import (
     FL_ROUND_DURATION,
     FL_ROUNDS,
 )
-from flower_basic.runtime_protocol import (
+from onion_fl.runtime_protocol import (
     build_global_model_payload,
     extract_named_parameters,
 )
-from flower_basic.telemetry import (
+from onion_fl.telemetry import (
     record_metric,
     start_linked_producer_span,
     start_server_span,

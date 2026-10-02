@@ -7,8 +7,8 @@ from unittest.mock import Mock
 
 import numpy as np
 
-from flower_basic.clients.fog_bridge_swell import FogClientSwell
-from flower_basic.swell_model import get_parameters
+from onion_fl.clients.fog_bridge_swell import FogClientSwell
+from onion_fl.swell_model import get_parameters
 
 
 def _mock_mqtt_init(self, tag, mqtt_broker, mqtt_port, subscriptions=None) -> None:
@@ -19,7 +19,7 @@ def _mock_mqtt_init(self, tag, mqtt_broker, mqtt_port, subscriptions=None) -> No
 
 def test_on_message_filters_region(monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
 
     client = FogClientSwell(
@@ -37,7 +37,7 @@ def test_on_message_filters_region(monkeypatch) -> None:
 
 def test_on_message_sets_partial(monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
 
     client = FogClientSwell(
@@ -70,7 +70,7 @@ def test_on_message_sets_partial(monkeypatch) -> None:
 
 def test_fit_forwards_partial(monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
 
     client = FogClientSwell(
@@ -102,7 +102,7 @@ def test_fit_forwards_partial(monkeypatch) -> None:
 
 def test_fit_times_out_without_partial(monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
     monkeypatch.setattr(time, "sleep", lambda _s: None)
 
@@ -118,7 +118,7 @@ def test_fit_times_out_without_partial(monkeypatch) -> None:
 
 def test_fit_handles_forwarding_error_without_exiting(monkeypatch) -> None:
     monkeypatch.setattr(
-        "flower_basic.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
+        "onion_fl.clients.baseclient.BaseMQTTComponent.__init__", _mock_mqtt_init
     )
 
     client = FogClientSwell(

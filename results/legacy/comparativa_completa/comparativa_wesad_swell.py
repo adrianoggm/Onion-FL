@@ -30,8 +30,8 @@ SRC_DIR = REPO_ROOT / "src"
 if SRC_DIR.exists():
     sys.path.insert(0, str(SRC_DIR))
 
-from flower_basic.datasets import wesad as wesad_module  # noqa: E402
-from flower_basic.datasets.swell import load_swell_dataset  # noqa: E402
+from onion_fl.datasets import wesad as wesad_module  # noqa: E402
+from onion_fl.datasets.swell import load_swell_dataset  # noqa: E402
 
 CANONICAL_SCL_MAP = {
     "scl_mean": "eda_mean",

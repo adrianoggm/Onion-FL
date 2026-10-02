@@ -8,7 +8,7 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    monitor: 'flower-basic-monitor'
+    monitor: 'onion-fl-monitor'
 
 # Alerting configuration (optional - uncomment if using Alertmanager)
 # alerting:

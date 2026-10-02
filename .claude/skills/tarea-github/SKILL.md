@@ -145,4 +145,4 @@ Meta: labels=area:core,enhancement · milestone=v0.2.0 · depende=F1.1,#77
 | Esperar que `Closes #N` cierre la issue | No se cierra al mergear en `develop`: usa `gh.py close N --pr P` |
 | Pasar a `git credential` el texto con una tubería de PowerShell | PowerShell añade un BOM y git rechaza el campo `protocol`; usa `gh.py`, que le pasa bytes |
 | Crear el entorno virtual en una ruta muy larga | Supera los 260 caracteres de Windows y la instalación de scikit-learn falla; usa `.venv` en el repo |
-| Usar el `python` global | Puede importar `flower_basic` desde otra copia del repo; usa `.venv` o `PYTHONPATH=src` |
+| Usar el `python` global | No tiene `onion_fl` instalado, y puede tener el antiguo `flower_basic` de otra copia del repo; usa `.venv` o `PYTHONPATH=src` |

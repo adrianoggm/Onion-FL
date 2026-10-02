@@ -19,7 +19,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from flower_basic.federated_architecture import (  # noqa: E402
+from onion_fl.federated_architecture import (  # noqa: E402
     FederatedArchitecture,
     apply_manifest_paths,
     build_runtime_plan,

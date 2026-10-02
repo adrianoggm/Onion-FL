@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from flower_basic.federated_architecture import (
+from onion_fl.federated_architecture import (
     ClientSpec,
     DatasetConfig,
     FederatedArchitecture,
@@ -459,7 +459,7 @@ def test_materialize_swell_partitions_updates_arch(tmp_path: Path, monkeypatch) 
         return {"output_dir": str(expected_out), "manifest": manifest}
 
     monkeypatch.setattr(
-        "flower_basic.federated_architecture._run_swell_materialization",
+        "onion_fl.federated_architecture._run_swell_materialization",
         _fake_plan,
     )
 
