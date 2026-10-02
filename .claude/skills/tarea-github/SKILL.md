@@ -113,10 +113,10 @@ En los PR hacia `main`, `merge` se niega a mergear si el CI no está en verde; n
 Al terminar, informa de lo integrado y propón la siguiente issue del milestone que ya no tenga dependencias abiertas.
 
 **8. Release.** Cuando el milestone esté completo y se pida:
-1. `gh.py release-pr vX.Y.Z`;
+1. `gh.py release-pr vX.Y.Z --notes docs/releases/vX.Y.Z.md` (las notas escritas a mano van antes de la lista de issues);
 2. esperar a que el CI esté en verde (`gh.py pr-status` sobre el PR de release); es el único momento en que corre el CI de GitHub;
 3. pedir aprobación y ejecutar `gh.py merge P`;
-4. `gh.py release vX.Y.Z`.
+4. `gh.py release vX.Y.Z --notes docs/releases/vX.Y.Z.md`.
 
 ## Dar de alta issues
 
