@@ -8,7 +8,7 @@ import json
 import numpy as np
 import pytest
 
-from onion_fl.core.codec import CODECS, get_codec
+from onion_fl.core.codec import get_codec
 from onion_fl.core.message import Message, MessageError, Payload
 
 CODEC_NAMES = ["json", "npz"]
@@ -33,10 +33,6 @@ def _update() -> Message:
         ),
         meta={"sent_at": 12.25, "trace_context": {"traceparent": "00-abc-01"}},
     )
-
-
-def test_both_codecs_are_registered() -> None:
-    assert set(CODECS) == {"json", "npz"}
 
 
 def test_unknown_codec_name_is_rejected() -> None:

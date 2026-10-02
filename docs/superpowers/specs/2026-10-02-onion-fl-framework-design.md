@@ -88,7 +88,7 @@ A partir de esa declaración, la herramienta ejecuta los experimentos en simulac
 - **Codec:** se encarga de la serialización y es un plugin. Vienen de serie `json` y uno binario (`npz`). Cada enlace usa uno, y el tamaño codificado cuenta para el modelo de red y para las métricas de comunicación.
 - **`Node`:** máquina de estados con `on_start(ctx)`, `on_message(msg, ctx)` y `on_timer(nombre, ctx)`. No tiene hilos, sockets ni reloj propio.
 - **`Context`:** la única vía de un nodo hacia fuera:
-  - `send(dst, msg)` para enviar mensajes;
+  - `send(msg)` para enviar mensajes (el destino es `msg.dst`, y `msg.src` debe ser el propio nodo);
   - `set_timer(retardo, nombre)` y `cancel_timer(nombre)` para los temporizadores;
   - `now()` para consultar el reloj;
   - `rng` para obtener aleatoriedad con semilla derivada del experimento y del id del nodo;

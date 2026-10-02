@@ -16,6 +16,7 @@ from typing import Any
 import numpy as np
 
 from onion_fl.core.message import Message, MessageError, Payload
+from onion_fl.core.registry import Registry
 
 VERSION = 1
 
@@ -160,14 +161,27 @@ class NpzCodec(Codec):
         return _message(doc, state)
 
 
-CODECS: dict[str, Codec] = {codec.name: codec for codec in (JsonCodec(), NpzCodec())}
+codecs = Registry("codec")
+codecs.register(
+    "json",
+    title="JSON",
+    description="Texto legible. Cada array conserva su dtype y su forma.",
+    explain=(
+        "Fácil de inspeccionar y depurar, pero ocupa más bytes por enlace: "
+        "cada número viaja como texto."
+    ),
+)(JsonCodec)
+codecs.register(
+    "npz",
+    title="NPZ (binario)",
+    description="Archivo NumPy: una cabecera JSON y un .npy por array.",
+    explain=(
+        "Más compacto que JSON, así que reduce el tiempo de transmisión y los "
+        "bytes por enlace. Nunca ejecuta pickle al leer."
+    ),
+)(NpzCodec)
 
 
 def get_codec(name: str) -> Codec:
-    """Look a codec up by name (``json`` or ``npz``)."""
-    try:
-        return CODECS[name]
-    except KeyError:
-        raise ValueError(
-            f"unknown codec {name!r}; available: {sorted(CODECS)}"
-        ) from None
+    """Build the codec registered as ``name`` (``json``, ``npz`` or a plugin path)."""
+    return codecs.create(name)
