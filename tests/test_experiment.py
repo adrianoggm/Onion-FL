@@ -158,6 +158,17 @@ def test_fedrep_needs_sharing_that_keeps_the_heads_local(workspace: Path) -> Non
     assert plan(parse_experiment(experiment(workspace, learning=local)))
 
 
+def test_a_bad_scenario_fails_before_any_run_starts(workspace: Path) -> None:
+    pairs = [["fedavg", "stub"], ["fedavg", "fedrep"]]
+    config = parse_experiment(
+        experiment(workspace, sweep={"learning.sharing,learning.trainer": pairs})
+    )
+
+    with pytest.raises(ConfigError, match="fedrep"):
+        run_experiment(config)
+    assert not list((workspace / "runs").glob("*"))
+
+
 def test_finetuned_scores_need_a_finetune_trainer(workspace: Path) -> None:
     raw = experiment(workspace, evaluation={"edge": {"models": ["finetuned"]}})
 
