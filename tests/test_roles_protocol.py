@@ -867,3 +867,27 @@ def test_a_trainer_can_ask_for_one_vote_per_edge() -> None:
     federation = run(tree(2), edges)
 
     assert_global(federation, "trunk.0.weight", 3.0)  # by examples: 53/14
+
+
+class Locked(Exploding):
+    """A valid plugin trainer that cannot be deep-copied (it holds a lock)."""
+
+    def __init__(self) -> None:
+        import threading
+
+        self.lock = threading.Lock()
+
+
+def test_a_trainer_that_cannot_be_copied_still_rolls_back_its_model() -> None:
+    edges = {
+        "fog_0": [
+            edge("e1", shift=2, examples=1),
+            EdgeSpec("e2", model(A), trainer=Locked()),
+        ]
+    }
+
+    federation = run(tree(1, fog={"quorum": 0.5, "deadline": 10}), edges)
+
+    assert_global(federation, "trunk.0.weight", 2.0)
+    (failed,) = names(federation, "edge.train_failed", "e2")
+    assert "non-finite" in failed["tags"]["error"]

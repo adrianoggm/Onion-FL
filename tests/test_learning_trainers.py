@@ -793,3 +793,23 @@ def test_scaffold_sends_the_change_in_its_control_variate(swell) -> None:
             rtol=1e-4,
             atol=1e-6,
         )
+
+
+@pytest.mark.parametrize(
+    "name, attribute",
+    [
+        ("ditto", "_personal"),
+        ("apfl", "_w"),
+        ("scaffold", "_c_i"),
+        ("feddyn", "_grad"),
+        ("moon", "_previous"),
+    ],
+)
+def test_stateful_trainers_snapshot_their_memory(name: str, attribute: str) -> None:
+    trainer = trainers.create(name)
+    saved = trainer.snapshot()
+
+    setattr(trainer, attribute, "poisoned")
+    trainer.restore(saved)
+
+    assert getattr(trainer, attribute) != "poisoned"

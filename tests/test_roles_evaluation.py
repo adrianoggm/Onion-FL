@@ -282,6 +282,12 @@ def test_a_diverged_edge_recovers_and_reports_no_non_finite_score() -> None:
             self.memory = 0.0
             self.stub = trainers.create("stub", {"shift": 1.0})
 
+        def snapshot(self) -> float:
+            return self.memory
+
+        def restore(self, saved: float) -> None:
+            self.memory = saved
+
         def train(self, model, data=None, received=None, ctx=None):
             type(self).calls += 1
             result = self.stub.train(model, data, received, ctx)

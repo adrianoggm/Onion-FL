@@ -742,12 +742,11 @@ class Edge(_Greeter, Node):
         metrics: dict[str, float] = {}
         if scoring and "received" in self.eval_models:
             metrics |= self._score("received", msg.round, ctx)
-        # What a diverged round rolls back to: the trainer's state and the model.
-        trainer_before, model_before = (
-            copy.deepcopy(self.trainer),
-            state_arrays(self.model),
-        )
+        model_before = state_arrays(self.model)
         try:
+            # What a diverged round rolls back to: the model, and the trainer's
+            # memory if it can snapshot it (built-ins can; a plugin may opt in).
+            saved = getattr(self.trainer, "snapshot", lambda: None)()
             result = self.trainer.train(
                 self.model, self.data, received=received, ctx=ctx
             )
@@ -762,7 +761,8 @@ class Edge(_Greeter, Node):
         arrays = state_arrays(self.model) | dict(result.aux)
         broken = sorted(k for k, v in arrays.items() if not np.isfinite(v).all())
         if broken:  # a diverged edge rolls back and tells its parent at once
-            self.trainer = trainer_before
+            if saved is not None:
+                self.trainer.restore(saved)
             load_arrays(self.model, model_before)
             ctx.emit(
                 "edge.train_failed",

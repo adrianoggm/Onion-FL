@@ -141,9 +141,18 @@ class StandardParams(BaseModel):
 )
 class Standard:
     Params: type[StandardParams] = StandardParams
+    _memory: tuple[str, ...] = ()  # attributes a diverged round rolls back
 
     def __init__(self, **params: Any) -> None:
         self.params = self.Params(**params)
+
+    def snapshot(self) -> dict[str, Any]:
+        """What the edge restores if this round diverges."""
+        return {name: copy.deepcopy(getattr(self, name)) for name in self._memory}
+
+    def restore(self, saved: Mapping[str, Any]) -> None:
+        for name, value in saved.items():
+            setattr(self, name, value)
 
     def _check(self, received: Mapping[str, np.ndarray] | None) -> None:
         pass
@@ -237,6 +246,7 @@ class DittoParams(StandardParams):
     ),
 )
 class Ditto(Standard):
+    _memory = ("_personal",)
     Params = DittoParams
 
     def __init__(self, **params: Any) -> None:
@@ -296,6 +306,7 @@ class APFLParams(StandardParams):
     ),
 )
 class APFL(Standard):
+    _memory = ("alpha", "_v", "_w")
     Params = APFLParams
 
     def __init__(self, **params: Any) -> None:
@@ -467,6 +478,7 @@ class Scaffold(Standard):
     PREFIX = "scaffold/"
     server_optimizer = "scaffold"
     uniform_weights = True  # the paper averages clients, not examples
+    _memory = ("_c_i",)
 
     def __init__(self, **params: Any) -> None:
         super().__init__(**params)
@@ -574,6 +586,7 @@ class FedDyn(Standard):
     Params = FedDynParams
     server_optimizer = "feddyn"
     uniform_weights = True  # θ̄ is the participants' plain mean
+    _memory = ("_grad",)
 
     def __init__(self, **params: Any) -> None:
         super().__init__(**params)
@@ -632,6 +645,7 @@ class MoonParams(StandardParams):
 )
 class Moon(Standard):
     Params = MoonParams
+    _memory = ("_previous",)  # _global is the model as received, rebuilt each round
 
     def __init__(self, **params: Any) -> None:
         super().__init__(**params)
