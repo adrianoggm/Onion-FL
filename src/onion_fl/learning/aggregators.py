@@ -209,25 +209,64 @@ def _krum_scores(vectors: np.ndarray, f: int) -> np.ndarray:
 class _Selection:
     """Keeps its last selection so the collector can report it."""
 
-    dropped: list[str]
-    f_used: int
+    dropped: list[str] = []
+    f_used: int = 0
+    rescued: list[str] = []
 
     def report(self) -> list[tuple[str, float, dict[str, Any]]]:
         return [
             (
                 "aggregation.dropped",
                 float(len(self.dropped)),
-                {"dropped": list(self.dropped), "f_used": self.f_used},
+                {
+                    "dropped": list(self.dropped),
+                    "f_used": self.f_used,
+                    "rescued": list(self.rescued),
+                },
             )
         ]
 
-    def _keep(
-        self, ordered: Sequence[Contribution], chosen: Sequence[int], source: str
+    def _select(
+        self,
+        ordered: Sequence[Contribution],
+        ranked: np.ndarray,
+        keep: int,
+        source: str,
+        combine: Combine = _weighted_mean,
     ) -> Contribution:
-        keep = {int(i) for i in chosen}
-        self.dropped = [c.source for i, c in enumerate(ordered) if i not in keep]
-        kept = [c for i, c in enumerate(ordered) if i in keep]
-        return _combine_per_key(kept, source, _weighted_mean, needs_weights=True)
+        """Combine each key over the kept children that hold it.
+
+        A key no kept child holds (a dataset whose edges were all dropped) comes
+        from its best-ranked holders instead of vanishing; it is reported.
+        """
+        chosen = {int(i) for i in ranked[:keep]}
+        rank = {int(i): r for r, i in enumerate(ranked)}
+        self.dropped = [c.source for i, c in enumerate(ordered) if i not in chosen]
+        rescued: set[str] = set()
+        state: dict[str, np.ndarray] = {}
+        weights: dict[str, float] = {}
+        for key in sorted({k for c in ordered for k in c.state}):
+            holders = [i for i, c in enumerate(ordered) if key in c.state]
+            kept = [i for i in holders if i in chosen]
+            if not kept:
+                kept = sorted(holders, key=rank.__getitem__)[:keep]
+                if not is_aux(key):
+                    rescued.add(key)
+            part = [
+                Contribution(
+                    ordered[i].source,
+                    {key: ordered[i].state[key]},
+                    {key: ordered[i].weights.get(key, 0.0)},
+                )
+                for i in kept
+            ]
+            how = _weighted_mean if is_aux(key) else combine
+            out = _combine_per_key(
+                part, source, how, needs_weights=how is _weighted_mean
+            )
+            state[key], weights[key] = out.state[key], out.weights[key]
+        self.rescued = sorted(rescued)
+        return Contribution(source, state, weights)
 
 
 class KrumParams(BaseModel):
@@ -269,7 +308,7 @@ class Krum(_Selection):
     ) -> Contribution:
         ordered = sorted(contributions, key=lambda item: item.source)
         ranked, self.f_used = self._ranked(ordered, reference)
-        return self._keep(ordered, ranked[:1], source)
+        return self._select(ordered, ranked, 1, source)
 
 
 class MultiKrumParams(KrumParams):
@@ -300,7 +339,7 @@ class MultiKrum(Krum):
         ordered = sorted(contributions, key=lambda item: item.source)
         ranked, self.f_used = self._ranked(ordered, reference)
         keep = min(self.m or len(ordered) - self.f_used, len(ordered))
-        return self._keep(ordered, ranked[:keep], source)
+        return self._select(ordered, ranked, keep, source)
 
 
 class GeometricMedianParams(BaseModel):
@@ -357,7 +396,10 @@ class GeometricMedian:
     title="Bulyan",
     description="Multi-Krum y después media recortada alrededor de la mediana, coordenada a coordenada.",
     params=KrumParams,
-    explain="Con menos de 4f + 3 hijos baja f (El Mhamdi et al., 2018).",
+    explain=(
+        "Con menos de 4f + 3 hijos baja f; selecciona con un único ranking de "
+        "Multi-Krum en lugar del Krum iterativo del artículo (El Mhamdi et al., 2018)."
+    ),
 )
 class Bulyan(Krum):
     def _feasible(self, n: int) -> int:
@@ -374,9 +416,6 @@ class Bulyan(Krum):
         ranked, f = self._ranked(ordered, reference)
         self.f_used = f
         theta = len(ordered) - 2 * f
-        keep = {int(i) for i in ranked[:theta]}
-        selected = [c for i, c in enumerate(ordered) if i in keep]
-        self.dropped = [c.source for i, c in enumerate(ordered) if i not in keep]
         beta = max(theta - 2 * f, 1)
 
         def around_median(stacked: np.ndarray, _weights: np.ndarray) -> np.ndarray:
@@ -385,9 +424,7 @@ class Bulyan(Krum):
             order = np.argsort(np.abs(stacked - median), axis=0, kind="stable")[:size]
             return np.take_along_axis(stacked, order, axis=0).mean(axis=0)
 
-        out = _combine_per_key(selected, source, around_median, needs_weights=False)
-        totals = _combine_per_key(selected, source, _weighted_mean, needs_weights=True)
-        return Contribution(source, out.state, totals.weights)
+        return self._select(ordered, ranked, theta, source, around_median)
 
 
 def _clipped(

@@ -499,3 +499,40 @@ def test_dp_fedavg_leaves_auxiliary_arrays_unclipped_and_unnoised() -> None:
     )
 
     np.testing.assert_allclose(out.state["scaffold/w"], [9.0])
+
+
+SWELL_ONLY = [
+    vec(f"s{i}", [1.0 + 0.02 * i]) for i in range(6)
+]  # 7 children: Bulyan keeps f = 1
+OUTLIER_WITH_ITS_OWN_KEY = vec("t0", [9.0], adapter_t=[7.0])
+
+
+@pytest.mark.parametrize("name", ["krum", "multi_krum", "bulyan"])
+def test_a_key_whose_holders_were_all_dropped_comes_from_its_best_holder(
+    name: str,
+) -> None:
+    selector = aggregators.create(name, {"f": 1})
+
+    out = selector.aggregate([*SWELL_ONLY, OUTLIER_WITH_ITS_OWN_KEY], "fog")
+
+    assert "t0" in selector.report()[0][2]["dropped"]
+    np.testing.assert_allclose(out.state["adapter_t"], [7.0])
+    assert selector.report()[0][2]["rescued"] == ["adapter_t"]
+
+
+def test_bulyan_averages_auxiliary_arrays_of_the_selected_children() -> None:
+    children = [vec(f"h{i}", [1.0 + 0.01 * i]) for i in range(7)]
+    for i, child in enumerate(children):
+        child.state["scaffold/w"] = np.full(1, float(i**2))  # skewed: mean != median
+        child.weights["scaffold/w"] = 1.0
+    bulyan = aggregators.create("bulyan", {"f": 1})
+
+    out = bulyan.aggregate(children, "fog")
+
+    kept = [c for c in children if c.source not in bulyan.report()[0][2]["dropped"]]
+    expected = np.mean([c.state["scaffold/w"] for c in kept])
+    np.testing.assert_allclose(out.state["scaffold/w"], [expected])
+
+
+def test_a_selection_reports_before_any_round() -> None:
+    assert aggregators.create("krum").report()[0][1] == 0.0
