@@ -7,6 +7,7 @@ Each aggregation node reads its round settings from the topology::
     aggregator: fedavg | {name: trimmed_mean, beta: 0.2}
     server_optimizer: replace        # root only
     quorum: 1.0 | 2                  # float = fraction, int = count
+    close_at_quorum: false           # true: close on K updates, late ones included (FedBuff)
     deadline: 30s
     participation: all | {name: fraction, p: 0.5}
     staleness: drop | {name: next_round, weighting: {name: polynomial, a: 0.5}}
@@ -16,7 +17,8 @@ Each aggregation node reads its round settings from the topology::
 
 The edge template takes ``eval: {every: 1, models: [received, local]}``.
 Edges hang from the leaf aggregators and use the topology's edge link; the
-root takes evaluators only (the global ``test`` subjects).
+root takes evaluators only: the ``test`` subjects, or the validation ones with
+``evaluation.global.subjects: val`` (hyperparameter selection).
 """
 
 from collections.abc import Mapping, Sequence
