@@ -1,0 +1,31 @@
+# four_fogs_swell_wesad_lossless whose fogs buffer in the style of FedBuff
+# (Nguyen et al., 2022), the cloud staying synchronous, so it is a hierarchical
+# adaptation, not the paper's protocol:
+# - each fog closes its round as soon as K updates are in, late ones included
+#   (just over half its edges in the segregated placement: 5 of 9 SWELL
+#   edges, 3 of 5 WESAD edges);
+# - an edge still training gets no newer model, and its update joins a later
+#   round as its change from the model it trained on, weighted by
+#   (1 + staleness)^-0.5.
+name: four_fogs_swell_wesad_lossless_fedbuff
+levels: [global, fog, edge]
+root:
+  id: cloud
+  aggregator: fedavg
+  server_optimizer: replace
+  deadline: 300s
+fog:
+  defaults:
+    aggregator: fedavg
+    close_at_quorum: true
+    staleness: {name: next_round, weighting: {name: polynomial, a: 0.5}}
+    deadline: 120s
+    link_up: {transport: mqtt, codec: json, profile: {preset: wifi, loss: 0.0}}
+  nodes:
+    - {id: fog_a1, home: swell, quorum: 5}
+    - {id: fog_a2, home: swell, quorum: 5}
+    - {id: fog_b1, home: wesad, quorum: 3}
+    - {id: fog_b2, home: wesad, quorum: 3}
+edge:
+  link_up: {transport: mqtt, codec: json, profile: {preset: 4g, loss: 0.0}}
+  device: {samples_per_second: 2000}

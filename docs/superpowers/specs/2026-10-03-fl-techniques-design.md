@@ -149,8 +149,8 @@ Los agregadores que comparan contribuciones enteras (Krum, Multi-Krum, Bulyan, m
 |---|---|---|---|
 | `fedyogi` | optimizador | Yogi sobre el pseudogradiente | Reddi et al., 2021 |
 | `fedadagrad` | optimizador | Adagrad sobre el pseudogradiente | Reddi et al., 2021 |
-| `fedasync` | optimizador | `x ← (1−α_s)·x + α_s·x̄`, con `α_s = α·(1 + staleness)^(−a)` | Xie et al., 2019 |
-| FedBuff | combinación | `quorum: K` (entero) + `staleness: next_round` + `stale_weighting: polynomial`, con `experiments/fedbuff.yaml` como ejemplo | Nguyen et al., 2022 |
+| `fedasync_mix` | optimizador | `x ← (1−α_s)·x + α_s·x̄`, con `α_s = α·(1 + staleness)^(−a)` | Regla de mezcla de Xie et al., 2019, una vez por ronda; no es el protocolo FedAsync, que actualiza con cada llegada y añade un término proximal en el edge |
+| Buffering jerárquico inspirado en FedBuff | combinación | `quorum: K` (entero) + `close_at_quorum: true` + `staleness: {name: next_round, weighting: polynomial}`. El fog cierra con K actualizaciones, tardías incluidas; no envía un modelo nuevo a un hijo que sigue entrenando; y una tardía entra como su cambio respecto al modelo con que entrenó. La nube sigue siendo síncrona. Ejemplo: `experiments/fedbuff.yaml` | Nguyen et al., 2022 |
 
 Cada fase tiene su propio plan de implementación, su issue y su PR.
 

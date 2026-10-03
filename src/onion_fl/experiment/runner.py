@@ -182,6 +182,15 @@ def _check_learning(config: ExperimentConfig, state: Mapping[str, Any]) -> None:
             f"statistics count only fresh updates, but {late} also aggregate late "
             "ones; use staleness drop"
         )
+    buffering = sorted(
+        n.id for n in topology.nodes if n.settings.get("close_at_quorum")
+    )
+    if needed is not None and getattr(trainer, "_memory", ()) and buffering:
+        raise ConfigError(
+            f"learning.trainer: {name} keeps edge state that its server optimizer "
+            f"tracks, but {buffering} close rounds at quorum (close_at_quorum), so "
+            "the slower edges' updates are dropped while their state moves on"
+        )
     zoned = sorted(
         g for g in param_groups(state) if policy.scope_of(g).startswith("level:")
     )
@@ -329,7 +338,14 @@ def edge_specs(
             )
             for client in clients
         ] + [evaluator("val", data) for data in placement.zone_evaluators.get(leaf, [])]
-    edges[topology.root.id] = [evaluator("test", data) for data in placement.test]
+    if config.evaluation.global_.subjects == "val":  # selection runs: no test
+        edges[topology.root.id] = [
+            evaluator("gval", data)
+            for leaf in sorted(placement.zone_evaluators)
+            for data in placement.zone_evaluators[leaf]
+        ]
+    else:
+        edges[topology.root.id] = [evaluator("test", data) for data in placement.test]
     return edges, initial
 
 

@@ -189,6 +189,14 @@ class AggregatorEval(Strict):
 
 class GlobalEval(Strict):
     every: PositiveInt | None = 1
+    subjects: Literal["test", "val"] | None = Field(
+        None,
+        description=(
+            "Sujetos con los que se evalúa el modelo global: los de test (por "
+            "defecto) o los de validación, para elegir hiperparámetros del servidor"
+        ),
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
 
 
 class EvaluationConfig(Strict):

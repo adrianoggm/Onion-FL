@@ -103,6 +103,7 @@ class _Collector(Node):
         sharing: SharingPolicy,
         aggregator: Any,
         quorum: float = 1.0,
+        close_at_quorum: bool = False,
         deadline: float | None = None,
         participation: Any = None,
         staleness: Any = None,
@@ -117,6 +118,7 @@ class _Collector(Node):
         self.level, self.levels, self.sharing = level, list(levels), sharing
         self.aggregator = aggregator
         self.quorum, self.deadline = quorum, deadline
+        self.close_at_quorum = close_at_quorum  # FedBuff-style: close at K, not at all
         self.participation = participation or AllChildren()
         self.staleness = staleness or Drop()
         self.register_timeout = register_timeout
@@ -128,6 +130,10 @@ class _Collector(Node):
         self.participants: list[str] = []
         self.responses: dict[str, tuple[Contribution, Mapping[str, float]]] = {}
         self.stale: dict[str, Contribution] = {}
+        self.stale_age: dict[str, float] = {}  # rounds behind, plus what it carried
+        self.stale_round: dict[str, int] = {}  # the round each buffered update is from
+        self.sent_history: dict[int, State] = {}  # what was sent down, per round
+        self.owed: dict[str, list[int]] = {}  # rounds each child has not answered
         self.pending_eval: dict[int, dict[str, Any]] = {}
         self.diagnostics = (
             [diagnostic_plugins.create(n) for n in diagnostic_plugins.names()]
@@ -205,9 +211,14 @@ class _Collector(Node):
         _reject(ctx, msg, "unexpected sender or kind")
 
     def _open(self, round: int, state: State, ctx: Context, bootstrap: bool) -> None:
+        if self.open:  # the parent moved on before this round closed
+            self._abandon(round, ctx)
         self.round, self.open, self.opened_at = round, True, ctx.now()
         self.responses, self.late, self.quorum_at = {}, 0, None
-        self.participants = self.participation.select(self.trainers(), round, ctx.rng)
+        selected = self.participation.select(self.trainers(), round, ctx.rng)
+        if self.close_at_quorum:  # FedBuff-style: a busy child gets no newer model
+            selected = [c for c in selected if c not in self.owed]
+        self.participants = selected
         ctx.emit(
             "round.participants",
             len(self.participants),
@@ -234,13 +245,88 @@ class _Collector(Node):
                     meta={"bootstrap": bootstrap},
                 )
             )
+            self.owed.setdefault(child, []).append(round)
+        # Kept while an update trained on it may still be kept, to rebase it; a
+        # policy that drops late updates needs none, and max_staleness bounds it.
+        self.sent_history[round] = down
+        alive = {round}
+        if self.staleness.weight(1) is not None:
+            alive |= {*self.stale_round.values()}
+            alive |= {r for rounds in self.owed.values() for r in rounds}
+            limit = getattr(self.staleness, "max_staleness", None)
+            if limit is not None:
+                alive = {r for r in alive if round - r <= limit}
+        self.sent_history = {r: s for r, s in self.sent_history.items() if r in alive}
         if not self.participants:
             self._close(ctx)
         elif self.deadline is not None:
             ctx.set_timer(self.deadline, "deadline")
 
+    def _abandon(self, new_round: int, ctx: Context) -> None:
+        """Keep the updates of a round the parent overtook, as late ones."""
+        ctx.cancel_timer("deadline")
+        kept = 0
+        for src, (contribution, metrics) in sorted(self.responses.items()):
+            if contribution.state:
+                kept += self._buffer(src, contribution, self.round, new_round, metrics)
+        ctx.emit(
+            "round.abandoned",
+            float(kept),
+            round=self.round,
+            kept=kept,
+            responded=len(self.responses),
+        )
+        self.open = False
+
+    def _buffer(
+        self,
+        src: str,
+        contribution: Contribution,
+        round: int,
+        target: int,
+        metrics: Mapping[str, float],
+    ) -> bool:
+        """Hold a late update for round ``target``, weighted by its staleness."""
+        factor = self.staleness.weight(target - round)
+        if factor is None or not contribution.state:
+            return False
+        weights = {k: w * factor for k, w in contribution.weights.items()}
+        self.stale[src] = Contribution(src, contribution.state, weights)
+        carried = float((metrics or {}).get("staleness", 0.0))
+        self.stale_age[src] = target - round + carried
+        self.stale_round[src] = round
+        return True
+
+    def _reached(self) -> bool:
+        """A buffering round (FedBuff-style) closes on K updates, late ones included."""
+        if not self.close_at_quorum:
+            return False
+        fresh = {s for s, (c, _) in self.responses.items() if c.state}
+        count = len(fresh) + sum(1 for s in self.stale if s not in fresh)
+        return count >= max(quorum_needed(self.quorum, len(self.participants)), 1)
+
+    def _rebased(self, source: str) -> Contribution | None:
+        """A late update as its change from the model it trained on, applied to the
+        model sent this round: an old model would pull the aggregate back. None
+        when that model is gone; the update is then dropped, never used as is."""
+        item = self.stale[source]
+        base = self.sent_history.get(self.stale_round.get(source, -1))
+        if base is None:
+            return None
+        state = dict(item.state)
+        for key, value in item.state.items():
+            if is_aux(key) or key not in base or key not in self.sent:
+                continue
+            delta = np.asarray(value, np.float64) - np.asarray(base[key], np.float64)
+            moved = np.asarray(self.sent[key], np.float64) + delta
+            state[key] = moved.astype(np.asarray(value).dtype)
+        return Contribution(item.source, state, item.weights)
+
     def _update(self, msg: Message, ctx: Context) -> None:
         r = msg.round
+        owed = [x for x in self.owed.pop(msg.src, []) if r is None or x > r]
+        if owed:  # links are FIFO: an answer for r settles every round up to r
+            self.owed[msg.src] = owed
         contribution = Contribution(
             msg.src, dict(msg.payload.state), dict(msg.payload.weights)
         )
@@ -251,18 +337,24 @@ class _Collector(Node):
             needed = quorum_needed(self.quorum, len(self.participants))
             if self.quorum_at is None and answered >= max(needed, 1):
                 self.quorum_at = ctx.now() - self.opened_at
-            if len(self.responses) == len(self.participants):
+            if self._reached() or len(self.responses) == len(self.participants):
                 self._close(ctx)
             return
         if r is not None and (r < self.round or (r == self.round and not self.open)):
             target = self.round if self.open else self.round + 1
-            factor = self.staleness.weight(target - r)
-            action = "drop" if factor is None or not contribution.state else "buffered"
+            buffered = self._buffer(
+                msg.src, contribution, r, target, msg.payload.metrics
+            )
             self.late += 1
-            ctx.emit("update.late", target - r, src=msg.src, round=r, action=action)
-            if action == "buffered":
-                weights = {k: w * factor for k, w in contribution.weights.items()}
-                self.stale[msg.src] = Contribution(msg.src, contribution.state, weights)
+            ctx.emit(
+                "update.late",
+                target - r,
+                src=msg.src,
+                round=r,
+                action="buffered" if buffered else "drop",
+            )
+            if self.open and self._reached():
+                self._close(ctx)
             return
         _reject(ctx, msg, "update for a round that is not open")
 
@@ -280,16 +372,28 @@ class _Collector(Node):
         ctx.cancel_timer("deadline")
         self.open = False
         fresh = {s: c for s, (c, _) in self.responses.items() if c.state}
-        stale = [c for s, c in sorted(self.stale.items()) if s not in fresh]
-        self.stale = {}
+        rebased = {s: self._rebased(s) for s in sorted(self.stale) if s not in fresh}
+        late = [s for s, c in rebased.items() if c is not None]
+        stale = [rebased[s] for s in late]
+        lost = [s for s, c in rebased.items() if c is None]
+        if lost:
+            ctx.emit(
+                "update.unrebased", float(len(lost)), sources=lost, round=self.round
+            )
+        # Staleness of what is combined: rounds behind here plus what each carried.
+        age = {s: float(self.responses[s][1].get("staleness", 0.0)) for s in fresh}
+        age |= {s: self.stale_age[s] for s in late}
+        ages = [age[s] for s in sorted(age)]
+        self.stale, self.stale_age, self.stale_round = {}, {}, {}
         needed = quorum_needed(self.quorum, len(self.participants))
+        count = len(fresh) + (len(stale) if self.close_at_quorum else 0)
         tags = {
             "responded": len(fresh),
             "participants": len(self.participants),
             "round": self.round,
         }
         reports = {s: m for s, (_, m) in sorted(self.responses.items()) if s in fresh}
-        if not fresh or len(fresh) < needed:
+        if not count or count < needed:
             ctx.emit("round.quorum_failed", self.round, needed=needed, **tags)
             self._diagnose(fresh, {}, reports, ctx, failed=True)
             if self.aggregate_children:
@@ -306,6 +410,8 @@ class _Collector(Node):
         self.previous = dict(aggregated.state)
         reports = list(reports.values())
         metrics = _train_metrics(reports)
+        if any(ages):  # absent means 0, so synchronous runs send nothing new
+            metrics["staleness"] = float(np.mean(ages))
         if self.aggregate_children:
             metrics |= self._children_scores(reports, ctx)
         ctx.emit("round.closed", ctx.now() - self.opened_at, stale=len(stale), **tags)
