@@ -667,3 +667,33 @@ def test_fedasync_mixes_by_a_staleness_discounted_weight() -> None:
 
     np.testing.assert_allclose(fresh["w"], [2.0])  # α_s = 0.5
     np.testing.assert_allclose(stale["w"], [1.0])  # α_s = 0.5·(1 + 3)^-0.5 = 0.25
+
+
+@pytest.mark.parametrize(
+    "name, params",
+    [
+        ("fedavgm", {"server_lr": 1.0, "momentum": 0.5}),
+        ("fedadam", {"server_lr": 0.1}),
+        ("fedyogi", {"server_lr": 0.1}),
+        ("fedadagrad", {"server_lr": 0.1}),
+        ("feddyn", {"alpha": 0.5}),
+    ],
+)
+def test_server_optimizer_state_survives_save_and_load(name: str, params: dict) -> None:
+    stats = {"train_edges": 2.0, "edges_total": 4.0}
+    one = server_optimizers.create(name, params)
+    first = one.apply(g(w=[0.0, 1.0]), g(w=[2.0, 3.0]), stats)
+
+    two = server_optimizers.create(name, params)
+    two.load_state(one.state())
+
+    np.testing.assert_array_equal(
+        one.apply(first, g(w=[1.0, 5.0]), stats)["w"],
+        two.apply(first, g(w=[1.0, 5.0]), stats)["w"],
+    )
+    assert all(isinstance(v, np.ndarray) for v in one.state().values())
+
+
+def test_stateless_server_optimizers_have_an_empty_state() -> None:
+    for name in ("replace", "fednova", "scaffold", "fedasync_mix"):
+        assert server_optimizers.create(name).state() == {}

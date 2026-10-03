@@ -813,3 +813,52 @@ def test_stateful_trainers_snapshot_their_memory(name: str, attribute: str) -> N
     trainer.restore(saved)
 
     assert getattr(trainer, attribute) != "poisoned"
+
+
+def _memory_equal(a, b) -> bool:
+    if isinstance(a, torch.nn.Module):
+        sa, sb = a.state_dict(), b.state_dict()
+        return sa.keys() == sb.keys() and all(torch.equal(sa[k], sb[k]) for k in sa)
+    if isinstance(a, dict):
+        return a.keys() == b.keys() and all(
+            np.array_equal(np.asarray(a[k]), np.asarray(b[k])) for k in a
+        )
+    return a == b
+
+
+@pytest.mark.parametrize("name", ["ditto", "apfl", "scaffold", "feddyn", "moon"])
+def test_trainer_memory_survives_export_and_import(name: str) -> None:
+    import copy
+
+    model = build()
+    trainer = trainers.create(name)
+    weights = {n: p.detach().clone() + 1 for n, p in model.named_parameters()}
+    memory = {
+        "_personal": copy.deepcopy(model),
+        "_v": copy.deepcopy(model),
+        "_previous": copy.deepcopy(model).eval(),
+        "_w": weights,
+        "_grad": weights,
+        "_c_i": {n: w.numpy() for n, w in weights.items()},
+        "alpha": 0.7,
+    }
+    for attribute in trainer._memory:
+        setattr(trainer, attribute, memory[attribute])
+
+    arrays, meta = trainer.export_memory()
+    fresh = trainers.create(name)
+    fresh.import_memory(arrays, meta, build())
+
+    for attribute in trainer._memory:
+        assert _memory_equal(getattr(trainer, attribute), getattr(fresh, attribute))
+    assert all(isinstance(v, np.ndarray) for v in arrays.values())
+
+
+def test_an_empty_memory_round_trips_as_empty() -> None:
+    trainer = trainers.create("moon")  # _previous is None before any round
+
+    arrays, meta = trainer.export_memory()
+    fresh = trainers.create("moon")
+    fresh.import_memory(arrays, meta, build())
+
+    assert fresh._previous is None and arrays == {}

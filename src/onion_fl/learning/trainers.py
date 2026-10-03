@@ -154,6 +154,64 @@ class Standard:
         for name, value in saved.items():
             setattr(self, name, value)
 
+    def export_memory(self) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+        """The memory as arrays and a JSON-ready description, for a bundle (no pickles)."""
+        arrays: dict[str, np.ndarray] = {}
+        meta: dict[str, Any] = {}
+        for name in self._memory:
+            value = getattr(self, name)
+            if value is None:
+                meta[name] = {"kind": "none"}
+            elif isinstance(value, nn.Module):
+                meta[name] = {"kind": "module", "training": value.training}
+                arrays |= {
+                    f"{name}/{k}": v.detach().cpu().numpy()
+                    for k, v in value.state_dict().items()
+                }
+            elif isinstance(value, Mapping):
+                tensors = any(isinstance(v, torch.Tensor) for v in value.values())
+                meta[name] = {"kind": "tensors" if tensors else "arrays"}
+                arrays |= {
+                    f"{name}/{k}": (
+                        v.detach().cpu().numpy()
+                        if isinstance(v, torch.Tensor)
+                        else np.asarray(v)
+                    )
+                    for k, v in value.items()
+                }
+            else:
+                meta[name] = {"kind": "scalar", "value": float(value)}
+        return arrays, meta
+
+    def import_memory(
+        self,
+        arrays: Mapping[str, np.ndarray],
+        meta: Mapping[str, Any],
+        model: nn.Module,
+    ) -> None:
+        """Rebuild the memory from ``export_memory``; ``model`` gives the architecture."""
+        for name in self._memory:
+            info = meta.get(name, {"kind": "none"})
+            part = {
+                key.split("/", 1)[1]: np.asarray(value)
+                for key, value in arrays.items()
+                if key.split("/", 1)[0] == name
+            }
+            kind = info["kind"]
+            if kind == "none":
+                value: Any = None
+            elif kind == "module":
+                value = copy.deepcopy(model)
+                value.load_state_dict({k: torch.as_tensor(v) for k, v in part.items()})
+                value.train(bool(info["training"]))
+            elif kind == "tensors":
+                value = {k: torch.as_tensor(v) for k, v in part.items()}
+            elif kind == "arrays":
+                value = {k: v.copy() for k, v in part.items()}
+            else:
+                value = float(info["value"])
+            setattr(self, name, value)
+
     def _check(self, received: Mapping[str, np.ndarray] | None) -> None:
         pass
 
