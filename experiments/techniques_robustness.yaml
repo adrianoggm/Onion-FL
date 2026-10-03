@@ -1,6 +1,7 @@
 # Robust aggregation under attack on SWELL and WESAD (issue #149): every leaf
 # aggregator (fog) runs the same aggregator; 20% of each dataset's edges flip
-# the sign of their update, or nobody attacks. Three seeds. Training as in the
+# the sign of their update (scale 1, or scale 5, which with 20% attackers makes
+# the averaged update point against learning), or nobody attacks. Three seeds. Training as in the
 # drift comparison (SGD, lr 0.3, chosen on validation for FedAvg); the clipping
 # bound is the median edge update norm under FedAvg (1.02), not a test score.
 #
@@ -38,3 +39,4 @@ sweep:
   attack:
     - null
     - {name: sign_flip, fraction: 0.2}
+    - {name: sign_flip, fraction: 0.2, scale: 5.0}
