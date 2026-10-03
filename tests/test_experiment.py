@@ -184,7 +184,6 @@ def test_an_unset_server_optimizer_stays_out_of_the_config(workspace: Path) -> N
     assert "server_optimizer" not in config.dump()["learning"]
 
 
-@pytest.mark.xfail(reason="the fednova plugins arrive in Task 5", strict=True)
 @pytest.mark.parametrize(
     "trainer, optimizer, message",
     [

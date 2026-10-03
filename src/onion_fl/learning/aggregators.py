@@ -11,6 +11,7 @@ depend on the order in which they arrived.
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 from pydantic import BaseModel, Field
@@ -263,4 +264,41 @@ class FedAdam:
             self._m[key], self._v[key] = m, v
             step = self.server_lr * m / (np.sqrt(v) + self.tau)
             new[key] = (current + step).astype(np.asarray(value).dtype)
+        return new
+
+
+@server_optimizers.register(
+    "fednova",
+    title="FedNova",
+    description="x + τ̄·d̄: la media de las actualizaciones normalizadas por la media de pasos.",
+    explain="Va con el entrenador fednova; con pasos iguales coincide con FedAvg (Wang et al., 2020).",
+)
+class FedNovaOptimizer:
+    PREFIX = "fednova/"
+
+    def check_trainer(self, name: str, trainer: Any) -> None:
+        if name != "fednova":
+            raise ValueError(f"fednova needs the fednova trainer, not {name!r}")
+
+    def apply(
+        self,
+        global_state: Mapping[str, np.ndarray],
+        aggregated: Mapping[str, np.ndarray],
+        stats: Mapping[str, float] | None = None,
+    ) -> State:
+        tau = (stats or {}).get("train_steps")
+        if not tau:
+            raise ValueError("fednova needs train_steps in the round statistics")
+        new = {k: v for k, v in global_state.items() if not k.startswith(self.PREFIX)}
+        for key, value in aggregated.items():
+            if key.startswith(self.PREFIX):
+                continue
+            step = aggregated.get(self.PREFIX + key)
+            if step is None:  # no normalised update (frozen or non-trainable): replace
+                new[key] = value
+                continue
+            current = np.asarray(global_state.get(key, value), dtype=np.float64)
+            new[key] = (current + tau * np.asarray(step, np.float64)).astype(
+                np.asarray(value).dtype
+            )
         return new

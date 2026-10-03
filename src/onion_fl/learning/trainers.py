@@ -502,6 +502,40 @@ class Scaffold(Standard):
         return replace(result, aux=aux)
 
 
+@trainers.register(
+    "fednova",
+    title="FedNova",
+    description="Entrenamiento estándar que envía además su actualización normalizada por pasos.",
+    params=StandardParams,
+    explain=(
+        "Cada edge envía (y − x)/τ_i; el optimizador de servidor fednova aplica "
+        "x + τ̄·d̄, así los edges que dan más pasos no arrastran el modelo "
+        "(Wang et al., 2020). Exige server_optimizer fednova."
+    ),
+)
+class FedNova(Standard):
+    server_optimizer = "fednova"
+
+    def train(
+        self,
+        model: nn.Module,
+        data: Samples,
+        received: Mapping[str, np.ndarray] | None = None,
+        ctx: Any = None,
+    ) -> TrainResult:
+        start = state_arrays(model)
+        result = super().train(model, data, received, ctx)
+        after = state_arrays(model)
+        names = trainable(model, self.params.frozen)
+        aux = {
+            f"fednova/{n}": ((after[n] - start[n]) / result.batches).astype(
+                start[n].dtype
+            )
+            for n in names
+        }
+        return replace(result, aux=aux)
+
+
 class StubParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

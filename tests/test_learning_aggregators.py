@@ -269,13 +269,15 @@ def test_fedadam_follows_its_update_rule() -> None:
 
 def test_optimizers_keep_the_dtype() -> None:
     for name in server_optimizers.names():
-        out = server_optimizers.create(name).apply(g(w=[0.0, 1.0]), g(w=[1.0, 2.0]))
+        stats = {"train_steps": 1.0, "train_edges": 1.0, "edges_total": 1.0}
+        optimizer = server_optimizers.create(name)
+        out = optimizer.apply(g(w=[0.0, 1.0]), g(w=[1.0, 2.0]), stats)
         assert out["w"].dtype == np.float32, name
 
 
 def test_registries_list_the_built_ins() -> None:
     assert aggregators.names() == ["fedavg", "mean", "median", "trimmed_mean"]
-    assert server_optimizers.names() == ["fedadam", "fedavgm", "replace"]
+    assert server_optimizers.names() == ["fedadam", "fedavgm", "fednova", "replace"]
 
 
 @pytest.mark.parametrize("name", ["fedavgm", "fedadam"])
@@ -288,3 +290,33 @@ def test_server_optimizers_replace_auxiliary_arrays(name: str) -> None:
     out = optimizer.apply(out, aggregated)  # a second step: momentum would show
 
     np.testing.assert_array_equal(out["scaffold/w"], [7.0, 7.0])
+
+
+def test_fednova_with_equal_steps_is_fedavg() -> None:
+    x = np.zeros(2)
+    ys = [np.array([1.0, 2.0]), np.array([3.0, 6.0])]
+    d = np.mean([(y - x) / 4 for y in ys], axis=0)
+
+    out = server_optimizers.create("fednova").apply(
+        {"w": x}, {"w": np.mean(ys, axis=0), "fednova/w": d}, {"train_steps": 4.0}
+    )
+
+    np.testing.assert_allclose(out["w"], np.mean(ys, axis=0))
+    assert "fednova/w" not in out
+
+
+def test_fednova_scales_the_normalised_update_by_the_mean_steps() -> None:
+    out = server_optimizers.create("fednova").apply(
+        {"w": np.ones(1)},
+        {"w": np.full(1, 9.0), "fednova/w": np.full(1, 0.5)},
+        {"train_steps": 3.0},
+    )
+
+    np.testing.assert_allclose(out["w"], [2.5])  # 1 + 3·0.5
+
+
+def test_fednova_names_the_missing_steps() -> None:
+    with pytest.raises(ValueError, match="train_steps"):
+        server_optimizers.create("fednova").apply(
+            {"w": np.zeros(1)}, {"w": np.zeros(1), "fednova/w": np.zeros(1)}, {}
+        )

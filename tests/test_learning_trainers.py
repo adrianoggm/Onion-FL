@@ -202,6 +202,7 @@ def test_trainers_registry_lists_the_built_ins() -> None:
         "apfl",
         "ditto",
         "fedbabu",
+        "fednova",
         "fedprox",
         "fedrep",
         "scaffold",
@@ -595,6 +596,25 @@ def test_scaffold_trains_when_the_heads_stay_on_the_edge(swell) -> None:
     )
 
     assert any(k.startswith("scaffold/head.") for k in result.aux)
+
+
+@real
+def test_fednova_sends_its_normalised_update(swell) -> None:
+    model = build()
+    received = state_arrays(model)
+
+    result = trainers.create("fednova", {"lr": 0.05}).train(
+        model, swell, received, ctx()
+    )
+
+    after = state_arrays(model)
+    for key, x in received.items():
+        np.testing.assert_allclose(
+            result.aux[f"fednova/{key}"],
+            (after[key] - x) / result.batches,
+            rtol=1e-5,
+            atol=1e-8,
+        )
 
 
 def test_ditto_needs_the_received_state() -> None:
