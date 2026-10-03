@@ -42,7 +42,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | CLI | ✅ | `onion_fl data · topology · plan · run · node · report · baseline · schema · serve` |
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
-| Tests | ✅ | 787 tests. With SWELL, WESAD and a local broker, 783 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
+| Tests | ✅ | 795 tests. With SWELL, WESAD and a local broker, 791 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
 
@@ -277,23 +277,23 @@ Source: [results/techniques_personalisation/](results/techniques_personalisation
 
 ### New framework: non-IID drift techniques
 
-Source: [results/techniques_drift/](results/techniques_drift/INDEX.md), `topology_id` `9033d1cf…`, commit `2564b81`. It is `experiments/techniques_drift.yaml`: SWELL + WESAD on four fogs at α = 0 (segregated), SGD, 20 rounds, 3 seeds. Each technique's learning rate was chosen on the validation subjects, never on the test ones. Macro-F1, mean ± 95% CI:
+Source: [results/techniques_drift/](results/techniques_drift/INDEX.md), `topology_id` `9033d1cf…`, commit `f62390b`. It is `experiments/techniques_drift.yaml`: SWELL + WESAD on four fogs at α = 0 (segregated), SGD, 20 rounds, 3 seeds. Each technique's learning rate was chosen on the validation subjects, never on the test ones (`validation.csv`). Macro-F1, mean ± 95% CI:
 
 | Technique | Global SWELL | Global WESAD | Edge, trained | Trunk alignment |
 |---|---|---|---|---|
 | FedAvg | 0.579 ± 0.034 | 0.749 ± 0.009 | 0.581 ± 0.028 | 0.159 ± 0.087 |
 | FedProx | 0.578 ± 0.046 | 0.751 ± 0.000 | 0.582 ± 0.016 | 0.160 ± 0.087 |
-| SCAFFOLD | 0.403 ± 0.000 | 0.789 ± 0.126 | 0.503 ± 0.011 | 0.208 ± 0.028 |
-| FedNova | 0.585 ± 0.031 | 0.751 ± 0.000 | 0.588 ± 0.033 | 0.133 ± 0.094 |
+| SCAFFOLD | 0.403 ± 0.000 | 0.772 ± 0.056 | 0.500 ± 0.017 | 0.204 ± 0.029 |
+| FedNova | 0.595 ± 0.039 | 0.751 ± 0.000 | 0.589 ± 0.023 | 0.138 ± 0.082 |
 | FedDyn | 0.533 ± 0.078 | 0.775 ± 0.045 | 0.604 ± 0.053 | 0.134 ± 0.139 |
 | MOON | 0.542 ± 0.074 | 0.737 ± 0.059 | 0.555 ± 0.009 | 0.153 ± 0.073 |
 
-- **No technique beats FedAvg on SWELL.**
-- **SCAFFOLD trades SWELL for WESAD.** It gives the most aligned trunk updates and the best WESAD score. But at the rate it needs to stay stable (0.1), its global model never leaves "always stress" on SWELL; at 0.3 one edge diverged.
-- **FedDyn helps WESAD and the edges a little.**
-- **MOON's contrast hurts on this tabular task.**
+- **No technique clearly beats FedAvg.**
+- **SCAFFOLD aligns the clients' trunk updates the most, but stalls on SWELL.** At the rate validation picked, its global model never leaves "always stress" there.
+- **FedDyn gives the best WESAD and trained-edge scores within overlapping intervals.**
+- **MOON's contrast does not help on this tabular task.**
 
-With three seeds most intervals overlap.
+With three seeds most intervals overlap; the INDEX lists each technique's limits.
 
 ### Before the redesign
 
