@@ -519,7 +519,8 @@ class DPFedAvg:
         rng: np.random.Generator | None = None,
     ) -> Contribution:
         reference = reference or {}
-        rng = rng if rng is not None else np.random.default_rng(0)
+        if rng is None:
+            raise ValueError("dp_fedavg needs a random stream (rng) to add noise")
         clipped = [_clipped(c, reference, self.clip)[0] for c in contributions]
         uniform = [
             Contribution(c.source, c.state, dict.fromkeys(c.state, 1.0))

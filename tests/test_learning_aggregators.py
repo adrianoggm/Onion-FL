@@ -536,3 +536,11 @@ def test_bulyan_averages_auxiliary_arrays_of_the_selected_children() -> None:
 
 def test_a_selection_reports_before_any_round() -> None:
     assert aggregators.create("krum").report()[0][1] == 0.0
+
+
+def test_dp_fedavg_refuses_to_noise_without_a_stream() -> None:
+    dp = aggregators.create("dp_fedavg")
+
+    # A fixed fallback stream would repeat the same noise every round.
+    with pytest.raises(ValueError, match="random stream"):
+        dp.aggregate(HONEST, "fog", reference={"w": np.zeros(2)})
