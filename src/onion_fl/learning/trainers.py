@@ -645,6 +645,7 @@ class MoonParams(StandardParams):
 )
 class Moon(Standard):
     Params = MoonParams
+    shared_features = True  # the global model's features must reach the edge
     _memory = ("_previous",)  # _global is the model as received, rebuilt each round
 
     def __init__(self, **params: Any) -> None:
