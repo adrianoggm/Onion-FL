@@ -2,10 +2,10 @@
 # aggregator (fog) runs the same aggregator; 20% of each dataset's edges flip
 # the sign of their update (scale 1, or scale 5, which with 20% attackers makes
 # the averaged update point against learning), or nobody attacks. Three seeds. Training as in the
-# drift comparison (SGD, lr 0.3, chosen on validation for FedAvg); the clipping
+# first drift selection (SGD, lr 0.3, FedAvg's rate on validation there); the clipping
 # bound is the median edge update norm under FedAvg (1.02), not a test score.
 # The defences assume the 20% attacker fraction, not a test score: the trimmed
-# mean cuts 20% per side; fogs hold 6-8 edges, so up to 2 attackers each, and
+# mean cuts 20% per side; fogs hold 6-8 edges, so about 1-2 attackers each, and
 # Krum and Multi-Krum tolerate f = 2 (lowered to 1 where n < 7); Bulyan needs
 # n >= 4f + 3, so f = 1, which the 6-edge fogs lower to 0. Lossless links, so
 # that lost rounds do not mix with the attack.

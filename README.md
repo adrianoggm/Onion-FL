@@ -46,7 +46,9 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 
 ### What the results can and can't support today
 
-- **Two experiments of the new framework have run on real data**, and both are committed in [§7](#7-results): the SWELL reference run and a SWELL + WESAD mixing sweep. Neither has a strong result. On SWELL, no model beats always predicting "stress" on the held-out subjects. On WESAD, the federated model reaches 0.77 accuracy where centralised logistic regression reaches 0.91. Placement (segregated vs mixed) shows no measurable effect with three seeds.
+- **Six experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, and the comparisons of personalisation, drift, robustness and privacy techniques. Each has three seeds, so many intervals overlap.
+  - The reference run and the mixing sweep have no strong result. On SWELL, no model beats always predicting "stress" on the held-out subjects. On WESAD, the federated model reaches 0.77 accuracy where centralised logistic regression reaches 0.91.
+  - In the technique comparisons, the clearest effects are on WESAD: FedDyn and SCAFFOLD beat FedAvg under drift, and a strong sign-flip attack collapses FedAvg while norm clipping holds.
 - **Checking the data found real problems,** now fixed. 999 means "missing" in the SWELL physiology file, for 53% of the heart-rate values, and both the old and the new loaders read it as a value. The facial and physiology joins and the WESAD chest signals `Resp` and `Temp` failed to load. The SWELL posture file has every date a month early, so posture is left out.
 - **Tests that need data** skip without `data/` ([docs/RULES.md](docs/RULES.md)). Protocol tests use a stub trainer that learns nothing.
 - **Legacy numbers stay legacy.** [§7](#7-results) lists the baselines from before the redesign with their caveats. Some of them predate the `blok` leak fix.
@@ -295,37 +297,37 @@ Source: [results/techniques_drift/](results/techniques_drift/INDEX.md), `topolog
 
 ### New framework: robust aggregation under attack
 
-Source: [results/techniques_robustness/](results/techniques_robustness/INDEX.md), `topology_id` `9033d1cf…`, commits `5c91004` and `e346733` (identical training). It is `experiments/techniques_robustness.yaml`: SWELL + WESAD on four fogs at α = 0.5. Every fog runs the scenario's aggregator, and 20% of each dataset's edges flip the sign of their update, x − s·(y − x). Global macro-F1, mean ± 95% CI over 3 seeds:
+Source: [results/techniques_robustness/](results/techniques_robustness/INDEX.md), `topology_id` `ff55fe4d…`, commit `5995082`. It is `experiments/techniques_robustness.yaml`: SWELL + WESAD on four fogs at α = 0.5, over lossless links. Every fog runs the scenario's aggregator, and 20% of each dataset's edges flip the sign of their update, x − s·(y − x). Global macro-F1, mean ± 95% CI over 3 seeds:
 
 | Fog aggregator | SWELL, no attack | SWELL, s = 5 | WESAD, no attack | WESAD, s = 5 |
 |---|---|---|---|---|
-| FedAvg | 0.568 ± 0.092 | 0.244 ± 0.000 | 0.751 ± 0.000 | 0.392 ± 0.000 |
-| Trimmed mean | 0.577 ± 0.103 | 0.244 ± 0.000 | 0.751 ± 0.000 | 0.389 ± 0.013 |
-| Median | 0.578 ± 0.020 | 0.541 ± 0.113 | 0.741 ± 0.043 | 0.500 ± 0.915 |
-| Krum | 0.556 ± 0.108 | 0.548 ± 0.066 | 0.617 ± 0.575 | 0.369 ± 0.468 |
-| Multi-Krum | 0.577 ± 0.076 | 0.489 ± 0.143 | 0.759 ± 0.109 | 0.660 ± 0.772 |
-| Geometric median | 0.567 ± 0.116 | 0.555 ± 0.135 | 0.747 ± 0.018 | 0.647 ± 0.541 |
-| Bulyan | 0.583 ± 0.044 | 0.453 ± 0.215 | 0.738 ± 0.026 | 0.296 ± 0.178 |
-| Norm clip (1.0) | 0.573 ± 0.069 | 0.548 ± 0.134 | 0.747 ± 0.018 | 0.763 ± 0.324 |
+| FedAvg | 0.578 ± 0.109 | 0.244 ± 0.000 | 0.751 ± 0.000 | 0.392 ± 0.000 |
+| Trimmed mean (β = 0.2) | 0.584 ± 0.066 | 0.429 ± 0.266 | 0.751 ± 0.000 | 0.316 ± 0.515 |
+| Median | 0.587 ± 0.036 | 0.571 ± 0.109 | 0.763 ± 0.069 | 0.450 ± 0.963 |
+| Krum (f = 2) | 0.582 ± 0.036 | 0.549 ± 0.143 | 0.743 ± 0.021 | 0.486 ± 0.768 |
+| Multi-Krum (f = 2) | 0.599 ± 0.064 | 0.564 ± 0.104 | 0.788 ± 0.099 | 0.445 ± 1.006 |
+| Geometric median | 0.587 ± 0.062 | 0.569 ± 0.156 | 0.751 ± 0.000 | 0.648 ± 0.752 |
+| Bulyan (f = 1) | 0.597 ± 0.059 | 0.492 ± 0.213 | 0.754 ± 0.014 | 0.217 ± 0.117 |
+| Norm clip (1.0) | 0.589 ± 0.059 | 0.575 ± 0.132 | 0.751 ± 0.000 | 0.777 ± 0.127 |
 
-- **The strong attack (s = 5) collapses FedAvg and the trimmed mean.**
-- **Norm clipping withstands it best.** Its bound is the median honest update norm, so a reversed update weighs no more than an honest one.
-- **Selection detects the strong attackers.** Multi-Krum and Bulyan drop about 55% of the malicious updates, with 82% precision, but neither protects WESAD reliably.
-- **At s = 1 the attack barely hurts FedAvg.** The INDEX has that column and the detection table.
+- **The strong attack (s = 5) collapses FedAvg**, and the trimmed mean does not stop it.
+- **In these runs, norm clipping is the most stable defence against the strong attack on both datasets.** It keeps SWELL near the clean scenario and avoids the WESAD degradation seen with the other robust aggregators.
+- **The other robust aggregators hold SWELL, but their WESAD scores vary widely between seeds.** The half-widths near 1 are correct for 3 seeds that disagree; the INDEX gives the per-seed values.
+- **Selection detects the strong attackers.** Multi-Krum drops 75% of them, with 74% precision. Bulyan runs at f = 0 in the 6-edge fogs, about half its selections.
 
 ### New framework: differential privacy
 
-Source: [results/techniques_privacy/](results/techniques_privacy/INDEX.md), commit `5c91004`. It is `experiments/techniques_privacy.yaml`: central DP at the fogs and local DP at the edges, with C = 1.0. ε is for δ = 1e-5, an upper bound without subsampling amplification:
+Source: [results/techniques_privacy/](results/techniques_privacy/INDEX.md), commit `5995082`. It is `experiments/techniques_privacy.yaml`: central DP at the fogs and local DP at the edges, with C = 1.0, over lossless links. ε is for δ = 1e-5, an upper bound without subsampling amplification; local DP is accounted with sensitivity 2C:
 
 | Scenario | SWELL | WESAD | ε after 20 rounds |
 |---|---|---|---|
-| FedAvg (no DP) | 0.568 ± 0.092 | 0.751 ± 0.000 | — |
-| Central DP, σ = 0.5 | 0.544 ± 0.048 | 0.529 ± 0.318 | 76.7 |
-| Central DP, σ = 1.0 | 0.466 ± 0.122 | 0.282 ± 0.048 | 28.6 |
-| Local DP, σ = 0.5 | 0.420 ± 0.037 | 0.356 ± 0.227 | 82.9 |
-| Local DP, σ = 1.0 | 0.437 ± 0.133 | 0.345 ± 0.365 | 31.5 |
+| FedAvg (no DP) | 0.578 ± 0.109 | 0.751 ± 0.000 | — |
+| Central DP, σ = 0.5 | 0.582 ± 0.074 | 0.629 ± 0.147 | 82.9 |
+| Central DP, σ = 1.0 | 0.449 ± 0.120 | 0.311 ± 0.084 | 30.8 |
+| Local DP, σ = 0.5 | 0.480 ± 0.150 | 0.317 ± 0.080 | 245.9 |
+| Local DP, σ = 1.0 | 0.424 ± 0.072 | 0.391 ± 0.314 | 82.9 |
 
-Privacy is expensive at this data size. Central DP keeps more utility than local DP at the same σ, and ε stays large because every one of the 20 rounds counts.
+In this configuration, stronger privacy costs a lot of utility, and local DP costs much more than central DP. At the higher noise levels some edges diverge and the cloud loses rounds (up to 18 of 20 with local DP at σ = 1.0).
 
 ### Before the redesign
 
