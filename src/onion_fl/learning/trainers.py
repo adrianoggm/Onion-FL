@@ -8,7 +8,8 @@ FedAvg weight. Initialisations run once on the coordinator's global model.
 """
 
 import fnmatch
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol
@@ -53,6 +54,40 @@ def trainable(model: nn.Module, frozen: Sequence[str]) -> list[str]:
         for name, _ in model.named_parameters()
         if not any(fnmatch.fnmatchcase(group_of(name), p) for p in frozen)
     ]
+
+
+def _samples(data: Samples) -> tuple[torch.Tensor, torch.Tensor]:
+    X, y = np.asarray(data.X, np.float32), np.asarray(data.y, np.int64)
+    if len(X) == 0:
+        raise TrainError("no samples to train on")
+    if len(X) != len(y):
+        raise TrainError(f"X has {len(X)} rows but y has {len(y)} labels")
+    return torch.from_numpy(X), torch.from_numpy(y)
+
+
+@contextmanager
+def _training(
+    models: Sequence[nn.Module], names: Sequence[str], rng: np.random.Generator
+) -> Iterator[None]:
+    """Train mode with gradients only on ``names``, dropout seeded from ``rng``.
+
+    Dropout draws from torch's global RNG: it is seeded from the node's rng
+    inside a fork, so runs are reproducible and the caller's state is kept.
+    """
+    wanted = set(names)
+    saved = [{n: t.requires_grad for n, t in m.named_parameters()} for m in models]
+    for module in models:
+        module.train()
+        for name, tensor in module.named_parameters():
+            tensor.requires_grad_(name in wanted)
+    try:
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(int(rng.integers(2**63)))
+            yield
+    finally:
+        for module, was in zip(models, saved, strict=True):
+            for name, tensor in module.named_parameters():
+                tensor.requires_grad_(was[name])
 
 
 def proximal_term(
@@ -120,47 +155,30 @@ class Standard:
         received: Mapping[str, np.ndarray] | None = None,
         ctx: Any = None,
     ) -> TrainResult:
-        X, y = np.asarray(data.X, np.float32), np.asarray(data.y, np.int64)
-        if len(X) == 0:
-            raise TrainError("no samples to train on")
-        if len(X) != len(y):
-            raise TrainError(f"X has {len(X)} rows but y has {len(y)} labels")
+        xs, ys = _samples(data)
         self._check(received)
         p = self.params
         names = trainable(model, p.frozen)
         if not names:
             raise TrainError(f"every parameter is frozen by {p.frozen}")
-
         params = dict(model.named_parameters())
-        was = {name: t.requires_grad for name, t in params.items()}
-        for name, tensor in params.items():
-            tensor.requires_grad_(name in names)
         optimizer = OPTIMIZERS[p.optimizer](
             [params[n] for n in names], lr=p.lr, weight_decay=p.weight_decay
         )
         rng = ctx.rng if ctx is not None else np.random.default_rng(0)
-        xs, ys = torch.from_numpy(X), torch.from_numpy(y)
         total, batches = 0.0, 0
-        model.train()
-        try:
-            # Dropout draws from torch's global RNG: seed it from the node's rng
-            # inside a fork so runs are reproducible and the caller's state is kept.
-            with torch.random.fork_rng(devices=[]):
-                torch.manual_seed(int(rng.integers(2**63)))
-                for _ in range(p.local_epochs):
-                    for idx in batches_of(len(X), p.batch_size, rng):
-                        optimizer.zero_grad()
-                        loss = F.cross_entropy(model(xs[idx]), ys[idx])
-                        total += float(loss.item()) * len(idx)
-                        (loss + self._penalty(model, received, names)).backward()
-                        optimizer.step()
-                        batches += 1
-        finally:
-            for name, tensor in params.items():
-                tensor.requires_grad_(was[name])
-        samples = p.local_epochs * len(X)
+        with _training([model], names, rng):
+            for _ in range(p.local_epochs):
+                for idx in batches_of(len(xs), p.batch_size, rng):
+                    optimizer.zero_grad()
+                    loss = F.cross_entropy(model(xs[idx]), ys[idx])
+                    total += float(loss.item()) * len(idx)
+                    (loss + self._penalty(model, received, names)).backward()
+                    optimizer.step()
+                    batches += 1
+        samples = p.local_epochs * len(xs)
         return TrainResult(
-            loss=total / samples, samples=samples, examples=len(X), batches=batches
+            loss=total / samples, samples=samples, examples=len(xs), batches=batches
         )
 
 
