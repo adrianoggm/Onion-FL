@@ -1092,3 +1092,53 @@ def test_a_trainer_that_cannot_be_copied_still_rolls_back_its_model() -> None:
     assert_global(federation, "trunk.0.weight", 2.0)
     (failed,) = names(federation, "edge.train_failed", "e2")
     assert "non-finite" in failed["tags"]["error"]
+
+
+# --- snapshot and continuation ------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "sharing", ["fedavg", "fedper", {"name": "zone", "level": "fog"}], ids=str
+)
+def test_a_federation_continues_from_its_snapshot_as_if_it_never_stopped(
+    sharing,
+) -> None:
+    from onion_fl.learning.aggregators import server_optimizers
+    from onion_fl.roles import restore_federation, snapshot_federation
+
+    def build(rounds: int):
+        def noisy(node_id: str, shift: float) -> EdgeSpec:
+            stub = trainers.create("stub", {"shift": shift, "noise": 0.1})
+            return EdgeSpec(node_id, model(A), trainer=stub)
+
+        edges = {
+            "fog_0": [noisy("e1", 1.0), noisy("e2", 2.0)],
+            "fog_1": [noisy("e3", 3.0)],
+        }
+        momentum = server_optimizers.create("fedavgm", {"momentum": 0.5})
+        return build_federation(
+            tree(2),
+            edges,
+            initial_state=INITIAL,
+            rounds=rounds,
+            sharing=sharing,
+            server_optimizer=momentum,
+        )
+
+    straight = build(4)
+    straight.run()
+    first = build(2)
+    first.run()
+
+    second = build(4)
+    restore_federation(second, snapshot_federation(first))
+    second.run()
+
+    for key, value in straight.coordinator.state.items():
+        np.testing.assert_array_equal(second.coordinator.state[key], value, err_msg=key)
+    for edge_id, node in straight.edges.items():
+        theirs = state_arrays(second.edges[edge_id].model)
+        for key, value in state_arrays(node.model).items():
+            np.testing.assert_array_equal(theirs[key], value, err_msg=edge_id + key)
+    rounds = [e["value"] for e in names(second, "round.started", "cloud")]
+    assert rounds == [3, 4]  # the round numbering continues
