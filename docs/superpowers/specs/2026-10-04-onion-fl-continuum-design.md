@@ -163,6 +163,16 @@ bundle/
   ```
 
   Verifica el `run_hash` del padre y registra el linaje en `run.json`. Reanudar con todo restaurado equivale a no haber parado; un test lo comprueba.
+  - **Padre.** `run` es un `run_id`, una carpeta o `experiment:<nombre>[/<escenario>]`, que se resuelve a la última ejecución terminada de ese experimento con la misma semilla. Si hay varios escenarios, hay que nombrar uno.
+  - **Alcance de la exactitud.** Es exacta con rondas síncronas, enlaces sin pérdidas y sin disponibilidad que dependa del reloj. Los streams de los enlaces, el reloj virtual y las tardías ya guardadas para la ronda siguiente empiezan de nuevo.
+  - **Se rechaza** (al planificar) una continuación:
+    - de un padre no terminado o con otra semilla;
+    - con otro coordinador raíz;
+    - con otro trainer y `edge_state`, o con otro optimizador de servidor y `server_state`;
+    - cuyos sujetos de test o validación entrenaron al padre;
+    - en modo real, hasta C9.
+  - **`restore.model: false`.** Deja nuevos el modelo global, las zonas y el agregado anterior.
+  - **Lo liberado se acumula.** El contable de la DP central y las liberaciones de la DP local continúan siempre: lo liberado no se olvida.
 - **Edges que cambian.**
   - Un edge nuevo empieza sin estado de edge.
   - El estado de un edge que ya no está se conserva en el bundle, pero no se usa.

@@ -154,6 +154,22 @@ sequenceDiagram
 
 With full quorum and the same seed, simulation and MQTT give the same final model. `tests/test_runtime_equivalence.py` checks it.
 
+## 7b. Continuing a run (continuum)
+
+- **Bundle.** Every simulated run writes `runs/<run_id>/bundle/` (`onion_fl.continuum.bundle`), which `run_hash` covers. It holds the state `snapshot_federation` captures, with `.npz` and JSON only:
+  - the global model, round and server optimizer;
+  - each aggregator's zone, previous aggregate and own state (the central DP accountant);
+  - each edge's model, trainer memory (`export_memory`) and released DP updates;
+  - every node's random stream (`rng_state`, with its spawned children).
+
+  Next to that state it keeps the frozen preprocessing (`DataSplit.preprocessing`), the data roles, the schema and the lineage.
+- **Continuation.** `learning.init: {name: run, run, restore}` verifies the parent and refuses a continuation that cannot be exact (spec §6). Then it:
+  - re-applies the frozen preprocessing, bit for bit;
+  - continues the round numbering;
+  - restores what `restore` asks for, through `restore_federation`;
+  - records the parent in `run.json`.
+- **Changes allowed.** New datasets get a fitted preprocessing and fresh adapters. `group_lr` can scale the steps of the groups a continuation keeps.
+
 ## 8. Observability
 
 **Event schema.** Every event becomes:
