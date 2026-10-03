@@ -1,0 +1,47 @@
+# Learning-rate selection for techniques_drift.yaml: every technique at lr
+# 0.03, 0.1 and 0.3 (MOON at mu 0.1, plus its default mu 1 at lr 0.3), seed 0.
+# Only the validation subjects decide: the zone evaluators' macro-F1 at round 20.
+#
+#   onion_fl run experiments/techniques_drift_select.yaml --workers 3
+name: techniques_drift_select
+description: Selección del lr de cada técnica de deriva sobre los sujetos de validación.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, local_val: 0.2, local_val_split: class_tail, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: &sgd {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.3}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge: {every: 5, models: [received, local]}
+  aggregators: {every: 5}
+  global: {every: 1}
+seeds: [0]
+sweep:
+  learning.trainer,learning.server_optimizer:
+    - [{<<: *sgd, name: standard, lr: 0.03}, replace]
+    - [{<<: *sgd, name: standard, lr: 0.1}, replace]
+    - [{<<: *sgd, name: standard, lr: 0.3}, replace]
+    - [{<<: *sgd, name: fedprox, lr: 0.03}, replace]
+    - [{<<: *sgd, name: fedprox, lr: 0.1}, replace]
+    - [{<<: *sgd, name: fedprox, lr: 0.3}, replace]
+    - [{<<: *sgd, name: scaffold, lr: 0.03}, scaffold]
+    - [{<<: *sgd, name: scaffold, lr: 0.1}, scaffold]
+    - [{<<: *sgd, name: scaffold, lr: 0.3}, scaffold]
+    - [{<<: *sgd, name: fednova, lr: 0.03}, fednova]
+    - [{<<: *sgd, name: fednova, lr: 0.1}, fednova]
+    - [{<<: *sgd, name: fednova, lr: 0.3}, fednova]
+    - [{<<: *sgd, name: feddyn, lr: 0.03}, feddyn]
+    - [{<<: *sgd, name: feddyn, lr: 0.1}, feddyn]
+    - [{<<: *sgd, name: feddyn, lr: 0.3}, feddyn]
+    - [{<<: *sgd, name: moon, lr: 0.03, mu: 0.1}, replace]
+    - [{<<: *sgd, name: moon, lr: 0.1, mu: 0.1}, replace]
+    - [{<<: *sgd, name: moon, lr: 0.3, mu: 0.1}, replace]
+    - [{<<: *sgd, name: moon, lr: 0.3, mu: 1.0}, replace]   # MOON's default mu

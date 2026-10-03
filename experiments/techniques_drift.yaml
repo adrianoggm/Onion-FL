@@ -1,17 +1,18 @@
 # Non-IID drift techniques on SWELL and WESAD (issue #148): one scenario per
-# technique, three seeds, segregated placement (each fog sees one dataset).
+# technique, three seeds, segregated placement (each fog sees one dataset),
+# lossless links so that lost rounds do not mix with drift
+# (techniques_drift_lossy.yaml runs the same techniques over lossy links).
 # Every technique uses SGD, which SCAFFOLD and FedNova assume. Each one's
-# learning rate (0.03, 0.1 or 0.3) was chosen on the validation subjects (zone
-# evaluators, round 20, seed 0), never on the test subjects. MOON's contrast
-# weight mu was chosen the same way (0.1; at its default 1 it collapsed); the
-# other algorithm parameters keep their defaults.
+# learning rate was chosen on the validation subjects with
+# techniques_drift_select.yaml (zone evaluators, round 20, seed 0), never on
+# the test subjects; the other algorithm parameters keep their defaults.
 #
 #   onion_fl plan experiments/techniques_drift.yaml
 #   onion_fl run experiments/techniques_drift.yaml --workers 3
 #   onion_fl report experiments/techniques_drift.yaml --by scenario --by model
 name: techniques_drift
 description: Deriva no IID (FedAvg, FedProx, SCAFFOLD, FedNova, FedDyn, MOON) sobre SWELL y WESAD.
-topology: four_fogs_swell_wesad
+topology: four_fogs_swell_wesad_lossless
 data:
   datasets:
     swell: {}
@@ -32,9 +33,9 @@ evaluation:
 seeds: [0, 1, 2]
 sweep:
   learning.trainer,learning.server_optimizer:
-    - [{<<: *sgd, name: standard, lr: 0.3}, replace]   # FedAvg
-    - [{<<: *sgd, name: fedprox, lr: 0.3}, replace]
-    - [{<<: *sgd, name: scaffold, lr: 0.1}, replace]
-    - [{<<: *sgd, name: fednova, lr: 0.3}, fednova]
+    - [{<<: *sgd, name: standard, lr: 0.1}, replace]   # FedAvg
+    - [{<<: *sgd, name: fedprox, lr: 0.1}, replace]
+    - [{<<: *sgd, name: scaffold, lr: 0.1}, scaffold]
+    - [{<<: *sgd, name: fednova, lr: 0.1}, fednova]
     - [{<<: *sgd, name: feddyn, lr: 0.1}, feddyn]
-    - [{<<: *sgd, name: moon, lr: 0.3, mu: 0.1}, replace]
+    - [{<<: *sgd, name: moon, lr: 0.1, mu: 0.1}, replace]

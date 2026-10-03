@@ -188,6 +188,7 @@ def test_an_unset_server_optimizer_stays_out_of_the_config(workspace: Path) -> N
     "trainer, optimizer, message",
     [
         ("fednova", "replace", "needs server_optimizer 'fednova'"),
+        ("scaffold", "replace", "needs server_optimizer 'scaffold'"),
         ("stub", "fednova", "fednova needs the fednova trainer"),
     ],
 )
@@ -234,6 +235,31 @@ def test_server_side_pairs_refuse_groups_held_below_the_root(
 
     with pytest.raises(ConfigError, match="zone|below the root"):
         plan(parse_experiment(experiment(workspace, learning=learning)))
+
+
+def test_moon_needs_the_feature_layers_shared(workspace: Path) -> None:
+    learning = experiment(workspace)["learning"] | {"trainer": "moon"}
+    local = learning | {"sharing": "lg_fedavg"}
+
+    with pytest.raises(ConfigError, match="moon.*lg_fedavg"):
+        plan(parse_experiment(experiment(workspace, learning=local)))
+    assert plan(parse_experiment(experiment(workspace, learning=learning)))
+
+
+def test_paired_optimizers_refuse_late_updates(workspace: Path) -> None:
+    learning = experiment(workspace)["learning"] | {
+        "trainer": "fednova",
+        "server_optimizer": "fednova",
+    }
+    fog = TOPOLOGY["fog"] | {"defaults": {"staleness": "next_round"}}
+    topology = TOPOLOGY | {"fog": fog}
+
+    with pytest.raises(ConfigError, match="staleness"):
+        plan(
+            parse_experiment(
+                experiment(workspace, learning=learning, topology=topology)
+            )
+        )
 
 
 def test_feddyn_needs_the_same_alpha_on_both_sides(workspace: Path) -> None:

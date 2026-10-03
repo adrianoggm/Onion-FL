@@ -140,6 +140,17 @@ def _check_learning(config: ExperimentConfig, state: Mapping[str, Any]) -> None:
             f"{policy.name!r} sends {leaving} up; use fedper or a custom rule "
             "that keeps them local"
         )
+    features = sorted(
+        g
+        for g in param_groups(state)
+        if not g.startswith("head.") and policy.scope_of(g) == "local"
+    )
+    if getattr(trainer, "shared_features", False) and features:
+        raise ConfigError(
+            f"learning.trainer: {name} contrasts with the global model's features, "
+            f"but sharing {policy.name!r} keeps {features} on the edge, so the "
+            "global ones never arrive; use fedavg, fedper or zone"
+        )
     topology = resolve_topology(config)
     if getattr(trainer, "sends_aux", False):
         bounding = sorted(
@@ -160,6 +171,17 @@ def _check_learning(config: ExperimentConfig, state: Mapping[str, Any]) -> None:
     ref = topology.root.settings.get("server_optimizer") or "replace"
     optimizer_name = _name(ref)
     needed = getattr(trainer, "server_optimizer", None)
+    late = sorted(
+        node.id
+        for node in topology.nodes
+        if _name(node.settings.get("staleness") or "drop") != "drop"
+    )
+    if needed is not None and late:
+        raise ConfigError(
+            f"learning.trainer: {name} pairs with a server optimizer whose round "
+            f"statistics count only fresh updates, but {late} also aggregate late "
+            "ones; use staleness drop"
+        )
     zoned = sorted(
         g for g in param_groups(state) if policy.scope_of(g).startswith("level:")
     )

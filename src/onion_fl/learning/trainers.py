@@ -141,9 +141,18 @@ class StandardParams(BaseModel):
 )
 class Standard:
     Params: type[StandardParams] = StandardParams
+    _memory: tuple[str, ...] = ()  # attributes a diverged round rolls back
 
     def __init__(self, **params: Any) -> None:
         self.params = self.Params(**params)
+
+    def snapshot(self) -> dict[str, Any]:
+        """What the edge restores if this round diverges."""
+        return {name: copy.deepcopy(getattr(self, name)) for name in self._memory}
+
+    def restore(self, saved: Mapping[str, Any]) -> None:
+        for name, value in saved.items():
+            setattr(self, name, value)
 
     def _check(self, received: Mapping[str, np.ndarray] | None) -> None:
         pass
@@ -237,6 +246,7 @@ class DittoParams(StandardParams):
     ),
 )
 class Ditto(Standard):
+    _memory = ("_personal",)
     Params = DittoParams
 
     def __init__(self, **params: Any) -> None:
@@ -296,6 +306,7 @@ class APFLParams(StandardParams):
     ),
 )
 class APFL(Standard):
+    _memory = ("alpha", "_v", "_w")
     Params = APFLParams
 
     def __init__(self, **params: Any) -> None:
@@ -445,7 +456,7 @@ class FedBABU(Standard):
 
 
 class ScaffoldParams(StandardParams):
-    optimizer: Literal["adam", "sgd"] = Field(
+    optimizer: Literal["sgd"] = Field(
         "sgd", description="La actualización de c_i supone SGD"
     )
 
@@ -456,16 +467,19 @@ class ScaffoldParams(StandardParams):
     description="Corrige cada gradiente con las variables de control: g − c_i + c.",
     params=ScaffoldParams,
     explain=(
-        "c viaja con el modelo global y c_i se queda en el edge; el edge envía "
-        "c_i⁺ = c_i − c + (x − y)/(K·η) y el agregado es el nuevo c (opción II "
-        "de Karimireddy et al., 2020). Con participación parcial, c es la media "
-        "de los participantes."
+        "c viaja con el modelo global y c_i se queda en el edge, que calcula "
+        "c_i⁺ = c_i − c + (x − y)/(K·η) y envía Δc_i = c_i⁺ − c_i (opción II de "
+        "Karimireddy et al., 2020). Exige server_optimizer scaffold, que guarda c. "
+        "Cada edge cuenta lo mismo, como en el artículo, no por muestras."
     ),
 )
 class Scaffold(Standard):
     Params = ScaffoldParams
     PREFIX = "scaffold/"
     sends_aux = True
+    server_optimizer = "scaffold"
+    uniform_weights = True  # the paper averages clients, not examples
+    _memory = ("_c_i",)
 
     def __init__(self, **params: Any) -> None:
         super().__init__(**params)
@@ -503,13 +517,14 @@ class Scaffold(Standard):
         result = super().train(model, data, received, ctx)
         after = state_arrays(model)
         scale = result.batches * self.params.lr
-        self._c_i = {n: c_i[n] - c[n] + (start[n] - after[n]) / scale for n in names}
-        aux = {self.PREFIX + n: v.astype(start[n].dtype) for n, v in self._c_i.items()}
+        new = {n: c_i[n] - c[n] + (start[n] - after[n]) / scale for n in names}
+        aux = {self.PREFIX + n: (new[n] - c_i[n]).astype(start[n].dtype) for n in names}
+        self._c_i = new
         return replace(result, aux=aux)
 
 
 class FedNovaParams(StandardParams):
-    optimizer: Literal["adam", "sgd"] = Field(
+    optimizer: Literal["sgd"] = Field(
         "sgd", description="La normalización por pasos supone SGD"
     )
 
@@ -572,6 +587,8 @@ class FedDynParams(StandardParams):
 class FedDyn(Standard):
     Params = FedDynParams
     server_optimizer = "feddyn"
+    uniform_weights = True  # θ̄ is the participants' plain mean
+    _memory = ("_grad",)
 
     def __init__(self, **params: Any) -> None:
         super().__init__(**params)
@@ -630,6 +647,8 @@ class MoonParams(StandardParams):
 )
 class Moon(Standard):
     Params = MoonParams
+    shared_features = True  # the global model's features must reach the edge
+    _memory = ("_previous",)  # _global is the model as received, rebuilt each round
 
     def __init__(self, **params: Any) -> None:
         super().__init__(**params)

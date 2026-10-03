@@ -17,7 +17,7 @@ import numpy as np
 from pydantic import BaseModel, Field, PositiveInt
 
 from onion_fl.core.registry import Registry
-from onion_fl.learning.model import is_aux
+from onion_fl.learning.model import group_of, is_aux
 from onion_fl.learning.privacy import gaussian_epsilon
 
 
@@ -554,6 +554,20 @@ server_optimizers = Registry("server_optimizer")
 State = dict[str, np.ndarray]
 
 
+def _share(stats: Mapping[str, float], key: str) -> float:
+    """|S|/N: the share of the edges holding ``key`` whose update was aggregated.
+
+    Per parameter group when the round counted holders (a key only one
+    dataset's edges hold), else the round's ``train_edges / edges_total``.
+    """
+    if any(name.startswith("edges_total/") for name in stats):
+        group = group_of(key)
+        total = stats.get(f"edges_total/{group}") or 0.0
+        return stats.get(f"train_edges/{group}", 0.0) / total if total else 1.0
+    total = stats.get("edges_total") or 0.0
+    return stats.get("train_edges", total) / total if total else 1.0
+
+
 @server_optimizers.register(
     "replace",
     title="Reemplazo (FedAvg clásico)",
@@ -712,9 +726,10 @@ class FedDynOptimizerParams(BaseModel):
     description="h ← h − α·(|P|/m)·(θ̄ − θ); θ ← θ̄ − h/α.",
     params=FedDynOptimizerParams,
     explain=(
-        "Va con el entrenador feddyn y su mismo α; |P|/m sale de "
-        "train_edges/edges_total, la fracción de toda la ronda, también para las "
-        "claves de un solo dataset (Acar et al., 2021)."
+        "Va con el entrenador feddyn y su mismo α. θ̄ es la media sin ponderar de "
+        "los edges que han entrenado y |P|/m su fracción entre los que tienen esa "
+        "clave, así que una clave de un solo dataset usa solo sus edges "
+        "(Acar et al., 2021)."
     ),
 )
 class FedDynOptimizer:
@@ -737,8 +752,6 @@ class FedDynOptimizer:
         stats: Mapping[str, float] | None = None,
     ) -> State:
         stats = stats or {}
-        total = stats.get("edges_total") or 0.0
-        share = stats.get("train_edges", total) / total if total else 1.0
         new = dict(global_state)
         for key, value in aggregated.items():
             if is_aux(key):
@@ -747,7 +760,43 @@ class FedDynOptimizer:
             mean = np.asarray(value, dtype=np.float64)
             current = np.asarray(global_state.get(key, value), dtype=np.float64)
             h = self._h.get(key, np.zeros_like(mean))
-            h = h - self.alpha * share * (mean - current)
+            h = h - self.alpha * _share(stats, key) * (mean - current)
             self._h[key] = h
             new[key] = (mean - h / self.alpha).astype(np.asarray(value).dtype)
+        return new
+
+
+@server_optimizers.register(
+    "scaffold",
+    title="SCAFFOLD",
+    description="x ← media de los modelos; c ← c + (|S|/N)·media de los Δc_i.",
+    explain=(
+        "Va con el entrenador scaffold. El servidor guarda c y le suma la media de "
+        "los cambios Δc_i de los edges que han entrenado, escalada por su fracción "
+        "entre los que tienen esa clave, así que una ronda parcial mueve c lo que "
+        "le toca (Karimireddy et al., 2020)."
+    ),
+)
+class ScaffoldOptimizer:
+    PREFIX = "scaffold/"
+
+    def check_trainer(self, name: str, trainer: Any) -> None:
+        if name != "scaffold":
+            raise ValueError(f"scaffold needs the scaffold trainer, not {name!r}")
+
+    def apply(
+        self,
+        global_state: Mapping[str, np.ndarray],
+        aggregated: Mapping[str, np.ndarray],
+        stats: Mapping[str, float] | None = None,
+    ) -> State:
+        stats = stats or {}
+        new = dict(global_state)
+        for key, value in aggregated.items():
+            if not key.startswith(self.PREFIX):  # the model: the participants' mean
+                new[key] = value
+                continue
+            c = np.asarray(global_state.get(key, np.zeros_like(value)), np.float64)
+            step = _share(stats, key) * np.asarray(value, np.float64)
+            new[key] = (c + step).astype(np.asarray(value).dtype)
         return new
