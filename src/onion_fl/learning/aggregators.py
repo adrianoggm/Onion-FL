@@ -319,7 +319,8 @@ class FedDynOptimizerParams(BaseModel):
     params=FedDynOptimizerParams,
     explain=(
         "Va con el entrenador feddyn y su mismo α; |P|/m sale de "
-        "train_edges/edges_total (Acar et al., 2021)."
+        "train_edges/edges_total, la fracción de toda la ronda, también para las "
+        "claves de un solo dataset (Acar et al., 2021)."
     ),
 )
 class FedDynOptimizer:

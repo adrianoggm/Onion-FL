@@ -562,7 +562,9 @@ class FedDynParams(StandardParams):
     explain=(
         "Minimiza L_i(θ) − ⟨∇L_i(θ_i^{t−1}), θ⟩ + α/2·‖θ − θ^{t−1}‖² y actualiza "
         "su gradiente recordado; exige server_optimizer feddyn con el mismo α "
-        "(Acar et al., 2021)."
+        "(Acar et al., 2021). Limitación: el edge actualiza su gradiente aunque su "
+        "actualización se pierda, así que con rondas perdidas el estado del "
+        "servidor se aparta del de los edges."
     ),
 )
 class FedDyn(Standard):
