@@ -288,8 +288,12 @@ class _Collector(Node):
             self._failed(ctx)
             return
         aggregated = self.aggregator.aggregate(
-            [*fresh.values(), *stale], source=self.id
+            [*fresh.values(), *stale],
+            source=self.id,
+            reference=self.sent,
+            rng=child_rng(ctx.rng),
         )
+        self._report_aggregation(ctx)
         self._diagnose(fresh, aggregated.state, reports, ctx, failed=False)
         self.previous = dict(aggregated.state)
         reports = list(reports.values())
@@ -298,6 +302,20 @@ class _Collector(Node):
             metrics |= self._children_scores(reports, ctx)
         ctx.emit("round.closed", ctx.now() - self.opened_at, stale=len(stale), **tags)
         self._closed(aggregated, metrics, ctx)
+
+    def _report_aggregation(self, ctx: Context) -> None:
+        """Emit what the aggregator reports; dropped children get their malicious count."""
+        malicious = {
+            child
+            for child, meta in self.registered.items()
+            if (meta.get("tags") or {}).get("malicious")
+        }
+        for name, value, tags in getattr(self.aggregator, "report", list)():
+            tags = dict(tags)
+            if "dropped" in tags:
+                tags["malicious_dropped"] = len(set(tags["dropped"]) & malicious)
+                tags["malicious"] = len(malicious & set(self.participants))
+            ctx.emit(name, value, round=self.round, **tags)
 
     def _diagnose(
         self, fresh, aggregated: State, reports, ctx: Context, failed: bool

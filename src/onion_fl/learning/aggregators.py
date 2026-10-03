@@ -89,7 +89,11 @@ aggregators = Registry("aggregator")
 )
 class FedAvg:
     def aggregate(
-        self, contributions: Sequence[Contribution], source: str
+        self,
+        contributions: Sequence[Contribution],
+        source: str,
+        reference: Mapping[str, np.ndarray] | None = None,
+        rng: np.random.Generator | None = None,
     ) -> Contribution:
         return _combine_per_key(
             contributions, source, _weighted_mean, needs_weights=True
@@ -103,7 +107,11 @@ class FedAvg:
 )
 class Mean:
     def aggregate(
-        self, contributions: Sequence[Contribution], source: str
+        self,
+        contributions: Sequence[Contribution],
+        source: str,
+        reference: Mapping[str, np.ndarray] | None = None,
+        rng: np.random.Generator | None = None,
     ) -> Contribution:
         return _combine_per_key(
             contributions, source, lambda s, _w: s.mean(axis=0), False
@@ -118,7 +126,11 @@ class Mean:
 )
 class Median:
     def aggregate(
-        self, contributions: Sequence[Contribution], source: str
+        self,
+        contributions: Sequence[Contribution],
+        source: str,
+        reference: Mapping[str, np.ndarray] | None = None,
+        rng: np.random.Generator | None = None,
     ) -> Contribution:
         return _combine_per_key(
             contributions, source, lambda s, _w: np.median(s, axis=0), False
@@ -149,7 +161,11 @@ class TrimmedMean:
         return ordered[cut : n - cut].mean(axis=0)
 
     def aggregate(
-        self, contributions: Sequence[Contribution], source: str
+        self,
+        contributions: Sequence[Contribution],
+        source: str,
+        reference: Mapping[str, np.ndarray] | None = None,
+        rng: np.random.Generator | None = None,
     ) -> Contribution:
         return _combine_per_key(contributions, source, self._trim, needs_weights=False)
 

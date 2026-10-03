@@ -133,8 +133,16 @@ class LearningConfig(Strict):
         description="Optimizador de servidor de la raíz; sin él, el de la topología",
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
+    aggregator: PluginRef | None = Field(
+        None,
+        description="Agregador de los nodos cuyos hijos son edges; sin él, el de la topología",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
 
     _model = field_validator("model")(lambda v: _plugin(models, v))
+    _aggregator = field_validator("aggregator")(
+        lambda v: v if v is None else _plugin(aggregators, v)
+    )
     _server_optimizer = field_validator("server_optimizer")(
         lambda v: v if v is None else _plugin(server_optimizers, v)
     )

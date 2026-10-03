@@ -18,6 +18,7 @@ import torch
 from onion_fl.core.message import Message, Payload
 from onion_fl.core.registry import PluginError
 from onion_fl.core.topology import parse_topology
+from onion_fl.learning.aggregators import aggregators
 from onion_fl.learning.model import (
     DataShape,
     ModularMLP,
@@ -831,3 +832,40 @@ def test_an_edge_with_non_finite_weights_does_not_poison_the_model() -> None:
     assert_global(federation, "trunk.0.weight", 2.0)
     (failed,) = names(federation, "edge.train_failed", "e2")
     assert "non-finite" in failed["tags"]["error"]
+
+
+class Spy:
+    """FedAvg that records what it is given and reports one dropped child."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[dict, object]] = []
+
+    def aggregate(self, contributions, source, reference=None, rng=None):
+        self.calls.append((dict(reference or {}), rng))
+        return aggregators.create("fedavg").aggregate(contributions, source)
+
+    def report(self):
+        return [("aggregation.dropped", 1.0, {"dropped": ["e2"]})]
+
+
+def test_aggregators_get_the_reference_and_a_stream_and_are_heard(
+    monkeypatch,
+) -> None:
+    from onion_fl.roles import federation as module
+
+    spy, original = Spy(), module._round_settings
+    monkeypatch.setattr(
+        module, "_round_settings", lambda raw: original(raw) | {"aggregator": spy}
+    )
+    malicious = EdgeSpec(
+        "e2", model(A), trainer=trainers.create("stub"), tags={"malicious": True}
+    )
+    edges = {"fog_0": [edge("e1", shift=1), malicious]}
+
+    federation = run(tree(1), edges)
+
+    reference, rng = spy.calls[0]
+    assert set(reference) >= set(INITIAL) and rng is not None
+    (dropped,) = names(federation, "aggregation.dropped", "fog_0")
+    assert dropped["tags"]["malicious_dropped"] == 1
+    assert dropped["tags"]["malicious"] == 1

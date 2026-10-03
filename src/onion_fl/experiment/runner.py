@@ -55,6 +55,11 @@ def resolve_topology(config: ExperimentConfig) -> Topology:
         ]
         if config.runtime.codec and node["link_up"] is not None:
             node["link_up"]["codec"] = config.runtime.codec
+    if config.learning.aggregator is not None:
+        parents = {n["parent"] for n in general["nodes"]}
+        for node in general["nodes"]:
+            if node["id"] not in parents:  # a leaf aggregator: its children are edges
+                node["settings"]["aggregator"] = config.learning.aggregator
     if config.learning.server_optimizer is not None:
         root = next(n for n in general["nodes"] if n["parent"] is None)
         root["settings"]["server_optimizer"] = config.learning.server_optimizer

@@ -246,6 +246,25 @@ def test_feddyn_needs_the_same_alpha_on_both_sides(workspace: Path) -> None:
         plan(parse_experiment(experiment(workspace, learning=learning)))
 
 
+def test_the_experiment_can_set_the_leaf_aggregators(workspace: Path) -> None:
+    from onion_fl.experiment.runner import resolve_topology
+
+    learning = experiment(workspace)["learning"] | {"aggregator": "median"}
+    config = parse_experiment(experiment(workspace, learning=learning))
+    topology = resolve_topology(config)
+
+    leaves = {leaf.id for leaf in topology.leaves()}
+    for node in topology.nodes:
+        expected = "median" if node.id in leaves else None
+        assert node.settings.get("aggregator") == expected, node.id
+
+
+def test_an_unset_aggregator_stays_out_of_the_config(workspace: Path) -> None:
+    dumped = parse_experiment(experiment(workspace)).dump()["learning"]
+
+    assert "aggregator" not in dumped
+
+
 def test_finetuned_scores_need_a_finetune_trainer(workspace: Path) -> None:
     raw = experiment(workspace, evaluation={"edge": {"models": ["finetuned"]}})
 
