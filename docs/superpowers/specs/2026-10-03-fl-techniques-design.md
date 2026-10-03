@@ -96,9 +96,11 @@ Punto de partida, ya implementado:
 
 - **En el edge (DP local).** `privacy: {name: local_dp, clip, sigma}` recorta la norma del incremento a `clip` y le suma `N(0, (sigma·clip)²)` antes de enviarlo. Es otro gancho `on_update`.
 - **En el agregador (DP central).** El agregador `dp_fedavg` recorta el incremento de cada hijo respecto a la referencia, promedia y suma `N(0, (sigma·clip/m)²)`, donde `m` es el número de hijos (McMahan et al., 2018).
-- **ε.** Cada ronda se emite `privacy.epsilon` acumulado para un `delta` configurable:
+- **ε.** Cada ronda se emite `diagnostic.privacy_epsilon` acumulado para un `delta` configurable:
   - el mecanismo gaussiano tiene RDP `α/(2σ²)` por ronda y se compone sumando;
-  - ε = min_α (T·α/(2σ²) + log(1/δ)/(α−1)), con T el número de rondas.
+  - ε = min_α (T·α/(2σ²) + log(1/δ)/(α−1)), con T el número de rondas;
+  - en DP local la vecindad es sustituir una actualización por otra: la sensibilidad es 2·clip y el contable usa σ/2.
+- **Claves auxiliares.** Ni el recorte ni el ruido ni los ataques las tocan, así que un entrenador que las envía (SCAFFOLD, FedNova) se rechaza junto con `privacy`, `attack`, `dp_fedavg` o `norm_clip`.
 
 ## 4. Catálogo por fases
 
@@ -138,7 +140,7 @@ Cada plugin lleva título, descripción y explicación en español, sus parámet
 | `local_dp` | privacidad | DP local en el edge (§3.7) | — |
 | `label_flip`, `sign_flip`, `gaussian`, `scale` | ataque | §3.6 | — |
 
-Los agregadores que comparan contribuciones enteras (Krum, Multi-Krum, Bulyan, mediana geométrica) puntúan sobre las claves que tienen todos los hijos. Después combinan clave a clave las contribuciones elegidas, como FedAvg, para que las claves que solo traen algunos hijos sigan funcionando (adaptadores por dataset). Si los hijos no bastan para el `f` pedido, el agregador da un error claro al cerrar la ronda.
+Los agregadores que comparan contribuciones enteras (Krum, Multi-Krum, Bulyan, mediana geométrica) puntúan sobre las claves que tienen todos los hijos. Después combinan clave a clave las contribuciones elegidas, como FedAvg, para que las claves que solo traen algunos hijos sigan funcionando (adaptadores por dataset). Si los hijos no bastan para el `f` pedido, el agregador baja `f` y emite el que ha usado (`f_used`). Una clave que solo tenían hijos descartados no se pierde: sale de los mejor puntuados que la tienen y se informa como `rescued`. Bulyan promedia las claves auxiliares de los seleccionados.
 
 ### P4 — Servidor y asincronía
 
@@ -155,7 +157,7 @@ Cada fase tiene su propio plan de implementación, su issue y su PR.
 
 - **Entre escenarios.** Por ejemplo, `sweep: {learning.trainer: [standard, fedprox, scaffold, ditto]}` o `{attack.fraction: [0, 0.2]}`. El barrido admite valores que son plugins completos con parámetros. Una clave `a,b` barre varias rutas a la vez: `learning.sharing,learning.trainer.name: [[fedper, fedrep], [fedavg, ditto]]` da un escenario por pareja.
 - **Entre niveles.** Cada nodo de la topología puede tener su `aggregator` y la raíz su `server_optimizer`, así que la técnica también se compara por nivel.
-- **Informes.** `onion_fl report --by scenario` y la vista Comparar del Studio dan la media ± IC sobre las semillas por nivel y métrica, incluidas `personal`, `finetuned`, `privacy.epsilon` y las de selección.
+- **Informes.** `onion_fl report --by scenario` y la vista Comparar del Studio dan la media ± IC sobre las semillas por nivel y métrica, incluidas `personal`, `finetuned`, `diagnostic.privacy_epsilon` y las de selección.
 - **Experimentos de ejemplo.** Uno por fase sobre SWELL + WESAD: `experiments/techniques_personalisation.yaml`, `techniques_drift.yaml`, `techniques_robustness.yaml` y `techniques_server.yaml`. Sus resultados se confirman en `results/` y se citan en el README.
 
 ## 6. Pruebas
