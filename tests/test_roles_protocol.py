@@ -649,14 +649,16 @@ def model_msg(round: int) -> Message:
     )
 
 
-def update_msg(src: str, round: int, value: float, weight: float) -> Message:
+def update_msg(
+    src: str, round: int, value: float, weight: float, **metrics: float
+) -> Message:
     state = {KEY: np.full_like(INITIAL[KEY], value)}
     return Message(
         kind="update",
         src=src,
         dst="fog_0",
         round=round,
-        payload=Payload(state=state, weights={KEY: weight}),
+        payload=Payload(state=state, weights={KEY: weight}, metrics=metrics),
     )
 
 
@@ -700,6 +702,53 @@ def test_a_fresh_update_replaces_a_stale_one_from_the_same_edge() -> None:
     sent = ctx.sent[-1]
     np.testing.assert_allclose(sent.payload.state[KEY], (3 * 1 + 7 * 2) / 3, rtol=1e-6)
     assert sent.payload.weights[KEY] == 3.0
+
+
+def test_a_round_reports_the_mean_staleness_of_what_it_combines() -> None:
+    fog, ctx = fog_by_hand(**STALE)
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+    assert "staleness" not in ctx.sent[-1].payload.metrics  # all fresh: 0, not sent
+    fog.on_message(model_msg(2), ctx)
+
+    fog.on_message(update_msg("e2", 1, 5.0, 2), ctx)  # one round late
+    fog.on_message(update_msg("e1", 2, 3.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+
+    assert ctx.sent[-1].payload.metrics["staleness"] == 0.5  # (0 + 1) / 2
+
+
+def test_a_childs_staleness_adds_to_its_age() -> None:
+    fog, ctx = fog_by_hand(**STALE)
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1, staleness=2.0), ctx)
+    fog.on_message(update_msg("e2", 1, 1.0, 1), ctx)
+
+    assert ctx.sent[-1].payload.metrics["staleness"] == 1.0  # (2 + 0) / 2
+
+
+def test_the_server_optimizer_sees_the_staleness_below() -> None:
+    recorder = StatsRecorder()
+    edges = {"fog_0": [edge("fast", shift=1), slow("slow", seconds=15, shift=7)]}
+    fog = STALE | {"deadline": 10}
+
+    run(tree(1, fog=fog), edges, rounds=3, server_optimizer=recorder)
+
+    assert any(s.get("staleness", 0.0) > 0 for s in recorder.stats)
+
+
+def test_a_round_can_close_as_soon_as_its_quorum_arrives() -> None:
+    fog, ctx = fog_by_hand(**STALE | {"quorum": 1, "close_at_quorum": True})
+    fog.on_message(model_msg(1), ctx)
+
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)  # 1 of 2 is enough
+
+    assert ctx.sent[-1].kind == "update" and not fog.open
+    fog.on_message(model_msg(2), ctx)
+    fog.on_message(update_msg("e2", 1, 5.0, 1), ctx)  # late: buffered
+    fog.on_message(update_msg("e1", 2, 3.0, 1), ctx)  # closes round 2 at once
+    np.testing.assert_allclose(ctx.sent[-1].payload.state[KEY], (3 + 5 * 0.5) / 1.5)
 
 
 # --- registration over lossy links ------------------------------------------------------------

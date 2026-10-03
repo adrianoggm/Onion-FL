@@ -89,6 +89,7 @@ def _round_settings(settings: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "aggregator": create(aggregators, settings.get("aggregator"), "fedavg"),
         "quorum": settings.get("quorum", 1.0),
+        "close_at_quorum": bool(settings.get("close_at_quorum", False)),
         "deadline": parse_duration(settings.get("deadline")),
         "participation": create(participations, settings.get("participation"), "all"),
         "staleness": create(stalenesses, settings.get("staleness"), "drop"),

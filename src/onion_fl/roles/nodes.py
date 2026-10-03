@@ -103,6 +103,7 @@ class _Collector(Node):
         sharing: SharingPolicy,
         aggregator: Any,
         quorum: float = 1.0,
+        close_at_quorum: bool = False,
         deadline: float | None = None,
         participation: Any = None,
         staleness: Any = None,
@@ -117,6 +118,7 @@ class _Collector(Node):
         self.level, self.levels, self.sharing = level, list(levels), sharing
         self.aggregator = aggregator
         self.quorum, self.deadline = quorum, deadline
+        self.close_at_quorum = close_at_quorum  # FedBuff: close at K, not at all
         self.participation = participation or AllChildren()
         self.staleness = staleness or Drop()
         self.register_timeout = register_timeout
@@ -128,6 +130,7 @@ class _Collector(Node):
         self.participants: list[str] = []
         self.responses: dict[str, tuple[Contribution, Mapping[str, float]]] = {}
         self.stale: dict[str, Contribution] = {}
+        self.stale_age: dict[str, float] = {}  # rounds behind, plus what it carried
         self.pending_eval: dict[int, dict[str, Any]] = {}
         self.diagnostics = (
             [diagnostic_plugins.create(n) for n in diagnostic_plugins.names()]
@@ -251,7 +254,8 @@ class _Collector(Node):
             needed = quorum_needed(self.quorum, len(self.participants))
             if self.quorum_at is None and answered >= max(needed, 1):
                 self.quorum_at = ctx.now() - self.opened_at
-            if len(self.responses) == len(self.participants):
+            reached = self.close_at_quorum and answered >= max(needed, 1)
+            if reached or len(self.responses) == len(self.participants):
                 self._close(ctx)
             return
         if r is not None and (r < self.round or (r == self.round and not self.open)):
@@ -263,6 +267,8 @@ class _Collector(Node):
             if action == "buffered":
                 weights = {k: w * factor for k, w in contribution.weights.items()}
                 self.stale[msg.src] = Contribution(msg.src, contribution.state, weights)
+                carried = (msg.payload.metrics or {}).get("staleness", 0.0)
+                self.stale_age[msg.src] = target - r + float(carried)
             return
         _reject(ctx, msg, "update for a round that is not open")
 
@@ -281,7 +287,10 @@ class _Collector(Node):
         self.open = False
         fresh = {s: c for s, (c, _) in self.responses.items() if c.state}
         stale = [c for s, c in sorted(self.stale.items()) if s not in fresh]
-        self.stale = {}
+        # Staleness of what is combined: rounds behind here plus what each carried.
+        ages = [float(self.responses[s][1].get("staleness", 0.0)) for s in fresh]
+        ages += [self.stale_age[c.source] for c in stale]
+        self.stale, self.stale_age = {}, {}
         needed = quorum_needed(self.quorum, len(self.participants))
         tags = {
             "responded": len(fresh),
@@ -306,6 +315,8 @@ class _Collector(Node):
         self.previous = dict(aggregated.state)
         reports = list(reports.values())
         metrics = _train_metrics(reports)
+        if any(ages):  # absent means 0, so synchronous runs send nothing new
+            metrics["staleness"] = float(np.mean(ages))
         if self.aggregate_children:
             metrics |= self._children_scores(reports, ctx)
         ctx.emit("round.closed", ctx.now() - self.opened_at, stale=len(stale), **tags)
