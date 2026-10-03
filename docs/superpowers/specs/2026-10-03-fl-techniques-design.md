@@ -100,6 +100,7 @@ Punto de partida, ya implementado:
   - el mecanismo gaussiano tiene RDP `α/(2σ²)` por ronda y se compone sumando;
   - ε = min_α (T·α/(2σ²) + log(1/δ)/(α−1)), con T el número de rondas;
   - en DP local la vecindad es sustituir una actualización por otra: la sensibilidad es 2·clip y el contable usa σ/2.
+- **Vecindad y límites de la garantía.** La DP central usa añadir o quitar un hijo (sensibilidad C sobre la suma) y trata como público m, el número de hijos que llegan, así que no protege quién participa; la DP local usa sustituir una actualización por otra (2C). ε supone C fijado de antemano: si C se calibra con los mismos datos sin privacidad, ε no es una garantía de extremo a extremo del procedimiento.
 - **Claves auxiliares.** Ni el recorte ni el ruido ni los ataques las tocan, así que un entrenador que las envía (SCAFFOLD, FedNova) se rechaza junto con `privacy`, `attack`, `dp_fedavg` o `norm_clip`.
 
 ## 4. Catálogo por fases
@@ -134,13 +135,13 @@ Cada plugin lleva título, descripción y explicación en español, sus parámet
 | `krum` | agregador | Elige la contribución con menor suma de distancias a sus `n − f − 2` vecinas | Blanchard et al., 2017 |
 | `multi_krum` | agregador | Promedia (FedAvg) las `m` mejores según Krum | Blanchard et al., 2017 |
 | `geometric_median` | agregador | Mediana geométrica ponderada por Weiszfeld (iteraciones y tolerancia) | Pillutla et al., 2022 (RFA) |
-| `bulyan` | agregador | Multi-Krum seguido de media recortada coordenada a coordenada | El Mhamdi et al., 2018 |
+| `bulyan` | agregador | Krum iterativo (elige θ = n − 2f de uno en uno, retirando cada elegido) seguido de media recortada coordenada a coordenada | El Mhamdi et al., 2018 |
 | `norm_clip` | agregador | Recorta la norma del incremento de cada hijo a `bound` y aplica FedAvg | Sun et al., 2019 |
 | `dp_fedavg` | agregador | DP central (§3.7) | McMahan et al., 2018 |
 | `local_dp` | privacidad | DP local en el edge (§3.7) | — |
 | `label_flip`, `sign_flip`, `gaussian`, `scale` | ataque | §3.6 | — |
 
-Los agregadores que comparan contribuciones enteras (Krum, Multi-Krum, Bulyan, mediana geométrica) puntúan sobre las claves que tienen todos los hijos. Después combinan clave a clave las contribuciones elegidas, como FedAvg, para que las claves que solo traen algunos hijos sigan funcionando (adaptadores por dataset). Si los hijos no bastan para el `f` pedido, el agregador baja `f` y emite el que ha usado (`f_used`). Una clave que solo tenían hijos descartados no se pierde: sale de los mejor puntuados que la tienen y se informa como `rescued`. Bulyan promedia las claves auxiliares de los seleccionados.
+Los agregadores que comparan contribuciones enteras (Krum, Multi-Krum, Bulyan, mediana geométrica) puntúan sobre las claves que tienen todos los hijos. Después combinan clave a clave las contribuciones elegidas, como FedAvg, para que las claves que solo traen algunos hijos sigan funcionando (adaptadores por dataset). Si los hijos no bastan para el `f` pedido, el agregador baja `f` y emite el que ha usado (`f_used`). Una clave que solo tenían hijos descartados no se pierde: sale de los mejor puntuados que la tienen y se informa en `rescued` con sus fuentes. Los descartados de los que no se usa ninguna clave se informan como `excluded`: la detección efectiva se mide con ellos, no con los descartados. Bulyan promedia las claves auxiliares de los seleccionados.
 
 ### P4 — Servidor y asincronía
 

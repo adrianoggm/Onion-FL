@@ -16,11 +16,17 @@ onion_fl report experiments/techniques_privacy.yaml --out report.html --metric m
 - **Local DP (`local_dp` at every edge).**
   - Each edge clips its own update to C = 1.0 and adds N(0, (σ·C)²) before sending.
   - No aggregator is trusted.
-- **Clipping bound.** C = 1.0 is the median edge update norm under FedAvg (`../techniques_robustness/INDEX.md`). It is a training statistic.
+- **Clipping bound.** C = 1.0 is the median edge update norm under FedAvg (`../techniques_robustness/INDEX.md`). It is a training statistic, computed without any privacy protection.
 - **How ε is computed.**
   - ε is for δ = 1e-5, from an RDP accountant for the Gaussian mechanism composed over the rounds actually applied.
   - It has no amplification by subsampling, so it is a conservative upper bound.
-  - Central DP uses add/remove-one-child adjacency, with sensitivity C on the sum. Local DP uses replace-one adjacency: any update in the C-ball may become any other, so the sensitivity is 2C and the accountant uses σ/2.
+  - **Central DP adjacency and denominator.**
+    - Neighbouring rounds differ by adding or removing one child. The sum of the clipped updates then has sensitivity C.
+    - The fog adds N(0, (σC)²) to that sum and divides it by m, the number of children whose update arrived and hold the key. That is the N(0, (σC/m)²) on the mean.
+    - m is treated as public: the guarantee covers the content of the updates, not which children took part. Protecting participation needs a fixed denominator, as in McMahan et al. (2018).
+    - Under replace-one adjacency the sensitivity would be 2C, as in local DP.
+  - **Local DP adjacency.** Replace-one: any update in the C-ball may become any other, so the sensitivity is 2C and the accountant uses σ/2.
+  - **ε assumes C was fixed in advance.** Here C was calibrated on the same training data without privacy. The ε values describe the mechanism with C fixed; they are not an end-to-end guarantee for the whole procedure, which included that calibration. An end-to-end guarantee needs C set a priori (from public or proxy data) or estimated privately.
   - Central ε counts the aggregations a fog performed; local ε counts the updates an edge released. The table gives the largest final value per run, averaged over seeds.
 - **Code.** Commit `5995082`, clean tree. See "Reproducibility" below for the rerun at the merge of #148's fixes (`0a4a6ad`).
 

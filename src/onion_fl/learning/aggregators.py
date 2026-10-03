@@ -527,7 +527,10 @@ class DPFedAvgParams(BaseModel):
     explain=(
         "Privacidad diferencial a nivel de hijo en un agregador de confianza; "
         "informa ε por ronda con un contable RDP sin amplificación por submuestreo "
-        "(McMahan et al., 2018). No admite entrenadores con claves auxiliares (SCAFFOLD, FedNova)."
+        "(McMahan et al., 2018). Vecindad: añadir o quitar un hijo, sensibilidad C "
+        "sobre la suma; m es el número de hijos que llegan y se trata como público, "
+        "así que no protege quién participa. ε supone C fijado de antemano. "
+        "No admite entrenadores con claves auxiliares (SCAFFOLD, FedNova)."
     ),
 )
 class DPFedAvg:
