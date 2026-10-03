@@ -42,7 +42,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | CLI | ✅ | `onion_fl data · topology · plan · run · node · report · baseline · schema · serve` |
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
-| Tests | ✅ | 883 tests. With SWELL, WESAD and a local broker, 879 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
+| Tests | ✅ | 885 tests. With SWELL, WESAD and a local broker, 881 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
 
@@ -334,7 +334,7 @@ Source: [results/techniques_privacy/](results/techniques_privacy/INDEX.md), comm
 
 ### New framework: server optimizers and asynchrony
 
-Source: [results/techniques_server/](results/techniques_server/INDEX.md), `topology_id` `ff55fe4d…`, commit `e7fb7fd`. It is `experiments/techniques_server.yaml`: the drift comparison's setup (SWELL + WESAD, segregated, lossless links, SGD at lr 0.1, 20 rounds, 3 seeds) with a different server side. Each optimizer's server rate was chosen by the final global model on the validation subjects (`validation.csv`). Macro-F1, mean ± 95% CI:
+Source: [results/techniques_server/](results/techniques_server/INDEX.md), `topology_id` `ff55fe4d…`, commit `47c482f`. It is `experiments/techniques_server.yaml`: the drift comparison's setup (SWELL + WESAD, segregated, lossless links, SGD at lr 0.1, 20 rounds, 3 seeds) with a different server side. Each optimizer's server rate was chosen by the final global model on the validation subjects (`validation.csv`). Macro-F1, mean ± 95% CI:
 
 | Server side | Global SWELL | Global WESAD | Simulated time (s) |
 |---|---|---|---|
@@ -343,11 +343,11 @@ Source: [results/techniques_server/](results/techniques_server/INDEX.md), `topol
 | FedAdam | 0.612 ± 0.038 | 0.853 ± 0.079 | 21 |
 | FedYogi | 0.602 ± 0.041 | 0.875 ± 0.076 | 21 |
 | FedAdagrad | 0.627 ± 0.013 | 0.898 ± 0.045 | 21 |
-| FedBuff (buffering fogs) | 0.417 ± 0.031 | 0.749 ± 0.045 | 12 |
-| FedBuff + FedAsync | 0.512 ± 0.186 | 0.751 ± 0.000 | 12 |
+| FedBuff-style buffering at the fogs | 0.417 ± 0.031 | 0.749 ± 0.045 | 12 |
+| FedBuff-style + FedAsync mixing rule | 0.512 ± 0.186 | 0.751 ± 0.000 | 12 |
 
 - **In these runs, FedAdagrad, FedYogi and FedAdam beat FedAvg on WESAD**; the intervals do not overlap. On SWELL they overlap.
-- **FedBuff finishes 20 rounds in 43% less simulated time**, but its per-round score on SWELL is lower; time-to-accuracy is not compared yet.
+- **FedBuff-style buffering finishes 20 rounds in 43% less simulated time**, but its per-round score on SWELL is lower; time-to-accuracy is not compared yet. It is a hierarchical adaptation (the fogs buffer, the cloud stays synchronous), not the FedBuff or FedAsync protocol.
 
 ### Before the redesign
 
