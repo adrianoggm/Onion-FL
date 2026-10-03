@@ -659,13 +659,14 @@ class FedAdamParams(BaseModel):
     tau: float = Field(1e-3, gt=0, description="Término de estabilidad")
 
 
-@server_optimizers.register(
-    "fedadam",
-    title="FedAdam",
-    description="Adam de servidor sobre el pseudo-gradiente (Reddi et al., 2021).",
-    params=FedAdamParams,
-)
-class FedAdam:
+class _Adaptive:
+    """Reddi et al. (2021): x ← x + η·m/(√v + τ) over the pseudo-gradient Δ = x̄ − x.
+
+    The optimizers differ only in how v follows Δ² and where it starts.
+    """
+
+    v_starts_at_tau2 = True  # Algorithm 2: v_{-1} = τ²
+
     def __init__(
         self,
         server_lr: float = 0.01,
@@ -676,6 +677,9 @@ class FedAdam:
         self.server_lr, self.beta1, self.beta2, self.tau = server_lr, beta1, beta2, tau
         self._m: dict[str, np.ndarray] = {}
         self._v: dict[str, np.ndarray] = {}
+
+    def _second(self, v: np.ndarray, squared: np.ndarray) -> np.ndarray:
+        raise NotImplementedError
 
     def apply(
         self,
@@ -694,13 +698,107 @@ class FedAdam:
                 self.beta1 * self._m.get(key, np.zeros_like(delta))
                 + (1 - self.beta1) * delta
             )
-            v = (
-                self.beta2 * self._v.get(key, np.zeros_like(delta))
-                + (1 - self.beta2) * delta**2
-            )
+            start = self.tau**2 if self.v_starts_at_tau2 else 0.0
+            v = self._second(self._v.get(key, np.full_like(delta, start)), delta**2)
             self._m[key], self._v[key] = m, v
             step = self.server_lr * m / (np.sqrt(v) + self.tau)
             new[key] = (current + step).astype(np.asarray(value).dtype)
+        return new
+
+
+@server_optimizers.register(
+    "fedadam",
+    title="FedAdam",
+    description="Adam de servidor sobre el pseudo-gradiente (Reddi et al., 2021).",
+    params=FedAdamParams,
+    explain=(
+        "v empieza en 0, como se publicó en Onion-FL; el algoritmo 2 del artículo "
+        "lo empieza en τ², como FedYogi y FedAdagrad."
+    ),
+)
+class FedAdam(_Adaptive):
+    v_starts_at_tau2 = False  # kept as first released: v starts at 0
+
+    def _second(self, v: np.ndarray, squared: np.ndarray) -> np.ndarray:
+        return self.beta2 * v + (1 - self.beta2) * squared
+
+
+@server_optimizers.register(
+    "fedyogi",
+    title="FedYogi",
+    description="Yogi de servidor: v ← v − (1 − β2)·Δ²·signo(v − Δ²).",
+    params=FedAdamParams,
+    explain=(
+        "Como FedAdam, pero v se mueve de forma aditiva hacia Δ², así que no cae de "
+        "golpe cuando el pseudo-gradiente se hace pequeño; v empieza en τ² "
+        "(Reddi et al., 2021, algoritmo 2)."
+    ),
+)
+class FedYogi(_Adaptive):
+    def _second(self, v: np.ndarray, squared: np.ndarray) -> np.ndarray:
+        return v - (1 - self.beta2) * squared * np.sign(v - squared)
+
+
+class FedAdagradParams(BaseModel):
+    server_lr: float = Field(0.01, gt=0)
+    beta1: float = Field(0.9, ge=0, lt=1)
+    tau: float = Field(1e-3, gt=0, description="Término de estabilidad")
+
+
+@server_optimizers.register(
+    "fedadagrad",
+    title="FedAdagrad",
+    description="Adagrad de servidor: v acumula Δ² y el paso se reduce con el tiempo.",
+    params=FedAdagradParams,
+    explain="v empieza en τ² (Reddi et al., 2021, algoritmo 2).",
+)
+class FedAdagrad(_Adaptive):
+    def __init__(
+        self, server_lr: float = 0.01, beta1: float = 0.9, tau: float = 1e-3
+    ) -> None:
+        super().__init__(server_lr, beta1, 0.0, tau)
+
+    def _second(self, v: np.ndarray, squared: np.ndarray) -> np.ndarray:
+        return v + squared
+
+
+class FedAsyncParams(BaseModel):
+    alpha: float = Field(0.6, gt=0, le=1, description="Peso α del agregado sin retraso")
+    a: float = Field(0.5, ge=0, description="Exponente: α·(1 + antigüedad)^-a")
+
+
+@server_optimizers.register(
+    "fedasync",
+    title="FedAsync",
+    description="x ← (1 − α_s)·x + α_s·x̄, con α_s = α·(1 + antigüedad)^-a.",
+    params=FedAsyncParams,
+    explain=(
+        "Mezcla el agregado con el modelo global y descuenta las actualizaciones "
+        "viejas por la antigüedad media de la ronda (estadístico staleness). Aplica "
+        "la regla de Xie et al. (2019) una vez por ronda, al agregado; no actualiza "
+        "con cada llegada."
+    ),
+)
+class FedAsync:
+    def __init__(self, alpha: float = 0.6, a: float = 0.5) -> None:
+        self.alpha, self.a = alpha, a
+
+    def apply(
+        self,
+        global_state: Mapping[str, np.ndarray],
+        aggregated: Mapping[str, np.ndarray],
+        stats: Mapping[str, float] | None = None,
+    ) -> State:
+        staleness = float((stats or {}).get("staleness", 0.0))
+        mix = self.alpha * (1 + staleness) ** -self.a
+        new = dict(global_state)
+        for key, value in aggregated.items():
+            if is_aux(key) or key not in global_state:
+                new[key] = value
+                continue
+            current = np.asarray(global_state[key], dtype=np.float64)
+            mixed = (1 - mix) * current + mix * np.asarray(value, dtype=np.float64)
+            new[key] = mixed.astype(np.asarray(value).dtype)
         return new
 
 

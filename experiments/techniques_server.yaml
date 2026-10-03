@@ -1,0 +1,40 @@
+# Server optimizers and asynchrony on SWELL and WESAD (issue #150): one scenario
+# per server-side technique, three seeds, segregated placement, lossless links.
+# Every edge trains with SGD at lr 0.1, FedAvg's rate on validation in the
+# drift comparison. Each optimizer's server rate (FedAsync's alpha) was chosen
+# with techniques_server_select.yaml, by the final global model on the
+# validation subjects. FedBuff is the topology whose fogs buffer
+# (four_fogs_swell_wesad_lossless_fedbuff), with FedAvg or FedAsync at the
+# cloud; FedAsync only sees staleness there.
+#
+#   onion_fl run experiments/techniques_server.yaml --workers 3
+name: techniques_server
+description: Optimizadores de servidor y asincronía (FedAvgM, FedAdam, FedYogi, FedAdagrad, FedAsync, FedBuff) sobre SWELL y WESAD.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, local_val: 0.2, local_val_split: class_tail, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge: {every: 5, models: [received, local]}
+  aggregators: {every: 5}
+  global: {every: 1}
+seeds: [0, 1, 2]
+sweep:
+  topology,learning.server_optimizer:
+    - [four_fogs_swell_wesad_lossless, replace]                                     # FedAvg
+    - [four_fogs_swell_wesad_lossless, {name: fedavgm, server_lr: 0.1}]
+    - [four_fogs_swell_wesad_lossless, {name: fedadam, server_lr: 0.03}]
+    - [four_fogs_swell_wesad_lossless, {name: fedyogi, server_lr: 0.1}]
+    - [four_fogs_swell_wesad_lossless, {name: fedadagrad, server_lr: 0.3}]
+    - [four_fogs_swell_wesad_lossless_fedbuff, replace]                                       # FedBuff
+    - [four_fogs_swell_wesad_lossless_fedbuff, {name: fedasync, alpha: 0.9}]                # FedBuff + FedAsync

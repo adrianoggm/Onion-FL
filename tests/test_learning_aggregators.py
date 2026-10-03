@@ -289,16 +289,21 @@ def test_registries_list_the_built_ins() -> None:
         "trimmed_mean",
     ]
     assert server_optimizers.names() == [
+        "fedadagrad",
         "fedadam",
+        "fedasync",
         "fedavgm",
         "feddyn",
         "fednova",
+        "fedyogi",
         "replace",
         "scaffold",
     ]
 
 
-@pytest.mark.parametrize("name", ["fedavgm", "fedadam"])
+@pytest.mark.parametrize(
+    "name", ["fedavgm", "fedadam", "fedyogi", "fedadagrad", "fedasync"]
+)
 def test_server_optimizers_replace_auxiliary_arrays(name: str) -> None:
     optimizer = server_optimizers.create(name)
     global_state = {"w": np.zeros(2), "scaffold/w": np.zeros(2)}
@@ -617,3 +622,48 @@ def test_bulyan_selects_recursively_with_krum() -> None:
     bulyan.aggregate(children, "fog")
 
     assert bulyan.report()[0][2]["dropped"] == ["c1", "c6"]
+
+
+ADAPTIVE = {"server_lr": 0.1, "beta1": 0.9, "tau": 0.001}
+
+
+def test_fedadagrad_accumulates_squared_pseudo_gradients() -> None:
+    # Reddi et al. (2021), Algorithm 2: v starts at tau², then v += Δ².
+    opt = server_optimizers.create("fedadagrad", ADAPTIVE)
+
+    first = opt.apply(g(w=[0.0]), g(w=[2.0]))
+    second = opt.apply(first, first | g(w=[float(first["w"][0]) + 1.0]))
+
+    m1, v1 = 0.1 * 2.0, 1e-6 + 2.0**2
+    x1 = 0.1 * m1 / (np.sqrt(v1) + 0.001)
+    np.testing.assert_allclose(first["w"], [x1], rtol=1e-6)
+    m2, v2 = 0.9 * m1 + 0.1 * 1.0, v1 + 1.0**2
+    np.testing.assert_allclose(
+        second["w"], [x1 + 0.1 * m2 / (np.sqrt(v2) + 0.001)], rtol=1e-5
+    )
+
+
+def test_fedyogi_moves_v_additively_by_the_sign_of_its_gap() -> None:
+    # v ← v − (1 − β2)·Δ²·sign(v − Δ²): up by 0.01·Δ² while v < Δ², then down.
+    opt = server_optimizers.create("fedyogi", ADAPTIVE | {"beta2": 0.99})
+
+    first = opt.apply(g(w=[0.0]), g(w=[2.0]))
+    second = opt.apply(first, first | g(w=[float(first["w"][0]) + 0.1]))
+
+    m1, v1 = 0.1 * 2.0, 1e-6 + 0.01 * 4.0  # v < Δ²: grows
+    x1 = 0.1 * m1 / (np.sqrt(v1) + 0.001)
+    np.testing.assert_allclose(first["w"], [x1], rtol=1e-6)
+    m2, v2 = 0.9 * m1 + 0.1 * 0.1, v1 - 0.01 * 0.01  # v > Δ²: shrinks by 0.01·Δ²
+    np.testing.assert_allclose(
+        second["w"], [x1 + 0.1 * m2 / (np.sqrt(v2) + 0.001)], rtol=1e-5
+    )
+
+
+def test_fedasync_mixes_by_a_staleness_discounted_weight() -> None:
+    opt = server_optimizers.create("fedasync", {"alpha": 0.5, "a": 0.5})
+
+    fresh = opt.apply(g(w=[0.0]), g(w=[4.0]))
+    stale = opt.apply(g(w=[0.0]), g(w=[4.0]), {"staleness": 3.0})
+
+    np.testing.assert_allclose(fresh["w"], [2.0])  # α_s = 0.5
+    np.testing.assert_allclose(stale["w"], [1.0])  # α_s = 0.5·(1 + 3)^-0.5 = 0.25

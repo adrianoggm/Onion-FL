@@ -262,6 +262,48 @@ def test_paired_optimizers_refuse_late_updates(workspace: Path) -> None:
         )
 
 
+@pytest.mark.parametrize("pair", ["scaffold", "feddyn"])
+def test_edge_memory_pairs_refuse_rounds_that_close_at_quorum(
+    workspace: Path, pair: str
+) -> None:
+    learning = experiment(workspace)["learning"] | {
+        "trainer": pair,
+        "server_optimizer": pair,
+    }
+    fog = TOPOLOGY["fog"] | {"defaults": {"close_at_quorum": True, "quorum": 1}}
+    topology = TOPOLOGY | {"fog": fog}
+
+    with pytest.raises(ConfigError, match="close_at_quorum"):
+        plan(
+            parse_experiment(
+                experiment(workspace, learning=learning, topology=topology)
+            )
+        )
+
+
+def test_the_global_model_can_be_scored_on_the_validation_subjects(
+    workspace: Path,
+) -> None:
+    from onion_fl.experiment.runner import _scenario_data, edge_specs
+
+    def root_evaluators(evaluation: dict) -> list[str]:
+        raw = experiment(workspace, evaluation=evaluation)
+        (scenario,) = scenarios(parse_experiment(raw))
+        topology, split, placement, _ = _scenario_data(scenario)
+        edges, _ = edge_specs(scenario, topology, split, placement)
+        return [spec.id for spec in edges[topology.root.id]]
+
+    test = root_evaluators({"global": {"every": 1}})
+    val = root_evaluators({"global": {"every": 1, "subjects": "val"}})
+
+    assert test and all(i.startswith("test-") for i in test)
+    assert val and all(i.startswith("gval-") for i in val)
+    assert (
+        "subjects"
+        not in parse_experiment(experiment(workspace)).dump()["evaluation"]["global"]
+    )
+
+
 def test_feddyn_needs_the_same_alpha_on_both_sides(workspace: Path) -> None:
     learning = experiment(workspace)["learning"] | {
         "trainer": {"name": "feddyn", "alpha": 0.1},
