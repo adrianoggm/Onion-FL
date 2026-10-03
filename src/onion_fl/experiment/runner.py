@@ -135,6 +135,15 @@ def _check_learning(config: ExperimentConfig, state: Mapping[str, Any]) -> None:
     ref = resolve_topology(config).root.settings.get("server_optimizer") or "replace"
     optimizer_name = _name(ref)
     needed = getattr(trainer, "server_optimizer", None)
+    zoned = sorted(
+        g for g in param_groups(state) if policy.scope_of(g).startswith("level:")
+    )
+    if needed is not None and zoned:
+        raise ConfigError(
+            f"learning.trainer: {name} pairs with a server optimizer that only "
+            f"runs at the root, but sharing {policy.name!r} keeps {zoned} below "
+            "the root, where fogs only average"
+        )
     if needed is not None and optimizer_name != needed:
         raise ConfigError(
             f"learning.trainer: {name} needs server_optimizer {needed!r}, "

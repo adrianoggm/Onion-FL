@@ -222,6 +222,20 @@ def test_a_trainer_that_needs_an_optimizer_is_checked(
     assert plan(parse_experiment(experiment(workspace, learning=ok)))
 
 
+@pytest.mark.parametrize("pair", ["fednova", "feddyn"])
+def test_server_side_pairs_refuse_groups_held_below_the_root(
+    workspace: Path, pair: str
+) -> None:
+    learning = experiment(workspace)["learning"] | {
+        "trainer": pair,
+        "server_optimizer": pair,
+        "sharing": "zone",
+    }
+
+    with pytest.raises(ConfigError, match="zone|below the root"):
+        plan(parse_experiment(experiment(workspace, learning=learning)))
+
+
 def test_feddyn_needs_the_same_alpha_on_both_sides(workspace: Path) -> None:
     learning = experiment(workspace)["learning"] | {
         "trainer": {"name": "feddyn", "alpha": 0.1},
