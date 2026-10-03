@@ -2,9 +2,10 @@
 # per server-side technique, three seeds, segregated placement, lossless links.
 # Every edge trains with SGD at lr 0.1, FedAvg's rate on validation in the
 # drift comparison. Each optimizer's server rate (FedAsync's alpha) was chosen
-# on the validation subjects with techniques_server_select.yaml (zone
-# evaluators, round 20, seed 0). FedBuff is the topology whose fogs buffer
-# (four_fogs_swell_wesad_lossless_fedbuff), with FedAvg at the cloud.
+# with techniques_server_select.yaml, by the final global model on the
+# validation subjects. FedBuff is the topology whose fogs buffer
+# (four_fogs_swell_wesad_lossless_fedbuff), with FedAvg or FedAsync at the
+# cloud; FedAsync only sees staleness there.
 #
 #   onion_fl run experiments/techniques_server.yaml --workers 3
 name: techniques_server
@@ -30,10 +31,10 @@ evaluation:
 seeds: [0, 1, 2]
 sweep:
   topology,learning.server_optimizer:
-    - [four_fogs_swell_wesad_lossless, replace]                            # FedAvg
+    - [four_fogs_swell_wesad_lossless, replace]                                     # FedAvg
     - [four_fogs_swell_wesad_lossless, {name: fedavgm, server_lr: 1.0}]
     - [four_fogs_swell_wesad_lossless, {name: fedadam, server_lr: 0.01}]
     - [four_fogs_swell_wesad_lossless, {name: fedyogi, server_lr: 0.01}]
     - [four_fogs_swell_wesad_lossless, {name: fedadagrad, server_lr: 0.01}]
-    - [four_fogs_swell_wesad_lossless, {name: fedasync, alpha: 0.6}]
-    - [four_fogs_swell_wesad_lossless_fedbuff, replace]                    # FedBuff
+    - [four_fogs_swell_wesad_lossless_fedbuff, replace]                                       # FedBuff
+    - [four_fogs_swell_wesad_lossless_fedbuff, {name: fedasync, alpha: 0.6}]                # FedBuff + FedAsync

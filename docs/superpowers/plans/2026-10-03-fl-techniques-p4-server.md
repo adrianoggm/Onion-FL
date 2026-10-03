@@ -3,7 +3,7 @@
 **Goal:** add `fedyogi`, `fedadagrad` and `fedasync` (issue #150), the `staleness` round statistic they need, FedBuff as a documented combination, and the real-data comparison `experiments/techniques_server.yaml`.
 
 **Architecture:**
-- **Optimizers.** The adaptive server optimizers share one base with FedAdam and differ only in their second moment. `fedasync` mixes the aggregate into the global model with a staleness-discounted weight.
+- **Optimizers.** The adaptive server optimizers share one base with FedAdam and differ in their second moment and where it starts: FedAdam keeps v₀ = 0, as first released; FedYogi and FedAdagrad start at τ². `fedasync` mixes the aggregate into the global model with a staleness-discounted weight.
 - **Staleness.** Each collector computes the mean staleness of what it combines and sends it up, so the root's optimizer sees the staleness of the updates inside the aggregate it applies.
 - **FedBuff.** It needs an aggregator that closes a round as soon as K updates arrived (a new round setting, `close_at_quorum`); late updates then join the next round through `staleness: next_round`.
 
@@ -45,7 +45,7 @@
 - Auxiliary arrays are replaced, never stepped.
 - **Tests:**
   - one and two hand-computed steps of each optimizer;
-  - Yogi's v grows more slowly than Adam's when Δ² jumps;
+  - Yogi's v moves additively by the sign of v − Δ², up and then down;
   - auxiliary arrays are replaced;
   - dtype is kept;
   - the registry lists both.

@@ -1,8 +1,11 @@
 # four_fogs_swell_wesad_lossless whose fogs buffer like FedBuff (Nguyen et al.,
-# 2022): each fog closes its round as soon as K updates arrived (just over half
-# its edges in the segregated placement: 5 of 9 SWELL edges, 3 of 5 WESAD
-# edges), and updates that arrive later join the next round, weighted by
-# (1 + staleness)^-0.5.
+# 2022), the cloud staying synchronous:
+# - each fog closes its round as soon as K updates are in, late ones included
+#   (just over half its edges in the segregated placement: 5 of 9 SWELL
+#   edges, 3 of 5 WESAD edges);
+# - an edge still training gets no newer model, and its update joins a later
+#   round as its change from the model it trained on, weighted by
+#   (1 + staleness)^-0.5.
 name: four_fogs_swell_wesad_lossless_fedbuff
 levels: [global, fog, edge]
 root:

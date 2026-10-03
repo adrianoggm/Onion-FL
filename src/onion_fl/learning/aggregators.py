@@ -711,6 +711,10 @@ class _Adaptive:
     title="FedAdam",
     description="Adam de servidor sobre el pseudo-gradiente (Reddi et al., 2021).",
     params=FedAdamParams,
+    explain=(
+        "v empieza en 0, como se publicó en Onion-FL; el algoritmo 2 del artículo "
+        "lo empieza en τ², como FedYogi y FedAdagrad."
+    ),
 )
 class FedAdam(_Adaptive):
     v_starts_at_tau2 = False  # kept as first released: v starts at 0

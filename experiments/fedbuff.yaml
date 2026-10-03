@@ -1,8 +1,9 @@
 # FedBuff (Nguyen et al., 2022) as a combination of round settings, not a
-# plugin: each fog closes its round as soon as K updates arrived
-# (`quorum: K` with `close_at_quorum: true`), and updates that arrive later
-# join the next round, weighted by (1 + staleness)^-a
-# (`staleness: next_round` with `weighting: polynomial`). The settings are in
+# plugin: each fog closes its round as soon as K updates are in, late ones
+# included (`quorum: K` with `close_at_quorum: true`); an edge still training
+# gets no newer model; and a late update joins as its change from the model it
+# trained on, weighted by (1 + staleness)^-a (`staleness: next_round` with
+# `weighting: polynomial`). The cloud stays synchronous. The settings are in
 # topologies/four_fogs_swell_wesad_lossless_fedbuff.yaml; techniques_server.yaml
 # compares it with the synchronous server optimizers.
 #
