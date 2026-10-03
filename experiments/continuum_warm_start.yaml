@@ -1,0 +1,38 @@
+# Extending a trained model with new data (issue #157): SWELL + WESAD continued
+# from continuum_parent (SWELL only, 20 rounds), against SWELL + WESAD from
+# scratch. Each warm run continues the parent run with its own seed
+# (`run: experiment:continuum_parent`): it keeps the parent's preprocessing for
+# SWELL, fits WESAD's, builds WESAD's adapter fresh and goes on from round 21.
+# From scratch runs 20 rounds (as the continuation adds) and 40 (as parent and
+# continuation together). Freezing the SWELL adapter is a design choice, not
+# tuned; the learning rate is the drift comparison's.
+#
+#   onion_fl run experiments/continuum_parent.yaml --workers 3   # first
+#   onion_fl run experiments/continuum_warm_start.yaml --workers 3
+name: continuum_warm_start
+description: Continuar el modelo de SWELL añadiendo WESAD, frente a entrenar desde cero.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, local_val: 0.2, local_val_split: class_tail, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: &sgd {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge: {every: 5, models: [received, local]}
+  aggregators: {every: 5}
+  global: {every: 1}
+seeds: [0, 1, 2]
+sweep:
+  learning.init,rounds,learning.trainer:
+    - [random, 20, *sgd]                                                     # from scratch, 20 rounds
+    - [random, 40, *sgd]                                                     # from scratch, 40 rounds
+    - [{name: run, run: "experiment:continuum_parent"}, 20, *sgd]            # warm start
+    - [{name: run, run: "experiment:continuum_parent"}, 20, {<<: *sgd, frozen: [adapter.swell]}]   # warm, SWELL adapter frozen
