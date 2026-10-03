@@ -23,6 +23,7 @@ just check                            # ruff check, ruff format --check, pytest:
 
 - pytest runs with `filterwarnings = error` (only `UserWarning`/`DeprecationWarning` are ignored), so any new warning class fails the suite.
 - **Skipped tests.** Some tests need `data/` (`data/SWELL`, `data/samples/*.pkl`…) or an MQTT broker (`ONIONFL_MQTT=host:port`, default `localhost:1883`), and skip without them.
+  - README §2 says where to download SWELL and WESAD. `data/samples/*.pkl` is built from them by `scripts/create_real_samples.py` (on Windows, with `PYTHONIOENCODING=utf-8`: it prints emoji).
   - Local broker: `docker run -d -p 1883:1883 eclipse-mosquitto:2 mosquitto -c /mosquitto-no-auth.conf`.
   - In Git Bash, prefix it with `MSYS_NO_PATHCONV=1`.
 - ruff is pinned to 0.16.x in `pyproject.toml` and `.pre-commit-config.yaml`; keep them in sync. Markdown is excluded from ruff.
