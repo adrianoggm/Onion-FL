@@ -4,6 +4,10 @@
 # the averaged update point against learning), or nobody attacks. Three seeds. Training as in the
 # drift comparison (SGD, lr 0.3, chosen on validation for FedAvg); the clipping
 # bound is the median edge update norm under FedAvg (1.02), not a test score.
+# The defences assume the 20% attacker fraction, not a test score: the trimmed
+# mean cuts 20% per side; fogs hold 6-8 edges, so up to 2 attackers each, and
+# Krum and Multi-Krum tolerate f = 2 (lowered to 1 where n < 7); Bulyan needs
+# n >= 4f + 3, so f = 1, which the 6-edge fogs lower to 0.
 #
 #   onion_fl plan experiments/techniques_robustness.yaml
 #   onion_fl run experiments/techniques_robustness.yaml --workers 3
@@ -30,11 +34,11 @@ sweep:
   learning.aggregator:
     - fedavg
     - median
-    - trimmed_mean
-    - krum
-    - multi_krum
+    - {name: trimmed_mean, beta: 0.2}
+    - {name: krum, f: 2}
+    - {name: multi_krum, f: 2}
     - geometric_median
-    - bulyan
+    - {name: bulyan, f: 1}
     - {name: norm_clip, bound: 1.0}
   attack:
     - null
