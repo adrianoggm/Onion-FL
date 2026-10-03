@@ -384,7 +384,11 @@ def run_experiment(
     evaluate: Callable[..., Any] | None = None,
 ) -> list[Path]:
     """Run every scenario (or the one named ``only``); in parallel processes when ``workers > 1``."""
-    todo = [s for s in scenarios(config) if only is None or s.name == only]
+    every = scenarios(config)
+    todo = [s for s in every if only is None or s.name == only]
+    if not todo:
+        names = sorted({s.name for s in every})
+        raise ConfigError(f"no scenario named {only!r}; the scenarios are {names}")
     if workers > 1 and evaluate is not None:
         raise ValueError(
             "a custom evaluate cannot be sent to worker processes; use workers=1"

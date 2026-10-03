@@ -285,6 +285,13 @@ def test_an_unset_attack_stays_out_of_the_config(workspace: Path) -> None:
     assert "attack" not in parse_experiment(experiment(workspace)).dump()
 
 
+def test_an_unknown_scenario_name_is_an_error(workspace: Path) -> None:
+    config = parse_experiment(experiment(workspace))
+
+    with pytest.raises(ConfigError, match="nope.*base"):
+        run_experiment(config, only="nope")
+
+
 def test_finetuned_scores_need_a_finetune_trainer(workspace: Path) -> None:
     raw = experiment(workspace, evaluation={"edge": {"models": ["finetuned"]}})
 
