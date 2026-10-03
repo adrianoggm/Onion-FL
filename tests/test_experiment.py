@@ -745,3 +745,23 @@ def test_plan_warns_about_lossy_links_without_deadline(workspace: Path) -> None:
     )  # cloud (from the fogs) and each fog (from its edges)
     assert all("deadline" in w for w in preview["warnings"])
     assert safe["warnings"] == []
+
+
+def test_every_simulated_run_writes_its_bundle_and_signs_it(workspace: Path) -> None:
+    from onion_fl.continuum.bundle import load_bundle
+
+    (scenario,) = scenarios(parse_experiment(experiment(workspace)))
+    path = run_scenario(scenario, evaluate=stub_score)
+
+    bundle = load_bundle(path / "bundle")
+    assert bundle.snapshot.round == 2
+    assert bundle.lineage == {
+        "version": 2,
+        "run_id": path.name,
+        "parent": None,
+    }
+    assert bundle.preprocessing["demo"]["features"] == ["f1", "f2"]
+    assert bundle.schema["demo"] == {"task": "stress", "n_classes": 2}
+    assert verify_run(path)
+    (path / "bundle" / "server.npz").write_bytes(b"tampered")
+    assert not verify_run(path)

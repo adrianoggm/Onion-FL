@@ -29,6 +29,7 @@ class NodeState:
 class FederationSnapshot:
     round: int  # the last round the coordinator closed
     nodes: dict[str, NodeState]
+    root: str = ""  # the coordinator's id
 
 
 def _prefixed(prefix: str, arrays: Mapping[str, Any]) -> dict[str, np.ndarray]:
@@ -68,7 +69,7 @@ def snapshot_federation(federation: Federation) -> FederationSnapshot:
             state.arrays |= _prefixed("memory", memory)
             state.meta["memory"] = meta
         nodes[node_id] = state
-    return FederationSnapshot(round=root.round, nodes=nodes)
+    return FederationSnapshot(round=root.round, nodes=nodes, root=root.id)
 
 
 def restore_federation(federation: Federation, snapshot: FederationSnapshot) -> None:

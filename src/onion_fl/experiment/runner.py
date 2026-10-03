@@ -16,6 +16,7 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from onion_fl.continuum.bundle import save_bundle
 from onion_fl.core.context import node_rng
 from onion_fl.core.topology import Topology, load_topology, parse_topology
 from onion_fl.data.cache import load_prepared, prepare
@@ -32,7 +33,7 @@ from onion_fl.learning.sharing import not_local, sharing, traffic
 from onion_fl.learning.trainers import inits, trainers
 from onion_fl.observability.run import Run, save_model
 from onion_fl.observability.sinks import OtelSink, PrometheusSink, otlp_provider
-from onion_fl.roles import EdgeSpec, build_federation
+from onion_fl.roles import EdgeSpec, build_federation, snapshot_federation
 from onion_fl.roles.policies import create
 from onion_fl.runtime.devices import availability_models, compute_models
 from onion_fl.runtime.network import resolve_profile
@@ -403,12 +404,32 @@ def run_scenario(
         run.attach(federation)
         federation.run()
         save_model(run.path, federation.coordinator.state)
+        save_bundle(
+            run.path / "bundle",
+            snapshot_federation(federation),
+            preprocessing=split.preprocessing,
+            schema=schema_of(split),
+            lineage={
+                "version": federation.coordinator.round,
+                "run_id": run.run_id,
+                "parent": None,
+            },
+            config=identity(config),
+        )
     except BaseException:
         run.finish(status="failed")
         raise
     # The queue can run dry before the last round (lost messages, no deadlines).
     run.finish(status="finished" if federation.coordinator.finished else "incomplete")
     return run.path
+
+
+def schema_of(split: DataSplit) -> dict[str, dict[str, Any]]:
+    """Per dataset, the task and classes its heads were built for."""
+    return {
+        c.dataset: {"task": c.train.task, "n_classes": c.train.n_classes}
+        for c in sorted(split.clients, key=lambda c: c.dataset)
+    }
 
 
 def record_data(

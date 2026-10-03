@@ -54,6 +54,11 @@ def compute_run_hash(path: str | Path) -> str:
     ]
     if (path / "model.npz").exists():
         parts.append(sha256((path / "model.npz").read_bytes()))
+    bundle = path / "bundle"  # a continuation's whole state (continuum)
+    if bundle.is_dir():
+        for file in sorted(f for f in bundle.rglob("*") if f.is_file()):
+            relative = file.relative_to(path).as_posix()
+            parts.append(f"{relative}:{sha256(file.read_bytes())}")
     return sha256("\n".join(parts))
 
 
