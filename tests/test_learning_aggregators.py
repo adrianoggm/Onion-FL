@@ -276,7 +276,16 @@ def test_optimizers_keep_the_dtype() -> None:
 
 
 def test_registries_list_the_built_ins() -> None:
-    assert aggregators.names() == ["fedavg", "mean", "median", "trimmed_mean"]
+    assert aggregators.names() == [
+        "bulyan",
+        "fedavg",
+        "geometric_median",
+        "krum",
+        "mean",
+        "median",
+        "multi_krum",
+        "trimmed_mean",
+    ]
     assert server_optimizers.names() == [
         "fedadam",
         "fedavgm",
@@ -358,3 +367,88 @@ def test_fednova_scales_each_key_by_the_steps_of_its_holders() -> None:
     np.testing.assert_allclose(out["a"], [10.0])
     np.testing.assert_allclose(out["b"], [20.0])
     assert not [k for k in out if k.startswith("fednova")]
+
+
+def vec(source: str, w, n: float = 1.0, **extra) -> Contribution:
+    state = {"w": np.asarray(w, dtype=np.float64)}
+    state |= {k: np.asarray(v, dtype=np.float64) for k, v in extra.items()}
+    return Contribution(source, state, dict.fromkeys(state, n))
+
+
+HONEST = [vec(f"h{i}", [1.0 + 0.1 * i, 1.0]) for i in range(5)]
+BYZANTINE = [vec("b0", [50.0, -50.0]), vec("b1", [60.0, -40.0])]
+
+
+def test_krum_picks_an_honest_update() -> None:
+    krum = aggregators.create("krum", {"f": 2})
+
+    out = krum.aggregate(HONEST + BYZANTINE, "fog")
+
+    assert out.state["w"][0] < 2.0
+    ((_, _, tags),) = krum.report()
+    assert {"b0", "b1"} <= set(tags["dropped"]) and tags["f_used"] == 2
+
+
+def test_multi_krum_averages_the_m_best() -> None:
+    multi = aggregators.create("multi_krum", {"f": 2, "m": 5})
+
+    out = multi.aggregate(HONEST + BYZANTINE, "fog")
+
+    expected = np.mean([h.state["w"] for h in HONEST], axis=0)
+    np.testing.assert_allclose(out.state["w"], expected)
+
+
+def test_too_few_children_lower_f_instead_of_failing() -> None:
+    krum = aggregators.create("krum", {"f": 2})
+
+    krum.aggregate(HONEST[:3], "fog")  # n=3 fits f=0 only (n >= 2f + 3)
+
+    assert krum.report()[0][2]["f_used"] == 0
+
+
+def test_the_geometric_median_resists_an_outlier() -> None:
+    points = [
+        vec("a", [0.0, 0.0]),
+        vec("b", [1.0, 0.0]),
+        vec("c", [0.0, 1.0]),
+        vec("d", [100.0, 100.0]),
+    ]
+
+    out = aggregators.create("geometric_median").aggregate(points, "fog")
+
+    assert np.linalg.norm(out.state["w"]) < 1.0
+
+
+def test_bulyan_bounds_an_extreme_coordinate() -> None:
+    children = [*HONEST, vec("h5", [1.2, 1.0]), vec("b0", [1000.0, 1.0])]  # n=7: f=1
+
+    bulyan = aggregators.create("bulyan", {"f": 1})
+    out = bulyan.aggregate(children, "fog")
+
+    assert out.state["w"][0] < 2.0
+    assert bulyan.report()[0][2]["f_used"] == 1
+
+
+def test_selection_scores_common_keys_and_combines_every_key() -> None:
+    children = [
+        vec("s0", [1.0], adapter_s=[1.0]),
+        vec("s1", [1.1], adapter_s=[3.0]),
+        vec("t0", [0.9], adapter_t=[5.0]),
+        vec("t1", [90.0], adapter_t=[7.0]),
+    ]
+
+    out = aggregators.create("multi_krum", {"f": 1, "m": 3}).aggregate(children, "fog")
+
+    np.testing.assert_allclose(out.state["adapter_s"], [2.0])  # both holders kept
+    np.testing.assert_allclose(out.state["adapter_t"], [5.0])  # only the honest one
+
+
+def test_auxiliary_arrays_follow_the_selected_children_unscored() -> None:
+    children = [*HONEST, vec("b0", [50.0, -50.0])]
+    for child in children:
+        child.state["scaffold/w"] = np.full(2, 500.0 if child.source == "b0" else 1.0)
+        child.weights["scaffold/w"] = 1.0
+
+    out = aggregators.create("multi_krum", {"f": 1, "m": 5}).aggregate(children, "fog")
+
+    np.testing.assert_allclose(out.state["scaffold/w"], [1.0, 1.0])

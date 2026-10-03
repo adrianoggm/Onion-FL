@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PositiveInt
 
 from onion_fl.core.registry import Registry
 from onion_fl.learning.model import is_aux
@@ -168,6 +168,225 @@ class TrimmedMean:
         rng: np.random.Generator | None = None,
     ) -> Contribution:
         return _combine_per_key(contributions, source, self._trim, needs_weights=False)
+
+
+# --- robust aggregation ------------------------------------------------------------
+
+
+def _common_model_keys(ordered: Sequence[Contribution]) -> list[str]:
+    keys = set.intersection(*(set(c.state) for c in ordered)) if ordered else set()
+    return sorted(k for k in keys if not is_aux(k))
+
+
+def _vectors(
+    ordered: Sequence[Contribution],
+    keys: Sequence[str],
+    reference: Mapping[str, np.ndarray] | None,
+) -> np.ndarray:
+    """One flattened update per child over ``keys``: its delta against ``reference``."""
+    rows = []
+    for item in ordered:
+        parts = []
+        for key in keys:
+            value = np.asarray(item.state[key], dtype=np.float64)
+            if reference is not None and key in reference:
+                value = value - np.asarray(reference[key], dtype=np.float64)
+            parts.append(np.ravel(value))
+        rows.append(np.concatenate(parts) if parts else np.zeros(0))
+    return np.stack(rows)
+
+
+def _krum_scores(vectors: np.ndarray, f: int) -> np.ndarray:
+    n = len(vectors)
+    nearest = max(n - f - 2, 1)
+    distances = ((vectors[:, None, :] - vectors[None, :, :]) ** 2).sum(axis=-1)
+    return np.array(
+        [np.sort(np.delete(distances[i], i))[:nearest].sum() for i in range(n)]
+    )
+
+
+class _Selection:
+    """Keeps its last selection so the collector can report it."""
+
+    dropped: list[str]
+    f_used: int
+
+    def report(self) -> list[tuple[str, float, dict[str, Any]]]:
+        return [
+            (
+                "aggregation.dropped",
+                float(len(self.dropped)),
+                {"dropped": list(self.dropped), "f_used": self.f_used},
+            )
+        ]
+
+    def _keep(
+        self, ordered: Sequence[Contribution], chosen: Sequence[int], source: str
+    ) -> Contribution:
+        keep = {int(i) for i in chosen}
+        self.dropped = [c.source for i, c in enumerate(ordered) if i not in keep]
+        kept = [c for i, c in enumerate(ordered) if i in keep]
+        return _combine_per_key(kept, source, _weighted_mean, needs_weights=True)
+
+
+class KrumParams(BaseModel):
+    f: int = Field(1, ge=0, description="Hijos maliciosos que tolera")
+
+
+@aggregators.register(
+    "krum",
+    title="Krum",
+    description="Elige la actualización con menor suma de distancias a sus n − f − 2 vecinas.",
+    params=KrumParams,
+    explain=(
+        "Puntúa sobre las claves de modelo que tienen todos los hijos y conserva una "
+        "sola contribución; con menos de 2f + 3 hijos baja f (Blanchard et al., 2017)."
+    ),
+)
+class Krum(_Selection):
+    def __init__(self, f: int = 1) -> None:
+        self.f = f
+
+    def _feasible(self, n: int) -> int:
+        return max(0, min(self.f, (n - 3) // 2))
+
+    def _ranked(
+        self,
+        ordered: Sequence[Contribution],
+        reference: Mapping[str, np.ndarray] | None,
+    ) -> tuple[np.ndarray, int]:
+        f = self._feasible(len(ordered))
+        vectors = _vectors(ordered, _common_model_keys(ordered), reference)
+        return np.argsort(_krum_scores(vectors, f), kind="stable"), f
+
+    def aggregate(
+        self,
+        contributions: Sequence[Contribution],
+        source: str,
+        reference: Mapping[str, np.ndarray] | None = None,
+        rng: np.random.Generator | None = None,
+    ) -> Contribution:
+        ordered = sorted(contributions, key=lambda item: item.source)
+        ranked, self.f_used = self._ranked(ordered, reference)
+        return self._keep(ordered, ranked[:1], source)
+
+
+class MultiKrumParams(KrumParams):
+    m: PositiveInt | None = Field(
+        None, description="Cuántas conserva; por defecto n − f"
+    )
+
+
+@aggregators.register(
+    "multi_krum",
+    title="Multi-Krum",
+    description="Promedia (FedAvg) las m actualizaciones mejor puntuadas por Krum.",
+    params=MultiKrumParams,
+    explain="Con menos de 2f + 3 hijos baja f (Blanchard et al., 2017).",
+)
+class MultiKrum(Krum):
+    def __init__(self, f: int = 1, m: int | None = None) -> None:
+        super().__init__(f)
+        self.m = m
+
+    def aggregate(
+        self,
+        contributions: Sequence[Contribution],
+        source: str,
+        reference: Mapping[str, np.ndarray] | None = None,
+        rng: np.random.Generator | None = None,
+    ) -> Contribution:
+        ordered = sorted(contributions, key=lambda item: item.source)
+        ranked, self.f_used = self._ranked(ordered, reference)
+        keep = min(self.m or len(ordered) - self.f_used, len(ordered))
+        return self._keep(ordered, ranked[:keep], source)
+
+
+class GeometricMedianParams(BaseModel):
+    iterations: PositiveInt = Field(10, description="Iteraciones de Weiszfeld")
+    eps: float = Field(
+        1e-6, gt=0, description="Distancia mínima (evita dividir por cero)"
+    )
+
+
+@aggregators.register(
+    "geometric_median",
+    title="Mediana geométrica",
+    description="Punto que minimiza la suma de distancias a las actualizaciones (Weiszfeld).",
+    params=GeometricMedianParams,
+    explain=(
+        "Pesa cada hijo por muestras / distancia a la mediana y aplica esos pesos a "
+        "todas sus claves (RFA, Pillutla et al., 2022)."
+    ),
+)
+class GeometricMedian:
+    def __init__(self, iterations: int = 10, eps: float = 1e-6) -> None:
+        self.iterations, self.eps = iterations, eps
+
+    def aggregate(
+        self,
+        contributions: Sequence[Contribution],
+        source: str,
+        reference: Mapping[str, np.ndarray] | None = None,
+        rng: np.random.Generator | None = None,
+    ) -> Contribution:
+        ordered = sorted(contributions, key=lambda item: item.source)
+        keys = _common_model_keys(ordered)
+        vectors = _vectors(ordered, keys, reference)
+        alpha = np.array(
+            [float(c.weights.get(keys[0], 1.0)) if keys else 1.0 for c in ordered]
+        )
+        beta = alpha / alpha.sum()
+        for _ in range(self.iterations):
+            z = (beta[:, None] * vectors).sum(axis=0)
+            distance = np.maximum(np.linalg.norm(vectors - z, axis=1), self.eps)
+            beta = alpha / distance
+            beta = beta / beta.sum()
+        weighted = [
+            Contribution(item.source, item.state, dict.fromkeys(item.state, float(b)))
+            for item, b in zip(ordered, beta, strict=True)
+        ]
+        out = _combine_per_key(weighted, source, _weighted_mean, needs_weights=True)
+        totals = _combine_per_key(ordered, source, _weighted_mean, needs_weights=True)
+        return Contribution(source, out.state, totals.weights)  # samples go up
+
+
+@aggregators.register(
+    "bulyan",
+    title="Bulyan",
+    description="Multi-Krum y después media recortada alrededor de la mediana, coordenada a coordenada.",
+    params=KrumParams,
+    explain="Con menos de 4f + 3 hijos baja f (El Mhamdi et al., 2018).",
+)
+class Bulyan(Krum):
+    def _feasible(self, n: int) -> int:
+        return max(0, min(self.f, (n - 3) // 4))
+
+    def aggregate(
+        self,
+        contributions: Sequence[Contribution],
+        source: str,
+        reference: Mapping[str, np.ndarray] | None = None,
+        rng: np.random.Generator | None = None,
+    ) -> Contribution:
+        ordered = sorted(contributions, key=lambda item: item.source)
+        ranked, f = self._ranked(ordered, reference)
+        self.f_used = f
+        theta = len(ordered) - 2 * f
+        keep = {int(i) for i in ranked[:theta]}
+        selected = [c for i, c in enumerate(ordered) if i in keep]
+        self.dropped = [c.source for i, c in enumerate(ordered) if i not in keep]
+        beta = max(theta - 2 * f, 1)
+
+        def around_median(stacked: np.ndarray, _weights: np.ndarray) -> np.ndarray:
+            size = min(beta, stacked.shape[0])
+            median = np.median(stacked, axis=0)
+            order = np.argsort(np.abs(stacked - median), axis=0, kind="stable")[:size]
+            return np.take_along_axis(stacked, order, axis=0).mean(axis=0)
+
+        out = _combine_per_key(selected, source, around_median, needs_weights=False)
+        totals = _combine_per_key(selected, source, _weighted_mean, needs_weights=True)
+        return Contribution(source, out.state, totals.weights)
 
 
 # --- server optimizers -----------------------------------------------------------
