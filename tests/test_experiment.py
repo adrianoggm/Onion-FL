@@ -243,6 +243,17 @@ def test_paths_joined_by_commas_are_swept_together(workspace: Path) -> None:
     ]
 
 
+def test_a_joint_sweep_key_may_have_spaces_after_its_commas(workspace: Path) -> None:
+    config = parse_experiment(
+        experiment(workspace, sweep={"learning.trainer.shift, rounds": [[2.0, 3]]})
+    )
+
+    (scenario,) = scenarios(config)
+
+    assert scenario.name == "learning.trainer.shift,rounds=2.0,3"
+    assert scenario.config.rounds == 3
+
+
 @pytest.mark.parametrize("value", [[1.0], "fedavg"])
 def test_a_joint_sweep_value_needs_one_entry_per_path(workspace: Path, value) -> None:
     config = parse_experiment(

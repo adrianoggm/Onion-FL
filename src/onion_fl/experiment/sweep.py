@@ -55,7 +55,8 @@ def _label(value: Any) -> str:
 
 def _apply(resolved: dict[str, Any], key: str, value: Any) -> str:
     """Set one sweep entry and return its label; ``a,b`` sets several paths at once."""
-    paths = key.split(",")
+    paths = [path.strip() for path in key.split(",")]
+    key = ",".join(paths)
     if len(paths) == 1:
         _set(resolved, key, value)
         return f"{key}={_label(value)}"
