@@ -210,18 +210,22 @@ class _Selection:
     """Keeps its last selection so the collector can report it."""
 
     dropped: list[str] = []
+    excluded: list[str] = []
     f_used: int = 0
-    rescued: list[str] = []
+    rescued: dict[str, list[str]] = {}
 
     def report(self) -> list[tuple[str, float, dict[str, Any]]]:
+        """``dropped`` lost the selection on the common keys; ``excluded`` were not
+        used at all; ``rescued`` names the sources of each key only they held."""
         return [
             (
                 "diagnostic.selection",
                 float(len(self.dropped)),
                 {
                     "dropped": list(self.dropped),
+                    "excluded": list(self.excluded),
                     "f_used": self.f_used,
-                    "rescued": list(self.rescued),
+                    "rescued": {k: list(v) for k, v in self.rescued.items()},
                 },
             )
         ]
@@ -237,12 +241,13 @@ class _Selection:
         """Combine each key over the kept children that hold it.
 
         A key no kept child holds (a dataset whose edges were all dropped) comes
-        from its best-ranked holders instead of vanishing; it is reported.
+        from its best-ranked holders instead of vanishing; it is reported with them.
         """
         chosen = {int(i) for i in ranked[:keep]}
         rank = {int(i): r for r, i in enumerate(ranked)}
         self.dropped = [c.source for i, c in enumerate(ordered) if i not in chosen]
-        rescued: set[str] = set()
+        rescued: dict[str, list[str]] = {}
+        used = set(chosen)
         state: dict[str, np.ndarray] = {}
         weights: dict[str, float] = {}
         for key in sorted({k for c in ordered for k in c.state}):
@@ -250,8 +255,9 @@ class _Selection:
             kept = [i for i in holders if i in chosen]
             if not kept:
                 kept = sorted(holders, key=rank.__getitem__)[:keep]
+                used.update(kept)
                 if not is_aux(key):
-                    rescued.add(key)
+                    rescued[key] = sorted(ordered[i].source for i in kept)
             part = [
                 Contribution(
                     ordered[i].source,
@@ -265,7 +271,8 @@ class _Selection:
                 part, source, how, needs_weights=how is _weighted_mean
             )
             state[key], weights[key] = out.state[key], out.weights[key]
-        self.rescued = sorted(rescued)
+        self.rescued = dict(sorted(rescued.items()))
+        self.excluded = [c.source for i, c in enumerate(ordered) if i not in used]
         return Contribution(source, state, weights)
 
 

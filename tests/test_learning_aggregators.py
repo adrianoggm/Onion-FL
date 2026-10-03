@@ -516,9 +516,12 @@ def test_a_key_whose_holders_were_all_dropped_comes_from_its_best_holder(
 
     out = selector.aggregate([*SWELL_ONLY, OUTLIER_WITH_ITS_OWN_KEY], "fog")
 
-    assert "t0" in selector.report()[0][2]["dropped"]
+    report = selector.report()[0][2]
+    assert "t0" in report["dropped"]
     np.testing.assert_allclose(out.state["adapter_t"], [7.0])
-    assert selector.report()[0][2]["rescued"] == ["adapter_t"]
+    # t0 lost the selection, but its own key still shaped the result.
+    assert report["rescued"] == {"adapter_t": ["t0"]}
+    assert "t0" not in report["excluded"]
 
 
 def test_bulyan_averages_auxiliary_arrays_of_the_selected_children() -> None:
@@ -591,3 +594,14 @@ def test_feddyn_uses_the_share_of_each_keys_holders() -> None:
 
     # h = −0.5·(1/2)·2 = −0.5 ; w = 2 + 1 = 3 (the round's 3/4 would give 3.5)
     np.testing.assert_allclose(out["adapter.a.0.weight"], [3.0])
+
+
+@pytest.mark.parametrize("name", ["krum", "multi_krum", "bulyan"])
+def test_a_selection_names_the_children_it_excluded_entirely(name: str) -> None:
+    selector = aggregators.create(name, {"f": 1})
+
+    selector.aggregate([*SWELL_ONLY, vec("t0", [9.0])], "fog")
+
+    report = selector.report()[0][2]
+    assert "t0" in report["dropped"] and "t0" in report["excluded"]
+    assert report["rescued"] == {}

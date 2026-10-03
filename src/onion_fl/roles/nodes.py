@@ -323,6 +323,8 @@ class _Collector(Node):
             if "dropped" in tags:
                 tags["malicious_dropped"] = len(set(tags["dropped"]) & malicious)
                 tags["malicious"] = len(malicious & sources)
+            if "excluded" in tags:
+                tags["malicious_excluded"] = len(set(tags["excluded"]) & malicious)
             ctx.emit(name, value, round=self.round, **tags)
 
     def _diagnose(

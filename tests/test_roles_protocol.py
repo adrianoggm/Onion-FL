@@ -846,7 +846,7 @@ class Spy:
         return aggregators.create("fedavg").aggregate(contributions, source)
 
     def report(self):
-        return [("diagnostic.selection", 1.0, {"dropped": ["e2"]})]
+        return [("diagnostic.selection", 1.0, {"dropped": ["e2"], "excluded": ["e2"]})]
 
 
 def test_aggregators_get_the_reference_and_a_stream_and_are_heard(
@@ -871,6 +871,7 @@ def test_aggregators_get_the_reference_and_a_stream_and_are_heard(
     assert set(reference) >= set(INITIAL) and rng is not None
     (dropped,) = names(federation, "diagnostic.selection", "fog_0")
     assert dropped["tags"]["malicious_dropped"] == 1
+    assert dropped["tags"]["malicious_excluded"] == 1
     assert dropped["tags"]["malicious"] == 1
 
 
