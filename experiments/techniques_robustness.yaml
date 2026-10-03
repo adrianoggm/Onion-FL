@@ -1,0 +1,40 @@
+# Robust aggregation under attack on SWELL and WESAD (issue #149): every leaf
+# aggregator (fog) runs the same aggregator; 20% of each dataset's edges flip
+# the sign of their update, or nobody attacks. Three seeds. Training as in the
+# drift comparison (SGD, lr 0.3, chosen on validation for FedAvg); the clipping
+# bound is the median edge update norm under FedAvg (1.02), not a test score.
+#
+#   onion_fl plan experiments/techniques_robustness.yaml
+#   onion_fl run experiments/techniques_robustness.yaml --workers 3
+name: techniques_robustness
+description: Agregación robusta frente a inversión de signo sobre SWELL y WESAD.
+topology: four_fogs_swell_wesad
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, local_val: 0.2, local_val_split: class_tail, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.5}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.3}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  global: {every: 1}
+seeds: [0, 1, 2]
+sweep:
+  learning.aggregator:
+    - fedavg
+    - median
+    - trimmed_mean
+    - krum
+    - multi_krum
+    - geometric_median
+    - bulyan
+    - {name: norm_clip, bound: 1.0}
+  attack:
+    - null
+    - {name: sign_flip, fraction: 0.2}
