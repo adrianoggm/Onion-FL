@@ -43,6 +43,7 @@ def _part(arrays: Mapping[str, np.ndarray], prefix: str) -> dict[str, np.ndarray
 
 def _collector(node: Any, runtime: Any) -> NodeState:
     arrays = _prefixed("previous", node.previous or {})
+    arrays |= _prefixed("aggregator", getattr(node.aggregator, "state", dict)())
     return NodeState(arrays, {"rng": rng_state(runtime._rng(node.id))})
 
 
@@ -76,7 +77,12 @@ def restore_federation(federation: Federation, snapshot: FederationSnapshot) -> 
     """Continue ``snapshot`` on a federation built from the same specs, before it runs.
 
     The round numbering continues. A node the snapshot does not hold starts
-    fresh (a new edge); a node of the snapshot that is gone here is ignored.
+    fresh (a new edge); a node of the snapshot that is gone here is ignored; a
+    node saved without some part (no model, no random stream) keeps its own.
+
+    Exact only for what the snapshot holds: synchronous rounds over lossless
+    links, with no time-based availability. Link streams, the virtual clock and
+    late updates already buffered for the next round start afresh.
     """
     runtime, root = federation.runtime, federation.coordinator
     root.round = snapshot.round
@@ -85,7 +91,11 @@ def restore_federation(federation: Federation, snapshot: FederationSnapshot) -> 
         if saved is None:
             continue
         node.previous = _part(saved.arrays, "previous") or None
-        restore_rng(runtime._rng(node_id), saved.meta["rng"])
+        load = getattr(node.aggregator, "load_state", None)
+        if load is not None:
+            load(_part(saved.arrays, "aggregator"))
+        if "rng" in saved.meta:
+            restore_rng(runtime._rng(node_id), saved.meta["rng"])
         if node is root:
             # New datasets keep their initial keys; the parent's override the rest.
             root.state = {**root.state, **_part(saved.arrays, "state")}
@@ -98,11 +108,13 @@ def restore_federation(federation: Federation, snapshot: FederationSnapshot) -> 
         saved = snapshot.nodes.get(node_id)
         if saved is None:
             continue
-        if edge.model is not None:
-            load_arrays(edge.model, _part(saved.arrays, "model"))
+        model = _part(saved.arrays, "model")
+        if edge.model is not None and model:
+            load_arrays(edge.model, model)
         if "memory" in saved.meta and hasattr(edge.trainer, "import_memory"):
             edge.trainer.import_memory(
                 _part(saved.arrays, "memory"), saved.meta["memory"], edge.model
             )
         edge._released = int(saved.meta.get("released", 0))
-        restore_rng(runtime._rng(node_id), saved.meta["rng"])
+        if "rng" in saved.meta:
+            restore_rng(runtime._rng(node_id), saved.meta["rng"])

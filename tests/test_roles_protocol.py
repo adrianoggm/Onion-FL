@@ -1142,3 +1142,30 @@ def test_a_federation_continues_from_its_snapshot_as_if_it_never_stopped(
             np.testing.assert_array_equal(theirs[key], value, err_msg=edge_id + key)
     rounds = [e["value"] for e in names(second, "round.started", "cloud")]
     assert rounds == [3, 4]  # the round numbering continues
+
+
+def test_the_central_dp_accountant_continues_across_a_snapshot() -> None:
+    from onion_fl.roles import restore_federation, snapshot_federation
+
+    private = {"aggregator": {"name": "dp_fedavg", "clip": 10.0, "sigma": 1.0}}
+
+    def build(rounds: int):
+        stub = trainers.create("stub", {"shift": 1.0})
+        edges = {"fog_0": [EdgeSpec("e1", model(A), trainer=stub)]}
+        return build_federation(
+            tree(1, fog=private), edges, initial_state=INITIAL, rounds=rounds
+        )
+
+    def epsilons(federation) -> list[float]:
+        events = names(federation, "diagnostic.privacy_epsilon", "fog_0")
+        return [e["value"] for e in events if e["tags"]["round"] > 2]
+
+    straight = build(4)
+    straight.run()
+    first = build(2)
+    first.run()
+    second = build(4)
+    restore_federation(second, snapshot_federation(first))
+    second.run()
+
+    assert epsilons(second) == epsilons(straight) and len(epsilons(straight)) == 2

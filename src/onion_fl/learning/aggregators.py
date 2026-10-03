@@ -542,6 +542,13 @@ class DPFedAvg:
         self.clip, self.sigma, self.delta = clip, sigma, delta
         self.rounds = 0
 
+    def state(self) -> dict[str, np.ndarray]:
+        """The accountant: ε composes over every round, across continuations."""
+        return {"rounds": np.asarray(self.rounds)}
+
+    def load_state(self, arrays: Mapping[str, np.ndarray]) -> None:
+        self.rounds = int(arrays.get("rounds", 0))
+
     def report(self) -> list[tuple[str, float, dict[str, Any]]]:
         epsilon = gaussian_epsilon(self.sigma, self.rounds, self.delta)
         return [("diagnostic.privacy_epsilon", epsilon, {"mechanism": "central"})]
