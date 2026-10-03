@@ -245,7 +245,9 @@ def cmd_pr(a) -> None:
     pr = _open_pr(a.number)
     if pr:
         # A refresh also moves the base, e.g. a stacked PR once its base merged.
-        pr, _ = api("PATCH", f"{R}/pulls/{pr['number']}", {"body": body, "base": a.base})
+        pr, _ = api(
+            "PATCH", f"{R}/pulls/{pr['number']}", {"body": body, "base": a.base}
+        )
     else:
         payload = {
             "title": branch,
