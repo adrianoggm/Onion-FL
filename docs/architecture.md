@@ -91,7 +91,9 @@ A group crosses a link, in both directions, when its scope is `global`, or `leve
 
 **Training and initialisation.**
 - Trainers: `standard` (epochs, batch, learning rate, optimizer, frozen groups) and `fedprox(μ)`.
-- Drift trainers: `scaffold` (control variates as auxiliary arrays), `moon` (contrast on `ModularMLP.features`), and the pairs `fednova` and `feddyn` (trainer + server optimizer, checked before the first scenario). An edge whose training leaves non-finite weights reports `edge.train_failed` and sends nothing.
+- Drift trainers: `moon` (contrast on `ModularMLP.features`, refused when sharing keeps the adapters or trunk local) and the pairs `scaffold`, `fednova` and `feddyn` (trainer + server optimizer, checked before the first scenario, and refused with any staleness but `drop`, because the round statistics count only fresh updates). SCAFFOLD edges send the change in their control variate and the `scaffold` optimizer keeps `c`. SCAFFOLD and FedNova accept only SGD.
+- **Participation per group.** Every edge announces in its `hello` the parameter groups it sends up, and aggregators add them up, so the root's statistics carry `edges_total/<group>`. Updates carry `train_edges/<group>`, summed up the tree. `scaffold` and `feddyn` scale their server step by the share of each key's holders that trained, and their trainers ask for one vote per edge (`uniform_weights`), as in their papers.
+- **Divergence.** An edge whose training leaves non-finite weights reports `edge.train_failed`, rolls its model back and sends nothing. The trainer's memory rolls back too when it offers `snapshot()` and `restore()`; the built-in trainers save only what a diverged round must undo, and a plugin without them is not copied.
 - Personalisation trainers: `ditto(λ)` and `apfl(α)` keep a personal model per edge across rounds and expose it through `personal()`. `fedrep` trains the local head, then the shared body, and declares the head as `local_groups`: `plan` refuses a sharing policy that sends it up. `fedbabu` freezes the head.
 - `stub` learns nothing and is for protocol tests; with `noise` each node sends a different, seeded update.
 - Inits: `random(seed)`, and `checkpoint(path, groups)`, which loads a saved `model.npz` such as a pooled run's.
@@ -236,7 +238,7 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | model | `modular_mlp` |
 | sharing | `fedavg`, `fedper`, `lg_fedavg`, `zone`, `independent`, `harmonized`, `custom` |
 | aggregator | `fedavg`, `mean`, `median`, `trimmed_mean` |
-| server_optimizer | `replace`, `fedavgm`, `fedadam`, `fednova`, `feddyn` |
+| server_optimizer | `replace`, `fedavgm`, `fedadam`, `scaffold`, `fednova`, `feddyn` |
 | trainer | `standard`, `fedprox`, `ditto`, `apfl`, `fedrep`, `fedbabu`, `scaffold`, `fednova`, `feddyn`, `moon`, `stub` |
 | init | `random`, `checkpoint` |
 | metric | `loss`, `accuracy`, `macro_f1`, `recall_per_class`, `confusion_matrix` |

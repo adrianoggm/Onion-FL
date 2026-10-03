@@ -51,8 +51,8 @@ Punto de partida, ya implementado:
 ### 3.2 Estadísticos de ronda
 
 - `TrainResult` gana `steps`, los pasos locales de optimización, que el edge envía como métrica `train_steps`.
-- `_train_metrics` reduce todas las métricas `train_*` por media ponderada por ejemplos. También suma `train_edges`, los edges que entrenaron, a medida que el informe sube por el árbol.
-- El colector añade `staleness`, la antigüedad media en rondas de las contribuciones que combina (0 si todas son de la ronda), y el coordinador `edges_total`, los edges registrados.
+- `_train_metrics` reduce todas las métricas `train_*` por media ponderada por ejemplos. También suma `train_edges`, los edges que entrenaron, y `train_edges/<grupo>`, los que enviaron cada grupo, a medida que el informe sube por el árbol.
+- El colector añade `staleness`, la antigüedad media en rondas de las contribuciones que combina (0 si todas son de la ronda), y el coordinador `edges_total`, los edges registrados, y `edges_total/<grupo>`, los que tienen cada grupo; cada edge anuncia sus grupos en el `hello`.
 - El optimizador de servidor pasa a ser `apply(global_state, aggregated, stats)`, donde `stats` son esas métricas de la ronda. Los optimizadores actuales lo ignoran.
 
 ### 3.3 Referencia para los agregadores
@@ -118,12 +118,12 @@ Cada plugin lleva título, descripción y explicación en español, sus parámet
 
 | Plugin | Eje | Qué hace | Referencia |
 |---|---|---|---|
-| `scaffold` | entrenador | Corrige cada gradiente con `c − c_i`. Mantiene `c_i`, envía `c_i⁺` como `scaffold/<clave>` y recibe `c` en el estado global (el promedio de los `c_i⁺`). Con participación parcial, `c` es el promedio de los participantes; se documenta como aproximación | Karimireddy et al., 2020 |
+| `scaffold` | entrenador + optimizador | Corrige cada gradiente con `c − c_i`. Mantiene `c_i` y envía `Δc_i = c_i⁺ − c_i` como `scaffold/<clave>`. El optimizador `scaffold` guarda `c` y aplica `c ← c + (|S|/N)·media(Δc_i)` por clave, con `|S|/N` la fracción de los edges con esa clave que han entrenado. Cada edge cuenta lo mismo, como en el artículo | Karimireddy et al., 2020 |
 | `fednova` | entrenador + optimizador | El edge envía `(y_i − x)/τ_i` como `fednova/<clave>`. El optimizador `fednova` aplica `x ← x + τ̄·d̄`, con `d̄` el agregado y `τ̄` la media de `train_steps` | Wang et al., 2020 |
-| `feddyn` | entrenador + optimizador | Término lineal con el gradiente previo del edge más uno proximal (`α`). El servidor mantiene `h` y aplica `θ ← θ̄ − h/α`. La fracción de participantes es `train_edges / edges_total` | Acar et al., 2021 |
+| `feddyn` | entrenador + optimizador | Término lineal con el gradiente previo del edge más uno proximal (`α`). El servidor mantiene `h` y aplica `θ ← θ̄ − h/α`, con `θ̄` la media sin ponderar de los participantes y su fracción calculada por clave (`train_edges/<grupo>` entre `edges_total/<grupo>`) | Acar et al., 2021 |
 | `moon` | entrenador | Pérdida contrastiva sobre `features`: acerca la representación local a la del global y la aleja de la del modelo local anterior (`μ`, temperatura `τ`) | Li et al., 2021 |
 
-`fednova` y `feddyn` necesitan su entrenador y su optimizador juntos. El plan valida el par y, si falta uno, da un error con la ruta.
+`scaffold`, `fednova` y `feddyn` necesitan su entrenador y su optimizador juntos. El plan valida el par y, si falta uno, da un error con la ruta. También rechaza estos pares con una política de actualizaciones tardías distinta de `drop`, porque sus estadísticos solo cuentan las frescas; `scaffold` y `fednova` solo con SGD, que sus fórmulas suponen; y `moon` si la compartición deja locales el adaptador o el tronco, porque entonces no recibe las features del global.
 
 ### P3 — Robustez y privacidad
 
