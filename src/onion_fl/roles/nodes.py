@@ -59,14 +59,21 @@ def _model_part(state: Mapping[str, Any]) -> State:
 
 
 def _train_metrics(reports: Iterable[Mapping[str, float]]) -> dict[str, float]:
+    """``train_*`` of the children: examples and edges summed, the rest averaged by examples."""
     reports = [r for r in reports if r.get("train_examples")]
     examples = sum(r["train_examples"] for r in reports)
     if not examples:
         return {}
-    loss = (
-        sum(r.get("train_loss", 0.0) * r["train_examples"] for r in reports) / examples
-    )
-    return {"train_loss": float(loss), "train_examples": float(examples)}
+    out = {
+        "train_examples": float(examples),
+        "train_edges": float(sum(r.get("train_edges", 1.0) for r in reports)),
+    }
+    names = sorted({k for r in reports for k in r if k.startswith("train_")} - set(out))
+    for name in names:
+        holders = [r for r in reports if name in r]
+        weight = sum(r["train_examples"] for r in holders)
+        out[name] = float(sum(r[name] * r["train_examples"] for r in holders) / weight)
+    return out
 
 
 def _eval_part(metrics: Mapping[str, float], model: str) -> tuple[dict, float]:
@@ -504,8 +511,9 @@ class Coordinator(_Collector):
 
     def _closed(self, aggregated: Contribution, metrics: dict, ctx: Context) -> None:
         held = keys_held_at(aggregated.state, self.sharing, self.levels, self.level)
+        stats = dict(metrics) | {"edges_total": float(self.edges_below())}
         self.state = self.server_optimizer.apply(
-            self.state, _subset(aggregated.state, held)
+            self.state, _subset(aggregated.state, held), stats
         )
         if "train_loss" in metrics:
             ctx.emit(
@@ -752,6 +760,8 @@ class Edge(_Greeter, Node):
             metrics={
                 "train_loss": float(result.loss),
                 "train_examples": float(result.examples),
+                "train_steps": float(result.batches),
+                "train_edges": 1.0,
                 **metrics,
             },
         )

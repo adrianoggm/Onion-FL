@@ -169,6 +169,7 @@ class Replace:
         self,
         global_state: Mapping[str, np.ndarray],
         aggregated: Mapping[str, np.ndarray],
+        stats: Mapping[str, float] | None = None,
     ) -> State:
         return {**global_state, **aggregated}
 
@@ -194,6 +195,7 @@ class FedAvgM:
         self,
         global_state: Mapping[str, np.ndarray],
         aggregated: Mapping[str, np.ndarray],
+        stats: Mapping[str, float] | None = None,
     ) -> State:
         new = dict(global_state)
         for key, value in aggregated.items():
@@ -241,6 +243,7 @@ class FedAdam:
         self,
         global_state: Mapping[str, np.ndarray],
         aggregated: Mapping[str, np.ndarray],
+        stats: Mapping[str, float] | None = None,
     ) -> State:
         new = dict(global_state)
         for key, value in aggregated.items():

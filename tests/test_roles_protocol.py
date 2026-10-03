@@ -776,3 +776,30 @@ def test_auxiliary_arrays_do_not_reach_the_diagnostics() -> None:
     with_aux = diagnostics(AuxStub())
 
     assert with_aux and with_aux == diagnostics(trainers.create("stub", {"shift": 1.0}))
+
+
+class StatsRecorder:
+    """A server optimizer that keeps the statistics of every round and replaces."""
+
+    def __init__(self) -> None:
+        self.stats: list[dict] = []
+
+    def apply(self, global_state, aggregated, stats=None):
+        self.stats.append(dict(stats or {}))
+        return {**global_state, **aggregated}
+
+
+def test_the_server_optimizer_gets_the_round_statistics() -> None:
+    recorder = StatsRecorder()
+    edges = {
+        "fog_0": [edge("e1", shift=1, examples=1), edge("e2", shift=1, examples=3)],
+        "fog_1": [edge("e3", shift=1, examples=4)],
+    }
+
+    run(tree(2), edges, server_optimizer=recorder)
+
+    (stats,) = recorder.stats
+    assert stats["train_edges"] == 3
+    assert stats["edges_total"] == 3
+    assert stats["train_examples"] == 8
+    assert stats["train_steps"] == pytest.approx(1.0)  # the stub reports one step
