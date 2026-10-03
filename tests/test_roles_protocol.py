@@ -793,6 +793,37 @@ def test_an_open_round_overtaken_by_its_parent_keeps_its_updates() -> None:
     np.testing.assert_allclose(ctx.sent[-1].payload.state[KEY], (3 + 1) / 2, rtol=1e-6)
 
 
+def test_an_update_twenty_rounds_late_is_still_rebased() -> None:
+    fog, ctx = fog_by_hand(**STALE)
+    for r in range(1, 22):  # e2 trains on round 1 and answers only in round 22
+        fog.on_message(model_msg(r, shift=float(r - 1)), ctx)
+        fog.on_message(update_msg("e1", r, float(r - 1), 1), ctx)
+        fog.on_timer("deadline", ctx)
+    fog.on_message(model_msg(22, shift=21.0), ctx)
+
+    fog.on_message(update_msg("e2", 1, 5.0, 2), ctx)  # trained 0 -> 5 on round 1
+    fog.on_message(update_msg("e1", 22, 3.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+
+    # INITIAL + 21 + (5 - INITIAL) = 26, never the old model 5
+    np.testing.assert_allclose(ctx.sent[-1].payload.state[KEY], (3 + 26) / 2, rtol=1e-6)
+
+
+def test_updates_older_than_max_staleness_are_dropped() -> None:
+    late = {"name": "next_round", "weighting": "constant", "max_staleness": 2}
+    fog, ctx = fog_by_hand(**STALE | {"staleness": late})
+    for r in range(1, 5):
+        fog.on_message(model_msg(r), ctx)
+        fog.on_message(update_msg("e1", r, 1.0, 1), ctx)
+        fog.on_timer("deadline", ctx)
+    fog.on_message(model_msg(5), ctx)
+
+    fog.on_message(update_msg("e2", 1, 5.0, 1), ctx)  # 4 rounds late > 2
+
+    (tags,) = [t for name, t in ctx.events if name == "update.late"]
+    assert tags["action"] == "drop"
+
+
 # --- registration over lossy links ------------------------------------------------------------
 
 

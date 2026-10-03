@@ -103,6 +103,9 @@ class NextRoundParams(BaseModel):
     weighting: str | dict[str, Any] = Field(
         "constant", description="Plugin de ponderación por antigüedad"
     )
+    max_staleness: int | None = Field(
+        None, ge=1, description="Antigüedad máxima en rondas; más vieja se descarta"
+    )
 
 
 @stalenesses.register(
@@ -112,10 +115,17 @@ class NextRoundParams(BaseModel):
     params=NextRoundParams,
 )
 class NextRound:
-    def __init__(self, weighting: str | dict[str, Any] = "constant") -> None:
+    def __init__(
+        self,
+        weighting: str | dict[str, Any] = "constant",
+        max_staleness: int | None = None,
+    ) -> None:
         self.weighting = create(stale_weightings, weighting)
+        self.max_staleness = max_staleness
 
     def weight(self, staleness: int) -> float | None:
+        if self.max_staleness is not None and staleness > self.max_staleness:
+            return None
         return self.weighting.factor(staleness)
 
 

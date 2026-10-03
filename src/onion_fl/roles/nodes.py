@@ -118,7 +118,7 @@ class _Collector(Node):
         self.level, self.levels, self.sharing = level, list(levels), sharing
         self.aggregator = aggregator
         self.quorum, self.deadline = quorum, deadline
-        self.close_at_quorum = close_at_quorum  # FedBuff: close at K, not at all
+        self.close_at_quorum = close_at_quorum  # FedBuff-style: close at K, not at all
         self.participation = participation or AllChildren()
         self.staleness = staleness or Drop()
         self.register_timeout = register_timeout
@@ -216,7 +216,7 @@ class _Collector(Node):
         self.round, self.open, self.opened_at = round, True, ctx.now()
         self.responses, self.late, self.quorum_at = {}, 0, None
         selected = self.participation.select(self.trainers(), round, ctx.rng)
-        if self.close_at_quorum:  # FedBuff: a busy child gets no newer model
+        if self.close_at_quorum:  # FedBuff-style: a busy child gets no newer model
             selected = [c for c in selected if c not in self.owed]
         self.participants = selected
         ctx.emit(
@@ -246,14 +246,17 @@ class _Collector(Node):
                 )
             )
             self.owed.setdefault(child, []).append(round)
-        # Kept while an update trained on it may still arrive, to rebase that update.
-        # ponytail: a child that never answers would pin its rounds; keep 16 at most.
+        # Kept while an update trained on it may still be kept, to rebase it; a
+        # policy that drops late updates needs none, and max_staleness bounds it.
         self.sent_history[round] = down
-        alive = {round, *self.stale_round.values()}
-        alive |= {r for rounds in self.owed.values() for r in rounds}
-        self.sent_history = {
-            r: s for r, s in self.sent_history.items() if r in alive and r > round - 16
-        }
+        alive = {round}
+        if self.staleness.weight(1) is not None:
+            alive |= {*self.stale_round.values()}
+            alive |= {r for rounds in self.owed.values() for r in rounds}
+            limit = getattr(self.staleness, "max_staleness", None)
+            if limit is not None:
+                alive = {r for r in alive if round - r <= limit}
+        self.sent_history = {r: s for r, s in self.sent_history.items() if r in alive}
         if not self.participants:
             self._close(ctx)
         elif self.deadline is not None:
@@ -295,20 +298,21 @@ class _Collector(Node):
         return True
 
     def _reached(self) -> bool:
-        """A buffering round (FedBuff) closes on K updates, late ones included."""
+        """A buffering round (FedBuff-style) closes on K updates, late ones included."""
         if not self.close_at_quorum:
             return False
         fresh = {s for s, (c, _) in self.responses.items() if c.state}
         count = len(fresh) + sum(1 for s in self.stale if s not in fresh)
         return count >= max(quorum_needed(self.quorum, len(self.participants)), 1)
 
-    def _rebased(self, source: str) -> Contribution:
+    def _rebased(self, source: str) -> Contribution | None:
         """A late update as its change from the model it trained on, applied to the
-        model sent this round: an old model would pull the aggregate back."""
+        model sent this round: an old model would pull the aggregate back. None
+        when that model is gone; the update is then dropped, never used as is."""
         item = self.stale[source]
         base = self.sent_history.get(self.stale_round.get(source, -1))
         if base is None:
-            return item
+            return None
         state = dict(item.state)
         for key, value in item.state.items():
             if is_aux(key) or key not in base or key not in self.sent:
@@ -368,8 +372,14 @@ class _Collector(Node):
         ctx.cancel_timer("deadline")
         self.open = False
         fresh = {s: c for s, (c, _) in self.responses.items() if c.state}
-        late = sorted(s for s in self.stale if s not in fresh)
-        stale = [self._rebased(s) for s in late]
+        rebased = {s: self._rebased(s) for s in sorted(self.stale) if s not in fresh}
+        late = [s for s, c in rebased.items() if c is not None]
+        stale = [rebased[s] for s in late]
+        lost = [s for s, c in rebased.items() if c is None]
+        if lost:
+            ctx.emit(
+                "update.unrebased", float(len(lost)), sources=lost, round=self.round
+            )
         # Staleness of what is combined: rounds behind here plus what each carried.
         age = {s: float(self.responses[s][1].get("staleness", 0.0)) for s in fresh}
         age |= {s: self.stale_age[s] for s in late}
