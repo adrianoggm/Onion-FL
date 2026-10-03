@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from onion_fl.core.context import child_rng, node_rng
+from onion_fl.core.context import child_rng, node_rng, restore_rng, rng_state
 from onion_fl.core.message import Message
 from onion_fl.core.node import Node
 
@@ -85,3 +85,19 @@ def test_successive_child_streams_differ_and_repeat_per_seed() -> None:
 
     assert first.tolist() != second.tolist()
     assert child_rng(b).integers(0, 2**31, 3).tolist() == first.tolist()
+
+
+def test_a_restored_stream_continues_its_draws_and_its_children() -> None:
+    import json
+
+    rng = node_rng(7, "edge-1")
+    rng.normal(size=5)
+    child_rng(rng)  # one child already spawned
+    saved = json.loads(json.dumps(rng_state(rng)))  # it must survive JSON
+    expected = (rng.normal(size=3), child_rng(rng).normal(size=3))
+
+    fresh = node_rng(7, "edge-1")
+    restore_rng(fresh, saved)
+
+    np.testing.assert_array_equal(fresh.normal(size=3), expected[0])
+    np.testing.assert_array_equal(child_rng(fresh).normal(size=3), expected[1])
