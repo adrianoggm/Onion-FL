@@ -51,33 +51,46 @@ onion_fl report runs --out report.html --metric macro_f1 --by scenario
 
 ## Results (macro-F1, mean ± 95% CI over 3 seeds)
 
-The global columns score the final global model on the test subjects. The edge columns score the edges' own held-out rows at round 20, combined at the cloud.
+**Global model** on the test subjects, from `summary.json` (the last global evaluation; for seed 1 that is round 19, because its round 20 failed quorum at the cloud):
 
-| Scenario | Global SWELL | Global WESAD | Edge received | Edge local | Edge personal | Edge fine-tuned |
-|---|---|---|---|---|---|---|
-| FedAvg | 0.620 ± 0.012 | 0.746 ± 0.009 | 0.594 ± 0.073 | 0.642 ± 0.115 | — | 0.613 ± 0.189 |
-| FedPer | 0.574 ± 0.052 ¹ | 0.686 ± 0.090 ¹ | 0.589 ± 0.022 | 0.630 ± 0.166 | — | 0.622 ± 0.292 |
-| LG-FedAvg | 0.246 ± 0.008 ¹ | 0.521 ± 0.279 ¹ | 0.687 ± 0.051 | 0.693 ± 0.031 | — | 0.697 ± 0.072 |
-| Ditto | 0.627 ± 0.011 | 0.746 ± 0.009 | 0.600 ± 0.204 | 0.633 ± 0.061 | 0.650 ± 0.015 | 0.621 ± 0.235 |
-| APFL | 0.625 ± 0.006 | 0.747 ± 0.018 | 0.600 ± 0.086 | 0.642 ± 0.093 | 0.697 ± 0.086 | 0.609 ± 0.147 |
-| FedRep | 0.502 ± 0.005 ¹ | 0.440 ± 0.556 ¹ | 0.597 ± 0.070 | 0.626 ± 0.011 | — | 0.617 ± 0.019 |
-| FedBABU | 0.610 ± 0.004 | 0.749 ± 0.009 | 0.611 ± 0.146 | 0.631 ± 0.080 | — | 0.622 ± 0.169 |
+| Scenario | Global SWELL | Global WESAD |
+|---|---|---|
+| FedAvg | 0.620 ± 0.012 | 0.746 ± 0.009 |
+| FedPer | 0.574 ± 0.052 ¹ | 0.686 ± 0.090 ¹ |
+| LG-FedAvg | 0.246 ± 0.008 ¹ | 0.521 ± 0.279 ¹ |
+| Ditto | 0.627 ± 0.011 | 0.746 ± 0.009 |
+| APFL | 0.625 ± 0.006 | 0.747 ± 0.018 |
+| FedRep | 0.502 ± 0.005 ¹ | 0.440 ± 0.556 ¹ |
+| FedBABU | 0.610 ± 0.004 | 0.749 ± 0.009 |
 
 ¹ These techniques keep groups on the edge, so the global model holds untrained versions of them. Their global columns do not measure the technique; read their edge columns.
 
+**Edges** score their own held-out rows at round 20. Each run's score is the mean over its edges, weighted by samples as the aggregators do. 28 edges score in each run, except 27 in seed 1. The numbers come from the edges' own events, kept in `edge_scores.csv`. The cloud's combined scores can't be used: seed 1 failed quorum at the cloud on every evaluation round, so they never formed. That has since been fixed: a failed round now keeps the scores that arrived.
+
+| Scenario | Received | Trained (local) | Personal | Fine-tuned |
+|---|---|---|---|---|
+| FedAvg | 0.593 ± 0.014 | 0.641 ± 0.023 | — | 0.607 ± 0.045 |
+| FedPer | 0.591 ± 0.009 | 0.632 ± 0.033 | — | 0.611 ± 0.074 |
+| LG-FedAvg | 0.683 ± 0.018 | 0.694 ± 0.007 | — | 0.691 ± 0.030 |
+| Ditto | 0.600 ± 0.040 | 0.634 ± 0.013 | 0.651 ± 0.004 | 0.609 ± 0.068 |
+| APFL | 0.598 ± 0.019 | 0.646 ± 0.024 | 0.695 ± 0.019 | 0.604 ± 0.036 |
+| FedRep | 0.585 ± 0.050 | 0.621 ± 0.021 | — | 0.596 ± 0.088 |
+| FedBABU | 0.608 ± 0.032 | 0.629 ± 0.018 | — | 0.611 ± 0.060 |
+
 ## Reading
 
-- **Global model.** Ditto, APFL and FedBABU leave the global model as good as FedAvg's: 0.61–0.63 on SWELL and 0.75 on WESAD.
-- **Edge scores.**
-  - The highest edge scores are APFL's personal model (0.697 ± 0.086) and LG-FedAvg (0.693 ± 0.031 local, 0.697 ± 0.072 fine-tuned).
-  - With three seeds, every interval overlaps FedAvg's own trained model (0.642 ± 0.115). **No personalisation technique is distinguishable from FedAvg here.**
-  - Two epochs of fine-tuning did not raise the scores.
-- **Optimistic edge scores.** A subject's held-out rows are the last of each class, so they are close in time to its training rows. That makes every edge score optimistic in the same way. The scores compare the techniques with each other, but not with the global test scores.
-- **Next step.** Separating these techniques needs more seeds, and probably subjects with more data than SWELL's 106–130 minutes each.
+- **APFL and LG-FedAvg win on the edges.** APFL's personal model (0.695 ± 0.019) and LG-FedAvg's local model (0.694 ± 0.007) are the only edge scores whose intervals clear FedAvg's own trained model (0.641 ± 0.023).
+- **Ditto falls in between.** Its personal model (0.651 ± 0.004) is better than its own trained model, but its interval overlaps FedAvg's.
+- **The global model is not hurt.** Ditto, APFL and FedBABU keep it as good as FedAvg's: 0.61–0.63 on SWELL and 0.75 on WESAD.
+- **Fine-tuning helps a little, but less than training.** Two epochs on the received model beat the received model in every scenario, and stay below the edge's own trained model in every one.
+- **Lost rounds.** The lossy links cost the cloud 7–9 of its 20 rounds per run (`quorum_failed`).
+- **Optimistic edge scores.** The held-out rows are the last of each class, so they are close in time to the training rows. That makes every edge score optimistic in the same way. The scores rank the techniques, but don't compare with the global test scores.
+- **Next step.** More seeds would tighten the intervals, and subjects with more data than SWELL's 106–130 minutes each would help.
 
 ## Files
 
 - `<run_id>/`: `run.json` (identity, config, `run_hash`), `summary.json` and `model.npz` of each run.
-- `report.html`: macro-F1 per round by scenario, mean ± CI over the seeds.
+- `edge_scores.csv`: round-20 edge macro-F1 per run and model, from the edges' events (the source of the edge table).
+- `report.html`: macro-F1 per round by scenario and model, mean ± CI over the seeds.
 
 `events.jsonl` (about 3 MB per run) is left out, and `host` and `pid` are removed from `run.json`. As a result, `verify_run` cannot check these copies. It passed on the original run folders.

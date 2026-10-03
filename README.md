@@ -42,7 +42,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | CLI | ✅ | `onion_fl data · topology · plan · run · node · report · baseline · schema · serve` |
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
-| Tests | ✅ | 745 tests. With SWELL, WESAD and a local broker, 741 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
+| Tests | ✅ | 747 tests. With SWELL, WESAD and a local broker, 743 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
 
@@ -254,21 +254,25 @@ Placement has no measurable effect with three seeds. On the same subjects, centr
 
 ### New framework: personalisation techniques
 
-Source: [results/techniques_personalisation/](results/techniques_personalisation/INDEX.md), `topology_id` `9033d1cf…`, commit `5c2c121`. It is `experiments/techniques_personalisation.yaml`: SWELL + WESAD on four fogs at α = 0.5, 20 rounds, 3 seeds per technique. Macro-F1, mean ± 95% CI. The edge columns score each edge's own held-out rows (the last 20% of each class) at round 20:
+Source: [results/techniques_personalisation/](results/techniques_personalisation/INDEX.md), `topology_id` `9033d1cf…`, commit `5c2c121`. It is `experiments/techniques_personalisation.yaml`: SWELL + WESAD on four fogs at α = 0.5, 20 rounds, 3 seeds per technique. Macro-F1, mean ± 95% CI over the 3 seeds:
+- **Global columns:** the global model on the test subjects.
+- **Edge columns:** each edge's own held-out rows (the last 20% of each class) at round 20, from `edge_scores.csv`.
 
-| Technique | Global SWELL | Global WESAD | Edge local | Edge personal |
+| Technique | Global SWELL | Global WESAD | Edge, trained | Edge, personal |
 |---|---|---|---|---|
-| FedAvg | 0.620 ± 0.012 | 0.746 ± 0.009 | 0.642 ± 0.115 | — |
-| FedPer | ¹ | ¹ | 0.630 ± 0.166 | — |
-| LG-FedAvg | ¹ | ¹ | 0.693 ± 0.031 | — |
-| Ditto | 0.627 ± 0.011 | 0.746 ± 0.009 | 0.633 ± 0.061 | 0.650 ± 0.015 |
-| APFL | 0.625 ± 0.006 | 0.747 ± 0.018 | 0.642 ± 0.093 | 0.697 ± 0.086 |
-| FedRep | ¹ | ¹ | 0.626 ± 0.011 | — |
-| FedBABU | 0.610 ± 0.004 | 0.749 ± 0.009 | 0.631 ± 0.080 | — |
+| FedAvg | 0.620 ± 0.012 | 0.746 ± 0.009 | 0.641 ± 0.023 | — |
+| FedPer | ¹ | ¹ | 0.632 ± 0.033 | — |
+| LG-FedAvg | ¹ | ¹ | 0.694 ± 0.007 | — |
+| Ditto | 0.627 ± 0.011 | 0.746 ± 0.009 | 0.634 ± 0.013 | 0.651 ± 0.004 |
+| APFL | 0.625 ± 0.006 | 0.747 ± 0.018 | 0.646 ± 0.024 | 0.695 ± 0.019 |
+| FedRep | ¹ | ¹ | 0.621 ± 0.021 | — |
+| FedBABU | 0.610 ± 0.004 | 0.749 ± 0.009 | 0.629 ± 0.018 | — |
 
 ¹ These keep groups on the edge, so their global model is not a meaningful score; the INDEX lists the numbers.
 
-APFL's personal model and LG-FedAvg score highest on the edges, but with three seeds every interval overlaps FedAvg's. No technique is distinguishable from FedAvg yet. The held-out rows are close in time to the training rows, so the edge scores are optimistic for every technique alike: they rank the techniques, but don't compare with the global test scores.
+- **Who wins on the edges.** APFL's personal model and LG-FedAvg are the only techniques whose edge intervals clear FedAvg's. Ditto's personal model falls in between.
+- **The global model is not hurt.** Ditto, APFL and FedBABU keep it as good as FedAvg's.
+- **Edge scores are optimistic.** The held-out rows are close in time to the training rows, so the edge scores are optimistic for every technique alike. They rank the techniques, but don't compare with the global test scores.
 
 ### Before the redesign
 
