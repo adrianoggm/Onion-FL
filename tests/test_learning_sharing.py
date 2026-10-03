@@ -96,6 +96,7 @@ def test_every_preset_and_custom_are_registered() -> None:
         "fedper",
         "harmonized",
         "independent",
+        "lg_fedavg",
         "zone",
     ]
 
@@ -123,6 +124,14 @@ def test_fedper_keeps_heads_local() -> None:
         "adapter.swell": "global",
         "trunk": "global",
         "head.stress_binary": "local",
+    }
+
+
+def test_lg_fedavg_keeps_the_representation_local() -> None:
+    assert scopes(sharing.create("lg_fedavg")) == {
+        "adapter.swell": "local",
+        "trunk": "local",
+        "head.stress_binary": "global",
     }
 
 

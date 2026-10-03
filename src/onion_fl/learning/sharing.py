@@ -198,6 +198,18 @@ def fedper() -> SharingPolicy:
     return SharingPolicy(name="fedper", rules={"head.*": "local"})
 
 
+@sharing.register(
+    "lg_fedavg",
+    title="LG-FedAvg",
+    description="Adaptadores y tronco locales; las cabezas se agregan globalmente.",
+    explain="Cada edge aprende su representación y solo comparte la cabeza (Liang et al., 2020).",
+)
+def lg_fedavg() -> SharingPolicy:
+    return SharingPolicy(
+        name="lg_fedavg", rules={"adapter*": "local", "trunk*": "local"}
+    )
+
+
 class ZoneParams(BaseModel):
     level: str = Field("fog", description="Nivel donde se agrega cada cabeza de zona")
 
