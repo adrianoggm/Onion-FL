@@ -7,6 +7,7 @@ turns ``samples`` into simulated compute time and sends ``examples`` up as the
 FedAvg weight. Initialisations run once on the coordinator's global model.
 """
 
+import copy
 import fnmatch
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -204,6 +205,63 @@ class FedProx(Standard):
         self, model: nn.Module, received: Any, names: Sequence[str]
     ) -> torch.Tensor:
         return proximal_term(model, received, self.params.mu, names)
+
+
+class DittoParams(StandardParams):
+    lam: float = Field(
+        0.1, ge=0, description="λ: cuánto se ata el modelo personal al global"
+    )
+    personal_epochs: PositiveInt | None = Field(
+        None, description="Épocas del modelo personal; por defecto local_epochs"
+    )
+
+
+@trainers.register(
+    "ditto",
+    title="Ditto",
+    description="Entrena el global como standard y, aparte, un modelo personal atado al global.",
+    params=DittoParams,
+    explain=(
+        "El modelo personal minimiza su pérdida más λ/2·‖v − w‖² hacia el global "
+        "recibido; cada edge lo conserva entre rondas y se puntúa como 'personal' "
+        "(Li et al., 2021)."
+    ),
+)
+class Ditto(Standard):
+    Params = DittoParams
+
+    def __init__(self, **params: Any) -> None:
+        super().__init__(**params)
+        self._personal: nn.Module | None = None
+
+    def train(
+        self,
+        model: nn.Module,
+        data: Samples,
+        received: Mapping[str, np.ndarray] | None = None,
+        ctx: Any = None,
+    ) -> TrainResult:
+        if received is None:
+            raise TrainError("ditto needs the received global state")
+        if self._personal is None:
+            self._personal = copy.deepcopy(model)  # the first global model
+        result = super().train(model, data, received, ctx)
+        p = self.params
+        tied = FedProx(
+            **p.model_dump(exclude={"lam", "personal_epochs", "local_epochs"}),
+            local_epochs=p.personal_epochs or p.local_epochs,
+            mu=p.lam,
+        )
+        own = tied.train(self._personal, data, received, ctx)
+        return TrainResult(
+            loss=result.loss,
+            samples=result.samples + own.samples,
+            examples=result.examples,
+            batches=result.batches + own.batches,
+        )
+
+    def personal(self) -> nn.Module | None:
+        return self._personal
 
 
 class StubParams(BaseModel):
