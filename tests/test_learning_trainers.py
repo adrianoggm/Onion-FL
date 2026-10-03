@@ -862,3 +862,31 @@ def test_an_empty_memory_round_trips_as_empty() -> None:
     fresh.import_memory(arrays, meta, build())
 
     assert fresh._previous is None and arrays == {}
+
+
+@real
+def test_a_group_lr_scales_the_step_of_its_groups_only(swell) -> None:
+    received = state_arrays(build())
+    params = {"local_epochs": 1, "batch_size": 100000, "lr": 0.1, "optimizer": "sgd"}
+    plain, scaled = build(), build()
+
+    trainers.create("standard", params).train(plain, swell, received, ctx())
+    trainers.create("standard", params | {"group_lr": {"trunk*": 0.5}}).train(
+        scaled, swell, received, ctx()
+    )
+
+    after_plain, after_scaled = state_arrays(plain), state_arrays(scaled)
+    for key, start in received.items():
+        factor = 0.5 if key.startswith("trunk") else 1.0
+        np.testing.assert_allclose(
+            after_scaled[key] - start,
+            factor * (after_plain[key] - start),
+            rtol=1e-4,
+            atol=1e-7,
+            err_msg=key,
+        )
+
+
+def test_a_group_lr_factor_must_be_positive() -> None:
+    with pytest.raises(PluginError):
+        trainers.create("standard", {"group_lr": {"trunk*": 0.0}})

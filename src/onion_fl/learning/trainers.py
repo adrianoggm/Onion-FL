@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Literal, Protocol
+from typing import Annotated, Any, Literal, Protocol
 
 import numpy as np
 import torch
@@ -130,6 +130,27 @@ class StandardParams(BaseModel):
         default_factory=list,
         description="Grupos que no se entrenan, por nombre o patrón (trunk, adapter.*)",
     )
+    group_lr: dict[str, Annotated[float, Field(gt=0)]] = Field(
+        default_factory=dict,
+        description="Factor del lr por grupo, por nombre o patrón (trunk*: 0.1); "
+        "para no entrenar un grupo, frozen",
+    )
+
+
+def lr_factor(name: str, group_lr: Mapping[str, float]) -> float:
+    """The factor of the first ``group_lr`` pattern matching ``name``'s group, else 1."""
+    group = group_of(name)
+    return next((f for p, f in group_lr.items() if fnmatch.fnmatchcase(group, p)), 1.0)
+
+
+def _param_groups(
+    params: Mapping[str, Any], names: Sequence[str], p: StandardParams
+) -> list[dict[str, Any]]:
+    """Optimizer groups: one per lr factor, so a continuation can move some slower."""
+    by_factor: dict[float, list[Any]] = {}
+    for name in names:
+        by_factor.setdefault(lr_factor(name, p.group_lr), []).append(params[name])
+    return [{"params": ps, "lr": p.lr * f} for f, ps in by_factor.items()]
 
 
 @trainers.register(
@@ -239,7 +260,7 @@ class Standard:
             raise TrainError(f"every parameter is frozen by {p.frozen}")
         params = dict(model.named_parameters())
         optimizer = OPTIMIZERS[p.optimizer](
-            [params[n] for n in names], lr=p.lr, weight_decay=p.weight_decay
+            _param_groups(params, names, p), lr=p.lr, weight_decay=p.weight_decay
         )
         rng = ctx.rng if ctx is not None else np.random.default_rng(0)
         total, batches = 0.0, 0
@@ -574,8 +595,12 @@ class Scaffold(Standard):
         }
         result = super().train(model, data, received, ctx)
         after = state_arrays(model)
-        scale = result.batches * self.params.lr
-        new = {n: c_i[n] - c[n] + (start[n] - after[n]) / scale for n in names}
+        # Each parameter's own step size, so group_lr keeps (x − y)/(K·η) exact.
+        scale = {
+            n: result.batches * self.params.lr * lr_factor(n, self.params.group_lr)
+            for n in names
+        }
+        new = {n: c_i[n] - c[n] + (start[n] - after[n]) / scale[n] for n in names}
         aux = {self.PREFIX + n: (new[n] - c_i[n]).astype(start[n].dtype) for n in names}
         self._c_i = new
         return replace(result, aux=aux)
