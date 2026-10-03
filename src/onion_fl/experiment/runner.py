@@ -260,7 +260,7 @@ def malicious_edges(
     chosen: set[str] = set()
     for dataset in sorted({c.dataset for c in clients}):
         ids = sorted(c.id for c in clients if c.dataset == dataset)
-        n = round(fraction * len(ids))
+        n = int(fraction * len(ids) + 0.5)  # half up: round() is banker's
         if n:
             rng = node_rng(seed, f"attack/{dataset}")
             chosen |= set(rng.choice(ids, size=n, replace=False).tolist())
@@ -358,10 +358,7 @@ def run_scenario(
         sinks=_sinks(config),
     )
     try:
-        record_data(run, split, placement)
-        bad = malicious_edges(config, split.clients, scenario.seed)
-        if bad:
-            run.record("data.attack", float(len(bad)), edges=sorted(bad))
+        record_data(run, scenario, split, placement)
         federation = build_scenario(
             scenario, topology, split, placement, evaluate=evaluate
         )
@@ -376,10 +373,15 @@ def run_scenario(
     return run.path
 
 
-def record_data(run: Run, split: DataSplit, placement: Placement) -> None:
+def record_data(
+    run: Run, scenario: Scenario, split: DataSplit, placement: Placement
+) -> None:
     run.record("data.roles", None, roles=split.roles)
     for leaf, composition in placement.composition().items():
         run.record("data.composition", composition["samples"], leaf=leaf, **composition)
+    bad = malicious_edges(scenario.config, split.clients, scenario.seed)
+    if bad:
+        run.record("data.attack", float(len(bad)), edges=sorted(bad))
 
 
 def check_scenarios(todo: Sequence[Scenario]) -> None:

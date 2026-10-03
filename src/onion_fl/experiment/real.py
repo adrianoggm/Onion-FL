@@ -82,7 +82,7 @@ def run_real(scenario: Scenario, python: str = sys.executable) -> Path:
         data_ids=digests,
         scenario=scenario.name,
     )
-    record_data(run, split, placement)
+    record_data(run, scenario, split, placement)
     epoch = time.time()
     document = {
         "name": scenario.name,

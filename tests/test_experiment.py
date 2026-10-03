@@ -304,6 +304,38 @@ def test_malicious_edges_are_a_seeded_fraction_of_each_dataset(
     assert chosen == malicious_edges(scenario.config, split.clients, scenario.seed)
 
 
+def test_a_malicious_fraction_rounds_half_up(workspace: Path) -> None:
+    from types import SimpleNamespace
+
+    from onion_fl.experiment.runner import malicious_edges
+
+    attack = {"name": "sign_flip", "fraction": 0.5}
+    config = parse_experiment(experiment(workspace, attack=attack))
+    clients = [SimpleNamespace(id=f"e{i}", dataset="a") for i in range(5)]
+
+    assert len(malicious_edges(config, clients, 0)) == 3  # 2.5, not banker's 2
+
+
+def test_the_data_record_names_the_malicious_edges(workspace: Path) -> None:
+    from onion_fl.experiment.runner import _scenario_data, record_data
+
+    class Recorder:
+        def __init__(self) -> None:
+            self.names: list[str] = []
+
+        def record(self, name, value=None, **tags) -> None:
+            self.names.append(name)
+
+    attack = {"name": "sign_flip", "fraction": 0.5}
+    (scenario,) = scenarios(parse_experiment(experiment(workspace, attack=attack)))
+    _, split, placement, _ = _scenario_data(scenario)
+    run = Recorder()
+
+    record_data(run, scenario, split, placement)  # real runs record through it too
+
+    assert "data.attack" in run.names
+
+
 def test_an_unset_attack_stays_out_of_the_config(workspace: Path) -> None:
     assert "attack" not in parse_experiment(experiment(workspace)).dump()
 
