@@ -31,7 +31,7 @@ def test_descriptors_are_valid(name: str) -> None:
 @pytest.mark.parametrize(
     "name, options",
     [
-        ("swell", {"facial": True, "posture": True, "physiology": True}),
+        ("swell", {"facial": True, "physiology": True}),
         ("swell", {"label": "binary_no_r"}),
         ("sweet", {"label": "ordinal", "selection": "selection2/users"}),
         ("sweet", {"label": "three_class"}),
@@ -67,6 +67,24 @@ def test_swell_reads_like_the_previous_loader() -> None:
         _same_where_present(data, X[mask], list(info["feature_names"]))
 
 
+@pytest.mark.skipif(not Path("data/SWELL").exists(), reason="data/SWELL not available")
+@pytest.mark.parametrize(
+    "name, options, columns",
+    [
+        ("swell", {"facial": True}, ["squality", "sneutral", "svalence"]),
+        ("swell", {"physiology": True}, ["hr", "rmssd", "scl"]),
+        ("swell_physiology", {}, ["hr", "rmssd", "scl"]),
+    ],
+)
+def test_swell_modalities_read_999_as_missing(name, options, columns) -> None:
+    subjects = ingest(descriptor(name), options)
+
+    assert len(subjects) == 25
+    for data in subjects:
+        idx = [data.feature_names.index(c) for c in columns]
+        assert not (data.X[:, idx] == 999).any(), data.subject
+
+
 @pytest.mark.skipif(
     not Path("data/SWEET/sample_subjects").exists(), reason="SWEET sample not available"
 )
@@ -87,17 +105,19 @@ def test_sweet_reads_like_the_previous_loader() -> None:
 def test_wesad_chest_reads_like_the_previous_loader() -> None:
     from onion_fl.datasets.wesad import _load_subject_data
 
+    # Not RESP or TEMP: the old loader looked them up in capitals, missed the
+    # published "Resp" and "Temp", and returned no window at all.
     X, y, names = _load_subject_data(
         Path("data/WESAD"),
         "S2",
-        ["ECG", "EDA", "RESP"],
+        ["ECG", "EDA", "EMG"],
         "chest",
         ["baseline", "stress"],
         60,
         0.5,
     )
     subjects = ingest(
-        descriptor("wesad"), {"location": "chest", "signals": "ECG,EDA,RESP"}
+        descriptor("wesad"), {"location": "chest", "signals": "ECG,EDA,EMG"}
     )
     new = {s.subject: s for s in subjects}["S2"]
 

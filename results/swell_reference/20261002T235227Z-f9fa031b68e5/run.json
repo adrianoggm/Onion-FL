@@ -1,0 +1,138 @@
+{
+  "run_id": "20261002T235227Z-f9fa031b68e5",
+  "topology_id": "38ee627b304aa62b196ccc8ebe1474f2eeac815b1a008b635a357ad0a5d9eb33",
+  "config_id": "dbf79b9114ab49086d368a69ac598bbae3370fcc5bc1f0d52ae6da5e27c240ae",
+  "data_id": "4cb6e8304363b781637fb153b1b4aedcc3fea14c5e698827a74767e69397bb97",
+  "code_version": {
+    "commit": "1696c0584f37e02e0531a2dac2366efe6f375f49",
+    "dirty": false
+  },
+  "seed": 9,
+  "scenario": "base",
+  "started_at": "2026-10-02T23:52:27.399542+00:00",
+  "status": "finished",
+  "config": {
+    "name": "swell_reference",
+    "description": "Reference SWELL run (physiology, 3 fogs, fixed test subjects) on the new framework.",
+    "topology": "swell_three_fogs",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": "datasets/swell_physiology.yaml",
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.0,
+        "overrides": {
+          "swell": {
+            "test": [
+              "19",
+              "20",
+              "23",
+              "24",
+              "25"
+            ],
+            "val": [],
+            "exclude": [
+              "8",
+              "11"
+            ]
+          }
+        },
+        "seed": 67,
+        "local_val": 0.0,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "explicit",
+        "assignment": {
+          "fog_0": [
+            "swell-1",
+            "swell-2",
+            "swell-3",
+            "swell-4",
+            "swell-5",
+            "swell-6"
+          ],
+          "fog_1": [
+            "swell-7",
+            "swell-9",
+            "swell-10",
+            "swell-12",
+            "swell-13",
+            "swell-14",
+            "swell-22"
+          ],
+          "fog_2": [
+            "swell-15",
+            "swell-16",
+            "swell-17",
+            "swell-18",
+            "swell-21"
+          ]
+        }
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 128,
+        "trunk_hidden": [
+          64
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "local_epochs": 14,
+        "lr": 0.001,
+        "batch_size": 32
+      },
+      "init": "random"
+    },
+    "rounds": 12,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": null,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": null,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    }
+  },
+  "finished_at": "2026-10-02T23:53:10.635146+00:00",
+  "run_hash": "1d0176e01b86c95dee248411f62ccd0659e15bce083337d15c4d4bca452f220c"
+}

@@ -2,8 +2,8 @@
 # minute), as in the reference federated runs before the redesign. The dataset is
 # still "swell": an experiment picks this file with `descriptor:`.
 #
-# NOT verified against the raw file yet (data/ is not in git): run
-# `onion_fl data inspect swell --datasets-dir ...` on it before citing results.
+# 999 means missing (the file says so): 1650 of 3140 rows lack HR and RMSSD and
+# 562 lack SCL. The loaders before the redesign kept 999 as a value.
 name: swell
 description: SWELL-KW, solo fisiología (HR, RMSSD y SCL por minuto).
 root: "data/SWELL/3 - Feature dataset/per sensor"
@@ -12,7 +12,7 @@ source:
   path: "D - Physiology features (HR_HRV_SCL - final).csv"
   sep: null
   encoding: utf-8-sig
-  na_values: ["#VALUE!"]
+  na_values: ["999", "#VALUE!"]
   normalize_columns: true
 steps:
   - subject: {column: pp, regex: '(\d+)'}

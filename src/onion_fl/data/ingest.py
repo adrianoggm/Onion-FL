@@ -251,9 +251,13 @@ class WesadPickleReader:
             data = pickle.load(handle, encoding="latin1")
         labels = np.asarray(data["label"])
         rates = WESAD_RATES[self.location]
+        # The published chest files spell two signals "Resp" and "Temp".
+        stored = {k.upper(): v for k, v in data["signal"][self.location].items()}
         arrays = {}
         for name in self.signals:
-            values = np.asarray(data["signal"][self.location][name], dtype=np.float64)
+            if name not in stored:
+                raise DataError(f"{path} has no {self.location} signal {name}")
+            values = np.asarray(stored[name], dtype=np.float64)
             arrays[name] = values.reshape(len(values), -1)
         # Keep the label rows every signal covers, as the old windows did.
         n = min(

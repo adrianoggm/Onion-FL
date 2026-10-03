@@ -1,0 +1,103 @@
+{
+  "run_id": "20261003T005810Z-c51d7e7242dc",
+  "topology_id": "9033d1cf2c9e348b4067c92173a36fd151b3077cf0c93b5a592d8d188df05f32",
+  "config_id": "73dcf56593d1c77ae8def9359740bcfc185ff77c8ba16ebc954b6b3c6ab2f3c6",
+  "data_id": "06ac5ff0d43080f42ccd968956b1f1e666a651cf8caecfa4ecd4e2b695e1f64e",
+  "code_version": {
+    "commit": "3d4db6f67e6f00843eec1ff99821734efa11aa72",
+    "dirty": false
+  },
+  "seed": 0,
+  "scenario": "data.placement.alpha=1.0",
+  "started_at": "2026-10-03T00:58:10.483044+00:00",
+  "status": "finished",
+  "config": {
+    "name": "mix_swell_wesad",
+    "description": "SWELL and WESAD over four fogs, from segregated to fully mixed placement.",
+    "topology": "four_fogs_swell_wesad",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        },
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.2,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 1.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.003
+      },
+      "init": "random"
+    },
+    "rounds": 20,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": 5,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": 5,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    }
+  },
+  "finished_at": "2026-10-03T00:59:23.348929+00:00",
+  "run_hash": "ee18dc0c96091af5ab483aa3f0665e6e220ea2e15c95696b6f9664004ec867c7"
+}

@@ -1,0 +1,24 @@
+# four_fogs with SWELL and WESAD as the home datasets, the two that can be
+# downloaded (README §2).
+# `home` tells the mixing placement which dataset each fog hosts at alpha = 0.
+name: four_fogs_swell_wesad
+levels: [global, fog, edge]
+root:
+  id: cloud
+  aggregator: fedavg
+  server_optimizer: replace
+  deadline: 300s          # the wifi links lose messages: never wait for ever
+fog:
+  defaults:
+    aggregator: fedavg
+    quorum: 1.0
+    deadline: 120s
+    link_up: {transport: mqtt, codec: json, profile: wifi}
+  nodes:
+    - {id: fog_a1, home: swell}
+    - {id: fog_a2, home: swell}
+    - {id: fog_b1, home: wesad}
+    - {id: fog_b2, home: wesad}
+edge:
+  link_up: {transport: mqtt, codec: json, profile: 4g}
+  device: {samples_per_second: 2000}
