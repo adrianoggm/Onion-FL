@@ -723,6 +723,11 @@ class Edge(_Greeter, Node):
         metrics: dict[str, float] = {}
         if scoring and "received" in self.eval_models:
             metrics |= self._score("received", msg.round, ctx)
+        # What a diverged round rolls back to: the trainer's state and the model.
+        trainer_before, model_before = (
+            copy.deepcopy(self.trainer),
+            state_arrays(self.model),
+        )
         try:
             result = self.trainer.train(
                 self.model, self.data, received=received, ctx=ctx
@@ -735,6 +740,20 @@ class Edge(_Greeter, Node):
             )
             return
         ctx.compute(result.samples)
+        arrays = state_arrays(self.model) | dict(result.aux)
+        broken = sorted(k for k, v in arrays.items() if not np.isfinite(v).all())
+        if broken:  # a diverged edge rolls back and tells its parent at once
+            self.trainer = trainer_before
+            load_arrays(self.model, model_before)
+            ctx.emit(
+                "edge.train_failed",
+                round=msg.round,
+                error=f"non-finite weights after training: {broken[:3]}",
+            )
+            ctx.send(
+                Message(kind="update", src=self.id, dst=self.parent, round=msg.round)
+            )
+            return
         if scoring and "local" in self.eval_models:
             metrics |= self._score("local", msg.round, ctx)
         try:
@@ -751,15 +770,6 @@ class Edge(_Greeter, Node):
                 round=msg.round,
                 error=f"{type(exc).__name__}: {exc}",
             )
-        arrays = state_arrays(self.model) | dict(result.aux)
-        broken = sorted(k for k, v in arrays.items() if not np.isfinite(v).all())
-        if broken:  # a diverged edge sends nothing rather than poison the tree
-            ctx.emit(
-                "edge.train_failed",
-                round=msg.round,
-                error=f"non-finite weights after training: {broken[:3]}",
-            )
-            return
         up = keys_crossing(arrays, self.sharing, self.levels, self.parent_level)
         ctx.emit("edge.trained", result.loss, round=msg.round, examples=result.examples)
         payload = Payload(
