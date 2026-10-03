@@ -2,13 +2,14 @@
 # (dp_fedavg) and local DP at the edges (local_dp), at two noise levels, against
 # plain FedAvg. Three seeds; every run reports its epsilon per round (delta 1e-5,
 # RDP without subsampling amplification). C = 1.0 is the median edge update
-# norm under FedAvg, a training statistic.
+# norm under FedAvg, a training statistic. Lossless links, so that lost rounds
+# do not mix with the noise.
 #
 #   onion_fl plan experiments/techniques_privacy.yaml
 #   onion_fl run experiments/techniques_privacy.yaml --workers 3
 name: techniques_privacy
 description: Privacidad diferencial central y local sobre SWELL y WESAD.
-topology: four_fogs_swell_wesad
+topology: four_fogs_swell_wesad_lossless
 data:
   datasets:
     swell: {}

@@ -7,13 +7,14 @@
 # The defences assume the 20% attacker fraction, not a test score: the trimmed
 # mean cuts 20% per side; fogs hold 6-8 edges, so up to 2 attackers each, and
 # Krum and Multi-Krum tolerate f = 2 (lowered to 1 where n < 7); Bulyan needs
-# n >= 4f + 3, so f = 1, which the 6-edge fogs lower to 0.
+# n >= 4f + 3, so f = 1, which the 6-edge fogs lower to 0. Lossless links, so
+# that lost rounds do not mix with the attack.
 #
 #   onion_fl plan experiments/techniques_robustness.yaml
 #   onion_fl run experiments/techniques_robustness.yaml --workers 3
 name: techniques_robustness
 description: Agregación robusta frente a inversión de signo sobre SWELL y WESAD.
-topology: four_fogs_swell_wesad
+topology: four_fogs_swell_wesad_lossless
 data:
   datasets:
     swell: {}
