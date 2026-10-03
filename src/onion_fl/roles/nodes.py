@@ -790,6 +790,8 @@ class Edge(_Greeter, Node):
                 round=msg.round,
                 error=f"{type(exc).__name__}: {exc}",
             )
+        up = keys_crossing(arrays, self.sharing, self.levels, self.parent_level)
+        arrays = _subset(arrays, up)  # the hooks see only what is released
         if attacking:
             arrays = self.attack.on_update(arrays, received, child_rng(ctx.rng))
         if self.privacy is not None:
@@ -801,10 +803,9 @@ class Edge(_Greeter, Node):
                 round=msg.round,
                 mechanism="local",
             )
-        up = keys_crossing(arrays, self.sharing, self.levels, self.parent_level)
         ctx.emit("edge.trained", result.loss, round=msg.round, examples=result.examples)
         payload = Payload(
-            state=_subset(arrays, up),
+            state=arrays,
             weights=dict.fromkeys(up, float(result.examples)),
             metrics={
                 "train_loss": float(result.loss),

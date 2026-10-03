@@ -894,3 +894,18 @@ def test_an_edge_with_local_dp_reports_its_epsilon_each_round() -> None:
 
     values = [e["value"] for e in names(federation, "diagnostic.privacy_epsilon", "e1")]
     assert len(values) == 2 and values[0] < values[1]
+
+
+def test_local_dp_clips_only_what_crosses_to_the_parent() -> None:
+    from onion_fl.learning.privacy import privacies
+
+    # The stub moves every weight by 1; a clip at the norm of the crossing keys
+    # leaves them whole, unless the local head (sent down in round 1) counts too.
+    crossing = [k for k in state_arrays(model(A)) if not k.startswith("head.")]
+    clip = float(np.sqrt(sum(INITIAL[k].size for k in crossing)))
+    dp = privacies.create("local_dp", {"clip": clip, "sigma": 1e-9})
+    spec = edge("e1", shift=1, privacy=dp)
+
+    federation = run(tree(1), {"fog_0": [spec]}, sharing="fedper")
+
+    assert_global(federation, "trunk.0.weight", 1.0)
