@@ -105,17 +105,19 @@ def test_sweet_reads_like_the_previous_loader() -> None:
 def test_wesad_chest_reads_like_the_previous_loader() -> None:
     from onion_fl.datasets.wesad import _load_subject_data
 
+    # Not RESP or TEMP: the old loader looked them up in capitals, missed the
+    # published "Resp" and "Temp", and returned no window at all.
     X, y, names = _load_subject_data(
         Path("data/WESAD"),
         "S2",
-        ["ECG", "EDA", "RESP"],
+        ["ECG", "EDA", "EMG"],
         "chest",
         ["baseline", "stress"],
         60,
         0.5,
     )
     subjects = ingest(
-        descriptor("wesad"), {"location": "chest", "signals": "ECG,EDA,RESP"}
+        descriptor("wesad"), {"location": "chest", "signals": "ECG,EDA,EMG"}
     )
     new = {s.subject: s for s in subjects}["S2"]
 
