@@ -1,7 +1,10 @@
 # Non-IID drift techniques on SWELL and WESAD (issue #148): one scenario per
 # technique, three seeds, segregated placement (each fog sees one dataset).
-# Every technique uses SGD, which SCAFFOLD and FedNova assume; lr 0.3 was the
-# best of 0.03, 0.1, 0.3 and 0.6 for plain FedAvg on seed 0.
+# Every technique uses SGD, which SCAFFOLD and FedNova assume. Each one's
+# learning rate (0.03, 0.1 or 0.3) was chosen on the validation subjects (zone
+# evaluators, round 20, seed 0), never on the test subjects. MOON's contrast
+# weight mu was chosen the same way (0.1; at its default 1 it collapsed); the
+# other algorithm parameters keep their defaults.
 #
 #   onion_fl plan experiments/techniques_drift.yaml
 #   onion_fl run experiments/techniques_drift.yaml --workers 3
@@ -18,7 +21,7 @@ data:
 learning:
   model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
   sharing: fedavg
-  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.3}
+  trainer: &sgd {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.3}
   init: random
 rounds: 20
 evaluation:
@@ -28,10 +31,10 @@ evaluation:
   global: {every: 1}
 seeds: [0, 1, 2]
 sweep:
-  learning.trainer.name,learning.server_optimizer:
-    - [standard, replace]   # FedAvg
-    - [fedprox, replace]
-    - [scaffold, replace]
-    - [fednova, fednova]
-    - [feddyn, feddyn]
-    - [moon, replace]
+  learning.trainer,learning.server_optimizer:
+    - [{<<: *sgd, name: standard, lr: 0.3}, replace]   # FedAvg
+    - [{<<: *sgd, name: fedprox, lr: 0.3}, replace]
+    - [{<<: *sgd, name: scaffold, lr: 0.1}, replace]
+    - [{<<: *sgd, name: fednova, lr: 0.3}, fednova]
+    - [{<<: *sgd, name: feddyn, lr: 0.1}, feddyn]
+    - [{<<: *sgd, name: moon, lr: 0.3, mu: 0.1}, replace]
