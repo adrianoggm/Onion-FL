@@ -13,6 +13,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import torch
 
 from onion_fl.core.message import Message, Payload
 from onion_fl.core.registry import PluginError
@@ -803,3 +804,30 @@ def test_the_server_optimizer_gets_the_round_statistics() -> None:
     assert stats["edges_total"] == 3
     assert stats["train_examples"] == 8
     assert stats["train_steps"] == pytest.approx(1.0)  # the stub reports one step
+
+
+class Exploding:
+    """A trainer whose weights overflow: a diverged local optimisation."""
+
+    def train(self, model, data=None, received=None, ctx=None):
+        result = trainers.create("stub").train(model, data, received, ctx)
+        with torch.no_grad():
+            next(model.parameters()).fill_(float("nan"))
+        return result
+
+
+def test_an_edge_with_non_finite_weights_does_not_poison_the_model() -> None:
+    edges = {
+        "fog_0": [
+            edge("e1", shift=2, examples=1),
+            EdgeSpec("e2", model(A), trainer=Exploding()),
+        ]
+    }
+
+    federation = run(tree(1, fog={"quorum": 0.5, "deadline": 10}), edges)
+
+    state = federation.coordinator.state
+    assert all(np.isfinite(v).all() for v in state.values())
+    assert_global(federation, "trunk.0.weight", 2.0)
+    (failed,) = names(federation, "edge.train_failed", "e2")
+    assert "non-finite" in failed["tags"]["error"]

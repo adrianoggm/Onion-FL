@@ -752,6 +752,14 @@ class Edge(_Greeter, Node):
                 error=f"{type(exc).__name__}: {exc}",
             )
         arrays = state_arrays(self.model) | dict(result.aux)
+        broken = sorted(k for k, v in arrays.items() if not np.isfinite(v).all())
+        if broken:  # a diverged edge sends nothing rather than poison the tree
+            ctx.emit(
+                "edge.train_failed",
+                round=msg.round,
+                error=f"non-finite weights after training: {broken[:3]}",
+            )
+            return
         up = keys_crossing(arrays, self.sharing, self.levels, self.parent_level)
         ctx.emit("edge.trained", result.loss, round=msg.round, examples=result.examples)
         payload = Payload(
