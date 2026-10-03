@@ -81,7 +81,7 @@ onion_fl report runs --out report.html --metric macro_f1 --by scenario
 
 - **APFL and LG-FedAvg win on the edges.** APFL's personal model (0.695 ± 0.019) and LG-FedAvg's local model (0.694 ± 0.007) are the only edge scores whose intervals clear FedAvg's own trained model (0.641 ± 0.023).
 - **Ditto falls in between.** Its personal model (0.651 ± 0.004) is better than its own trained model, but its interval overlaps FedAvg's.
-- **The global model is not hurt.** Ditto, APFL and FedBABU keep it as good as FedAvg's: 0.61–0.63 on SWELL and 0.75 on WESAD.
+- **The global model is not hurt.** Ditto, APFL and FedBABU keep it as good as FedAvg's: 0.61–0.63 on SWELL and 0.75 on WESAD. In these runs Ditto's and APFL's personal passes still shared the node's random stream. Since #152 they use a child stream, so a re-run gives them exactly FedAvg's global model.
 - **Fine-tuning helps a little, but less than training.** Two epochs on the received model beat the received model in every scenario, and stay below the edge's own trained model in every one.
 - **Lost rounds.** The lossy links cost the cloud 7–9 of its 20 rounds per run (`quorum_failed`).
 - **Optimistic edge scores.** The held-out rows are the last of each class, so they are close in time to the training rows. That makes every edge score optimistic in the same way. The scores rank the techniques, but don't compare with the global test scores.
