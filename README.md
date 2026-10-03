@@ -42,13 +42,13 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | CLI | ✅ | `onion_fl data · topology · plan · run · node · report · baseline · schema · serve` |
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
-| Tests | ✅ | 864 tests. With SWELL, WESAD and a local broker, 860 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
+| Tests | ✅ | 883 tests. With SWELL, WESAD and a local broker, 879 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
 
-- **Six experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, and the comparisons of personalisation, drift, robustness and privacy techniques. Each has three seeds, so many intervals overlap.
+- **Seven experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, and the comparisons of personalisation, drift, robustness, privacy and server-side techniques. Each has three seeds, so many intervals overlap.
   - The reference run and the mixing sweep have no strong result. On SWELL, no model beats always predicting "stress" on the held-out subjects. On WESAD, the federated model reaches 0.77 accuracy where centralised logistic regression reaches 0.91.
-  - In the technique comparisons, the clearest effects are on WESAD: FedDyn and SCAFFOLD beat FedAvg under drift, and a strong sign-flip attack collapses FedAvg while norm clipping holds.
+  - In the technique comparisons, the clearest effects are on WESAD: FedDyn and SCAFFOLD beat FedAvg under drift, the adaptive server optimizers beat it too, and a strong sign-flip attack collapses FedAvg while norm clipping holds.
 - **Checking the data found real problems,** now fixed. 999 means "missing" in the SWELL physiology file, for 53% of the heart-rate values, and both the old and the new loaders read it as a value. The facial and physiology joins and the WESAD chest signals `Resp` and `Temp` failed to load. The SWELL posture file has every date a month early, so posture is left out.
 - **Tests that need data** skip without `data/` ([docs/RULES.md](docs/RULES.md)). Protocol tests use a stub trainer that learns nothing.
 - **Legacy numbers stay legacy.** [§7](#7-results) lists the baselines from before the redesign with their caveats. Some of them predate the `blok` leak fix.
@@ -174,6 +174,9 @@ sweep: {data.placement.alpha: [0.0, 0.5, 1.0]}
 - **Paired values.** A key `a,b` sweeps several paths together: `learning.sharing,learning.trainer.name: [[fedper, fedrep], [fedavg, ditto]]` gives one scenario per pair. A whole plugin can be a value; its scenario is named `name(k=v,…)`.
 - **Aggregator, attack and privacy.** `learning.aggregator` sets the aggregator of the leaf aggregators (the fogs over the edges). `attack` makes a seeded fraction of each dataset's edges malicious, and `privacy` adds local DP at every edge. Unset, they stay out of the `config_id`.
 - **Server optimizer.** `learning.server_optimizer` sets the root's optimizer. Pairs such as `scaffold`, `fednova` and `feddyn` are checked against the trainer before the first scenario runs.
+- **Buffering and selection.**
+  - `close_at_quorum: true` on an aggregator closes its round as soon as its `quorum` is in, late updates included. With `staleness: next_round` this gives FedBuff (`experiments/fedbuff.yaml`).
+  - `evaluation.global.subjects: val` scores the global model on the validation subjects instead of the test ones, for choosing server-side hyperparameters.
 - **Edge validation.** `data.roles.local_val_split: class_tail` holds out the last rows of each class instead of the last rows of the recording, which are usually a single condition.
 - **Downloadable data.** `experiments/mix_swell_wesad.yaml` runs the same sweep with SWELL and WESAD, the two datasets that can be downloaded. It trains for 10 local epochs: with one, the model only learns the majority class ([§7](#7-results)).
 
@@ -328,6 +331,23 @@ Source: [results/techniques_privacy/](results/techniques_privacy/INDEX.md), comm
 | Local DP, σ = 1.0 | 0.424 ± 0.072 | 0.391 ± 0.314 | 82.9 |
 
 ε describes the mechanism with C fixed; C was calibrated on the training data without privacy, so it is not an end-to-end guarantee (the INDEX gives the adjacency and denominator). In this configuration, stronger privacy costs a lot of utility, and local DP costs much more than central DP. At the higher noise levels some edges diverge and the cloud loses rounds (up to 18 of 20 with local DP at σ = 1.0).
+
+### New framework: server optimizers and asynchrony
+
+Source: [results/techniques_server/](results/techniques_server/INDEX.md), `topology_id` `ff55fe4d…`, commit `e7fb7fd`. It is `experiments/techniques_server.yaml`: the drift comparison's setup (SWELL + WESAD, segregated, lossless links, SGD at lr 0.1, 20 rounds, 3 seeds) with a different server side. Each optimizer's server rate was chosen by the final global model on the validation subjects (`validation.csv`). Macro-F1, mean ± 95% CI:
+
+| Server side | Global SWELL | Global WESAD | Simulated time (s) |
+|---|---|---|---|
+| FedAvg | 0.549 ± 0.081 | 0.752 ± 0.005 | 21 |
+| FedAvgM | 0.506 ± 0.018 | 0.754 ± 0.014 | 21 |
+| FedAdam | 0.612 ± 0.038 | 0.853 ± 0.079 | 21 |
+| FedYogi | 0.602 ± 0.041 | 0.875 ± 0.076 | 21 |
+| FedAdagrad | 0.627 ± 0.013 | 0.898 ± 0.045 | 21 |
+| FedBuff (buffering fogs) | 0.417 ± 0.031 | 0.749 ± 0.045 | 12 |
+| FedBuff + FedAsync | 0.512 ± 0.186 | 0.751 ± 0.000 | 12 |
+
+- **In these runs, FedAdagrad, FedYogi and FedAdam beat FedAvg on WESAD**; the intervals do not overlap. On SWELL they overlap.
+- **FedBuff finishes 20 rounds in 43% less simulated time**, but its per-round score on SWELL is lower; time-to-accuracy is not compared yet.
 
 ### Before the redesign
 
