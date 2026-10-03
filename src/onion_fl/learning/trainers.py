@@ -536,6 +536,64 @@ class FedNova(Standard):
         return replace(result, aux=aux)
 
 
+class FedDynParams(StandardParams):
+    alpha: float = Field(0.01, gt=0, description="α del regularizador dinámico")
+
+
+@trainers.register(
+    "feddyn",
+    title="FedDyn",
+    description="Regularizador dinámico: término proximal más el gradiente que el edge recuerda.",
+    params=FedDynParams,
+    explain=(
+        "Minimiza L_i(θ) − ⟨∇L_i(θ_i^{t−1}), θ⟩ + α/2·‖θ − θ^{t−1}‖² y actualiza "
+        "su gradiente recordado; exige server_optimizer feddyn con el mismo α "
+        "(Acar et al., 2021)."
+    ),
+)
+class FedDyn(Standard):
+    Params = FedDynParams
+    server_optimizer = "feddyn"
+
+    def __init__(self, **params: Any) -> None:
+        super().__init__(**params)
+        self._grad: dict[str, torch.Tensor] = {}
+
+    def _check(self, received: Mapping[str, np.ndarray] | None) -> None:
+        if received is None:
+            raise TrainError("feddyn needs the received global state")
+
+    def _penalty(
+        self, model: nn.Module, received: Any, names: Sequence[str]
+    ) -> torch.Tensor:
+        params = dict(model.named_parameters())
+        total = proximal_term(model, received, self.params.alpha, names)
+        for name in names:
+            if name in self._grad:
+                total = total - (params[name] * self._grad[name]).sum()
+        return total
+
+    def train(
+        self,
+        model: nn.Module,
+        data: Samples,
+        received: Mapping[str, np.ndarray] | None = None,
+        ctx: Any = None,
+    ) -> TrainResult:
+        result = super().train(model, data, received, ctx)
+        params = dict(model.named_parameters())
+        for name in trainable(model, self.params.frozen):
+            if name not in received:
+                continue
+            anchor = torch.as_tensor(
+                np.asarray(received[name]), dtype=params[name].dtype
+            )
+            drift = params[name].detach() - anchor
+            previous = self._grad.get(name, torch.zeros_like(drift))
+            self._grad[name] = previous - self.params.alpha * drift
+        return result
+
+
 class StubParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

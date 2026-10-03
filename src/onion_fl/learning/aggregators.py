@@ -302,3 +302,53 @@ class FedNovaOptimizer:
                 np.asarray(value).dtype
             )
         return new
+
+
+class FedDynOptimizerParams(BaseModel):
+    alpha: float = Field(0.01, gt=0, description="El mismo α que el entrenador feddyn")
+
+
+@server_optimizers.register(
+    "feddyn",
+    title="FedDyn",
+    description="h ← h − α·(|P|/m)·(θ̄ − θ); θ ← θ̄ − h/α.",
+    params=FedDynOptimizerParams,
+    explain=(
+        "Va con el entrenador feddyn y su mismo α; |P|/m sale de "
+        "train_edges/edges_total (Acar et al., 2021)."
+    ),
+)
+class FedDynOptimizer:
+    def __init__(self, alpha: float = 0.01) -> None:
+        self.alpha = alpha
+        self._h: dict[str, np.ndarray] = {}
+
+    def check_trainer(self, name: str, trainer: Any) -> None:
+        if name != "feddyn":
+            raise ValueError(f"feddyn needs the feddyn trainer, not {name!r}")
+        if trainer.params.alpha != self.alpha:
+            raise ValueError(
+                f"alpha {self.alpha} differs from the trainer's {trainer.params.alpha}"
+            )
+
+    def apply(
+        self,
+        global_state: Mapping[str, np.ndarray],
+        aggregated: Mapping[str, np.ndarray],
+        stats: Mapping[str, float] | None = None,
+    ) -> State:
+        stats = stats or {}
+        total = stats.get("edges_total") or 0.0
+        share = stats.get("train_edges", total) / total if total else 1.0
+        new = dict(global_state)
+        for key, value in aggregated.items():
+            if is_aux(key):
+                new[key] = value
+                continue
+            mean = np.asarray(value, dtype=np.float64)
+            current = np.asarray(global_state.get(key, value), dtype=np.float64)
+            h = self._h.get(key, np.zeros_like(mean))
+            h = h - self.alpha * share * (mean - current)
+            self._h[key] = h
+            new[key] = (mean - h / self.alpha).astype(np.asarray(value).dtype)
+        return new

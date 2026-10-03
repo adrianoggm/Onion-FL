@@ -277,7 +277,13 @@ def test_optimizers_keep_the_dtype() -> None:
 
 def test_registries_list_the_built_ins() -> None:
     assert aggregators.names() == ["fedavg", "mean", "median", "trimmed_mean"]
-    assert server_optimizers.names() == ["fedadam", "fedavgm", "fednova", "replace"]
+    assert server_optimizers.names() == [
+        "fedadam",
+        "fedavgm",
+        "feddyn",
+        "fednova",
+        "replace",
+    ]
 
 
 @pytest.mark.parametrize("name", ["fedavgm", "fedadam"])
@@ -320,3 +326,16 @@ def test_fednova_names_the_missing_steps() -> None:
         server_optimizers.create("fednova").apply(
             {"w": np.zeros(1)}, {"w": np.zeros(1), "fednova/w": np.zeros(1)}, {}
         )
+
+
+def test_feddyn_moves_the_global_model_against_its_drift_term() -> None:
+    optimizer = server_optimizers.create("feddyn", {"alpha": 0.5})
+    stats = {"train_edges": 2.0, "edges_total": 4.0}
+
+    first = optimizer.apply({"w": np.zeros(1)}, {"w": np.full(1, 2.0)}, stats)
+    # h = 0 − 0.5·(2/4)·(2 − 0) = −0.5 ; w = 2 − h/0.5 = 3
+    np.testing.assert_allclose(first["w"], [3.0])
+
+    second = optimizer.apply(first, {"w": np.full(1, 3.0)}, stats)
+    # h = −0.5 − 0.5·0.5·(3 − 3) = −0.5 ; w = 3 + 1 = 4
+    np.testing.assert_allclose(second["w"], [4.0])

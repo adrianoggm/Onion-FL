@@ -202,6 +202,7 @@ def test_trainers_registry_lists_the_built_ins() -> None:
         "apfl",
         "ditto",
         "fedbabu",
+        "feddyn",
         "fednova",
         "fedprox",
         "fedrep",
@@ -615,6 +616,39 @@ def test_fednova_sends_its_normalised_update(swell) -> None:
             rtol=1e-5,
             atol=1e-8,
         )
+
+
+@real
+def test_feddyn_without_history_is_proximal(swell) -> None:
+    received = state_arrays(build())
+    prox, dyn = build(), build()
+    params = {"local_epochs": 1, "lr": 0.05}
+
+    trainers.create("fedprox", params | {"mu": 0.3}).train(prox, swell, received, ctx())
+    trainers.create("feddyn", params | {"alpha": 0.3}).train(
+        dyn, swell, received, ctx()
+    )
+
+    for key, value in state_arrays(prox).items():
+        np.testing.assert_allclose(value, state_arrays(dyn)[key], rtol=1e-6)
+
+
+@real
+def test_feddyn_remembers_its_gradient_term(swell) -> None:
+    trainer = trainers.create("feddyn", {"lr": 0.05, "alpha": 0.3})
+    model = build()
+    trainer.train(model, swell, state_arrays(model), ctx())
+    second = state_arrays(model)
+    trainer.train(model, swell, second, ctx(1))
+
+    fresh, start = trainers.create("feddyn", {"lr": 0.05, "alpha": 0.3}), build()
+    load_arrays(start, second)
+    fresh.train(start, swell, second, ctx(1))
+
+    assert any(
+        not np.allclose(v, state_arrays(start)[k])
+        for k, v in state_arrays(model).items()
+    )
 
 
 def test_ditto_needs_the_received_state() -> None:

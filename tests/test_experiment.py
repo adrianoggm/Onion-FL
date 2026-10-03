@@ -222,6 +222,16 @@ def test_a_trainer_that_needs_an_optimizer_is_checked(
     assert plan(parse_experiment(experiment(workspace, learning=ok)))
 
 
+def test_feddyn_needs_the_same_alpha_on_both_sides(workspace: Path) -> None:
+    learning = experiment(workspace)["learning"] | {
+        "trainer": {"name": "feddyn", "alpha": 0.1},
+        "server_optimizer": {"name": "feddyn", "alpha": 0.2},
+    }
+
+    with pytest.raises(ConfigError, match="alpha"):
+        plan(parse_experiment(experiment(workspace, learning=learning)))
+
+
 def test_finetuned_scores_need_a_finetune_trainer(workspace: Path) -> None:
     raw = experiment(workspace, evaluation={"edge": {"models": ["finetuned"]}})
 
