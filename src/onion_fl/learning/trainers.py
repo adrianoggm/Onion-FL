@@ -410,8 +410,8 @@ class APFL(Standard):
             self._v = copy.deepcopy(model)
         w, v = dict(model.named_parameters()), dict(self._v.named_parameters())
         make = OPTIMIZERS[p.optimizer]
-        opt_w = make([w[n] for n in names], lr=p.lr, weight_decay=p.weight_decay)
-        opt_v = make([v[n] for n in names], lr=p.lr, weight_decay=p.weight_decay)
+        opt_w = make(_param_groups(w, names, p), lr=p.lr, weight_decay=p.weight_decay)
+        opt_v = make(_param_groups(v, names, p), lr=p.lr, weight_decay=p.weight_decay)
         alpha = torch.tensor(self.alpha, requires_grad=p.adapt_alpha)
         rng = ctx.rng if ctx is not None else np.random.default_rng(0)
         side = child_rng(rng)  # dropout of the personal pass, apart from w's
@@ -840,6 +840,8 @@ class RandomInit:
 
 
 class RestoreParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     model: bool = Field(True, description="El modelo global del padre")
     preprocessing: bool = Field(True, description="El preprocesado congelado del padre")
     server_state: bool = Field(
@@ -851,7 +853,12 @@ class RestoreParams(BaseModel):
 
 
 class RunInitParams(BaseModel):
-    run: str = Field(description="run_id del padre (en paths.runs) o ruta a su carpeta")
+    model_config = ConfigDict(extra="forbid")
+
+    run: str = Field(
+        description="run_id del padre (en paths.runs), ruta a su carpeta, o "
+        "experiment:<nombre>[/<escenario>] para la última ejecución con la misma semilla"
+    )
     restore: RestoreParams = Field(default_factory=RestoreParams)
 
 

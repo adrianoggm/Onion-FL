@@ -890,3 +890,25 @@ def test_a_group_lr_scales_the_step_of_its_groups_only(swell) -> None:
 def test_a_group_lr_factor_must_be_positive() -> None:
     with pytest.raises(PluginError):
         trainers.create("standard", {"group_lr": {"trunk*": 0.0}})
+
+
+@real
+def test_apfl_honours_the_group_lr(swell) -> None:
+    received = state_arrays(build())
+    params = {"local_epochs": 1, "batch_size": 100000, "lr": 0.1, "optimizer": "sgd"}
+    params |= {"adapt_alpha": False}
+    plain, scaled = build(), build()
+
+    trainers.create("apfl", params).train(plain, swell, received, ctx())
+    trainers.create("apfl", params | {"group_lr": {"trunk*": 0.5}}).train(
+        scaled, swell, received, ctx()
+    )
+
+    after_plain, after_scaled = state_arrays(plain), state_arrays(scaled)
+    key = next(k for k in received if k.startswith("trunk"))
+    np.testing.assert_allclose(
+        after_scaled[key] - received[key],
+        0.5 * (after_plain[key] - received[key]),
+        rtol=1e-4,
+        atol=1e-7,
+    )
