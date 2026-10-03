@@ -275,6 +275,7 @@ class FedAdam:
 )
 class FedNovaOptimizer:
     PREFIX = "fednova/"
+    STEPS = "fednova_steps/"
 
     def check_trainer(self, name: str, trainer: Any) -> None:
         if name != "fednova":
@@ -286,17 +287,20 @@ class FedNovaOptimizer:
         aggregated: Mapping[str, np.ndarray],
         stats: Mapping[str, float] | None = None,
     ) -> State:
-        tau = (stats or {}).get("train_steps")
-        if not tau:
-            raise ValueError("fednova needs train_steps in the round statistics")
-        new = {k: v for k, v in global_state.items() if not k.startswith(self.PREFIX)}
+        mean_steps = (stats or {}).get("train_steps")
+        mine = (self.PREFIX, self.STEPS)
+        new = {k: v for k, v in global_state.items() if not k.startswith(mine)}
         for key, value in aggregated.items():
-            if key.startswith(self.PREFIX):
+            if key.startswith(mine):
                 continue
             step = aggregated.get(self.PREFIX + key)
             if step is None:  # no normalised update (frozen or non-trainable): replace
                 new[key] = value
                 continue
+            held = aggregated.get(self.STEPS + key)  # mean steps of this key's holders
+            tau = float(np.ravel(held)[0]) if held is not None else mean_steps
+            if not tau:
+                raise ValueError("fednova needs train_steps in the round statistics")
             current = np.asarray(global_state.get(key, value), dtype=np.float64)
             new[key] = (current + tau * np.asarray(step, np.float64)).astype(
                 np.asarray(value).dtype

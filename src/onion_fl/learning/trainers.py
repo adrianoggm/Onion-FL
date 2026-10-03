@@ -507,11 +507,17 @@ class Scaffold(Standard):
         return replace(result, aux=aux)
 
 
+class FedNovaParams(StandardParams):
+    optimizer: Literal["adam", "sgd"] = Field(
+        "sgd", description="La normalización por pasos supone SGD"
+    )
+
+
 @trainers.register(
     "fednova",
     title="FedNova",
     description="Entrenamiento estándar que envía además su actualización normalizada por pasos.",
-    params=StandardParams,
+    params=FedNovaParams,
     explain=(
         "Cada edge envía (y − x)/τ_i; el optimizador de servidor fednova aplica "
         "x + τ̄·d̄, así los edges que dan más pasos no arrastran el modelo "
@@ -519,6 +525,7 @@ class Scaffold(Standard):
     ),
 )
 class FedNova(Standard):
+    Params = FedNovaParams
     server_optimizer = "fednova"
 
     def train(
@@ -532,12 +539,14 @@ class FedNova(Standard):
         result = super().train(model, data, received, ctx)
         after = state_arrays(model)
         names = trainable(model, self.params.frozen)
-        aux = {
-            f"fednova/{n}": ((after[n] - start[n]) / result.batches).astype(
+        steps = np.full(1, float(result.batches), dtype=np.float32)
+        aux: dict[str, np.ndarray] = {}
+        for n in names:
+            aux[f"fednova/{n}"] = ((after[n] - start[n]) / result.batches).astype(
                 start[n].dtype
             )
-            for n in names
-        }
+            # Per key, so a key only some datasets hold gets its holders' mean steps.
+            aux[f"fednova_steps/{n}"] = steps
         return replace(result, aux=aux)
 
 

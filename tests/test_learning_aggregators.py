@@ -339,3 +339,22 @@ def test_feddyn_moves_the_global_model_against_its_drift_term() -> None:
     second = optimizer.apply(first, {"w": np.full(1, 3.0)}, stats)
     # h = −0.5 − 0.5·0.5·(3 − 3) = −0.5 ; w = 3 + 1 = 4
     np.testing.assert_allclose(second["w"], [4.0])
+
+
+def test_fednova_scales_each_key_by_the_steps_of_its_holders() -> None:
+    out = server_optimizers.create("fednova").apply(
+        {"a": np.zeros(1), "b": np.zeros(1)},
+        {
+            "a": np.zeros(1),
+            "fednova/a": np.full(1, 0.5),
+            "fednova_steps/a": np.full(1, 20.0),
+            "b": np.zeros(1),
+            "fednova/b": np.full(1, 0.5),
+            "fednova_steps/b": np.full(1, 40.0),
+        },
+        {"train_steps": 35.0},  # the round mean: right for neither key
+    )
+
+    np.testing.assert_allclose(out["a"], [10.0])
+    np.testing.assert_allclose(out["b"], [20.0])
+    assert not [k for k in out if k.startswith("fednova")]

@@ -712,6 +712,24 @@ def test_scaffold_alone_with_local_heads_is_sgd_for_two_rounds(swell) -> None:
         )
 
 
+@real
+def test_fednova_sends_its_steps_with_every_key(swell) -> None:
+    model = build()
+
+    result = trainers.create("fednova", {"lr": 0.05}).train(
+        model, swell, state_arrays(model), ctx()
+    )
+
+    for key in state_arrays(model):
+        np.testing.assert_array_equal(
+            result.aux[f"fednova_steps/{key}"], [float(result.batches)]
+        )
+
+
+def test_fednova_defaults_to_sgd() -> None:
+    assert trainers.create("fednova").params.optimizer == "sgd"
+
+
 def test_ditto_needs_the_received_state() -> None:
     data = SimpleNamespace(X=np.zeros((1, 16), np.float32), y=np.zeros(1, np.int64))
 
