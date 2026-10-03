@@ -37,7 +37,7 @@ Habla con la API REST de GitHub usando la credencial que ya guarda git (Git Cred
 | `pr N [--draft]` | Abre o actualiza el PR de `task/#N` hacia `develop`, con las etiquetas, el milestone y el enlace de la issue |
 | `pr-status N` | Estado del PR y de los checks del CI |
 | `merge P` | Mergea con merge commit (nunca squash) |
-| `close N --pr P` | Comenta, cierra la issue y borra la rama remota |
+| `close N --pr P --notes cierre.md` | Comenta con la evidencia, cierra la issue y borra la rama remota |
 | `release-pr vX.Y.Z` / `release vX.Y.Z` | Abre el PR de `develop` a `main` / crea el tag y las notas y cierra el milestone |
 
 ## Reglas duras
@@ -45,7 +45,7 @@ Habla con la API REST de GitHub usando la credencial que ya guarda git (Git Cred
 1. **Sin `Co-Authored-By` en los commits ni pie "Generated with" en los PR.** Los commits son del autor humano.
 2. **Nunca commitees en `develop` ni en `main`, ni hagas push a `main`.** Los PR de tarea van siempre a `develop`.
 3. **El push y el merge solo se hacen con una orden explícita.** Commitear no da permiso para empujar.
-4. **GitHub no cierra la issue al mergear en `develop`**, porque no es la rama por defecto. `Closes #N` no basta: cierra con `gh.py close N --pr P`.
+4. **GitHub no cierra la issue al mergear en `develop`**, porque no es la rama por defecto. `Closes #N` no basta: cierra con `gh.py close N --pr P --notes cierre.md`.
 5. **Verifica tú y reporta la evidencia.** Si algo no se ha podido comprobar, dilo con todas las letras.
 6. **El CI de GitHub solo corre en los PR hacia `main`**, para no gastar minutos. En los PR de tarea hacia `develop`, la verificación local de la etapa 3 es la garantía: repórtala en el PR antes de pedir el merge.
 
@@ -104,11 +104,25 @@ Si algo falla, arréglalo con un commit nuevo en la rama, sin `--amend` ni force
 
 ```bash
 python .claude/skills/tarea-github/scripts/gh.py merge P
-python .claude/skills/tarea-github/scripts/gh.py close N --pr P
+python .claude/skills/tarea-github/scripts/gh.py close N --pr P --notes cierre.md
 git switch develop && git pull --ff-only origin develop && git fetch --prune origin && git branch -d "task/#N"
 ```
 
 En los PR hacia `main`, `merge` se niega a mergear si el CI no está en verde; no uses `--force` sin una orden expresa. En los PR hacia `develop` no hay CI, y `merge` solo avisa.
+
+El comentario de cierre lleva la evidencia de lo integrado. Escribe `cierre.md` en el scratchpad con estas tres secciones; `close` se niega si falta alguna o está vacía:
+
+```markdown
+## Qué se ha hecho
+- Lo integrado, en una línea por cambio, con los ficheros o plugins clave.
+
+## Verificación
+- ruff ok; pytest N passed, M skipped (Python 3.11; con qué datos y broker, y qué se saltó).
+- Resultados confirmados, si hubo ejecuciones: `results/<experimento>/` con su `config_id` y su commit.
+
+## Pendiente
+- Lo que queda fuera o se aplaza, con la issue que lo recoge; o «Nada.».
+```
 
 Al terminar, informa de lo integrado y propón la siguiente issue del milestone que ya no tenga dependencias abiertas.
 
@@ -123,14 +137,18 @@ Al terminar, informa de lo integrado y propón la siguiente issue del milestone 
 Primero escribe un backlog en Markdown. Cada `## [CLAVE] Título` es una issue:
 
 ```markdown
-## [F2.1] Núcleo: Message y codecs
-Meta: labels=area:core,enhancement · milestone=v0.2.0 · depende=F1.1,#77
+## [T2] Técnicas FL: deriva no IID (SCAFFOLD, FedNova, FedDyn, MOON)
+Meta: labels=area:learning,enhancement · milestone=v0.4.0 · depende=T1
+
+Especificación: `docs/superpowers/specs/<fecha>-<tema>-design.md` (§4 P2).
 
 - [ ] Tarea…
 **Aceptación:** …
 ```
 
-`depende` admite claves definidas antes en el mismo fichero o números `#N`. Las etiquetas y los milestones que falten se crean solos.
+- La línea `Meta:` lleva siempre los tres campos. Sin dependencias se escribe `depende=-`.
+- `depende` admite claves definidas antes en el mismo fichero o números `#N`. Las etiquetas y los milestones que falten se crean solos.
+- Si las issues salen de una especificación, crea una por fase y cita la sección que implementa.
 
 1. Ejecuta `gh.py backlog fichero.md --dry-run`, enseña el resultado y espera confirmación.
 2. Ejecuta `gh.py backlog fichero.md`.
@@ -142,7 +160,8 @@ Meta: labels=area:core,enhancement · milestone=v0.2.0 · depende=F1.1,#77
 |---|---|
 | Rama `task/fase-0` o `task/77` | La rama es `task/#N`, con el número real de la issue |
 | PR con título descriptivo, o abierto contra `main` | Título `task/#N` y base `develop`; `gh.py pr` ya lo hace bien |
-| Esperar que `Closes #N` cierre la issue | No se cierra al mergear en `develop`: usa `gh.py close N --pr P` |
+| Esperar que `Closes #N` cierre la issue | No se cierra al mergear en `develop`: usa `gh.py close N --pr P --notes cierre.md` |
+| Línea `Meta:` sin `depende=` | `backlog` la rechaza: escribe `depende=-` |
 | Pasar a `git credential` el texto con una tubería de PowerShell | PowerShell añade un BOM y git rechaza el campo `protocol`; usa `gh.py`, que le pasa bytes |
 | Crear el entorno virtual en una ruta muy larga | Supera los 260 caracteres de Windows y la instalación de scikit-learn falla; usa `.venv` en el repo |
 | Usar el `python` global | No tiene `onion_fl` instalado, y puede tener el antiguo `flower_basic` de otra copia del repo; usa `.venv` o `PYTHONPATH=src` |
