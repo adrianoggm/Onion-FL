@@ -449,3 +449,17 @@ def test_a_frozen_feature_the_data_lacks_is_an_error() -> None:
 
     with pytest.raises(DataError, match="missing"):
         split_subjects(cohort(4), RolesConfig(test=0.0), frozen={"swell": renamed})
+
+
+def test_a_frozen_preprocessing_reproduces_the_parents_arrays_bit_for_bit() -> None:
+    # Heavy-tailed values, where x - mean is inexact in float32 (HRV, EDA, ...).
+    values = np.random.default_rng(0).lognormal(3, 2, size=(5, 40, 2))
+    data = [subject(str(i), v) for i, v in enumerate(values, 1)]
+    parent = split_subjects(data, RolesConfig(test=0.2))
+
+    child = split_subjects(data, RolesConfig(test=0.2), frozen=parent.preprocessing)
+
+    for mine, theirs in zip(child.clients, parent.clients, strict=True):
+        assert mine.train.X.dtype == theirs.train.X.dtype
+        np.testing.assert_array_equal(mine.train.X, theirs.train.X)
+    np.testing.assert_array_equal(child.test[0].X, parent.test[0].X)

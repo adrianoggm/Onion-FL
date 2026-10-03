@@ -126,7 +126,7 @@ class _Fit:
             reduce = np.nanmedian if impute == "median" else np.nanmean
             fill = reduce(X, axis=0) if len(X) else np.full(X.shape[1], np.nan)
         if fallback is not None:
-            fill = np.where(np.isnan(fill), fallback, fill)
+            fill = np.where(np.isnan(fill), fallback.astype(fill.dtype), fill)
         fill = np.nan_to_num(fill)
         filled = np.where(np.isnan(X), fill, X)
         if not len(X):
@@ -268,7 +268,10 @@ def split_subjects(
                     f"not {config.scaler!r}"
                 )
             keep = np.array([own.index(f) for f in saved["features"]])
-            shared = _Fit(*(np.asarray(saved[k]) for k in ("fill", "mean", "std")))
+            # float32 like the parent's fit, so re-applying it is bit for bit
+            shared = _Fit(
+                *(np.asarray(saved[k], np.float32) for k in ("fill", "mean", "std"))
+            )
         else:
             fit = _Fit.on(bag, config.impute)
             keep = np.arange(bag.shape[1])
