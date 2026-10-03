@@ -149,6 +149,15 @@ def test_the_schema_includes_the_plugin_catalogue() -> None:
     assert {p["name"] for p in plugins["transport"]} == {"memory", "mqtt"}
 
 
+def test_fedrep_needs_sharing_that_keeps_the_heads_local(workspace: Path) -> None:
+    learning = experiment(workspace)["learning"] | {"trainer": "fedrep"}
+
+    with pytest.raises(ConfigError, match="fedrep"):
+        plan(parse_experiment(experiment(workspace, learning=learning)))
+    local = learning | {"sharing": "fedper"}
+    assert plan(parse_experiment(experiment(workspace, learning=local)))
+
+
 def test_finetuned_scores_need_a_finetune_trainer(workspace: Path) -> None:
     raw = experiment(workspace, evaluation={"edge": {"models": ["finetuned"]}})
 

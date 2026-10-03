@@ -197,7 +197,15 @@ def test_the_stub_needs_no_data() -> None:
 
 
 def test_trainers_registry_lists_the_built_ins() -> None:
-    assert trainers.names() == ["apfl", "ditto", "fedprox", "standard", "stub"]
+    assert trainers.names() == [
+        "apfl",
+        "ditto",
+        "fedbabu",
+        "fedprox",
+        "fedrep",
+        "standard",
+        "stub",
+    ]
     assert inits.names() == ["checkpoint", "random"]
 
 
@@ -430,6 +438,34 @@ def test_apfl_learns_its_alpha_within_bounds(swell) -> None:
     personal = state_arrays(trainer.personal())
     assert any(not np.allclose(personal[k], v) for k, v in state_arrays(model).items())
     assert result.samples == 2 * 2 * len(swell.y)  # two models per batch
+
+
+@real
+def test_fedrep_trains_the_head_then_the_body(swell) -> None:
+    model = build()
+    before = state_arrays(model)
+    trainer = trainers.create(
+        "fedrep", {"head_epochs": 2, "local_epochs": 1, "lr": 0.05}
+    )
+
+    result = trainer.train(model, swell, before, ctx())
+
+    after = state_arrays(model)
+    assert all(not np.array_equal(after[k], v) for k, v in before.items())
+    assert result.samples == 3 * len(swell.y)
+    assert trainer.local_groups == ["head*"]
+
+
+@real
+def test_fedbabu_leaves_the_head_as_it_was_initialised(swell) -> None:
+    model = build()
+    before = state_arrays(model)
+
+    trainers.create("fedbabu", {"lr": 0.05}).train(model, swell, before, ctx())
+
+    after = state_arrays(model)
+    for key, value in before.items():
+        assert np.array_equal(after[key], value) == key.startswith("head."), key
 
 
 def test_ditto_needs_the_received_state() -> None:

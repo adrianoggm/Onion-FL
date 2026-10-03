@@ -112,6 +112,18 @@ def keys_held_at(
     return [k for k in keys if policy.scope_of(group_of(k)) == wanted]
 
 
+def not_local(
+    policy: SharingPolicy, groups: Iterable[str], patterns: Sequence[str]
+) -> list[str]:
+    """Groups matching ``patterns`` that ``policy`` lets leave the edge."""
+    return sorted(
+        g
+        for g in groups
+        if any(fnmatch.fnmatchcase(g, p) for p in patterns)
+        and policy.scope_of(g) != "local"
+    )
+
+
 def traffic(
     topology: Topology, policy: SharingPolicy, groups: Sequence[str]
 ) -> list[dict[str, Any]]:

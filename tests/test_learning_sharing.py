@@ -12,6 +12,7 @@ from onion_fl.learning.sharing import (
     SharingPolicy,
     keys_crossing,
     keys_held_at,
+    not_local,
     sharing,
     stored_at,
     traffic,
@@ -101,6 +102,16 @@ def test_every_preset_and_custom_are_registered() -> None:
 
 def scopes(policy: SharingPolicy) -> dict[str, str]:
     return {group: policy.scope_of(group) for group in GROUPS}
+
+
+def test_groups_a_trainer_keeps_local_are_checked_against_the_policy() -> None:
+    groups = ["adapter.swell", "trunk", "head.stress_binary"]
+
+    assert not_local(sharing.create("fedper"), groups, ["head*"]) == []
+    assert not_local(sharing.create("fedavg"), groups, ["head*"]) == [
+        "head.stress_binary"
+    ]
+    assert not_local(sharing.create("fedavg"), groups, []) == []
 
 
 def test_fedavg_shares_everything_globally() -> None:

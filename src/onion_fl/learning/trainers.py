@@ -352,6 +352,81 @@ class APFL(Standard):
         return out
 
 
+class FedRepParams(StandardParams):
+    head_epochs: PositiveInt = Field(
+        5, description="Épocas de la cabeza con el cuerpo congelado"
+    )
+    head: list[str] = Field(
+        default_factory=lambda: ["head*"],
+        description="Grupos que forman la cabeza, por nombre o patrón",
+    )
+
+
+@trainers.register(
+    "fedrep",
+    title="FedRep",
+    description="Entrena primero la cabeza local y después el cuerpo compartido (local_epochs).",
+    params=FedRepParams,
+    explain=(
+        "La cabeza se queda en el edge: exige una compartición que la mantenga "
+        "local, como fedper; solo viaja la representación (Collins et al., 2021)."
+    ),
+)
+class FedRep(Standard):
+    Params = FedRepParams
+
+    @property
+    def local_groups(self) -> list[str]:
+        return list(self.params.head)
+
+    def train(
+        self,
+        model: nn.Module,
+        data: Samples,
+        received: Mapping[str, np.ndarray] | None = None,
+        ctx: Any = None,
+    ) -> TrainResult:
+        p = self.params
+        base = p.model_dump(exclude={"head_epochs", "head", "local_epochs", "frozen"})
+        groups = {group_of(name) for name, _ in model.named_parameters()}
+        body = sorted(
+            g for g in groups if not any(fnmatch.fnmatchcase(g, h) for h in p.head)
+        )
+        head = Standard(
+            **base, local_epochs=p.head_epochs, frozen=[*p.frozen, *body]
+        ).train(model, data, received, ctx)
+        rest = Standard(
+            **base, local_epochs=p.local_epochs, frozen=[*p.frozen, *p.head]
+        ).train(model, data, received, ctx)
+        return TrainResult(
+            loss=rest.loss,
+            samples=head.samples + rest.samples,
+            examples=rest.examples,
+            batches=head.batches + rest.batches,
+        )
+
+
+class FedBABUParams(StandardParams):
+    frozen: list[str] = Field(
+        default_factory=lambda: ["head*"],
+        description="Grupos congelados; por defecto la cabeza, que no se entrena",
+    )
+
+
+@trainers.register(
+    "fedbabu",
+    title="FedBABU",
+    description="Solo aprende el cuerpo; la cabeza se queda como se inicializó.",
+    params=FedBABUParams,
+    explain=(
+        "Se evalúa ajustando el modelo recibido con evaluation.edge.finetune y "
+        "puntuándolo como 'finetuned' (Oh et al., 2022)."
+    ),
+)
+class FedBABU(Standard):
+    Params = FedBABUParams
+
+
 class StubParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

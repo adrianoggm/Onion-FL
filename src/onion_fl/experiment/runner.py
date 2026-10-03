@@ -11,7 +11,7 @@ from __future__ import annotations
 """
 
 import hashlib
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -21,10 +21,10 @@ from onion_fl.data.cache import load_prepared, prepare
 from onion_fl.data.ingest import load_spec
 from onion_fl.data.placement import Placement, place
 from onion_fl.data.roles import DataSplit, split_subjects
-from onion_fl.experiment.config import ExperimentConfig
+from onion_fl.experiment.config import ConfigError, ExperimentConfig
 from onion_fl.experiment.sweep import Scenario, identity, scenarios
 from onion_fl.learning.model import models, param_groups, state_arrays
-from onion_fl.learning.sharing import sharing, traffic
+from onion_fl.learning.sharing import not_local, sharing, traffic
 from onion_fl.learning.trainers import inits, trainers
 from onion_fl.observability.run import Run, save_model
 from onion_fl.observability.sinks import OtelSink, PrometheusSink, otlp_provider
@@ -106,7 +106,25 @@ def _initial_state(config: ExperimentConfig, shapes: Sequence[Any], seed: int):
     family = create(models, config.learning.model)
     model = family.build(shapes, seed=seed)
     create(inits, config.learning.init).init(model)
-    return family, state_arrays(model)
+    state = state_arrays(model)
+    _check_local_groups(config, state)
+    return family, state
+
+
+def _check_local_groups(config: ExperimentConfig, state: Mapping[str, Any]) -> None:
+    """A trainer that keeps groups on the edge (FedRep) needs sharing that keeps them."""
+    trainer = create(trainers, config.learning.trainer)
+    patterns = list(getattr(trainer, "local_groups", ()))
+    policy = create(sharing, config.learning.sharing)
+    leaving = not_local(policy, param_groups(state), patterns)
+    if leaving:
+        ref = config.learning.trainer
+        name = ref if isinstance(ref, str) else ref["name"]
+        raise ConfigError(
+            f"learning.trainer: {name} keeps {patterns} on the edge, but sharing "
+            f"{policy.name!r} sends {leaving} up; use fedper or a custom rule "
+            "that keeps them local"
+        )
 
 
 def link_warnings(topology: Topology) -> list[str]:
