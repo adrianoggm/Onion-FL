@@ -231,6 +231,46 @@ def test_finetune_scoring_does_not_change_training() -> None:
         np.testing.assert_array_equal(value, scored[key])
 
 
+class BrokenPersonal(PersonalStub):
+    def personal(self):
+        raise RuntimeError("personal model lost")
+
+
+def test_a_failing_score_does_not_drop_the_edge_update() -> None:
+    spec = EdgeSpec("e1", model(A), trainer=BrokenPersonal(), val_data=samples(4))
+
+    federation = run(tree(edge=PERSONAL), {"fog_0": [spec]})
+
+    assert federation.coordinator.state[KEY].mean() == pytest.approx(M0 + 1)
+    (failed,) = [
+        e for e in federation.runtime.events if e["name"] == "edge.eval_failed"
+    ]
+    assert "personal model lost" in failed["tags"]["error"]
+
+
+class Failing:
+    def train(self, model, data=None, received=None, ctx=None):
+        raise RuntimeError("out of memory")
+
+
+def test_a_failed_round_still_reports_the_scores_that_arrived() -> None:
+    edges = {
+        "fog_0": [trainer_edge("e1", shift=1, val=4)],
+        "fog_1": [EdgeSpec("e2", model(A), trainer=Failing())],
+    }
+
+    federation = run(tree(fog={"deadline": 5}, edge=EDGE_EVAL, n_fogs=2), edges)
+
+    failed = [
+        e
+        for e in federation.runtime.events
+        if e["name"] == "round.quorum_failed" and e["node"] == "cloud"
+    ]
+    assert failed
+    (cloud,) = scores(federation, "cloud", model="local", source="children")
+    assert cloud["value"] == pytest.approx(M0 + 1)
+
+
 # --- fog --------------------------------------------------------------------------------------
 
 

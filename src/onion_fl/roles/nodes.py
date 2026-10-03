@@ -270,6 +270,9 @@ class _Collector(Node):
         if not fresh or len(fresh) < needed:
             ctx.emit("round.quorum_failed", self.round, needed=needed, **tags)
             self._diagnose(fresh, {}, reports, ctx, failed=True)
+            if self.aggregate_children:
+                # Scores that arrived are evaluation, not aggregation: keep them.
+                self._children_scores(list(reports.values()), ctx)
             self._failed(ctx)
             return
         aggregated = self.aggregator.aggregate(
@@ -716,13 +719,19 @@ class Edge(_Greeter, Node):
         ctx.compute(result.samples)
         if scoring and "local" in self.eval_models:
             metrics |= self._score("local", msg.round, ctx)
-        if scoring and "personal" in self.eval_models:
-            personal = getattr(self.trainer, "personal", lambda: None)()
-            if personal is not None:
-                metrics |= self._score("personal", msg.round, ctx, personal)
-        if finetuning:
-            metrics |= self._score(
-                "finetuned", msg.round, ctx, self._finetuned(start, received, ctx)
+        try:
+            if scoring and "personal" in self.eval_models:
+                personal = getattr(self.trainer, "personal", lambda: None)()
+                if personal is not None:
+                    metrics |= self._score("personal", msg.round, ctx, personal)
+            if finetuning:
+                finetuned = self._finetuned(start, received, ctx)
+                metrics |= self._score("finetuned", msg.round, ctx, finetuned)
+        except Exception as exc:  # scoring never costs the edge its update
+            ctx.emit(
+                "edge.eval_failed",
+                round=msg.round,
+                error=f"{type(exc).__name__}: {exc}",
             )
         arrays = state_arrays(self.model)
         up = keys_crossing(arrays, self.sharing, self.levels, self.parent_level)
