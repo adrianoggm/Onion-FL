@@ -1,5 +1,6 @@
-# FedBuff (Nguyen et al., 2022) as a combination of round settings, not a
-# plugin: each fog closes its round as soon as K updates are in, late ones
+# Hierarchical buffering inspired by FedBuff (Nguyen et al., 2022), as a
+# combination of round settings, not a plugin. It is not the paper's protocol:
+# the fogs buffer and the cloud stays synchronous. each fog closes its round as soon as K updates are in, late ones
 # included (`quorum: K` with `close_at_quorum: true`); an edge still training
 # gets no newer model; and a late update joins as its change from the model it
 # trained on, weighted by (1 + staleness)^-a (`staleness: next_round` with
@@ -10,7 +11,7 @@
 #   onion_fl plan experiments/fedbuff.yaml
 #   onion_fl run experiments/fedbuff.yaml --workers 3
 name: fedbuff
-description: FedBuff como combinación de ajustes de ronda en los fogs.
+description: Buffering jerárquico inspirado en FedBuff, como combinación de ajustes de ronda en los fogs.
 topology: four_fogs_swell_wesad_lossless_fedbuff
 data:
   datasets:

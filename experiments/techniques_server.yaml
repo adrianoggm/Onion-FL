@@ -1,15 +1,16 @@
 # Server optimizers and asynchrony on SWELL and WESAD (issue #150): one scenario
 # per server-side technique, three seeds, segregated placement, lossless links.
 # Every edge trains with SGD at lr 0.1, FedAvg's rate on validation in the
-# drift comparison. Each optimizer's server rate (FedAsync's alpha) was chosen
+# drift comparison. Each optimizer's server rate (the mixing alpha) was chosen
 # with techniques_server_select.yaml, by the final global model on the
-# validation subjects. FedBuff is the topology whose fogs buffer
-# (four_fogs_swell_wesad_lossless_fedbuff), with FedAvg or FedAsync at the
-# cloud; FedAsync only sees staleness there.
+# validation subjects. FedBuff-style is the topology whose fogs buffer
+# (four_fogs_swell_wesad_lossless_fedbuff), with FedAvg or FedAsync's mixing
+# rule (fedasync_mix) at the cloud, which only sees staleness there. Neither is
+# the paper's protocol: the fogs buffer and the cloud stays synchronous.
 #
 #   onion_fl run experiments/techniques_server.yaml --workers 3
 name: techniques_server
-description: Optimizadores de servidor y asincronía (FedAvgM, FedAdam, FedYogi, FedAdagrad, FedAsync, FedBuff) sobre SWELL y WESAD.
+description: Optimizadores de servidor y asincronía (FedAvgM, FedAdam, FedYogi, FedAdagrad, buffering jerárquico inspirado en FedBuff y mezcla de FedAsync) sobre SWELL y WESAD.
 topology: four_fogs_swell_wesad_lossless
 data:
   datasets:
@@ -36,5 +37,5 @@ sweep:
     - [four_fogs_swell_wesad_lossless, {name: fedadam, server_lr: 0.03}]
     - [four_fogs_swell_wesad_lossless, {name: fedyogi, server_lr: 0.1}]
     - [four_fogs_swell_wesad_lossless, {name: fedadagrad, server_lr: 0.3}]
-    - [four_fogs_swell_wesad_lossless_fedbuff, replace]                                       # FedBuff
-    - [four_fogs_swell_wesad_lossless_fedbuff, {name: fedasync, alpha: 0.9}]                # FedBuff + FedAsync
+    - [four_fogs_swell_wesad_lossless_fedbuff, replace]                                       # FedBuff-style
+    - [four_fogs_swell_wesad_lossless_fedbuff, {name: fedasync_mix, alpha: 0.9}]                # FedBuff-style + FedAsync mixing

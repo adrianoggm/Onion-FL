@@ -1,5 +1,6 @@
-# four_fogs_swell_wesad_lossless whose fogs buffer like FedBuff (Nguyen et al.,
-# 2022), the cloud staying synchronous:
+# four_fogs_swell_wesad_lossless whose fogs buffer in the style of FedBuff
+# (Nguyen et al., 2022), the cloud staying synchronous, so it is a hierarchical
+# adaptation, not the paper's protocol:
 # - each fog closes its round as soon as K updates are in, late ones included
 #   (just over half its edges in the segregated placement: 5 of 9 SWELL
 #   edges, 3 of 5 WESAD edges);

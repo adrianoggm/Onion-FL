@@ -7,7 +7,7 @@ Each aggregation node reads its round settings from the topology::
     aggregator: fedavg | {name: trimmed_mean, beta: 0.2}
     server_optimizer: replace        # root only
     quorum: 1.0 | 2                  # float = fraction, int = count
-    close_at_quorum: false           # true: close on K updates, late ones included (FedBuff)
+    close_at_quorum: false           # true: close on K updates, late ones included (FedBuff-style)
     deadline: 30s
     participation: all | {name: fraction, p: 0.5}
     staleness: drop | {name: next_round, weighting: {name: polynomial, a: 0.5}}

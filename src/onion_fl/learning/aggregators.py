@@ -762,24 +762,24 @@ class FedAdagrad(_Adaptive):
         return v + squared
 
 
-class FedAsyncParams(BaseModel):
+class FedAsyncMixParams(BaseModel):
     alpha: float = Field(0.6, gt=0, le=1, description="Peso α del agregado sin retraso")
     a: float = Field(0.5, ge=0, description="Exponente: α·(1 + antigüedad)^-a")
 
 
 @server_optimizers.register(
-    "fedasync",
-    title="FedAsync",
+    "fedasync_mix",
+    title="Mezcla de FedAsync",
     description="x ← (1 − α_s)·x + α_s·x̄, con α_s = α·(1 + antigüedad)^-a.",
-    params=FedAsyncParams,
+    params=FedAsyncMixParams,
     explain=(
-        "Mezcla el agregado con el modelo global y descuenta las actualizaciones "
-        "viejas por la antigüedad media de la ronda (estadístico staleness). Aplica "
-        "la regla de Xie et al. (2019) una vez por ronda, al agregado; no actualiza "
-        "con cada llegada."
+        "La regla de mezcla de FedAsync (Xie et al., 2019), aplicada una vez por "
+        "ronda al agregado con la antigüedad media de la ronda (estadístico "
+        "staleness). No es el protocolo FedAsync: allí el servidor actualiza con "
+        "cada llegada y el edge añade un término proximal."
     ),
 )
-class FedAsync:
+class FedAsyncMix:
     def __init__(self, alpha: float = 0.6, a: float = 0.5) -> None:
         self.alpha, self.a = alpha, a
 

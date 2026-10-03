@@ -3,7 +3,7 @@
 # val`), so the server optimizer's own output is what decides; the test
 # subjects are never evaluated here. Seed 0. FedAvgM at server_lr 0.1, 0.3 and
 # 1.0; FedAdam and FedYogi at 0.01, 0.03 and 0.1; FedAdagrad also at 0.3;
-# FedAsync at alpha 0.3, 0.6 and 0.9 on the buffering topology, where it sees
+# FedAsync's mixing rule at alpha 0.3, 0.6 and 0.9 on the buffering topology, where it sees
 # staleness. Where the best value sat on an edge of its grid, the grid was
 # widened by one step (FedAvgM 0.03, FedYogi 0.3, FedAdagrad 1.0, alpha 1.0).
 #
@@ -47,7 +47,7 @@ sweep:
     - [four_fogs_swell_wesad_lossless, {name: fedadagrad, server_lr: 0.1}]
     - [four_fogs_swell_wesad_lossless, {name: fedadagrad, server_lr: 0.3}]
     - [four_fogs_swell_wesad_lossless, {name: fedadagrad, server_lr: 1.0}]
-    - [four_fogs_swell_wesad_lossless_fedbuff, {name: fedasync, alpha: 0.3}]
-    - [four_fogs_swell_wesad_lossless_fedbuff, {name: fedasync, alpha: 0.6}]
-    - [four_fogs_swell_wesad_lossless_fedbuff, {name: fedasync, alpha: 0.9}]
-    - [four_fogs_swell_wesad_lossless_fedbuff, {name: fedasync, alpha: 1.0}]
+    - [four_fogs_swell_wesad_lossless_fedbuff, {name: fedasync_mix, alpha: 0.3}]
+    - [four_fogs_swell_wesad_lossless_fedbuff, {name: fedasync_mix, alpha: 0.6}]
+    - [four_fogs_swell_wesad_lossless_fedbuff, {name: fedasync_mix, alpha: 0.9}]
+    - [four_fogs_swell_wesad_lossless_fedbuff, {name: fedasync_mix, alpha: 1.0}]

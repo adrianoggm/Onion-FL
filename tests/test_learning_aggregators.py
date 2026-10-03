@@ -291,7 +291,7 @@ def test_registries_list_the_built_ins() -> None:
     assert server_optimizers.names() == [
         "fedadagrad",
         "fedadam",
-        "fedasync",
+        "fedasync_mix",
         "fedavgm",
         "feddyn",
         "fednova",
@@ -302,7 +302,7 @@ def test_registries_list_the_built_ins() -> None:
 
 
 @pytest.mark.parametrize(
-    "name", ["fedavgm", "fedadam", "fedyogi", "fedadagrad", "fedasync"]
+    "name", ["fedavgm", "fedadam", "fedyogi", "fedadagrad", "fedasync_mix"]
 )
 def test_server_optimizers_replace_auxiliary_arrays(name: str) -> None:
     optimizer = server_optimizers.create(name)
@@ -660,7 +660,7 @@ def test_fedyogi_moves_v_additively_by_the_sign_of_its_gap() -> None:
 
 
 def test_fedasync_mixes_by_a_staleness_discounted_weight() -> None:
-    opt = server_optimizers.create("fedasync", {"alpha": 0.5, "a": 0.5})
+    opt = server_optimizers.create("fedasync_mix", {"alpha": 0.5, "a": 0.5})
 
     fresh = opt.apply(g(w=[0.0]), g(w=[4.0]))
     stale = opt.apply(g(w=[0.0]), g(w=[4.0]), {"staleness": 3.0})
