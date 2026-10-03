@@ -34,8 +34,11 @@ Todo v0.7.0 se desarrolla y se valida en simulación (`SimRuntime`, reloj virtua
 
 | Tema | Decisión | Por qué |
 |---|---|---|
-| Unidad temporal | Cada observación lleva `observed_at → available_at → label_available_at → trainable_at → consumed_by_version` | Hace explícito qué sabía el sistema y cuándo; evita fugas temporales |
-| Evaluación | Test-then-train (prequential): un ejemplo no entrena antes de que lo evalúe el modelo activo cuando llegó | Es la medida estándar en streams y no tiene fugas |
+| Unidad temporal | Cada observación lleva `observed_at → available_at → predicted_at (+ predicted_by_version) → label_available_at → trainable_at → first_consumed_by_version` | Hace explícito qué sabía el sistema y cuándo; evita fugas temporales |
+| Dos relojes | Tiempo de datos (la semántica: retrasos, disparadores, bootstrap) separado del tiempo virtual de la simulación; `stream.speed` solo convierte uno en otro | Cambiar la velocidad acelera la simulación sin cambiar cuándo ocurre nada |
+| Arranque | Un bootstrap temporal explícito: con lo anterior a t₀ se ajusta el preprocesado y se entrena v0; después se congela | Realista, y ninguna estadística del preprocesado usa observaciones posteriores a t₀ |
+| Evaluación | Test-then-train (prequential): un ejemplo no entrena antes de que lo evalúe el modelo activo cuando llegó, y esa predicción se guarda para puntuarla cuando llegue la etiqueta | Es la medida estándar en streams y no tiene fugas |
+| Validación | Un stream de validación independiente, solo para evaluar: nunca entrena | Da la ventana reciente y la histórica con las que se decide promover |
 | Versiones | Champion (activo) y challenger (candidato) con una `PromotionPolicy` enchufable | Solo se promueve lo que mejora de forma segura; el rechazo y el rollback son baratos |
 | Estado | Un `ModelBundle` con el estado global, el de cada edge, el preprocesado, el esquema y el linaje | Continuar no es solo cargar pesos: SCAFFOLD, FedDyn, MOON, Ditto/APFL y el replay tienen estado |
 | Preprocesado | Artefacto de primera clase de cada versión, congelado por dataset; un dataset nuevo es una evolución explícita del esquema | Reajustarlo con datos futuros cambia la representación en silencio y filtra información |
@@ -53,27 +56,39 @@ Cada fila de un sujeto gana un tiempo `t` (segundos desde el inicio de su grabac
 - **SWELL:** de la columna `timestamp`, que hoy se excluye de las features.
 - **WESAD:** del inicio de cada ventana.
 
-Una observación recorre estos instantes:
+Una observación recorre estos instantes, todos en tiempo de datos (§4.2):
 
 | Instante | Significado |
 |---|---|
 | `observed_at` | `t` en el reloj del stream del edge |
 | `available_at` | Cuando llega al edge (con `stream.latency`, 0 por defecto) |
+| `predicted_at`, `predicted_by_version` | Cuándo y con qué versión la predijo el champion que el edge servía; la predicción se guarda |
 | `label_available_at` | Cuando llega su etiqueta: `available_at + labels.delay`, o nunca si no está en la fracción etiquetada |
-| `trainable_at` | Cuando el edge puede entrenar con ella: tras evaluarla (test-then-train), sin etiqueta desde `available_at` y con etiqueta desde `label_available_at` |
-| `consumed_by_version` | La primera versión candidata en cuyo entrenamiento entró |
+| `trainable_at` | Cuando el edge puede entrenar con ella: tras predecirla, sin etiqueta desde `available_at` y con etiqueta desde `label_available_at` |
+| `first_consumed_by_version` | La primera versión candidata en cuyo entrenamiento entró; con replay puede entrar en varias, que se registran en los eventos |
 
-### 4.2 Reloj del stream
+### 4.2 Dos relojes y bootstrap
 
-`stream.speed` convierte el tiempo de los datos al reloj virtual: por ejemplo, `speed: 60` hace que un minuto de datos pase en un segundo simulado. `stream.start` desplaza el inicio de cada sujeto:
-- `aligned`: todos empiezan a la vez;
-- `staggered: <s>`: un sujeto cada `s` segundos, que es como se simulan edges que se incorporan más tarde.
+- **Dos relojes.**
+  - El **tiempo de datos** es el de las grabaciones. En él se expresa toda la semántica: `labels.delay`, los disparadores por calendario, el bootstrap y el horizonte.
+  - El **tiempo virtual** es el de `SimRuntime`. `stream.speed` solo convierte uno en otro: `speed: 60` hace que un minuto de datos pase en un segundo simulado. Pasar de 60 a 120 acelera la simulación y no cambia cuándo debería ocurrir una ronda.
+- **Inicio de cada sujeto** (`stream.start`):
+  - `aligned`: todos empiezan a la vez. Es el benchmark principal.
+  - `staggered: <s>`: un sujeto cada `s` segundos de datos. Simula edges que se incorporan más tarde y queda como experimento secundario de heterogeneidad del sistema.
+- **Horizonte.** `stream.horizon: session` termina cuando se agota la grabación de cada sujeto. Se deriva del máximo `t` disponible, no de una duración escrita a mano.
+- **Bootstrap temporal** (`stream.bootstrap: 20m` o `{samples: 500}`):
+  - lo ocurrido antes de t₀ es el histórico disponible antes de poner en marcha el continuum;
+  - con él se ajusta el preprocesado, se entrena v0 y después se congela el preprocesado;
+  - ninguna estadística del preprocesado puede usar observaciones posteriores a t₀;
+  - un periodo de bootstrap, a diferencia de una sola primera ventana, puede abarcar varias condiciones y clases.
 
 ### 4.3 Regla de evaluación sin fugas
 
-- Cuando un lote llega a un edge, primero lo **predice el champion** que el edge sirve. Esa predicción entra en las métricas prequential.
-- Solo después pasa al búfer de entrenamiento: sin etiqueta, o con etiqueta cuando llegue.
+- Cuando un lote llega a un edge, primero lo **predice el champion** que el edge sirve, y la predicción se guarda con `predicted_at` y `predicted_by_version`.
+- Cuando llega la etiqueta, se puntúa **esa predicción guardada**, no una nueva con el champion de ese momento. Eso mantiene el test-then-train con etiquetas diferidas.
+- Solo después de predecirlo, el lote pasa al búfer de entrenamiento: sin etiqueta, o con ella cuando llegue.
 - La etiqueta real de lo no etiquetado se conserva fuera del learner, solo para evaluar.
+- **Los sujetos de validación también llegan en flujo, solo para evaluar:** forman un stream independiente que nunca entrena y que da la ventana reciente y la histórica de §5.2.
 - Los sujetos de test **nunca** llegan a ningún edge.
 
 ### 4.4 Tipos de deriva
@@ -81,11 +96,12 @@ Una observación recorre estos instantes:
 | Tipo | Qué cambia | Cómo se detecta (primeros detectores) |
 |---|---|---|
 | De datos | P(X) | Distancia entre la ventana reciente y la de referencia de las features del edge |
-| De concepto | P(Y\|X) | Error del champion sobre las etiquetas que van llegando |
+| De prior (de etiquetas) | P(Y) | Cambio en la proporción de clases de las etiquetas llegadas, o de las predichas |
+| De concepto | P(Y\|X) | Error del champion sobre las etiquetas que van llegando, una vez descontado el cambio de P(Y) |
 | De rendimiento | Una métrica observada | Caída del macro-F1 prequential frente a su media móvil |
 | De cliente | Un edge respecto al resto | Divergencia de sus actualizaciones (`diagnostic.divergence_*`, ya existe) |
 
-En SWELL y WESAD, las condiciones de estrés llegan por bloques dentro de cada sesión, así que hay **desplazamiento de etiquetas** real: el benchmark (C8) no necesita deriva sintética.
+En SWELL y WESAD, las condiciones de estrés llegan por bloques dentro de cada sesión, así que hay **deriva de prior** (P(Y)) real, y probablemente de datos. El benchmark (C8) no necesita deriva sintética.
 
 ## 5. Versiones: champion y challenger
 
@@ -116,8 +132,8 @@ promotion:
 ```
 
 - **Dos conjuntos.**
-  - **Ventana reciente (plasticidad):** lo último llegado a los sujetos de validación.
-  - **Referencia e historia (retención):** una muestra fija de los periodos anteriores, también de validación.
+  - **Ventana reciente (plasticidad):** lo último llegado al stream de validación.
+  - **Referencia e historia (retención):** una muestra fija de los periodos anteriores del mismo stream.
 - **El test nunca decide.** Los sujetos de test solo se usan para informar.
 - **Dónde se sirve cada versión.** Los edges sirven el champion. El challenger no llega a producción antes de promoverse.
 
@@ -153,7 +169,7 @@ bundle/
   - El estado global que depende del número de edges (por ejemplo, N en la fracción de SCAFFOLD) se recalcula con los `holders` registrados.
 - **Evolución del esquema.**
   - Para un dataset existente, el preprocesado del bundle se congela.
-  - Un dataset nuevo ajusta su preprocesado sobre su primera ventana de entrenamiento, que se congela después, y crea su adaptador (y su cabeza, si la tarea es nueva).
+  - Un dataset nuevo tiene su propio periodo de bootstrap explícito (§4.2): su preprocesado se ajusta únicamente sobre ese prefijo temporal y queda congelado después. Crea su adaptador (y su cabeza, si la tarea es nueva).
   - Los grupos cargados pueden congelarse o entrenarse con un lr menor, por grupo.
 
 ## 7. Streams y etiquetas (C3)
@@ -162,11 +178,13 @@ bundle/
 stream:
   order: timestamp       # el orden real de las filas de cada sujeto
   batch_size: 32         # filas que llegan juntas
-  speed: 60              # segundos de datos por segundo simulado
-  start: aligned         # o {staggered: 600}
+  speed: 60              # tiempo de datos → tiempo virtual (solo acelera)
+  start: aligned         # o {staggered: 10m}
+  horizon: session       # hasta el final de la grabación de cada sujeto
+  bootstrap: 20m         # o {samples: 500}: el histórico antes de t₀
 labels:
   fraction: 0.2          # fracción etiquetada, por edge
-  delay: 2h              # retraso de la etiqueta, en tiempo de datos
+  delay: 30m             # retraso de la etiqueta, en tiempo de datos
 ```
 
 - **Búfer de entrenamiento por edge.** Contiene lo reciente que el edge puede usar ahora (`trainable_at ≤ t`). La memoria de C4 es aparte.
@@ -186,6 +204,11 @@ continual:
 - **Plugins.** `none`, `fifo`, `reservoir` y `class_balanced`.
 - **Qué guarda la memoria.** Solo ejemplos etiquetados (con su etiqueta llegada) o pseudoetiquetados aceptados, nunca la etiqueta oculta.
 - **Líneas base.** Ajuste fino solo con lo reciente, y ajuste fino más replay.
+- **Replay y privacidad.**
+  - El replay participa en el entrenamiento como cualquier dato. La privacidad de P3 se aplica a la **actualización liberada**: con DP local, el edge recorta y perturba la actualización resultante; con DP central, el fog o el servidor recortan y perturban la contribución recibida.
+  - Cada liberación cuenta en la composición del presupuesto.
+  - No se añade ruido a los ejemplos guardados.
+- **Seguridad del almacenamiento.** La DP del protocolo no protege el búfer frente a quien comprometa físicamente el edge; eso es seguridad de almacenamiento. En C4 el búfer es local, no sale del edge y tiene capacidad (y opcionalmente TTL). El cifrado queda para después.
 
 ## 9. Datos sin etiquetar (C5)
 
@@ -201,6 +224,7 @@ unlabelled:
 - **Diagnósticos.**
   - `pseudo_labels_seen`, `pseudo_labels_accepted`, `acceptance_rate` y `confidence`;
   - `pseudo_label_accuracy`, solo en simulación, con la etiqueta oculta.
+- **Auditoría.** Cada pseudoetiqueta guarda `pseudo_label`, `confidence` y `generated_by_version`, para saber después qué champion generó una etiqueta errónea.
 
 ## 10. Disparadores y federación continua (C6)
 
@@ -209,14 +233,14 @@ continuum:
   trigger:                # federativo: cuándo abre ronda el coordinador
     name: any
     of:
-      - {name: schedule, every: 6h}
+      - {name: schedule, every: 15m}                                    # tiempo de datos
       - {name: volume, samples: 500}
       - {name: drift, kind: performance, detector: {name: page_hinkley}}
   edge_trigger: {name: volume, samples: 64}   # local: cuándo un edge tiene una actualización
-  horizon: 7d             # hasta dónde se reproduce el stream
 ```
 
-- **El coordinador no termina tras N rondas.** Termina al agotar el `horizon` o por orden del operador.
+- **El coordinador no termina tras N rondas.** Termina al agotar `stream.horizon` o por orden del operador.
+- **Duraciones en tiempo de datos.** Todas las duraciones de los disparadores están en tiempo de datos (§4.2).
 - **Volumen y deriva llegan al coordinador como mensajes de estado.**
   - Los edges los envían cada `status_every` y los fogs los agregan.
   - Los mensajes no llevan datos: solo recuentos y estadísticos.
@@ -249,6 +273,8 @@ Líneas base: congelado, reentrenar desde cero, warm start, warm start + replay,
 
 ## 13. Qué implementa cada issue
 
+**Orden de implementación:** C2 → C3 → C4 → C6 → C5 → C7 → C8. Primero un continuum supervisado completo y medible (bundle, streams, memoria y federación continua); el semisupervisado (C5) es una extensión encima de esa base.
+
 | Issue | Secciones |
 |---|---|
 | #157 C2 Model bundle | §6 |
@@ -260,9 +286,20 @@ Líneas base: congelado, reentrenar desde cero, warm start, warm start + replay,
 | #163 C8 Benchmark | §12 |
 | #164 C9 Distribuido | §6 (estado por nodo), §10–11 sobre los nodos de #105 |
 
-## 14. Preguntas abiertas para la revisión
+## 14. Decisiones de la revisión
 
-1. **Validación en flujo.** ¿Los sujetos de validación también llegan en flujo (ventana reciente) o son fijos? Propuesta: también en flujo, porque si no, la ventana reciente no existe.
-2. **Escalado inicial.** Hoy `scaler: global` se ajusta con todas las partes de entrenamiento. En el continuum, ¿se ajusta solo con la primera ventana, o se acepta el ajuste global inicial como "modelo base"? Propuesta: la primera ventana, para que la versión 0 no vea el futuro.
-3. **Privacidad del replay.** La memoria guarda datos crudos en el edge. Con `privacy` (P3), ¿se exige que el replay pase por el mismo recorte y ruido? Propuesta: sí, como cualquier actualización.
-4. **Escala del benchmark.** ¿`horizon` cubre una sesión completa por sujeto (SWELL ≈ 3 h, WESAD ≈ 2 h) con `speed` de 60?
+Las cuatro preguntas abiertas del primer borrador quedaron resueltas así:
+
+| Pregunta | Decisión |
+|---|---|
+| ¿La validación llega en flujo? | Sí: un stream de validación independiente, **solo para evaluar** (§4.3); da la ventana reciente y la histórica |
+| ¿Cómo se ajusta el escalado inicial? | Con un **bootstrap temporal explícito**, no con una sola primera ventana: lo anterior a t₀ ajusta el preprocesado y entrena v0 (§4.2) |
+| ¿El replay pasa por la DP? | Sí, pero la DP se aplica a la **actualización liberada**, no a cada ejemplo del replay; la seguridad del búfer es aparte (§8) |
+| ¿Qué escala tiene el benchmark? | La **sesión completa** (`horizon: session`, derivado de los datos) con `speed: 60`; tiempo de datos separado del virtual (§4.2) |
+
+Además:
+- **Deriva de prior.** Se añade como quinto tipo de deriva, P(Y) (§4.4).
+- **Predicción guardada.** Cada predicción guarda `predicted_at` y `predicted_by_version`, y se puntúa esa misma cuando llega la etiqueta (§4.1, §4.3).
+- **Varios consumos.** `first_consumed_by_version` sustituye a `consumed_by_version`, porque con replay un ejemplo entra en varias versiones.
+- **Pseudoetiquetas auditables.** Cada una guarda `pseudo_label`, `confidence` y `generated_by_version` (§9).
+- **Orden de implementación.** C2 → C3 → C4 → C6 → C5 → C7 → C8 (§13).
