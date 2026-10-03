@@ -50,7 +50,7 @@ The links lose nothing. Rounds are lost when the noise drives some edges to non-
 
 ## Reproducibility
 
-The runs are being repeated at the merge commit `0a4a6ad`, which brings #148's fixes into this branch, on a clean tree. The first 8 of 15 give the same final model bit for bit, with the same final metrics and lost cloud rounds.
+All 15 runs were repeated at the merge commit `0a4a6ad`, which brings #148's fixes into this branch, on a clean tree. For every `config_id` and seed, the final model is identical bit for bit, and so are the final metrics and the lost cloud rounds.
 
 ## Files
 
