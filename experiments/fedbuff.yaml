@@ -1,0 +1,31 @@
+# FedBuff (Nguyen et al., 2022) as a combination of round settings, not a
+# plugin: each fog closes its round as soon as K updates arrived
+# (`quorum: K` with `close_at_quorum: true`), and updates that arrive later
+# join the next round, weighted by (1 + staleness)^-a
+# (`staleness: next_round` with `weighting: polynomial`). The settings are in
+# topologies/four_fogs_swell_wesad_lossless_fedbuff.yaml; techniques_server.yaml
+# compares it with the synchronous server optimizers.
+#
+#   onion_fl plan experiments/fedbuff.yaml
+#   onion_fl run experiments/fedbuff.yaml --workers 3
+name: fedbuff
+description: FedBuff como combinación de ajustes de ronda en los fogs.
+topology: four_fogs_swell_wesad_lossless_fedbuff
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, local_val: 0.2, local_val_split: class_tail, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge: {every: 5, models: [received, local]}
+  aggregators: {every: 5}
+  global: {every: 1}
+seeds: [0, 1, 2]

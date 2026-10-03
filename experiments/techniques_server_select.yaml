@@ -1,0 +1,44 @@
+# Server-rate selection for techniques_server.yaml: FedAvgM at server_lr 0.1,
+# 0.3 and 1.0; FedAdam, FedYogi and FedAdagrad at 0.01, 0.03 and 0.1; FedAsync
+# at alpha 0.3, 0.6 and 0.9. Seed 0. Only the validation subjects decide: the
+# zone evaluators' macro-F1 at round 20.
+#
+#   onion_fl run experiments/techniques_server_select.yaml --workers 3
+name: techniques_server_select
+description: Selección del lr de servidor de cada optimizador sobre los sujetos de validación.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, local_val: 0.2, local_val_split: class_tail, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge: {every: 5, models: [received, local]}
+  aggregators: {every: 5}
+  global: {every: 1}
+seeds: [0]
+sweep:
+  learning.server_optimizer:
+    - {name: fedavgm, server_lr: 0.1}
+    - {name: fedavgm, server_lr: 0.3}
+    - {name: fedavgm, server_lr: 1.0}
+    - {name: fedadam, server_lr: 0.01}
+    - {name: fedadam, server_lr: 0.03}
+    - {name: fedadam, server_lr: 0.1}
+    - {name: fedyogi, server_lr: 0.01}
+    - {name: fedyogi, server_lr: 0.03}
+    - {name: fedyogi, server_lr: 0.1}
+    - {name: fedadagrad, server_lr: 0.01}
+    - {name: fedadagrad, server_lr: 0.03}
+    - {name: fedadagrad, server_lr: 0.1}
+    - {name: fedasync, alpha: 0.3}
+    - {name: fedasync, alpha: 0.6}
+    - {name: fedasync, alpha: 0.9}
