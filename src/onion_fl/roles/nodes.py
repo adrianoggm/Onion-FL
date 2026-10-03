@@ -650,6 +650,7 @@ class Edge(_Greeter, Node):
         hello_retry: float | None = 5.0,
         finetuner: Any = None,
         attack: Any = None,
+        privacy: Any = None,
     ) -> None:
         super().__init__(node_id)
         self.hello_retry = hello_retry
@@ -657,6 +658,7 @@ class Edge(_Greeter, Node):
         self.trainer, self.train = trainer, train
         self.finetuner = finetuner
         self.attack = attack
+        self.privacy, self._released = privacy, 0
         self.sharing, self.levels = sharing, list(levels)
         self.parent_level = self.levels[-2]
         self.val_data, self.evaluate = val_data, evaluate
@@ -792,6 +794,15 @@ class Edge(_Greeter, Node):
             )
         if attacking:
             arrays = self.attack.on_update(arrays, received, child_rng(ctx.rng))
+        if self.privacy is not None:
+            arrays = self.privacy.on_update(arrays, received, child_rng(ctx.rng))
+            self._released += 1
+            ctx.emit(
+                "privacy.epsilon",
+                self.privacy.epsilon(self._released),
+                round=msg.round,
+                mechanism="local",
+            )
         up = keys_crossing(arrays, self.sharing, self.levels, self.parent_level)
         ctx.emit("edge.trained", result.loss, round=msg.round, examples=result.examples)
         payload = Payload(

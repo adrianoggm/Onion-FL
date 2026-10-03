@@ -27,6 +27,7 @@ from onion_fl.experiment.sweep import Scenario, identity, scenarios
 from onion_fl.learning.aggregators import server_optimizers
 from onion_fl.learning.attacks import attacks
 from onion_fl.learning.model import models, param_groups, state_arrays
+from onion_fl.learning.privacy import privacies
 from onion_fl.learning.sharing import not_local, sharing, traffic
 from onion_fl.learning.trainers import inits, trainers
 from onion_fl.observability.run import Run, save_model
@@ -280,6 +281,11 @@ def edge_specs(
                 tags={"dataset": client.dataset}
                 | ({"malicious": True} if client.id in bad else {}),
                 attack=(create(attacks, config.attack) if client.id in bad else None),
+                privacy=(
+                    None
+                    if config.privacy is None
+                    else create(privacies, config.privacy)
+                ),
                 **device,
             )
             for client in clients

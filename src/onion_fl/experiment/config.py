@@ -51,6 +51,7 @@ from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.attacks import attacks
 from onion_fl.learning.metrics import metrics
 from onion_fl.learning.model import models
+from onion_fl.learning.privacy import privacies
 from onion_fl.learning.sharing import sharing
 from onion_fl.learning.trainers import inits, trainers
 from onion_fl.observability.diagnostics import diagnostics
@@ -89,6 +90,7 @@ REGISTRIES: dict[str, Registry] = {
     "step": steps,
     "baseline": baseline_models,
     "attack": attacks,
+    "privacy": privacies,
 }
 
 
@@ -248,6 +250,15 @@ class ExperimentConfig(Strict):
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
 
+    privacy: PluginRef | None = Field(
+        None,
+        description="Privacidad diferencial local en cada edge que entrena",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+
+    _privacy = field_validator("privacy")(
+        lambda v: v if v is None else _plugin(privacies, v)
+    )
     _attack = field_validator("attack")(
         lambda v: v if v is None else _plugin(attacks, v)
     )

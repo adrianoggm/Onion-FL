@@ -880,3 +880,15 @@ def test_a_malicious_edge_attacks_from_its_start_round() -> None:
     federation = run(tree(1), edges, rounds=2)
 
     assert_global(federation, "trunk.0.weight", 1.0 + 3.0)  # honest, then ×3
+
+
+def test_an_edge_with_local_dp_reports_its_epsilon_each_round() -> None:
+    from onion_fl.learning.privacy import privacies
+
+    dp = privacies.create("local_dp", {"clip": 10.0, "sigma": 1.0})
+    spec = EdgeSpec("e1", model(A), trainer=trainers.create("stub"), privacy=dp)
+
+    federation = run(tree(1), {"fog_0": [spec]}, rounds=2)
+
+    values = [e["value"] for e in names(federation, "privacy.epsilon", "e1")]
+    assert len(values) == 2 and values[0] < values[1]

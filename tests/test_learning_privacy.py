@@ -5,9 +5,10 @@ Hand-written arrays only; nothing is trained (docs/RULES.md).
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
-from onion_fl.learning.privacy import gaussian_epsilon
+from onion_fl.learning.privacy import gaussian_epsilon, privacies
 
 
 def test_epsilon_matches_the_closed_form_optimum() -> None:
@@ -19,3 +20,17 @@ def test_epsilon_grows_with_rounds_and_shrinks_with_noise() -> None:
     assert gaussian_epsilon(1.0, 10, 1e-5) > gaussian_epsilon(1.0, 1, 1e-5)
     assert gaussian_epsilon(2.0, 10, 1e-5) < gaussian_epsilon(1.0, 10, 1e-5)
     assert gaussian_epsilon(1.0, 0, 1e-5) == 0.0
+
+
+def test_local_dp_clips_and_noises_crossing_keys_only() -> None:
+    dp = privacies.create("local_dp", {"clip": 1.0, "sigma": 0.0001})
+
+    out = dp.on_update(
+        {"w": np.array([3.0, 4.0]), "scaffold/w": np.full(2, 5.0)},
+        {"w": np.zeros(2)},
+        np.random.default_rng(0),
+    )
+
+    np.testing.assert_allclose(out["w"], [0.6, 0.8], atol=1e-3)
+    np.testing.assert_allclose(out["scaffold/w"], [5.0, 5.0])
+    assert dp.epsilon(3) == pytest.approx(gaussian_epsilon(0.0001, 3, 1e-5))

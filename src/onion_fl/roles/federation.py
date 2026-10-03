@@ -56,6 +56,7 @@ class EdgeSpec:
     val_data: Any = None
     tags: dict[str, Any] = field(default_factory=dict)
     attack: Any = None
+    privacy: Any = None
 
 
 @dataclass
@@ -186,6 +187,7 @@ def build_federation(
                 eval_every=edge_eval.get("every"),
                 eval_models=edge_eval.get("models", ("received", "local")),
                 attack=spec.attack,
+                privacy=spec.privacy,
                 finetuner=(
                     create(trainer_plugins, finetune)
                     if finetune is not None and spec.train
