@@ -1,0 +1,37 @@
+# Non-IID drift techniques on SWELL and WESAD (issue #148): one scenario per
+# technique, three seeds, segregated placement (each fog sees one dataset).
+# Every technique uses SGD, which SCAFFOLD and FedNova assume; lr 0.3 was the
+# best of 0.03, 0.1, 0.3 and 0.6 for plain FedAvg on seed 0.
+#
+#   onion_fl plan experiments/techniques_drift.yaml
+#   onion_fl run experiments/techniques_drift.yaml --workers 3
+#   onion_fl report experiments/techniques_drift.yaml --by scenario --by model
+name: techniques_drift
+description: Deriva no IID (FedAvg, FedProx, SCAFFOLD, FedNova, FedDyn, MOON) sobre SWELL y WESAD.
+topology: four_fogs_swell_wesad
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, local_val: 0.2, local_val_split: class_tail, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.3}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge: {every: 5, models: [received, local]}
+  aggregators: {every: 5}
+  global: {every: 1}
+seeds: [0, 1, 2]
+sweep:
+  learning.trainer.name,learning.server_optimizer:
+    - [standard, replace]   # FedAvg
+    - [fedprox, replace]
+    - [scaffold, replace]
+    - [fednova, fednova]
+    - [feddyn, feddyn]
+    - [moon, replace]
