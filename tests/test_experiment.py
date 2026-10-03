@@ -860,3 +860,16 @@ def test_a_parent_can_be_named_by_experiment_and_seed(workspace: Path) -> None:
 
     meta = json.loads((path / "run.json").read_text(encoding="utf-8"))
     assert meta["parent"]["run_id"] == parents[1].name
+
+
+def test_a_continuation_refuses_test_subjects_that_trained_the_parent(
+    workspace: Path,
+) -> None:
+    (head,) = scenarios(parse_experiment(experiment(workspace)))
+    parent = run_scenario(head, evaluate=stub_score)
+    raw = experiment(workspace)
+    raw["learning"] = raw["learning"] | {"init": {"name": "run", "run": parent.name}}
+    raw["data"] = raw["data"] | {"roles": {"test": 0.25, "val": 0.17, "seed": 1}}
+
+    with pytest.raises(ConfigError, match="trained the parent"):
+        plan(parse_experiment(raw))

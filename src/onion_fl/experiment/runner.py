@@ -144,6 +144,21 @@ def _parent(config: ExperimentConfig, seed: int) -> tuple[Path, Bundle, Any] | N
     return path, load_bundle(path / "bundle"), init.restore
 
 
+def _check_roles(parent: Mapping[str, Any], child: Mapping[str, Any]) -> None:
+    """No test or validation subject of the child may have trained the parent."""
+    if not parent:
+        raise ConfigError("learning.init: the parent's bundle records no data roles")
+    for dataset, roles in sorted(child.items()):
+        trained = set((parent.get(dataset) or {}).get("train", []))
+        held = set(roles.get("test", [])) | set(roles.get("val", []))
+        leaked = sorted(trained & held)
+        if leaked:
+            raise ConfigError(
+                f"learning.init: {dataset} subjects {leaked} trained the parent but "
+                "are test or validation subjects here; keep the parent's data.roles"
+            )
+
+
 def _restore(federation: Any, bundle: Bundle, restore: Any) -> None:
     """Continue the parent's bundle, leaving out what ``restore`` does not ask for."""
     snapshot = bundle.snapshot
@@ -173,6 +188,8 @@ def _scenario_data(
     parent = _parent(config, scenario.seed)
     frozen = parent[1].preprocessing if parent and parent[2].preprocessing else None
     split = split_subjects(subjects, config.data.roles, frozen=frozen)
+    if parent:
+        _check_roles(parent[1].roles, split.roles)
     placement_ref = config.data.placement
     name = placement_ref if isinstance(placement_ref, str) else placement_ref["name"]
     params = (
@@ -510,6 +527,7 @@ def run_scenario(
                 "parent": lineage_parent,
             },
             config=identity(config),
+            roles=split.roles,
         )
     except BaseException:
         run.finish(status="failed")

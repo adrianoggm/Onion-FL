@@ -9,7 +9,8 @@ from __future__ import annotations
     ├── nodes/<id>.npz       # each node's arrays (edge model, trainer memory, zone, ...)
     ├── nodes/<id>.json      # each node's metadata (random stream, memory layout, ...)
     ├── preprocessing.json   # per dataset: kept features, fill, mean, std
-    ├── schema.json          # per dataset: task, classes, features
+    ├── schema.json          # per dataset: task and classes
+    ├── roles.json           # per dataset: train, val and test subjects
     ├── lineage.json         # version, run_id, parent
     └── config.yaml          # the config that produced it
 
@@ -37,6 +38,7 @@ class Bundle:
     schema: dict[str, Any]
     lineage: dict[str, Any]
     config: dict[str, Any]
+    roles: dict[str, Any]
 
 
 def _save_npz(path: Path, arrays: Mapping[str, np.ndarray]) -> None:
@@ -62,6 +64,7 @@ def save_bundle(
     schema: Mapping[str, Any],
     lineage: Mapping[str, Any],
     config: Mapping[str, Any],
+    roles: Mapping[str, Any] | None = None,
 ) -> Path:
     path = Path(path)
     (path / "nodes").mkdir(parents=True, exist_ok=True)
@@ -88,6 +91,7 @@ def save_bundle(
     _write_json(path / "preprocessing.json", dict(preprocessing))
     _write_json(path / "schema.json", dict(schema))
     _write_json(path / "lineage.json", dict(lineage))
+    _write_json(path / "roles.json", dict(roles or {}))
     (path / "config.yaml").write_text(
         yaml.safe_dump(
             json.loads(json.dumps(dict(config), default=str)), sort_keys=True
@@ -122,4 +126,5 @@ def load_bundle(path: str | Path) -> Bundle:
         schema=read("schema.json"),
         lineage=read("lineage.json"),
         config=yaml.safe_load((path / "config.yaml").read_text(encoding="utf-8")) or {},
+        roles=read("roles.json") if (path / "roles.json").is_file() else {},
     )
