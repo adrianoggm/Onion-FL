@@ -759,6 +759,11 @@ def test_every_simulated_run_writes_its_bundle_and_signs_it(workspace: Path) -> 
         "version": 2,
         "run_id": path.name,
         "parent": None,
+        "algorithms": {
+            "trainer": "stub",
+            "server_optimizer": "replace",
+            "root": "cloud",
+        },
     }
     assert bundle.preprocessing["demo"]["features"] == ["f1", "f2"]
     assert bundle.schema["demo"] == {"task": "stress", "n_classes": 2}
@@ -873,3 +878,123 @@ def test_a_continuation_refuses_test_subjects_that_trained_the_parent(
 
     with pytest.raises(ConfigError, match="trained the parent"):
         plan(parse_experiment(raw))
+
+
+def _parent_run(workspace: Path, **overrides) -> Path:
+    (head,) = scenarios(parse_experiment(experiment(workspace, **overrides)))
+    return run_scenario(head, evaluate=stub_score)
+
+
+def _child(workspace: Path, run: str, restore: dict | None = None, **overrides) -> dict:
+    init = {"name": "run", "run": run} | ({"restore": restore} if restore else {})
+    learning = overrides.pop("learning", experiment(workspace)["learning"])
+    return experiment(workspace, learning=learning | {"init": init}, **overrides)
+
+
+@pytest.mark.parametrize(
+    "change, match",
+    [
+        (
+            {
+                "learning": {
+                    "model": {
+                        "name": "modular_mlp",
+                        "adapter_width": 4,
+                        "trunk_hidden": [4],
+                    },
+                    "trainer": "standard",
+                }
+            },
+            "edge_state",
+        ),
+        (
+            {
+                "learning": {
+                    "model": {
+                        "name": "modular_mlp",
+                        "adapter_width": 4,
+                        "trunk_hidden": [4],
+                    },
+                    "trainer": "stub",
+                    "server_optimizer": "fedavgm",
+                }
+            },
+            "server_state",
+        ),
+        ({"seeds": [1]}, "seed"),
+        ({"topology": {**TOPOLOGY, "root": {"id": "server"}}}, "root"),
+        ({"runtime": {"mode": "real"}}, "real"),
+    ],
+    ids=["trainer", "server_optimizer", "seed", "root", "real"],
+)
+def test_a_continuation_that_cannot_be_exact_is_refused(
+    workspace: Path, change: dict, match: str
+) -> None:
+    parent = _parent_run(workspace)
+
+    with pytest.raises(ConfigError, match=match):
+        plan(parse_experiment(_child(workspace, parent.name, **change)))
+
+
+def test_a_changed_trainer_is_allowed_without_edge_state(workspace: Path) -> None:
+    parent = _parent_run(workspace)
+    learning = experiment(workspace)["learning"] | {"trainer": "standard"}
+
+    raw = _child(workspace, parent.name, {"edge_state": False}, learning=learning)
+    assert plan(parse_experiment(raw))
+
+
+def test_an_unfinished_parent_is_refused(workspace: Path) -> None:
+    from onion_fl.observability.run import compute_run_hash
+
+    parent = _parent_run(workspace)
+    meta = json.loads((parent / "run.json").read_text(encoding="utf-8"))
+    meta["status"] = "incomplete"
+    (parent / "run.json").write_text(json.dumps(meta), encoding="utf-8")
+    meta["run_hash"] = compute_run_hash(parent)
+    (parent / "run.json").write_text(json.dumps(meta), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="finished"):
+        plan(parse_experiment(_child(workspace, parent.name)))
+
+
+def test_a_swept_parent_experiment_must_name_its_scenario(workspace: Path) -> None:
+    sweep = {"learning.trainer": ["stub", {"name": "stub", "shift": 2.0}]}
+    parents = [
+        run_scenario(s, evaluate=stub_score)
+        for s in scenarios(
+            parse_experiment(experiment(workspace, name="parent_exp", sweep=sweep))
+        )
+    ]
+    chosen = json.loads((parents[1] / "run.json").read_text(encoding="utf-8"))[
+        "scenario"
+    ]
+
+    with pytest.raises(ConfigError, match="scenarios"):
+        plan(parse_experiment(_child(workspace, "experiment:parent_exp")))
+    raw = _child(workspace, f"experiment:parent_exp/{chosen}")
+    (child,) = scenarios(parse_experiment(raw))
+    path = run_scenario(child, evaluate=stub_score)
+    meta = json.loads((path / "run.json").read_text(encoding="utf-8"))
+    assert meta["parent"]["run_id"] == parents[1].name
+
+
+def test_a_fresh_model_also_leaves_the_zones_fresh(workspace: Path) -> None:
+    from onion_fl.experiment.runner import _scenario_data, build_scenario
+
+    zone = experiment(workspace)["learning"] | {
+        "sharing": {"name": "zone", "level": "fog"}
+    }
+    parent = _parent_run(workspace, learning=zone)
+    raw = _child(workspace, parent.name, {"model": False}, learning=zone)
+    (tail,) = scenarios(parse_experiment(raw))
+    topology, split, placement, _ = _scenario_data(tail)
+
+    federation = build_scenario(tail, topology, split, placement, evaluate=stub_score)
+
+    assert all(not fog.zone for fog in federation.aggregators.values())
+
+
+def test_a_typo_in_restore_is_an_error(workspace: Path) -> None:
+    with pytest.raises(ConfigError, match="edge_states"):
+        parse_experiment(_child(workspace, "x", {"edge_states": False}))

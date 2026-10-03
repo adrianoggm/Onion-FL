@@ -94,41 +94,65 @@ def load_data(config: ExperimentConfig) -> tuple[list[Any], dict[str, str]]:
     return subjects, digests
 
 
-def _newest_run(runs: Path, experiment: str, seed: int) -> Path | None:
-    """The newest finished run of ``experiment`` with ``seed`` that has a bundle."""
-    found = []
+def _newest_run(runs: Path, reference: str, seed: int) -> Path:
+    """``experiment:<name>[/<scenario>]``: the newest finished run of that
+    experiment (and scenario) with ``seed``, among the runs with a bundle."""
+    name, _, scenario = reference.partition("/")
+    found: dict[str, list[Path]] = {}
     for path in sorted(runs.iterdir()) if runs.is_dir() else []:
         if not (path / "run.json").is_file() or not (path / "bundle").is_dir():
             continue
         meta = json.loads((path / "run.json").read_text(encoding="utf-8"))
         if (
-            meta["config"]["name"] == experiment
+            meta["config"]["name"] == name
             and meta["seed"] == seed
             and meta.get("status") == "finished"
+            and (not scenario or meta.get("scenario") == scenario)
         ):
-            found.append(path)
-    return found[-1] if found else None  # run ids start with their UTC time
+            found.setdefault(meta.get("scenario"), []).append(path)
+    if not found:
+        raise ConfigError(
+            f"learning.init: no finished run of experiment {reference!r} with seed "
+            f"{seed} in {runs}"
+        )
+    if len(found) > 1:
+        raise ConfigError(
+            f"learning.init: experiment {name!r} has runs of several scenarios "
+            f"{sorted(found)}; name one as experiment:{name}/<scenario>"
+        )
+    (paths,) = found.values()
+    return paths[-1]  # run ids start with their UTC time
+
+
+def _algorithms(config: ExperimentConfig) -> dict[str, str]:
+    """The trainer and server optimizer whose state a bundle holds."""
+    root = resolve_topology(config).root
+    return {
+        "trainer": _name(config.learning.trainer),
+        "server_optimizer": _name(root.settings.get("server_optimizer") or "replace"),
+        "root": root.id,
+    }
 
 
 def _parent(config: ExperimentConfig, seed: int) -> tuple[Path, Bundle, Any] | None:
     """The run that ``init: run`` continues: its folder, verified bundle and restore.
 
-    ``run`` is a run id, a run folder, or ``experiment:<name>``: the newest
-    finished run of that experiment with this scenario's seed.
+    ``run`` is a run id, a run folder, or ``experiment:<name>[/<scenario>]``:
+    the newest finished run of that experiment with this scenario's seed. The
+    parent must be finished, signed and continuable exactly: same seed, same
+    root, and the same trainer and server optimizer for the state it restores.
     """
     if _name(config.learning.init) != "run":
         return None
+    if config.runtime.mode == "real":
+        raise ConfigError(
+            "learning.init: run continues only in simulation for now; real runs "
+            "write no bundle until the distributed continuum (C9)"
+        )
     init = create(inits, config.learning.init)
     runs = Path(config.paths.runs)
     if init.run.startswith("experiment:"):
-        name = init.run.split(":", 1)[1]
-        newest = _newest_run(runs, name, seed)
-        if newest is None:
-            raise ConfigError(
-                f"learning.init: no finished run of experiment {name!r} with seed "
-                f"{seed} in {runs}"
-            )
-        path = newest
+        path = _newest_run(runs, init.run.split(":", 1)[1], seed)
     else:
         path = Path(init.run)
         if not path.is_dir():
@@ -139,9 +163,33 @@ def _parent(config: ExperimentConfig, seed: int) -> tuple[Path, Bundle, Any] | N
         raise ConfigError(
             f"learning.init: run {path.name!r} does not verify against its run_hash"
         )
+    meta = json.loads((path / "run.json").read_text(encoding="utf-8"))
+    if meta.get("status") != "finished":
+        raise ConfigError(
+            f"learning.init: run {path.name!r} is {meta.get('status')!r}; only a "
+            "finished run can be continued"
+        )
+    if meta["seed"] != seed:
+        raise ConfigError(
+            f"learning.init: run {path.name!r} has seed {meta['seed']}, this scenario "
+            f"{seed}; continue each seed from its own parent (experiment:<name>)"
+        )
     if not (path / "bundle" / "bundle.json").is_file():
         raise ConfigError(f"learning.init: run {path.name!r} has no bundle")
-    return path, load_bundle(path / "bundle"), init.restore
+    bundle = load_bundle(path / "bundle")
+    saved, here = bundle.lineage.get("algorithms", {}), _algorithms(config)
+    if saved.get("root") != here["root"]:
+        raise ConfigError(
+            f"learning.init: the parent's root is {saved.get('root')!r}, here "
+            f"{here['root']!r}; a continuation keeps the coordinator"
+        )
+    for part, flag in (("trainer", "edge_state"), ("server_optimizer", "server_state")):
+        if getattr(init.restore, flag) and saved.get(part) != here[part]:
+            raise ConfigError(
+                f"learning.init: the parent's {part} is {saved.get(part)!r}, here "
+                f"{here[part]!r}; its state does not fit: set restore.{flag}: false"
+            )
+    return path, bundle, init.restore
 
 
 def _check_roles(parent: Mapping[str, Any], child: Mapping[str, Any]) -> None:
@@ -165,27 +213,29 @@ def _restore(federation: Any, bundle: Bundle, restore: Any) -> None:
     nodes = {}
     for node_id, node in snapshot.nodes.items():
         arrays = dict(node.arrays)
-        if node_id == snapshot.root:
-            dropped = [] if restore.model else ["state/"]
-            dropped += [] if restore.server_state else ["server/"]
-            arrays = {
-                k: v for k, v in arrays.items() if not k.startswith(tuple(dropped))
-            }
-        elif node_id in federation.edges and not restore.edge_state:
-            continue
-        nodes[node_id] = NodeState(arrays, node.meta)
+        meta = dict(node.meta)
+        dropped = [] if restore.model else ["state/", "zone/", "previous/"]
+        dropped += [] if restore.server_state else ["server/"]
+        if node_id in federation.edges and not restore.edge_state:
+            # the edge starts fresh, but what it already released stays released
+            arrays, meta = {}, {"released": node.meta.get("released", 0)}
+        arrays = {k: v for k, v in arrays.items() if not k.startswith(tuple(dropped))}
+        nodes[node_id] = NodeState(arrays, meta)
     restore_federation(
         federation, FederationSnapshot(snapshot.round, nodes, snapshot.root)
     )
 
 
 def _scenario_data(
-    scenario: Scenario,
+    scenario: Scenario, parent: Any = ...
 ) -> tuple[Topology, DataSplit, Placement, dict[str, str]]:
+    """Topology, split, placement and data digests; ``parent`` as ``_parent`` gives
+    it (resolved here when not passed)."""
     config = scenario.config
     topology = resolve_topology(config)
     subjects, digests = load_data(config)
-    parent = _parent(config, scenario.seed)
+    if parent is ...:
+        parent = _parent(config, scenario.seed)
     frozen = parent[1].preprocessing if parent and parent[2].preprocessing else None
     split = split_subjects(subjects, config.data.roles, frozen=frozen)
     if parent:
@@ -455,11 +505,13 @@ def build_scenario(
     *,
     evaluate: Callable[..., Any] | None = None,
     runtime: Any = None,
+    parent: Any = ...,
 ) -> Any:
     """The federation of a scenario, on ``runtime`` (a new SimRuntime by default)."""
     config = scenario.config
     edges, initial = edge_specs(scenario, topology, split, placement)
-    parent = _parent(config, scenario.seed)
+    if parent is ...:
+        parent = _parent(config, scenario.seed)
     start = parent[1].snapshot.round if parent else 0
     federation = build_federation(
         topology,
@@ -488,7 +540,8 @@ def run_scenario(
         from onion_fl.experiment.real import run_real
 
         return run_real(scenario)
-    topology, split, placement, digests = _scenario_data(scenario)
+    parent = _parent(config, scenario.seed)  # resolved once for the whole run
+    topology, split, placement, digests = _scenario_data(scenario, parent)
     run = Run(
         config.paths.runs,
         config=identity(config),
@@ -498,7 +551,6 @@ def run_scenario(
         scenario=scenario.name,
         sinks=_sinks(config),
     )
-    parent = _parent(config, scenario.seed)
     lineage_parent = None
     if parent:
         meta = json.loads((parent[0] / "run.json").read_text(encoding="utf-8"))
@@ -511,7 +563,7 @@ def run_scenario(
     try:
         record_data(run, scenario, split, placement)
         federation = build_scenario(
-            scenario, topology, split, placement, evaluate=evaluate
+            scenario, topology, split, placement, evaluate=evaluate, parent=parent
         )
         run.attach(federation)
         federation.run()
@@ -525,6 +577,7 @@ def run_scenario(
                 "version": federation.coordinator.round,
                 "run_id": run.run_id,
                 "parent": lineage_parent,
+                "algorithms": _algorithms(config),
             },
             config=identity(config),
             roles=split.roles,
