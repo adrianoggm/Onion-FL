@@ -19,6 +19,7 @@ from onion_fl.core.message import Message, Payload
 from onion_fl.core.registry import PluginError
 from onion_fl.core.topology import parse_topology
 from onion_fl.learning.aggregators import aggregators
+from onion_fl.learning.attacks import attacks
 from onion_fl.learning.model import (
     DataShape,
     ModularMLP,
@@ -869,3 +870,13 @@ def test_aggregators_get_the_reference_and_a_stream_and_are_heard(
     (dropped,) = names(federation, "aggregation.dropped", "fog_0")
     assert dropped["tags"]["malicious_dropped"] == 1
     assert dropped["tags"]["malicious"] == 1
+
+
+def test_a_malicious_edge_attacks_from_its_start_round() -> None:
+    attack = attacks.create("scale", {"factor": 3.0, "start_round": 2})
+    stub = trainers.create("stub", {"shift": 1.0})
+    edges = {"fog_0": [EdgeSpec("e1", model(A), trainer=stub, attack=attack)]}
+
+    federation = run(tree(1), edges, rounds=2)
+
+    assert_global(federation, "trunk.0.weight", 1.0 + 3.0)  # honest, then ×3

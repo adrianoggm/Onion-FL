@@ -265,6 +265,26 @@ def test_an_unset_aggregator_stays_out_of_the_config(workspace: Path) -> None:
     assert "aggregator" not in dumped
 
 
+def test_malicious_edges_are_a_seeded_fraction_of_each_dataset(
+    workspace: Path,
+) -> None:
+    from onion_fl.experiment.runner import _scenario_data, malicious_edges
+
+    attack = {"name": "sign_flip", "fraction": 0.5}
+    config = parse_experiment(experiment(workspace, attack=attack))
+    (scenario,) = scenarios(config)
+    _, split, _, _ = _scenario_data(scenario)
+
+    chosen = malicious_edges(scenario.config, split.clients, scenario.seed)
+
+    assert len(chosen) == round(0.5 * len(split.clients))
+    assert chosen == malicious_edges(scenario.config, split.clients, scenario.seed)
+
+
+def test_an_unset_attack_stays_out_of_the_config(workspace: Path) -> None:
+    assert "attack" not in parse_experiment(experiment(workspace)).dump()
+
+
 def test_finetuned_scores_need_a_finetune_trainer(workspace: Path) -> None:
     raw = experiment(workspace, evaluation={"edge": {"models": ["finetuned"]}})
 

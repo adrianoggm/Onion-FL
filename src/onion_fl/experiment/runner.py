@@ -16,6 +16,7 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from onion_fl.core.context import node_rng
 from onion_fl.core.topology import Topology, load_topology, parse_topology
 from onion_fl.data.cache import load_prepared, prepare
 from onion_fl.data.ingest import load_spec
@@ -24,6 +25,7 @@ from onion_fl.data.roles import DataSplit, split_subjects
 from onion_fl.experiment.config import ConfigError, ExperimentConfig
 from onion_fl.experiment.sweep import Scenario, identity, scenarios
 from onion_fl.learning.aggregators import server_optimizers
+from onion_fl.learning.attacks import attacks
 from onion_fl.learning.model import models, param_groups, state_arrays
 from onion_fl.learning.sharing import not_local, sharing, traffic
 from onion_fl.learning.trainers import inits, trainers
@@ -230,6 +232,23 @@ def _sinks(config: ExperimentConfig) -> list[Any]:
     return out
 
 
+def malicious_edges(
+    config: ExperimentConfig, clients: Sequence[Any], seed: int
+) -> set[str]:
+    """The seeded ``fraction`` of each dataset's training edges that attack."""
+    if config.attack is None:
+        return set()
+    fraction = create(attacks, config.attack).fraction
+    chosen: set[str] = set()
+    for dataset in sorted({c.dataset for c in clients}):
+        ids = sorted(c.id for c in clients if c.dataset == dataset)
+        n = round(fraction * len(ids))
+        if n:
+            rng = node_rng(seed, f"attack/{dataset}")
+            chosen |= set(rng.choice(ids, size=n, replace=False).tolist())
+    return chosen
+
+
 def edge_specs(
     scenario: Scenario, topology: Topology, split: DataSplit, placement: Placement
 ) -> tuple[dict[str, list[EdgeSpec]], dict[str, Any]]:
@@ -248,6 +267,7 @@ def edge_specs(
             tags={"dataset": data.dataset},
         )
 
+    bad = malicious_edges(config, split.clients, scenario.seed)
     edges: dict[str, list[EdgeSpec]] = {}
     for leaf, clients in placement.edges.items():
         edges[leaf] = [
@@ -257,7 +277,9 @@ def edge_specs(
                 data=client.train,
                 trainer=create(trainers, config.learning.trainer),
                 val_data=client.local_val,
-                tags={"dataset": client.dataset},
+                tags={"dataset": client.dataset}
+                | ({"malicious": True} if client.id in bad else {}),
+                attack=(create(attacks, config.attack) if client.id in bad else None),
                 **device,
             )
             for client in clients
@@ -314,6 +336,9 @@ def run_scenario(
     )
     try:
         record_data(run, split, placement)
+        bad = malicious_edges(config, split.clients, scenario.seed)
+        if bad:
+            run.record("data.attack", float(len(bad)), edges=sorted(bad))
         federation = build_scenario(
             scenario, topology, split, placement, evaluate=evaluate
         )

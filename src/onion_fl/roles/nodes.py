@@ -649,12 +649,14 @@ class Edge(_Greeter, Node):
         tags: Mapping[str, Any] | None = None,
         hello_retry: float | None = 5.0,
         finetuner: Any = None,
+        attack: Any = None,
     ) -> None:
         super().__init__(node_id)
         self.hello_retry = hello_retry
         self.parent, self.model, self.data = parent, model, data
         self.trainer, self.train = trainer, train
         self.finetuner = finetuner
+        self.attack = attack
         self.sharing, self.levels = sharing, list(levels)
         self.parent_level = self.levels[-2]
         self.val_data, self.evaluate = val_data, evaluate
@@ -738,6 +740,8 @@ class Edge(_Greeter, Node):
             scoring and "finetuned" in self.eval_models and self.finetuner is not None
         )
         start = copy.deepcopy(self.model) if finetuning else None
+        attacking = self.attack is not None and msg.round >= self.attack.start_round
+        data = self.attack.on_data(self.data) if attacking else self.data
         metrics: dict[str, float] = {}
         if scoring and "received" in self.eval_models:
             metrics |= self._score("received", msg.round, ctx)
@@ -747,9 +751,7 @@ class Edge(_Greeter, Node):
             state_arrays(self.model),
         )
         try:
-            result = self.trainer.train(
-                self.model, self.data, received=received, ctx=ctx
-            )
+            result = self.trainer.train(self.model, data, received=received, ctx=ctx)
         except Exception as exc:  # the edge counts as absent; the run goes on
             ctx.emit(
                 "edge.train_failed",
@@ -788,6 +790,8 @@ class Edge(_Greeter, Node):
                 round=msg.round,
                 error=f"{type(exc).__name__}: {exc}",
             )
+        if attacking:
+            arrays = self.attack.on_update(arrays, received, child_rng(ctx.rng))
         up = keys_crossing(arrays, self.sharing, self.levels, self.parent_level)
         ctx.emit("edge.trained", result.loss, round=msg.round, examples=result.examples)
         payload = Payload(
