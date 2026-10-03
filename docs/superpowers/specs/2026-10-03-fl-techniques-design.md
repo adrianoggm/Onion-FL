@@ -37,6 +37,8 @@ Punto de partida, ya implementado:
 
 ## 3. Extensiones del núcleo
 
+§3.4 se implementó con P1 (#147). §3.1–3.2 llegan con P2 (#148) y §3.3 con P3 (#149), donde tienen consumidor.
+
 ### 3.1 Estado auxiliar
 
 - **Nombres.** Una clave `<algoritmo>/<clave del parámetro>`, por ejemplo `scaffold/trunk.0.weight`, pertenece al grupo de su parámetro: `group_of` quita el prefijo.
@@ -60,7 +62,9 @@ Punto de partida, ya implementado:
 ### 3.4 Modelos personales y evaluación con ajuste fino
 
 - **Modelo personal.** Un entrenador puede exponer `personal() -> nn.Module | None` (Ditto, APFL). Si lo hace, el edge puntúa también el modelo `personal` sobre su `local_val`.
-- **Ajuste fino.** `evaluation.edge.finetune: {epochs: k}` copia el modelo recibido, lo entrena `k` épocas con `standard` sobre los datos locales y lo puntúa como `finetuned`. Es el protocolo habitual de FedBABU y Per-FedAvg.
+- **Ajuste fino.** `evaluation.edge.finetune` es un entrenador, por ejemplo `{name: standard, local_epochs: 2}`. Copia el modelo recibido, lo entrena con él sobre los datos locales y lo puntúa como `finetuned`; es el protocolo habitual de FedBABU y Per-FedAvg. `finetune` y `finetuned` en `models` van juntos: uno sin el otro es un error.
+- **Flujos aleatorios.** El ajuste fino y el entrenamiento personal de Ditto y APFL usan un flujo hijo del generador del nodo (`child_rng`). Así, puntuar nunca cambia el entrenamiento, y el modelo global de Ditto y APFL coincide con el de FedAvg para la misma semilla.
+- **Validación local estratificada.** `data.roles.local_val_split: class_tail` reserva las últimas filas de cada clase en lugar de las últimas del sujeto, que suelen ser de una sola condición.
 - **Resultado en los informes.** Los agregadores combinan esas puntuaciones como las de `received` y `local`. El informe compara `global`, `personal` y `finetuned` por nivel.
 
 ### 3.5 Representación del modelo
@@ -106,7 +110,7 @@ Cada plugin lleva título, descripción y explicación en español, sus parámet
 |---|---|---|---|
 | `ditto` | entrenador | Entrena el global como `standard` y, aparte, un modelo personal con término proximal `λ/2·‖v − w‖²` hacia el global. Puntúa `personal` | Li et al., 2021 |
 | `apfl` | entrenador | Modelo personal `v` mezclado con el global: `α·v + (1−α)·w`. `α` es fijo o se aprende | Deng et al., 2020 |
-| `fedrep` | entrenador | Primero `head_epochs` sobre la cabeza con el cuerpo congelado, luego `body_epochs` sobre el cuerpo. Exige que la cabeza sea local (`fedper`, o una compartición `custom` con `head.*: local`); si no, `ConfigError` | Collins et al., 2021 |
+| `fedrep` | entrenador | Primero `head_epochs` sobre la cabeza con el cuerpo congelado, luego `local_epochs` sobre el cuerpo. Exige que la cabeza sea local (`fedper`, o una compartición `custom` con `head.*: local`); si no, `ConfigError` antes de lanzar el primer escenario | Collins et al., 2021 |
 | `fedbabu` | entrenador | `standard` con la cabeza congelada en su inicialización. Se evalúa con ajuste fino (§3.4) | Oh et al., 2022 |
 | `lg_fedavg` | compartición | Adaptadores y tronco locales; cabezas globales | Liang et al., 2020 |
 
@@ -149,7 +153,7 @@ Cada fase tiene su propio plan de implementación, su issue y su PR.
 
 ## 5. Comparar técnicas
 
-- **Entre escenarios.** Por ejemplo, `sweep: {learning.trainer: [standard, fedprox, scaffold, ditto]}` o `{attack.fraction: [0, 0.2]}`. El barrido ya admite valores que son plugins completos con parámetros.
+- **Entre escenarios.** Por ejemplo, `sweep: {learning.trainer: [standard, fedprox, scaffold, ditto]}` o `{attack.fraction: [0, 0.2]}`. El barrido admite valores que son plugins completos con parámetros. Una clave `a,b` barre varias rutas a la vez: `learning.sharing,learning.trainer.name: [[fedper, fedrep], [fedavg, ditto]]` da un escenario por pareja.
 - **Entre niveles.** Cada nodo de la topología puede tener su `aggregator` y la raíz su `server_optimizer`, así que la técnica también se compara por nivel.
 - **Informes.** `onion_fl report --by scenario` y la vista Comparar del Studio dan la media ± IC sobre las semillas por nivel y métrica, incluidas `personal`, `finetuned`, `privacy.epsilon` y las de selección.
 - **Experimentos de ejemplo.** Uno por fase sobre SWELL + WESAD: `experiments/techniques_personalisation.yaml`, `techniques_drift.yaml`, `techniques_robustness.yaml` y `techniques_server.yaml`. Sus resultados se confirman en `results/` y se citan en el README.

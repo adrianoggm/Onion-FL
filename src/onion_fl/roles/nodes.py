@@ -24,7 +24,7 @@ from typing import Any
 
 import numpy as np
 
-from onion_fl.core.context import Context
+from onion_fl.core.context import Context, child_rng
 from onion_fl.core.message import Message, Payload
 from onion_fl.core.node import Node
 from onion_fl.learning.aggregators import Contribution
@@ -684,9 +684,11 @@ class Edge(_Greeter, Node):
         It draws from a child stream of the node's generator, so scoring
         never shifts the draws of the edge's own training.
         """
-        rng = np.random.default_rng(ctx.rng.bit_generator.seed_seq.spawn(1)[0])
         self.finetuner.train(
-            start, self.data, received=received, ctx=SimpleNamespace(rng=rng)
+            start,
+            self.data,
+            received=received,
+            ctx=SimpleNamespace(rng=child_rng(ctx.rng)),
         )
         return start
 

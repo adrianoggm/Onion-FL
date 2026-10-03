@@ -299,6 +299,18 @@ def record_data(run: Run, split: DataSplit, placement: Placement) -> None:
         run.record("data.composition", composition["samples"], leaf=leaf, **composition)
 
 
+def check_scenarios(todo: Sequence[Scenario]) -> None:
+    """Refuse a sweep before its first run if any scenario cannot be built.
+
+    Builds each scenario's initial model, which checks that its trainer fits
+    its sharing (FedRep); a bad scenario then fails before any run folder.
+    """
+    for scenario in todo:
+        config = scenario.config
+        split = split_subjects(load_data(config)[0], config.data.roles)
+        _initial_state(config, _shapes(split), scenario.seed)
+
+
 def run_experiment(
     config: ExperimentConfig,
     workers: int = 1,
@@ -307,13 +319,12 @@ def run_experiment(
 ) -> list[Path]:
     """Run every scenario (or the one named ``only``); in parallel processes when ``workers > 1``."""
     todo = [s for s in scenarios(config) if only is None or s.name == only]
-    if workers <= 1:
-        return [run_scenario(s, evaluate) for s in todo]
-    if evaluate is not None:
+    if workers > 1 and evaluate is not None:
         raise ValueError(
             "a custom evaluate cannot be sent to worker processes; use workers=1"
         )
-    for scenario in todo:  # fill the caches once, before the workers read them
-        load_data(scenario.config)
+    check_scenarios(todo)  # also fills the caches before any worker reads them
+    if workers <= 1:
+        return [run_scenario(s, evaluate) for s in todo]
     with ProcessPoolExecutor(max_workers=workers) as pool:
         return list(pool.map(run_scenario, todo))

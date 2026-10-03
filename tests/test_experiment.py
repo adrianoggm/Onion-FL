@@ -158,10 +158,31 @@ def test_fedrep_needs_sharing_that_keeps_the_heads_local(workspace: Path) -> Non
     assert plan(parse_experiment(experiment(workspace, learning=local)))
 
 
+def test_a_bad_scenario_fails_before_any_run_starts(workspace: Path) -> None:
+    pairs = [["fedavg", "stub"], ["fedavg", "fedrep"]]
+    config = parse_experiment(
+        experiment(workspace, sweep={"learning.sharing,learning.trainer": pairs})
+    )
+
+    with pytest.raises(ConfigError, match="fedrep"):
+        run_experiment(config)
+    assert not list((workspace / "runs").glob("*"))
+
+
 def test_finetuned_scores_need_a_finetune_trainer(workspace: Path) -> None:
     raw = experiment(workspace, evaluation={"edge": {"models": ["finetuned"]}})
 
     with pytest.raises(ConfigError, match="finetune"):
+        parse_experiment(raw)
+
+
+def test_a_finetune_trainer_needs_finetuned_scores(workspace: Path) -> None:
+    raw = experiment(
+        workspace,
+        evaluation={"edge": {"models": ["local"], "finetune": "standard"}},
+    )
+
+    with pytest.raises(ConfigError, match="finetuned"):
         parse_experiment(raw)
 
 
@@ -231,6 +252,17 @@ def test_paths_joined_by_commas_are_swept_together(workspace: Path) -> None:
         (1.0, 1),
         (2.0, 3),
     ]
+
+
+def test_a_joint_sweep_key_may_have_spaces_after_its_commas(workspace: Path) -> None:
+    config = parse_experiment(
+        experiment(workspace, sweep={"learning.trainer.shift, rounds": [[2.0, 3]]})
+    )
+
+    (scenario,) = scenarios(config)
+
+    assert scenario.name == "learning.trainer.shift,rounds=2.0,3"
+    assert scenario.config.rounds == 3
 
 
 @pytest.mark.parametrize("value", [[1.0], "fedavg"])

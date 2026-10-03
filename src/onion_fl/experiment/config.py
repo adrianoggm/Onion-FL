@@ -151,9 +151,13 @@ class EdgeEval(Strict):
     )
 
     @model_validator(mode="after")
-    def _finetuned_needs_a_trainer(self) -> EdgeEval:
+    def _finetune_and_finetuned_go_together(self) -> EdgeEval:
         if "finetuned" in self.models and self.finetune is None:
             raise ValueError("models: 'finetuned' needs evaluation.edge.finetune")
+        if self.finetune is not None and "finetuned" not in self.models:
+            raise ValueError(
+                "finetune: it only runs for 'finetuned' scores; add it to models"
+            )
         return self
 
 
