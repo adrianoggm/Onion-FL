@@ -276,3 +276,15 @@ def test_optimizers_keep_the_dtype() -> None:
 def test_registries_list_the_built_ins() -> None:
     assert aggregators.names() == ["fedavg", "mean", "median", "trimmed_mean"]
     assert server_optimizers.names() == ["fedadam", "fedavgm", "replace"]
+
+
+@pytest.mark.parametrize("name", ["fedavgm", "fedadam"])
+def test_server_optimizers_replace_auxiliary_arrays(name: str) -> None:
+    optimizer = server_optimizers.create(name)
+    global_state = {"w": np.zeros(2), "scaffold/w": np.zeros(2)}
+    aggregated = {"w": np.ones(2), "scaffold/w": np.full(2, 7.0)}
+
+    out = optimizer.apply(global_state, aggregated)
+    out = optimizer.apply(out, aggregated)  # a second step: momentum would show
+
+    np.testing.assert_array_equal(out["scaffold/w"], [7.0, 7.0])

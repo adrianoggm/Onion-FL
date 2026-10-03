@@ -15,6 +15,7 @@ from onion_fl.learning.model import (
     ModularMLP,
     ModularMLPConfig,
     group_of,
+    is_aux,
     load_arrays,
     models,
     param_groups,
@@ -280,3 +281,9 @@ def test_models_registry_validates_and_describes_the_config() -> None:
         "heads",
         "dropout",
     }
+
+
+def test_auxiliary_keys_belong_to_their_parameter_group() -> None:
+    assert is_aux("scaffold/trunk.0.weight") and not is_aux("trunk.0.weight")
+    assert group_of("scaffold/trunk.0.weight") == "trunk"
+    assert group_of("fednova/adapter.swell.0.weight") == "adapter.swell"

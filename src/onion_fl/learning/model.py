@@ -169,9 +169,20 @@ class ModularMLP(nn.Module):
         return self.head[self._head_key(self.shapes[dataset])](hidden)
 
 
+AUX = "/"
+
+
+def is_aux(key: str) -> bool:
+    """An auxiliary array ``<algorithm>/<parameter key>`` (a control variate, …)."""
+    return AUX in key
+
+
 def group_of(key: str) -> str:
-    """Parameter group of a key: ``adapter.<dataset>``, ``trunk``, ``trunk.<dataset>``, ``head.<task>``."""
-    parts = key.split(".")
+    """Parameter group of a key: ``adapter.<dataset>``, ``trunk``, ``trunk.<dataset>``, ``head.<task>``.
+
+    An auxiliary key belongs to the group of the parameter it names.
+    """
+    parts = key.split(AUX, 1)[-1].split(".")
     if len(parts) < 2 or parts[0] not in NAMESPACES:
         raise ValueError(f"key {key!r} is outside the {'/'.join(NAMESPACES)} namespace")
     if parts[0] in ("adapter", "trunk") and parts[1][0].isdigit():

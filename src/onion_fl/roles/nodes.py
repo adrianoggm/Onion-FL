@@ -29,7 +29,7 @@ from onion_fl.core.message import Message, Payload
 from onion_fl.core.node import Node
 from onion_fl.learning.aggregators import Contribution
 from onion_fl.learning.metrics import reduce_reports
-from onion_fl.learning.model import load_arrays, state_arrays
+from onion_fl.learning.model import is_aux, load_arrays, state_arrays
 from onion_fl.learning.sharing import SharingPolicy, keys_crossing, keys_held_at
 from onion_fl.observability.diagnostics import RoundView
 from onion_fl.observability.diagnostics import diagnostics as diagnostic_plugins
@@ -51,6 +51,11 @@ def _subset(state: Mapping[str, np.ndarray], keys: Iterable[str]) -> State:
 
 def _due(every: int | None, round: int) -> bool:
     return bool(every) and round % every == 0
+
+
+def _model_part(state: Mapping[str, Any]) -> State:
+    """The model's own arrays, without auxiliary ones (control variates, …)."""
+    return {k: v for k, v in state.items() if not is_aux(k)}
 
 
 def _train_metrics(reports: Iterable[Mapping[str, float]]) -> dict[str, float]:
@@ -294,11 +299,14 @@ class _Collector(Node):
             return
         view = RoundView(
             round=self.round,
-            sent=self.sent,
-            contributions=fresh,
-            aggregated=aggregated,
-            previous=self.previous,
-            received=getattr(self, "received", {}),
+            sent=_model_part(self.sent),
+            contributions={
+                child: Contribution(c.source, _model_part(c.state), c.weights)
+                for child, c in fresh.items()
+            },
+            aggregated=_model_part(aggregated),
+            previous=None if self.previous is None else _model_part(self.previous),
+            received=_model_part(getattr(self, "received", {})),
             datasets={
                 c: meta["tags"]["dataset"]
                 for c, meta in self.registered.items()
@@ -735,7 +743,7 @@ class Edge(_Greeter, Node):
                 round=msg.round,
                 error=f"{type(exc).__name__}: {exc}",
             )
-        arrays = state_arrays(self.model)
+        arrays = state_arrays(self.model) | dict(result.aux)
         up = keys_crossing(arrays, self.sharing, self.levels, self.parent_level)
         ctx.emit("edge.trained", result.loss, round=msg.round, examples=result.examples)
         payload = Payload(

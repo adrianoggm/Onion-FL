@@ -11,7 +11,7 @@ import copy
 import fnmatch
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Literal, Protocol
@@ -43,6 +43,7 @@ class TrainResult:
     samples: int  # samples processed (epochs × examples): what compute is charged for
     examples: int  # distinct local examples: the FedAvg weight
     batches: int
+    aux: Mapping[str, np.ndarray] = field(default_factory=dict)  # sent with the update
 
 
 def batches_of(n: int, batch_size: int, rng: np.random.Generator) -> list[np.ndarray]:

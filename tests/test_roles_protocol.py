@@ -7,6 +7,7 @@ arithmetic. No data is involved (docs/RULES.md).
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from pathlib import Path
 
@@ -69,6 +70,21 @@ def edge(
 class Broken:
     def train(self, *args, **kwargs):
         raise RuntimeError("out of memory")
+
+
+class AuxStub:
+    """The stub trainer plus one auxiliary array: what it last received, plus 1."""
+
+    def __init__(self) -> None:
+        self.stub = trainers.create("stub", {"shift": 1.0})
+        self.seen: list[np.ndarray | None] = []
+
+    def train(self, model, data=None, received=None, ctx=None):
+        result = self.stub.train(model, data, received, ctx)
+        last = (received or {}).get("algo/trunk.0.weight")
+        self.seen.append(None if last is None else np.asarray(last).copy())
+        base = np.zeros_like(received["trunk.0.weight"]) if last is None else last
+        return dataclasses.replace(result, aux={"algo/trunk.0.weight": base + 1})
 
 
 def run(topology, edges, rounds: int = 1, sharing: str = "fedavg", **kw):
@@ -726,3 +742,37 @@ def test_without_retries_a_lost_hello_stalls_the_registration() -> None:
     federation = run(lossy_tree(hello_retry=None), edges, seed=1)
 
     assert names(federation, "federation.registered") == []
+
+
+def test_auxiliary_arrays_go_up_and_come_back_down() -> None:
+    trainer = AuxStub()
+    edges = {"fog_0": [EdgeSpec("e1", model(A), trainer=trainer)]}
+
+    federation = run(tree(1), edges, rounds=3)
+
+    assert trainer.seen[0] is None
+    assert float(trainer.seen[1].mean()) == pytest.approx(1.0)
+    assert float(trainer.seen[2].mean()) == pytest.approx(2.0)
+    final = federation.coordinator.state["algo/trunk.0.weight"]
+    assert float(final.mean()) == pytest.approx(3.0)
+
+
+def test_auxiliary_arrays_do_not_reach_the_diagnostics() -> None:
+    def diagnostics(trainer) -> list:
+        other = trainers.create("stub", {"shift": 2.0})
+        edges = {
+            "fog_0": [
+                EdgeSpec("e1", model(A), trainer=trainer),
+                EdgeSpec("e2", model(A), trainer=other),
+            ]
+        }
+        federation = run(tree(1), edges, rounds=2)
+        return sorted(
+            (e["node"], e["name"], e["tags"].get("round"), round(float(e["value"]), 9))
+            for e in federation.runtime.events
+            if e["name"].startswith(("diagnostic.divergence", "diagnostic.drift"))
+        )
+
+    with_aux = diagnostics(AuxStub())
+
+    assert with_aux and with_aux == diagnostics(trainers.create("stub", {"shift": 1.0}))

@@ -16,6 +16,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from onion_fl.core.registry import Registry
+from onion_fl.learning.model import is_aux
 
 
 class AggregationError(ValueError):
@@ -196,6 +197,9 @@ class FedAvgM:
     ) -> State:
         new = dict(global_state)
         for key, value in aggregated.items():
+            if is_aux(key):  # control variates and the like: replaced, never stepped
+                new[key] = value
+                continue
             current = np.asarray(global_state.get(key, value), dtype=np.float64)
             delta = np.asarray(value, dtype=np.float64) - current
             velocity = (
@@ -240,6 +244,9 @@ class FedAdam:
     ) -> State:
         new = dict(global_state)
         for key, value in aggregated.items():
+            if is_aux(key):  # control variates and the like: replaced, never stepped
+                new[key] = value
+                continue
             current = np.asarray(global_state.get(key, value), dtype=np.float64)
             delta = np.asarray(value, dtype=np.float64) - current
             m = (
