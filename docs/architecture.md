@@ -64,7 +64,7 @@ flowchart LR
 - **Roles** are drawn per dataset with their own seed, before and apart from the placement:
   - `test` subjects are the global evaluators, and they are identical in every scenario;
   - `val` subjects become zone evaluators;
-  - `train` subjects are grouped into clients (`subjects_per_client`), each keeping a contiguous `local_val` tail;
+  - `train` subjects are grouped into clients (`subjects_per_client`), each keeping `local_val` rows: its last rows (`tail`) or the last rows of each class (`class_tail`);
   - imputation, scaling (`global`, `local` or `none`) and constant-feature removal are fitted on the training portions only.
 - **Placement** gives each leaf aggregator its clients and its zone evaluators:
   - `mixing(α)` weights each dataset by home fog (declared, inherited or assigned in turns), from segregated at α = 0 to uniform at α = 1;
@@ -83,12 +83,13 @@ flowchart LR
 | `level:<name>` | Aggregated up to that level; its aggregator keeps it and injects it into what it sends down |
 | `local` | Never leaves the edge |
 
-A group crosses a link, in both directions, when its scope is `global`, or `level:X` with X at the parent's level or above it. The presets are `fedavg`, `fedper` (local heads), `zone(level)`, `independent` and `harmonized`; `custom` takes rules by glob.
+A group crosses a link, in both directions, when its scope is `global`, or `level:X` with X at the parent's level or above it. The presets are `fedavg`, `fedper` (local heads), `lg_fedavg` (local adapters and trunk, global heads), `zone(level)`, `independent` and `harmonized`; `custom` takes rules by glob.
 
 **Aggregation.** Aggregators work per key, only among the contributions that hold it, and send up the summed samples, so a tree of `fedavg` equals a flat FedAvg. Contributions are sorted by sender before combining. The aggregators are `fedavg`, `mean`, `median` and `trimmed_mean(β)`. The coordinator then applies a server optimizer: `replace`, `fedavgm` or `fedadam`.
 
 **Training and initialisation.**
 - Trainers: `standard` (epochs, batch, learning rate, optimizer, frozen groups) and `fedprox(μ)`.
+- Personalisation trainers: `ditto(λ)` and `apfl(α)` keep a personal model per edge across rounds and expose it through `personal()`. `fedrep` trains the local head, then the shared body, and declares the head as `local_groups`: `plan` refuses a sharing policy that sends it up. `fedbabu` freezes the head.
 - `stub` learns nothing and is for protocol tests; with `noise` each node sends a different, seeded update.
 - Inits: `random(seed)`, and `checkpoint(path, groups)`, which loads a saved `model.npz` such as a pooled run's.
 
@@ -119,7 +120,7 @@ sequenceDiagram
 - **Participation.** It is `all`, or `fraction(p)` drawn with the node's own RNG stream.
 - **Failures.** A failed training is `edge.train_failed`, and the edge counts as absent. A malformed message, or one from an unknown sender, is `message.rejected`. No node error stops a run.
 - **Evaluation.**
-  - Edges score their `local_val` every `edge.every` rounds.
+  - Edges score their `local_val` every `edge.every` rounds: the model received and the one trained, plus `personal` (if the trainer has a personal model) and `finetuned` (the received model after the `edge.finetune` trainer, which draws from a child random stream so it never changes training).
   - Aggregators combine the scores of their children, and ask their `val` evaluators to score the zone model every `aggregators.every` rounds.
   - The coordinator asks the `test` evaluators to score the global model every `global.every` rounds, and always after the last one. It reports per dataset.
 
@@ -230,10 +231,10 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | availability_model | `always`, `bernoulli`, `schedule`, `crash_at` |
 | transport | `memory`, `mqtt` |
 | model | `modular_mlp` |
-| sharing | `fedavg`, `fedper`, `zone`, `independent`, `harmonized`, `custom` |
+| sharing | `fedavg`, `fedper`, `lg_fedavg`, `zone`, `independent`, `harmonized`, `custom` |
 | aggregator | `fedavg`, `mean`, `median`, `trimmed_mean` |
 | server_optimizer | `replace`, `fedavgm`, `fedadam` |
-| trainer | `standard`, `fedprox`, `stub` |
+| trainer | `standard`, `fedprox`, `ditto`, `apfl`, `fedrep`, `fedbabu`, `stub` |
 | init | `random`, `checkpoint` |
 | metric | `loss`, `accuracy`, `macro_f1`, `recall_per_class`, `confusion_matrix` |
 | diagnostic | `divergence`, `dataset_conflict`, `drift`, `participation`, `fairness` |
