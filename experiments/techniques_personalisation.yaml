@@ -1,0 +1,41 @@
+# Personalisation techniques on SWELL and WESAD (issue #147): one scenario per
+# technique, three seeds. Every edge scores on its own class-stratified rows
+# the model it received, the one it trained, its personal model (Ditto, APFL)
+# and the received model after two epochs of fine-tuning.
+#
+#   onion_fl plan experiments/techniques_personalisation.yaml
+#   onion_fl run experiments/techniques_personalisation.yaml --workers 3
+#   onion_fl report experiments/techniques_personalisation.yaml --by scenario
+name: techniques_personalisation
+description: Personalización (FedAvg, FedPer, LG-FedAvg, Ditto, APFL, FedRep, FedBABU) sobre SWELL y WESAD.
+topology: four_fogs_swell_wesad
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, local_val: 0.2, local_val_split: class_tail, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.5}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, local_epochs: 10, batch_size: 32, lr: 0.003}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge:
+    every: 5
+    models: [received, local, personal, finetuned]
+    finetune: {name: standard, local_epochs: 2, batch_size: 32, lr: 0.003}
+  aggregators: {every: 5}
+  global: {every: 1}
+seeds: [0, 1, 2]
+sweep:
+  learning.sharing,learning.trainer.name:
+    - [fedavg, standard]      # FedAvg
+    - [fedper, standard]      # FedPer
+    - [lg_fedavg, standard]   # LG-FedAvg
+    - [fedavg, ditto]
+    - [fedavg, apfl]
+    - [fedper, fedrep]
+    - [fedavg, fedbabu]
