@@ -112,6 +112,18 @@ def keys_held_at(
     return [k for k in keys if policy.scope_of(group_of(k)) == wanted]
 
 
+def not_local(
+    policy: SharingPolicy, groups: Iterable[str], patterns: Sequence[str]
+) -> list[str]:
+    """Groups matching ``patterns`` that ``policy`` lets leave the edge."""
+    return sorted(
+        g
+        for g in groups
+        if any(fnmatch.fnmatchcase(g, p) for p in patterns)
+        and policy.scope_of(g) != "local"
+    )
+
+
 def traffic(
     topology: Topology, policy: SharingPolicy, groups: Sequence[str]
 ) -> list[dict[str, Any]]:
@@ -184,6 +196,18 @@ def fedavg() -> SharingPolicy:
 )
 def fedper() -> SharingPolicy:
     return SharingPolicy(name="fedper", rules={"head.*": "local"})
+
+
+@sharing.register(
+    "lg_fedavg",
+    title="LG-FedAvg",
+    description="Adaptadores y tronco locales; las cabezas se agregan globalmente.",
+    explain="Cada edge aprende su representación y solo comparte la cabeza (Liang et al., 2020).",
+)
+def lg_fedavg() -> SharingPolicy:
+    return SharingPolicy(
+        name="lg_fedavg", rules={"adapter*": "local", "trunk*": "local"}
+    )
 
 
 class ZoneParams(BaseModel):

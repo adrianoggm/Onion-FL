@@ -197,7 +197,15 @@ def test_the_stub_needs_no_data() -> None:
 
 
 def test_trainers_registry_lists_the_built_ins() -> None:
-    assert trainers.names() == ["fedprox", "standard", "stub"]
+    assert trainers.names() == [
+        "apfl",
+        "ditto",
+        "fedbabu",
+        "fedprox",
+        "fedrep",
+        "standard",
+        "stub",
+    ]
     assert inits.names() == ["checkpoint", "random"]
 
 
@@ -361,6 +369,110 @@ def test_fedprox_stays_closer_to_the_received_state(swell) -> None:
         )
 
     assert distance(prox) < distance(plain)
+
+
+@real
+def test_ditto_keeps_a_personal_model_apart_from_the_global(swell) -> None:
+    model = build()
+    received = state_arrays(model)
+    trainer = trainers.create("ditto", {"local_epochs": 2, "lr": 0.05, "lam": 0.1})
+
+    result = trainer.train(model, swell, received, ctx())
+
+    personal, trained = state_arrays(trainer.personal()), state_arrays(model)
+    assert any(not np.array_equal(personal[k], trained[k]) for k in trained)
+    assert any(not np.array_equal(personal[k], received[k]) for k in received)
+    assert result.samples == 4 * len(swell.y)  # global and personal epochs
+    assert result.examples == len(swell.y)
+
+
+@real
+def test_a_larger_lambda_keeps_the_personal_model_near_the_global(swell) -> None:
+    received = state_arrays(build())
+
+    def distance(lam: float) -> float:
+        trainer = trainers.create("ditto", {"local_epochs": 3, "lr": 0.05, "lam": lam})
+        trainer.train(build(), swell, received, ctx())
+        return sum(
+            float(((v - received[k]) ** 2).sum())
+            for k, v in state_arrays(trainer.personal()).items()
+        )
+
+    assert distance(10.0) < distance(0.0)
+
+
+@real
+def test_ditto_trains_when_the_heads_stay_on_the_edge(swell) -> None:
+    model = build()
+    received = {
+        k: v for k, v in state_arrays(model).items() if not k.startswith("head.")
+    }
+    trainer = trainers.create("ditto", {"lr": 0.05})
+
+    trainer.train(model, swell, received, ctx())
+
+    assert trainer.personal() is not None
+
+
+@real
+def test_apfl_with_alpha_zero_is_the_global_model(swell) -> None:
+    model = build()
+    trainer = trainers.create("apfl", {"lr": 0.05, "alpha": 0.0, "adapt_alpha": False})
+
+    trainer.train(model, swell, state_arrays(model), ctx())
+
+    for key, value in state_arrays(trainer.personal()).items():
+        np.testing.assert_allclose(value, state_arrays(model)[key])
+
+
+@real
+def test_apfl_learns_its_alpha_within_bounds(swell) -> None:
+    model = build()
+    trainer = trainers.create(
+        "apfl", {"local_epochs": 2, "lr": 0.05, "alpha": 0.5, "alpha_lr": 0.5}
+    )
+
+    result = trainer.train(model, swell, state_arrays(model), ctx())
+
+    assert trainer.alpha != 0.5 and 0.0 <= trainer.alpha <= 1.0
+    personal = state_arrays(trainer.personal())
+    assert any(not np.allclose(personal[k], v) for k, v in state_arrays(model).items())
+    assert result.samples == 2 * 2 * len(swell.y)  # two models per batch
+
+
+@real
+def test_fedrep_trains_the_head_then_the_body(swell) -> None:
+    model = build()
+    before = state_arrays(model)
+    trainer = trainers.create(
+        "fedrep", {"head_epochs": 2, "local_epochs": 1, "lr": 0.05}
+    )
+
+    result = trainer.train(model, swell, before, ctx())
+
+    after = state_arrays(model)
+    assert all(not np.array_equal(after[k], v) for k, v in before.items())
+    assert result.samples == 3 * len(swell.y)
+    assert trainer.local_groups == ["head*"]
+
+
+@real
+def test_fedbabu_leaves_the_head_as_it_was_initialised(swell) -> None:
+    model = build()
+    before = state_arrays(model)
+
+    trainers.create("fedbabu", {"lr": 0.05}).train(model, swell, before, ctx())
+
+    after = state_arrays(model)
+    for key, value in before.items():
+        assert np.array_equal(after[key], value) == key.startswith("head."), key
+
+
+def test_ditto_needs_the_received_state() -> None:
+    data = SimpleNamespace(X=np.zeros((1, 16), np.float32), y=np.zeros(1, np.int64))
+
+    with pytest.raises(TrainError, match="received"):
+        trainers.create("ditto").train(build(), data, None, ctx())
 
 
 def test_the_stub_can_add_seeded_noise_per_node() -> None:

@@ -149,6 +149,28 @@ def test_the_schema_includes_the_plugin_catalogue() -> None:
     assert {p["name"] for p in plugins["transport"]} == {"memory", "mqtt"}
 
 
+def test_fedrep_needs_sharing_that_keeps_the_heads_local(workspace: Path) -> None:
+    learning = experiment(workspace)["learning"] | {"trainer": "fedrep"}
+
+    with pytest.raises(ConfigError, match="fedrep"):
+        plan(parse_experiment(experiment(workspace, learning=learning)))
+    local = learning | {"sharing": "fedper"}
+    assert plan(parse_experiment(experiment(workspace, learning=local)))
+
+
+def test_finetuned_scores_need_a_finetune_trainer(workspace: Path) -> None:
+    raw = experiment(workspace, evaluation={"edge": {"models": ["finetuned"]}})
+
+    with pytest.raises(ConfigError, match="finetune"):
+        parse_experiment(raw)
+
+
+def test_an_unset_finetune_stays_out_of_the_config(workspace: Path) -> None:
+    config = parse_experiment(experiment(workspace))
+
+    assert "finetune" not in config.dump()["evaluation"]["edge"]
+
+
 # --- sweeps ------------------------------------------------------------------------------------
 
 
@@ -189,6 +211,38 @@ def test_sweeping_a_plugin_given_by_name(workspace: Path) -> None:
     trainer = [s.config.learning.trainer for s in scenarios(config)]
 
     assert trainer == [{"name": "stub", "shift": 1.0}, {"name": "stub", "shift": 2.0}]
+
+
+def test_paths_joined_by_commas_are_swept_together(workspace: Path) -> None:
+    config = parse_experiment(
+        experiment(
+            workspace,
+            sweep={"learning.trainer.shift,rounds": [[1.0, 1], [2.0, 3]]},
+        )
+    )
+
+    out = scenarios(config)
+
+    assert [s.name for s in out] == [
+        "learning.trainer.shift,rounds=1.0,1",
+        "learning.trainer.shift,rounds=2.0,3",
+    ]
+    assert [(s.config.learning.trainer["shift"], s.config.rounds) for s in out] == [
+        (1.0, 1),
+        (2.0, 3),
+    ]
+
+
+@pytest.mark.parametrize("value", [[1.0], "fedavg"])
+def test_a_joint_sweep_value_needs_one_entry_per_path(workspace: Path, value) -> None:
+    config = parse_experiment(
+        experiment(workspace, sweep={"learning.trainer.shift,rounds": [value]})
+    )
+
+    with pytest.raises(
+        ConfigError, match="learning.trainer.shift,rounds: .*one per path"
+    ):
+        scenarios(config)
 
 
 def test_a_bad_sweep_value_names_its_scenario(workspace: Path) -> None:

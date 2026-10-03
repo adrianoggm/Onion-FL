@@ -30,6 +30,7 @@ from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.metrics import evaluate as score
 from onion_fl.learning.sharing import SharingPolicy
 from onion_fl.learning.sharing import sharing as sharing_presets
+from onion_fl.learning.trainers import trainers as trainer_plugins
 from onion_fl.observability.diagnostics import diagnostics as diagnostic_plugins
 from onion_fl.roles.nodes import Aggregator, Coordinator, Edge, Evaluate
 from onion_fl.roles.policies import (
@@ -135,6 +136,7 @@ def build_federation(
             return score(model, data, names)
 
     edge_eval = topology.edge.settings.get("eval") or {}
+    finetune = edge_eval.get("finetune")
     common = {"levels": topology.levels, "sharing": policy}
     children = {
         node.id: [c.id for c in topology.children(node.id)]
@@ -182,6 +184,11 @@ def build_federation(
                 evaluate=evaluate,
                 eval_every=edge_eval.get("every"),
                 eval_models=edge_eval.get("models", ("received", "local")),
+                finetuner=(
+                    create(trainer_plugins, finetune)
+                    if finetune is not None and spec.train
+                    else None
+                ),
                 tags=spec.tags,
                 hello_retry=parse_duration(
                     topology.edge.settings.get("hello_retry", 5.0)

@@ -185,6 +185,58 @@ def test_no_local_val_by_default() -> None:
     assert client.local_val is None
 
 
+def test_class_tail_holds_out_the_last_rows_of_each_class() -> None:
+    subjects = [subject("1", [[i] for i in range(1, 11)], [0] * 5 + [1] * 5)]
+
+    (client,) = split_subjects(
+        subjects,
+        RolesConfig(
+            test=0.0, local_val=0.2, local_val_split="class_tail", scaler="none"
+        ),
+    ).clients
+
+    assert client.local_val.X[:, 0].tolist() == [5, 10]
+    assert client.local_val.y.tolist() == [0, 1]
+    assert client.train.X[:, 0].tolist() == [1, 2, 3, 4, 6, 7, 8, 9]
+
+
+def test_class_tail_always_leaves_a_training_row() -> None:
+    subjects = [subject("1", [[1], [2]], [0, 1])]
+
+    (client,) = split_subjects(
+        subjects,
+        RolesConfig(
+            test=0.0,
+            local_val=0.9,
+            local_val_split="class_tail",
+            scaler="none",
+            drop_constant=False,  # one training row makes every feature constant
+        ),
+    ).clients
+
+    assert client.train.X[:, 0].tolist() == [1]
+    assert client.local_val.X[:, 0].tolist() == [2]
+
+
+def test_class_tail_with_one_class_is_that_class_tail() -> None:
+    subjects = [subject("1", [[1], [2], [3], [4]], [1, 1, 1, 1])]
+
+    (client,) = split_subjects(
+        subjects,
+        RolesConfig(
+            test=0.0, local_val=0.25, local_val_split="class_tail", scaler="none"
+        ),
+    ).clients
+
+    assert client.local_val.X[:, 0].tolist() == [4]
+
+
+def test_the_default_split_stays_out_of_the_config() -> None:
+    assert "local_val_split" not in RolesConfig().model_dump()
+    dumped = RolesConfig(local_val_split="class_tail").model_dump()
+    assert dumped["local_val_split"] == "class_tail"
+
+
 # --- preprocessing fitted on the training bag only ---------------------------------------
 
 

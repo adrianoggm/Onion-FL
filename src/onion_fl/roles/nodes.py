@@ -17,7 +17,9 @@ Evaluation happens at three levels:
   model, and reports per dataset tag.
 """
 
+import copy
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -268,6 +270,9 @@ class _Collector(Node):
         if not fresh or len(fresh) < needed:
             ctx.emit("round.quorum_failed", self.round, needed=needed, **tags)
             self._diagnose(fresh, {}, reports, ctx, failed=True)
+            if self.aggregate_children:
+                # Scores that arrived are evaluation, not aggregation: keep them.
+                self._children_scores(list(reports.values()), ctx)
             self._failed(ctx)
             return
         aggregated = self.aggregator.aggregate(
@@ -609,11 +614,13 @@ class Edge(_Greeter, Node):
         eval_models: Sequence[str] = ("received", "local"),
         tags: Mapping[str, Any] | None = None,
         hello_retry: float | None = 5.0,
+        finetuner: Any = None,
     ) -> None:
         super().__init__(node_id)
         self.hello_retry = hello_retry
         self.parent, self.model, self.data = parent, model, data
         self.trainer, self.train = trainer, train
+        self.finetuner = finetuner
         self.sharing, self.levels = sharing, list(levels)
         self.parent_level = self.levels[-2]
         self.val_data, self.evaluate = val_data, evaluate
@@ -652,8 +659,12 @@ class Edge(_Greeter, Node):
                 f"a {'trainer' if self.train else 'evaluator'} does not take {msg.kind}",
             )
 
-    def _score(self, model: str, round: int, ctx: Context) -> dict[str, float]:
-        scores, samples = self.evaluate(self.model, self.val_data)
+    def _score(
+        self, model: str, round: int, ctx: Context, module: Any = None
+    ) -> dict[str, float]:
+        scores, samples = self.evaluate(
+            self.model if module is None else module, self.val_data
+        )
         _emit_scores(
             ctx,
             scores,
@@ -667,6 +678,18 @@ class Edge(_Greeter, Node):
             f"eval.{model}.samples": float(samples)
         }
 
+    def _finetuned(self, start: Any, received: State, ctx: Context) -> Any:
+        """``start`` (the model as received) trained by the finetune trainer.
+
+        It draws from a child stream of the node's generator, so scoring
+        never shifts the draws of the edge's own training.
+        """
+        rng = np.random.default_rng(ctx.rng.bit_generator.seed_seq.spawn(1)[0])
+        self.finetuner.train(
+            start, self.data, received=received, ctx=SimpleNamespace(rng=rng)
+        )
+        return start
+
     def _train(self, msg: Message, ctx: Context) -> None:
         received = dict(msg.payload.state)
         load_arrays(self.model, received)
@@ -675,6 +698,10 @@ class Edge(_Greeter, Node):
             and self.val_data is not None
             and _due(self.eval_every, msg.round)
         )
+        finetuning = (
+            scoring and "finetuned" in self.eval_models and self.finetuner is not None
+        )
+        start = copy.deepcopy(self.model) if finetuning else None
         metrics: dict[str, float] = {}
         if scoring and "received" in self.eval_models:
             metrics |= self._score("received", msg.round, ctx)
@@ -692,6 +719,20 @@ class Edge(_Greeter, Node):
         ctx.compute(result.samples)
         if scoring and "local" in self.eval_models:
             metrics |= self._score("local", msg.round, ctx)
+        try:
+            if scoring and "personal" in self.eval_models:
+                personal = getattr(self.trainer, "personal", lambda: None)()
+                if personal is not None:
+                    metrics |= self._score("personal", msg.round, ctx, personal)
+            if finetuning:
+                finetuned = self._finetuned(start, received, ctx)
+                metrics |= self._score("finetuned", msg.round, ctx, finetuned)
+        except Exception as exc:  # scoring never costs the edge its update
+            ctx.emit(
+                "edge.eval_failed",
+                round=msg.round,
+                error=f"{type(exc).__name__}: {exc}",
+            )
         arrays = state_arrays(self.model)
         up = keys_crossing(arrays, self.sharing, self.levels, self.parent_level)
         ctx.emit("edge.trained", result.loss, round=msg.round, examples=result.examples)
