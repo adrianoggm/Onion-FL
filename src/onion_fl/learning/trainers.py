@@ -465,6 +465,7 @@ class ScaffoldParams(StandardParams):
 class Scaffold(Standard):
     Params = ScaffoldParams
     PREFIX = "scaffold/"
+    sends_aux = True
 
     def __init__(self, **params: Any) -> None:
         super().__init__(**params)
@@ -527,6 +528,7 @@ class FedNovaParams(StandardParams):
 class FedNova(Standard):
     Params = FedNovaParams
     server_optimizer = "fednova"
+    sends_aux = True
 
     def train(
         self,

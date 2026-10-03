@@ -459,6 +459,8 @@ class NormClipParams(BaseModel):
     explain="Acota la influencia de cualquier hijo, malicioso o no (Sun et al., 2019).",
 )
 class NormClip:
+    bounds_updates = True  # a trainer with auxiliary arrays would bypass it
+
     def __init__(self, bound: float = 1.0) -> None:
         self.bound = bound
         self.clipped = 0
@@ -493,10 +495,12 @@ class DPFedAvgParams(BaseModel):
     explain=(
         "Privacidad diferencial a nivel de hijo en un agregador de confianza; "
         "informa ε por ronda con un contable RDP sin amplificación por submuestreo "
-        "(McMahan et al., 2018). Las claves auxiliares no se recortan ni se ruidean."
+        "(McMahan et al., 2018). No admite entrenadores con claves auxiliares (SCAFFOLD, FedNova)."
     ),
 )
 class DPFedAvg:
+    bounds_updates = True
+
     def __init__(
         self, clip: float = 1.0, sigma: float = 1.0, delta: float = 1e-5
     ) -> None:

@@ -24,7 +24,7 @@ from onion_fl.data.placement import Placement, place
 from onion_fl.data.roles import DataSplit, split_subjects
 from onion_fl.experiment.config import ConfigError, ExperimentConfig
 from onion_fl.experiment.sweep import Scenario, identity, scenarios
-from onion_fl.learning.aggregators import server_optimizers
+from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.attacks import attacks
 from onion_fl.learning.model import models, param_groups, state_arrays
 from onion_fl.learning.privacy import privacies
@@ -140,7 +140,24 @@ def _check_learning(config: ExperimentConfig, state: Mapping[str, Any]) -> None:
             f"{policy.name!r} sends {leaving} up; use fedper or a custom rule "
             "that keeps them local"
         )
-    ref = resolve_topology(config).root.settings.get("server_optimizer") or "replace"
+    topology = resolve_topology(config)
+    if getattr(trainer, "sends_aux", False):
+        bounding = sorted(
+            {
+                _name(ref)
+                for node in topology.nodes
+                if (ref := node.settings.get("aggregator")) is not None
+                and getattr(create(aggregators, ref), "bounds_updates", False)
+            }
+        )
+        axes = [axis for axis in ("attack", "privacy") if getattr(config, axis)]
+        if bounding or axes:
+            raise ConfigError(
+                f"learning.trainer: {name} sends auxiliary arrays that "
+                f"{', '.join(bounding + axes)} would not clip, noise or poison; "
+                "use a trainer without them"
+            )
+    ref = topology.root.settings.get("server_optimizer") or "replace"
     optimizer_name = _name(ref)
     needed = getattr(trainer, "server_optimizer", None)
     zoned = sorted(

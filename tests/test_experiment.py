@@ -246,6 +246,29 @@ def test_feddyn_needs_the_same_alpha_on_both_sides(workspace: Path) -> None:
         plan(parse_experiment(experiment(workspace, learning=learning)))
 
 
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"privacy": "local_dp"},
+        {"attack": "sign_flip"},
+        {"learning": {"aggregator": "dp_fedavg"}},
+        {"learning": {"aggregator": "norm_clip"}},
+    ],
+)
+@pytest.mark.parametrize("trainer", ["scaffold", "fednova"])
+def test_auxiliary_arrays_cannot_bypass_a_clip_noise_or_attack(
+    workspace: Path, trainer: str, extra: dict
+) -> None:
+    learning = experiment(workspace)["learning"] | {"trainer": trainer}
+    if trainer == "fednova":
+        learning["server_optimizer"] = "fednova"
+    extra = dict(extra)  # the parametrized dict is shared between trainers
+    learning |= extra.pop("learning", {})
+
+    with pytest.raises(ConfigError, match="auxiliary arrays"):
+        plan(parse_experiment(experiment(workspace, learning=learning, **extra)))
+
+
 def test_the_experiment_can_set_the_leaf_aggregators(workspace: Path) -> None:
     from onion_fl.experiment.runner import resolve_topology
 
