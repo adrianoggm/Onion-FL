@@ -32,9 +32,9 @@ seeds: [0, 1, 2]
 sweep:
   topology,learning.server_optimizer:
     - [four_fogs_swell_wesad_lossless, replace]                                     # FedAvg
-    - [four_fogs_swell_wesad_lossless, {name: fedavgm, server_lr: 1.0}]
-    - [four_fogs_swell_wesad_lossless, {name: fedadam, server_lr: 0.01}]
-    - [four_fogs_swell_wesad_lossless, {name: fedyogi, server_lr: 0.01}]
-    - [four_fogs_swell_wesad_lossless, {name: fedadagrad, server_lr: 0.01}]
+    - [four_fogs_swell_wesad_lossless, {name: fedavgm, server_lr: 0.1}]
+    - [four_fogs_swell_wesad_lossless, {name: fedadam, server_lr: 0.03}]
+    - [four_fogs_swell_wesad_lossless, {name: fedyogi, server_lr: 0.1}]
+    - [four_fogs_swell_wesad_lossless, {name: fedadagrad, server_lr: 0.3}]
     - [four_fogs_swell_wesad_lossless_fedbuff, replace]                                       # FedBuff
-    - [four_fogs_swell_wesad_lossless_fedbuff, {name: fedasync, alpha: 0.6}]                # FedBuff + FedAsync
+    - [four_fogs_swell_wesad_lossless_fedbuff, {name: fedasync, alpha: 0.9}]                # FedBuff + FedAsync
