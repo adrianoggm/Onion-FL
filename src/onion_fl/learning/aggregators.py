@@ -280,7 +280,8 @@ class KrumParams(BaseModel):
     params=KrumParams,
     explain=(
         "Puntúa sobre las claves de modelo que tienen todos los hijos y conserva una "
-        "sola contribución; con menos de 2f + 3 hijos baja f (Blanchard et al., 2017)."
+        "sola contribución; con menos de 2f + 3 hijos baja f (Blanchard et al., 2017). "
+        "Una clave que solo tenían hijos descartados sale de los mejor puntuados que la tienen."
     ),
 )
 class Krum(_Selection):
@@ -322,7 +323,10 @@ class MultiKrumParams(KrumParams):
     title="Multi-Krum",
     description="Promedia (FedAvg) las m actualizaciones mejor puntuadas por Krum.",
     params=MultiKrumParams,
-    explain="Con menos de 2f + 3 hijos baja f (Blanchard et al., 2017).",
+    explain=(
+        "Con menos de 2f + 3 hijos baja f (Blanchard et al., 2017). "
+        "Una clave que solo tenían hijos descartados sale de los mejor puntuados que la tienen."
+    ),
 )
 class MultiKrum(Krum):
     def __init__(self, f: int = 1, m: int | None = None) -> None:
@@ -398,7 +402,9 @@ class GeometricMedian:
     params=KrumParams,
     explain=(
         "Con menos de 4f + 3 hijos baja f; selecciona con un único ranking de "
-        "Multi-Krum en lugar del Krum iterativo del artículo (El Mhamdi et al., 2018)."
+        "Multi-Krum en lugar del Krum iterativo del artículo (El Mhamdi et al., 2018). "
+        "Las claves auxiliares se promedian sobre los seleccionados. "
+        "Una clave que solo tenían hijos descartados sale de los mejor puntuados que la tienen."
     ),
 )
 class Bulyan(Krum):
