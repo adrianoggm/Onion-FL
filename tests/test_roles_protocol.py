@@ -831,3 +831,39 @@ def test_an_edge_with_non_finite_weights_does_not_poison_the_model() -> None:
     assert_global(federation, "trunk.0.weight", 2.0)
     (failed,) = names(federation, "edge.train_failed", "e2")
     assert "non-finite" in failed["tags"]["error"]
+
+
+def test_the_statistics_count_the_holders_of_each_group() -> None:
+    recorder = StatsRecorder()
+    edges = {
+        "fog_0": [edge("e1"), edge("e2")],
+        "fog_1": [edge("e3", shape=B), EdgeSpec("e4", model(B), trainer=Broken())],
+    }
+
+    run(tree(2, fog={"quorum": 0.5, "deadline": 10}), edges, server_optimizer=recorder)
+
+    (stats,) = recorder.stats
+    assert stats["edges_total/adapter.a"] == 2 and stats["train_edges/adapter.a"] == 2
+    assert stats["edges_total/adapter.b"] == 2 and stats["train_edges/adapter.b"] == 1
+    assert stats["edges_total/trunk"] == 4 and stats["train_edges/trunk"] == 3
+
+
+class OneVote(trainers.create("stub").__class__):
+    """The stub trainer, asking for one vote per edge instead of one per example."""
+
+    uniform_weights = True
+
+
+def test_a_trainer_can_ask_for_one_vote_per_edge() -> None:
+    def voter(node_id: str, shift: float, examples: int) -> EdgeSpec:
+        trainer = OneVote(shift=shift, examples=examples)
+        return EdgeSpec(node_id, model(A), trainer=trainer)
+
+    edges = {
+        "fog_0": [voter("e1", 1, 1), voter("e2", 4, 3)],
+        "fog_1": [voter("e3", 4, 10)],
+    }
+
+    federation = run(tree(2), edges)
+
+    assert_global(federation, "trunk.0.weight", 3.0)  # by examples: 53/14

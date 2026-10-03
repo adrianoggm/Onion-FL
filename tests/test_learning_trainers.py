@@ -693,7 +693,7 @@ def test_scaffold_alone_with_local_heads_is_sgd_for_two_rounds(swell) -> None:
         trainers.create("standard", params),
         trainers.create("scaffold", params),
     )
-    sent: dict = {}
+    c: dict = {}
     for round_ in range(2):
         shared = {
             k: v for k, v in state_arrays(plain).items() if not k.startswith("head.")
@@ -703,8 +703,9 @@ def test_scaffold_alone_with_local_heads_is_sgd_for_two_rounds(swell) -> None:
             k: v
             for k, v in state_arrays(corrected).items()
             if not k.startswith("head.")
-        } | {k: v for k, v in sent.items() if not k.startswith("scaffold/head.")}
+        } | {k: v for k, v in c.items() if not k.startswith("scaffold/head.")}
         sent = dict(scaffold.train(corrected, swell, received, ctx(round_)).aux)
+        c = {k: c.get(k, 0.0) + v for k, v in sent.items()}  # the server, alone
 
     for key, value in state_arrays(plain).items():
         np.testing.assert_allclose(
@@ -728,6 +729,12 @@ def test_fednova_sends_its_steps_with_every_key(swell) -> None:
 
 def test_fednova_defaults_to_sgd() -> None:
     assert trainers.create("fednova").params.optimizer == "sgd"
+
+
+@pytest.mark.parametrize("name", ["scaffold", "fednova"])
+def test_step_based_trainers_refuse_adam(name: str) -> None:
+    with pytest.raises(ValueError, match="sgd"):
+        trainers.create(name, {"optimizer": "adam"})
 
 
 def test_moon_contrast_is_lower_near_the_global_than_near_the_previous() -> None:
@@ -766,3 +773,23 @@ def test_the_stub_can_add_seeded_noise_per_node() -> None:
         np.testing.assert_array_equal(a[key], b[key])
     assert any(not np.array_equal(a[k], c[k]) for k in a)
     assert any(not np.array_equal(a[k], state_arrays(build())[k]) for k in a)
+
+
+@real
+def test_scaffold_sends_the_change_in_its_control_variate(swell) -> None:
+    model = build()
+    trainer = trainers.create("scaffold", {"local_epochs": 1, "lr": 0.05})
+    first = trainer.train(model, swell, state_arrays(model), ctx())
+    received = state_arrays(model)  # no c arrives: c = c_i, no correction
+
+    second = trainer.train(model, swell, received, ctx(1))
+
+    after = state_arrays(model)
+    for key, x in received.items():
+        c_i = (x - after[key]) / (second.batches * 0.05)
+        np.testing.assert_allclose(
+            second.aux[f"scaffold/{key}"],
+            c_i - first.aux[f"scaffold/{key}"],
+            rtol=1e-4,
+            atol=1e-6,
+        )

@@ -283,6 +283,7 @@ def test_registries_list_the_built_ins() -> None:
         "feddyn",
         "fednova",
         "replace",
+        "scaffold",
     ]
 
 
@@ -358,3 +359,49 @@ def test_fednova_scales_each_key_by_the_steps_of_its_holders() -> None:
     np.testing.assert_allclose(out["a"], [10.0])
     np.testing.assert_allclose(out["b"], [20.0])
     assert not [k for k in out if k.startswith("fednova")]
+
+
+def test_scaffold_moves_c_by_the_share_of_its_holders_that_trained() -> None:
+    # Two holders, one trained with Δc = 2: c = 0 + (1/2)·2 (Karimireddy et al.).
+    out = server_optimizers.create("scaffold").apply(
+        {"trunk.0.weight": np.zeros(1), "scaffold/trunk.0.weight": np.zeros(1)},
+        {"trunk.0.weight": np.full(1, 5.0), "scaffold/trunk.0.weight": np.full(1, 2.0)},
+        {"train_edges/trunk": 1.0, "edges_total/trunk": 2.0},
+    )
+
+    np.testing.assert_allclose(out["scaffold/trunk.0.weight"], [1.0])
+    np.testing.assert_allclose(out["trunk.0.weight"], [5.0])  # the model: replaced
+
+
+def test_scaffold_accumulates_c_across_rounds() -> None:
+    optimizer = server_optimizers.create("scaffold")
+    stats = {"train_edges/trunk": 2.0, "edges_total/trunk": 2.0}
+    state = {"trunk.0.weight": np.zeros(1)}
+
+    for delta in (1.0, 3.0):
+        aggregated = {
+            "trunk.0.weight": np.zeros(1),
+            "scaffold/trunk.0.weight": np.full(1, delta),
+        }
+        state = optimizer.apply(state, aggregated, stats)
+
+    np.testing.assert_allclose(state["scaffold/trunk.0.weight"], [4.0])
+
+
+def test_feddyn_uses_the_share_of_each_keys_holders() -> None:
+    optimizer = server_optimizers.create("feddyn", {"alpha": 0.5})
+    stats = {
+        "train_edges": 3.0,
+        "edges_total": 4.0,
+        "train_edges/adapter.a": 1.0,
+        "edges_total/adapter.a": 2.0,
+    }
+
+    out = optimizer.apply(
+        {"adapter.a.0.weight": np.zeros(1)},
+        {"adapter.a.0.weight": np.full(1, 2.0)},
+        stats,
+    )
+
+    # h = −0.5·(1/2)·2 = −0.5 ; w = 2 + 1 = 3 (the round's 3/4 would give 3.5)
+    np.testing.assert_allclose(out["adapter.a.0.weight"], [3.0])

@@ -188,6 +188,7 @@ def test_an_unset_server_optimizer_stays_out_of_the_config(workspace: Path) -> N
     "trainer, optimizer, message",
     [
         ("fednova", "replace", "needs server_optimizer 'fednova'"),
+        ("scaffold", "replace", "needs server_optimizer 'scaffold'"),
         ("stub", "fednova", "fednova needs the fednova trainer"),
     ],
 )
