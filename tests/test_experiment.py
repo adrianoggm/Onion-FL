@@ -165,6 +165,16 @@ def test_finetuned_scores_need_a_finetune_trainer(workspace: Path) -> None:
         parse_experiment(raw)
 
 
+def test_a_finetune_trainer_needs_finetuned_scores(workspace: Path) -> None:
+    raw = experiment(
+        workspace,
+        evaluation={"edge": {"models": ["local"], "finetune": "standard"}},
+    )
+
+    with pytest.raises(ConfigError, match="finetuned"):
+        parse_experiment(raw)
+
+
 def test_an_unset_finetune_stays_out_of_the_config(workspace: Path) -> None:
     config = parse_experiment(experiment(workspace))
 
