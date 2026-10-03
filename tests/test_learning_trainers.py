@@ -730,6 +730,21 @@ def test_fednova_defaults_to_sgd() -> None:
     assert trainers.create("fednova").params.optimizer == "sgd"
 
 
+def test_moon_contrast_is_lower_near_the_global_than_near_the_previous() -> None:
+    import copy
+
+    trainer = trainers.create("moon", {"mu": 1.0, "temperature": 0.5})
+    local, other = build(seed=0).eval(), build(seed=1).eval()
+    x = torch.linspace(-1.0, 1.0, 4 * 16).reshape(4, 16)  # a shape fixture
+
+    trainer._global, trainer._previous = copy.deepcopy(local), other
+    near_global = float(trainer._batch_term(local, x))
+    trainer._global, trainer._previous = other, copy.deepcopy(local)
+    near_previous = float(trainer._batch_term(local, x))
+
+    assert near_global < near_previous
+
+
 def test_ditto_needs_the_received_state() -> None:
     data = SimpleNamespace(X=np.zeros((1, 16), np.float32), y=np.zeros(1, np.int64))
 
