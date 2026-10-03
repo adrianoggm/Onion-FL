@@ -317,6 +317,20 @@ def test_paths_joined_by_commas_are_swept_together(workspace: Path) -> None:
     ]
 
 
+def test_a_plugin_given_whole_is_labelled_compactly(workspace: Path) -> None:
+    trainers = [{"name": "stub", "shift": 2.0}, {"name": "stub", "shift": 3.0}]
+    config = parse_experiment(
+        experiment(workspace, sweep={"learning.trainer": trainers})
+    )
+
+    names = [s.name for s in scenarios(config)]
+
+    assert names == [
+        "learning.trainer=stub(shift=2.0)",
+        "learning.trainer=stub(shift=3.0)",
+    ]
+
+
 def test_a_joint_sweep_key_may_have_spaces_after_its_commas(workspace: Path) -> None:
     config = parse_experiment(
         experiment(workspace, sweep={"learning.trainer.shift, rounds": [[2.0, 3]]})

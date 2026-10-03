@@ -50,7 +50,15 @@ def identity(config: ExperimentConfig) -> dict[str, Any]:
 
 
 def _label(value: Any) -> str:
-    return value if isinstance(value, str) else repr(value)
+    """How a swept value appears in a scenario name; a whole plugin is name(k=v,...)."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict) and isinstance(value.get("name"), str):
+        params = ",".join(
+            f"{k}={_label(v)}" for k, v in sorted(value.items()) if k != "name"
+        )
+        return f"{value['name']}({params})"
+    return repr(value)
 
 
 def _apply(resolved: dict[str, Any], key: str, value: Any) -> str:
