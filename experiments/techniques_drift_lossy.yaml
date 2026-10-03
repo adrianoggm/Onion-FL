@@ -1,18 +1,12 @@
-# Non-IID drift techniques on SWELL and WESAD (issue #148): one scenario per
-# technique, three seeds, segregated placement (each fog sees one dataset),
-# lossless links so that lost rounds do not mix with drift
-# (techniques_drift_lossy.yaml runs the same techniques over lossy links).
-# Every technique uses SGD, which SCAFFOLD and FedNova assume. Each one's
-# learning rate was chosen on the validation subjects with
-# techniques_drift_select.yaml (zone evaluators, round 20, seed 0), never on
-# the test subjects; the other algorithm parameters keep their defaults.
+# The drift techniques of techniques_drift.yaml over lossy links (wifi loses
+# 0.5% of messages, 4g 1%), with the same learning rates: how each technique
+# copes with lost updates and lost rounds, which matters most for those that
+# keep state on both sides (SCAFFOLD, FedDyn).
 #
-#   onion_fl plan experiments/techniques_drift.yaml
-#   onion_fl run experiments/techniques_drift.yaml --workers 3
-#   onion_fl report experiments/techniques_drift.yaml --by scenario --by model
-name: techniques_drift
-description: Deriva no IID (FedAvg, FedProx, SCAFFOLD, FedNova, FedDyn, MOON) sobre SWELL y WESAD.
-topology: four_fogs_swell_wesad_lossless
+#   onion_fl run experiments/techniques_drift_lossy.yaml --workers 3
+name: techniques_drift_lossy
+description: Las técnicas de deriva no IID sobre enlaces con pérdidas (wifi 0,5 %, 4g 1 %).
+topology: four_fogs_swell_wesad
 data:
   datasets:
     swell: {}
