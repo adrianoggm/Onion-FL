@@ -265,12 +265,30 @@ def test_the_example_topology_and_experiment_are_valid() -> None:
     assert len(scenarios(config)) == 9  # 3 alphas x 3 seeds
 
 
+@pytest.mark.parametrize("path", sorted(Path("experiments").glob("*.yaml")), ids=str)
+def test_every_shipped_experiment_and_its_topology_are_valid(path: Path) -> None:
+    from onion_fl.experiment.config import load_experiment
+    from onion_fl.experiment.runner import resolve_topology
+
+    resolve_topology(load_experiment(path))
+
+
 @pytest.mark.skipif(
     not (Path("data/SWELL").exists() and Path("data/SWEET/sample_subjects").exists()),
     reason="data/SWELL and data/SWEET not available",
 )
 def test_the_example_experiment_plans_on_real_data(capsys) -> None:
     code, out, _ = run(capsys, "plan", "experiments/mix_ab.yaml")
+
+    assert code == 0 and len(json.loads(out)) == 9
+
+
+@pytest.mark.skipif(
+    not (Path("data/SWELL").exists() and Path("data/WESAD").exists()),
+    reason="data/SWELL and data/WESAD not available",
+)
+def test_the_swell_wesad_experiment_plans_on_real_data(capsys) -> None:
+    code, out, _ = run(capsys, "plan", "experiments/mix_swell_wesad.yaml")
 
     assert code == 0 and len(json.loads(out)) == 9
 
