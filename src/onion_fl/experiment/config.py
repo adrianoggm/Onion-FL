@@ -128,8 +128,16 @@ class LearningConfig(Strict):
     sharing: PluginRef = "fedavg"
     trainer: PluginRef = "standard"
     init: PluginRef = "random"
+    server_optimizer: PluginRef | None = Field(
+        None,
+        description="Optimizador de servidor de la raíz; sin él, el de la topología",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
 
     _model = field_validator("model")(lambda v: _plugin(models, v))
+    _server_optimizer = field_validator("server_optimizer")(
+        lambda v: v if v is None else _plugin(server_optimizers, v)
+    )
     _sharing = field_validator("sharing")(lambda v: _plugin(sharing, v))
     _trainer = field_validator("trainer")(lambda v: _plugin(trainers, v))
     _init = field_validator("init")(lambda v: _plugin(inits, v))

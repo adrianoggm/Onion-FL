@@ -11,11 +11,13 @@ depend on the order in which they arrived.
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 from pydantic import BaseModel, Field
 
 from onion_fl.core.registry import Registry
+from onion_fl.learning.model import group_of, is_aux
 
 
 class AggregationError(ValueError):
@@ -158,6 +160,20 @@ server_optimizers = Registry("server_optimizer")
 State = dict[str, np.ndarray]
 
 
+def _share(stats: Mapping[str, float], key: str) -> float:
+    """|S|/N: the share of the edges holding ``key`` whose update was aggregated.
+
+    Per parameter group when the round counted holders (a key only one
+    dataset's edges hold), else the round's ``train_edges / edges_total``.
+    """
+    if any(name.startswith("edges_total/") for name in stats):
+        group = group_of(key)
+        total = stats.get(f"edges_total/{group}") or 0.0
+        return stats.get(f"train_edges/{group}", 0.0) / total if total else 1.0
+    total = stats.get("edges_total") or 0.0
+    return stats.get("train_edges", total) / total if total else 1.0
+
+
 @server_optimizers.register(
     "replace",
     title="Reemplazo (FedAvg clásico)",
@@ -168,6 +184,7 @@ class Replace:
         self,
         global_state: Mapping[str, np.ndarray],
         aggregated: Mapping[str, np.ndarray],
+        stats: Mapping[str, float] | None = None,
     ) -> State:
         return {**global_state, **aggregated}
 
@@ -193,9 +210,13 @@ class FedAvgM:
         self,
         global_state: Mapping[str, np.ndarray],
         aggregated: Mapping[str, np.ndarray],
+        stats: Mapping[str, float] | None = None,
     ) -> State:
         new = dict(global_state)
         for key, value in aggregated.items():
+            if is_aux(key):  # control variates and the like: replaced, never stepped
+                new[key] = value
+                continue
             current = np.asarray(global_state.get(key, value), dtype=np.float64)
             delta = np.asarray(value, dtype=np.float64) - current
             velocity = (
@@ -237,9 +258,13 @@ class FedAdam:
         self,
         global_state: Mapping[str, np.ndarray],
         aggregated: Mapping[str, np.ndarray],
+        stats: Mapping[str, float] | None = None,
     ) -> State:
         new = dict(global_state)
         for key, value in aggregated.items():
+            if is_aux(key):  # control variates and the like: replaced, never stepped
+                new[key] = value
+                continue
             current = np.asarray(global_state.get(key, value), dtype=np.float64)
             delta = np.asarray(value, dtype=np.float64) - current
             m = (
@@ -253,4 +278,131 @@ class FedAdam:
             self._m[key], self._v[key] = m, v
             step = self.server_lr * m / (np.sqrt(v) + self.tau)
             new[key] = (current + step).astype(np.asarray(value).dtype)
+        return new
+
+
+@server_optimizers.register(
+    "fednova",
+    title="FedNova",
+    description="x + τ̄·d̄: la media de las actualizaciones normalizadas por la media de pasos.",
+    explain="Va con el entrenador fednova; con pasos iguales coincide con FedAvg (Wang et al., 2020).",
+)
+class FedNovaOptimizer:
+    PREFIX = "fednova/"
+    STEPS = "fednova_steps/"
+
+    def check_trainer(self, name: str, trainer: Any) -> None:
+        if name != "fednova":
+            raise ValueError(f"fednova needs the fednova trainer, not {name!r}")
+
+    def apply(
+        self,
+        global_state: Mapping[str, np.ndarray],
+        aggregated: Mapping[str, np.ndarray],
+        stats: Mapping[str, float] | None = None,
+    ) -> State:
+        mean_steps = (stats or {}).get("train_steps")
+        mine = (self.PREFIX, self.STEPS)
+        new = {k: v for k, v in global_state.items() if not k.startswith(mine)}
+        for key, value in aggregated.items():
+            if key.startswith(mine):
+                continue
+            step = aggregated.get(self.PREFIX + key)
+            if step is None:  # no normalised update (frozen or non-trainable): replace
+                new[key] = value
+                continue
+            held = aggregated.get(self.STEPS + key)  # mean steps of this key's holders
+            tau = float(np.ravel(held)[0]) if held is not None else mean_steps
+            if not tau:
+                raise ValueError("fednova needs train_steps in the round statistics")
+            current = np.asarray(global_state.get(key, value), dtype=np.float64)
+            new[key] = (current + tau * np.asarray(step, np.float64)).astype(
+                np.asarray(value).dtype
+            )
+        return new
+
+
+class FedDynOptimizerParams(BaseModel):
+    alpha: float = Field(0.01, gt=0, description="El mismo α que el entrenador feddyn")
+
+
+@server_optimizers.register(
+    "feddyn",
+    title="FedDyn",
+    description="h ← h − α·(|P|/m)·(θ̄ − θ); θ ← θ̄ − h/α.",
+    params=FedDynOptimizerParams,
+    explain=(
+        "Va con el entrenador feddyn y su mismo α. θ̄ es la media sin ponderar de "
+        "los edges que han entrenado y |P|/m su fracción entre los que tienen esa "
+        "clave, así que una clave de un solo dataset usa solo sus edges "
+        "(Acar et al., 2021)."
+    ),
+)
+class FedDynOptimizer:
+    def __init__(self, alpha: float = 0.01) -> None:
+        self.alpha = alpha
+        self._h: dict[str, np.ndarray] = {}
+
+    def check_trainer(self, name: str, trainer: Any) -> None:
+        if name != "feddyn":
+            raise ValueError(f"feddyn needs the feddyn trainer, not {name!r}")
+        if trainer.params.alpha != self.alpha:
+            raise ValueError(
+                f"alpha {self.alpha} differs from the trainer's {trainer.params.alpha}"
+            )
+
+    def apply(
+        self,
+        global_state: Mapping[str, np.ndarray],
+        aggregated: Mapping[str, np.ndarray],
+        stats: Mapping[str, float] | None = None,
+    ) -> State:
+        stats = stats or {}
+        new = dict(global_state)
+        for key, value in aggregated.items():
+            if is_aux(key):
+                new[key] = value
+                continue
+            mean = np.asarray(value, dtype=np.float64)
+            current = np.asarray(global_state.get(key, value), dtype=np.float64)
+            h = self._h.get(key, np.zeros_like(mean))
+            h = h - self.alpha * _share(stats, key) * (mean - current)
+            self._h[key] = h
+            new[key] = (mean - h / self.alpha).astype(np.asarray(value).dtype)
+        return new
+
+
+@server_optimizers.register(
+    "scaffold",
+    title="SCAFFOLD",
+    description="x ← media de los modelos; c ← c + (|S|/N)·media de los Δc_i.",
+    explain=(
+        "Va con el entrenador scaffold. El servidor guarda c y le suma la media de "
+        "los cambios Δc_i de los edges que han entrenado, escalada por su fracción "
+        "entre los que tienen esa clave, así que una ronda parcial mueve c lo que "
+        "le toca (Karimireddy et al., 2020)."
+    ),
+)
+class ScaffoldOptimizer:
+    PREFIX = "scaffold/"
+
+    def check_trainer(self, name: str, trainer: Any) -> None:
+        if name != "scaffold":
+            raise ValueError(f"scaffold needs the scaffold trainer, not {name!r}")
+
+    def apply(
+        self,
+        global_state: Mapping[str, np.ndarray],
+        aggregated: Mapping[str, np.ndarray],
+        stats: Mapping[str, float] | None = None,
+    ) -> State:
+        stats = stats or {}
+        new = dict(global_state)
+        for key, value in aggregated.items():
+            if not key.startswith(self.PREFIX):  # the model: the participants' mean
+                new[key] = value
+                continue
+            c = np.asarray(global_state.get(key, np.zeros_like(value)), np.float64)
+            step = _share(stats, key) * np.asarray(value, np.float64)
+            new[key] = (c + step).astype(np.asarray(value).dtype)
         return new

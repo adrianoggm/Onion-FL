@@ -169,6 +169,109 @@ def test_a_bad_scenario_fails_before_any_run_starts(workspace: Path) -> None:
     assert not list((workspace / "runs").glob("*"))
 
 
+def test_the_experiment_can_set_the_root_server_optimizer(workspace: Path) -> None:
+    from onion_fl.experiment.runner import resolve_topology
+
+    learning = experiment(workspace)["learning"] | {"server_optimizer": "fedadam"}
+    config = parse_experiment(experiment(workspace, learning=learning))
+
+    assert resolve_topology(config).root.settings["server_optimizer"] == "fedadam"
+
+
+def test_an_unset_server_optimizer_stays_out_of_the_config(workspace: Path) -> None:
+    config = parse_experiment(experiment(workspace))
+
+    assert "server_optimizer" not in config.dump()["learning"]
+
+
+@pytest.mark.parametrize(
+    "trainer, optimizer, message",
+    [
+        ("fednova", "replace", "needs server_optimizer 'fednova'"),
+        ("scaffold", "replace", "needs server_optimizer 'scaffold'"),
+        ("stub", "fednova", "fednova needs the fednova trainer"),
+    ],
+)
+def test_paired_trainers_and_optimizers_are_checked_both_ways(
+    workspace: Path, trainer: str, optimizer: str, message: str
+) -> None:
+    learning = experiment(workspace)["learning"] | {
+        "trainer": trainer,
+        "server_optimizer": optimizer,
+    }
+
+    with pytest.raises(ConfigError, match=message):
+        plan(parse_experiment(experiment(workspace, learning=learning)))
+
+
+def test_a_trainer_that_needs_an_optimizer_is_checked(
+    workspace: Path, monkeypatch
+) -> None:
+    from onion_fl.core.registry import PluginSpec
+    from onion_fl.learning.trainers import Stub, StubParams, trainers
+
+    class Needy(Stub):
+        server_optimizer = "fedadam"
+
+    spec = PluginSpec("needy_test", Needy, "t", "d", StubParams)
+    monkeypatch.setitem(trainers._specs, "needy_test", spec)
+    learning = experiment(workspace)["learning"] | {"trainer": "needy_test"}
+
+    with pytest.raises(ConfigError, match="fedadam"):
+        plan(parse_experiment(experiment(workspace, learning=learning)))
+    ok = learning | {"server_optimizer": "fedadam"}
+    assert plan(parse_experiment(experiment(workspace, learning=ok)))
+
+
+@pytest.mark.parametrize("pair", ["fednova", "feddyn"])
+def test_server_side_pairs_refuse_groups_held_below_the_root(
+    workspace: Path, pair: str
+) -> None:
+    learning = experiment(workspace)["learning"] | {
+        "trainer": pair,
+        "server_optimizer": pair,
+        "sharing": "zone",
+    }
+
+    with pytest.raises(ConfigError, match="zone|below the root"):
+        plan(parse_experiment(experiment(workspace, learning=learning)))
+
+
+def test_moon_needs_the_feature_layers_shared(workspace: Path) -> None:
+    learning = experiment(workspace)["learning"] | {"trainer": "moon"}
+    local = learning | {"sharing": "lg_fedavg"}
+
+    with pytest.raises(ConfigError, match="moon.*lg_fedavg"):
+        plan(parse_experiment(experiment(workspace, learning=local)))
+    assert plan(parse_experiment(experiment(workspace, learning=learning)))
+
+
+def test_paired_optimizers_refuse_late_updates(workspace: Path) -> None:
+    learning = experiment(workspace)["learning"] | {
+        "trainer": "fednova",
+        "server_optimizer": "fednova",
+    }
+    fog = TOPOLOGY["fog"] | {"defaults": {"staleness": "next_round"}}
+    topology = TOPOLOGY | {"fog": fog}
+
+    with pytest.raises(ConfigError, match="staleness"):
+        plan(
+            parse_experiment(
+                experiment(workspace, learning=learning, topology=topology)
+            )
+        )
+
+
+def test_feddyn_needs_the_same_alpha_on_both_sides(workspace: Path) -> None:
+    learning = experiment(workspace)["learning"] | {
+        "trainer": {"name": "feddyn", "alpha": 0.1},
+        "server_optimizer": {"name": "feddyn", "alpha": 0.2},
+    }
+
+    with pytest.raises(ConfigError, match="alpha"):
+        plan(parse_experiment(experiment(workspace, learning=learning)))
+
+
 def test_finetuned_scores_need_a_finetune_trainer(workspace: Path) -> None:
     raw = experiment(workspace, evaluation={"edge": {"models": ["finetuned"]}})
 
@@ -251,6 +354,20 @@ def test_paths_joined_by_commas_are_swept_together(workspace: Path) -> None:
     assert [(s.config.learning.trainer["shift"], s.config.rounds) for s in out] == [
         (1.0, 1),
         (2.0, 3),
+    ]
+
+
+def test_a_plugin_given_whole_is_labelled_compactly(workspace: Path) -> None:
+    trainers = [{"name": "stub", "shift": 2.0}, {"name": "stub", "shift": 3.0}]
+    config = parse_experiment(
+        experiment(workspace, sweep={"learning.trainer": trainers})
+    )
+
+    names = [s.name for s in scenarios(config)]
+
+    assert names == [
+        "learning.trainer=stub(shift=2.0)",
+        "learning.trainer=stub(shift=3.0)",
     ]
 
 

@@ -111,6 +111,7 @@ def build_federation(
     runtime: Any = None,
     metrics: Sequence[str] = ("loss", "accuracy"),
     evaluate: Evaluate | None = None,
+    server_optimizer: Any = None,
 ) -> Federation:
     """Coordinator, aggregators and edges of ``topology`` on ``runtime`` (a new SimRuntime).
 
@@ -148,9 +149,8 @@ def build_federation(
         children[root.id],
         state=initial_state,
         rounds=rounds,
-        server_optimizer=create(
-            server_optimizers, root.settings.get("server_optimizer"), "replace"
-        ),
+        server_optimizer=server_optimizer
+        or create(server_optimizers, root.settings.get("server_optimizer"), "replace"),
         level=root.level,
         **common,
         **_round_settings(root.settings),

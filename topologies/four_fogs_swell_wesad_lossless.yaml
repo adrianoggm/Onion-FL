@@ -1,0 +1,23 @@
+# four_fogs_swell_wesad with the same latencies and bandwidths but no message
+# loss, so a comparison of learning algorithms is not mixed with lost rounds.
+name: four_fogs_swell_wesad_lossless
+levels: [global, fog, edge]
+root:
+  id: cloud
+  aggregator: fedavg
+  server_optimizer: replace
+  deadline: 300s
+fog:
+  defaults:
+    aggregator: fedavg
+    quorum: 1.0
+    deadline: 120s
+    link_up: {transport: mqtt, codec: json, profile: {preset: wifi, loss: 0.0}}
+  nodes:
+    - {id: fog_a1, home: swell}
+    - {id: fog_a2, home: swell}
+    - {id: fog_b1, home: wesad}
+    - {id: fog_b2, home: wesad}
+edge:
+  link_up: {transport: mqtt, codec: json, profile: {preset: 4g, loss: 0.0}}
+  device: {samples_per_second: 2000}

@@ -269,10 +269,139 @@ def test_fedadam_follows_its_update_rule() -> None:
 
 def test_optimizers_keep_the_dtype() -> None:
     for name in server_optimizers.names():
-        out = server_optimizers.create(name).apply(g(w=[0.0, 1.0]), g(w=[1.0, 2.0]))
+        stats = {"train_steps": 1.0, "train_edges": 1.0, "edges_total": 1.0}
+        optimizer = server_optimizers.create(name)
+        out = optimizer.apply(g(w=[0.0, 1.0]), g(w=[1.0, 2.0]), stats)
         assert out["w"].dtype == np.float32, name
 
 
 def test_registries_list_the_built_ins() -> None:
     assert aggregators.names() == ["fedavg", "mean", "median", "trimmed_mean"]
-    assert server_optimizers.names() == ["fedadam", "fedavgm", "replace"]
+    assert server_optimizers.names() == [
+        "fedadam",
+        "fedavgm",
+        "feddyn",
+        "fednova",
+        "replace",
+        "scaffold",
+    ]
+
+
+@pytest.mark.parametrize("name", ["fedavgm", "fedadam"])
+def test_server_optimizers_replace_auxiliary_arrays(name: str) -> None:
+    optimizer = server_optimizers.create(name)
+    global_state = {"w": np.zeros(2), "scaffold/w": np.zeros(2)}
+    aggregated = {"w": np.ones(2), "scaffold/w": np.full(2, 7.0)}
+
+    out = optimizer.apply(global_state, aggregated)
+    out = optimizer.apply(out, aggregated)  # a second step: momentum would show
+
+    np.testing.assert_array_equal(out["scaffold/w"], [7.0, 7.0])
+
+
+def test_fednova_with_equal_steps_is_fedavg() -> None:
+    x = np.zeros(2)
+    ys = [np.array([1.0, 2.0]), np.array([3.0, 6.0])]
+    d = np.mean([(y - x) / 4 for y in ys], axis=0)
+
+    out = server_optimizers.create("fednova").apply(
+        {"w": x}, {"w": np.mean(ys, axis=0), "fednova/w": d}, {"train_steps": 4.0}
+    )
+
+    np.testing.assert_allclose(out["w"], np.mean(ys, axis=0))
+    assert "fednova/w" not in out
+
+
+def test_fednova_scales_the_normalised_update_by_the_mean_steps() -> None:
+    out = server_optimizers.create("fednova").apply(
+        {"w": np.ones(1)},
+        {"w": np.full(1, 9.0), "fednova/w": np.full(1, 0.5)},
+        {"train_steps": 3.0},
+    )
+
+    np.testing.assert_allclose(out["w"], [2.5])  # 1 + 3·0.5
+
+
+def test_fednova_names_the_missing_steps() -> None:
+    with pytest.raises(ValueError, match="train_steps"):
+        server_optimizers.create("fednova").apply(
+            {"w": np.zeros(1)}, {"w": np.zeros(1), "fednova/w": np.zeros(1)}, {}
+        )
+
+
+def test_feddyn_moves_the_global_model_against_its_drift_term() -> None:
+    optimizer = server_optimizers.create("feddyn", {"alpha": 0.5})
+    stats = {"train_edges": 2.0, "edges_total": 4.0}
+
+    first = optimizer.apply({"w": np.zeros(1)}, {"w": np.full(1, 2.0)}, stats)
+    # h = 0 − 0.5·(2/4)·(2 − 0) = −0.5 ; w = 2 − h/0.5 = 3
+    np.testing.assert_allclose(first["w"], [3.0])
+
+    second = optimizer.apply(first, {"w": np.full(1, 3.0)}, stats)
+    # h = −0.5 − 0.5·0.5·(3 − 3) = −0.5 ; w = 3 + 1 = 4
+    np.testing.assert_allclose(second["w"], [4.0])
+
+
+def test_fednova_scales_each_key_by_the_steps_of_its_holders() -> None:
+    out = server_optimizers.create("fednova").apply(
+        {"a": np.zeros(1), "b": np.zeros(1)},
+        {
+            "a": np.zeros(1),
+            "fednova/a": np.full(1, 0.5),
+            "fednova_steps/a": np.full(1, 20.0),
+            "b": np.zeros(1),
+            "fednova/b": np.full(1, 0.5),
+            "fednova_steps/b": np.full(1, 40.0),
+        },
+        {"train_steps": 35.0},  # the round mean: right for neither key
+    )
+
+    np.testing.assert_allclose(out["a"], [10.0])
+    np.testing.assert_allclose(out["b"], [20.0])
+    assert not [k for k in out if k.startswith("fednova")]
+
+
+def test_scaffold_moves_c_by_the_share_of_its_holders_that_trained() -> None:
+    # Two holders, one trained with Δc = 2: c = 0 + (1/2)·2 (Karimireddy et al.).
+    out = server_optimizers.create("scaffold").apply(
+        {"trunk.0.weight": np.zeros(1), "scaffold/trunk.0.weight": np.zeros(1)},
+        {"trunk.0.weight": np.full(1, 5.0), "scaffold/trunk.0.weight": np.full(1, 2.0)},
+        {"train_edges/trunk": 1.0, "edges_total/trunk": 2.0},
+    )
+
+    np.testing.assert_allclose(out["scaffold/trunk.0.weight"], [1.0])
+    np.testing.assert_allclose(out["trunk.0.weight"], [5.0])  # the model: replaced
+
+
+def test_scaffold_accumulates_c_across_rounds() -> None:
+    optimizer = server_optimizers.create("scaffold")
+    stats = {"train_edges/trunk": 2.0, "edges_total/trunk": 2.0}
+    state = {"trunk.0.weight": np.zeros(1)}
+
+    for delta in (1.0, 3.0):
+        aggregated = {
+            "trunk.0.weight": np.zeros(1),
+            "scaffold/trunk.0.weight": np.full(1, delta),
+        }
+        state = optimizer.apply(state, aggregated, stats)
+
+    np.testing.assert_allclose(state["scaffold/trunk.0.weight"], [4.0])
+
+
+def test_feddyn_uses_the_share_of_each_keys_holders() -> None:
+    optimizer = server_optimizers.create("feddyn", {"alpha": 0.5})
+    stats = {
+        "train_edges": 3.0,
+        "edges_total": 4.0,
+        "train_edges/adapter.a": 1.0,
+        "edges_total/adapter.a": 2.0,
+    }
+
+    out = optimizer.apply(
+        {"adapter.a.0.weight": np.zeros(1)},
+        {"adapter.a.0.weight": np.full(1, 2.0)},
+        stats,
+    )
+
+    # h = −0.5·(1/2)·2 = −0.5 ; w = 2 + 1 = 3 (the round's 3/4 would give 3.5)
+    np.testing.assert_allclose(out["adapter.a.0.weight"], [3.0])

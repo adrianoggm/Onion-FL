@@ -29,7 +29,7 @@ from onion_fl.core.message import Message, Payload
 from onion_fl.core.node import Node
 from onion_fl.learning.aggregators import Contribution
 from onion_fl.learning.metrics import reduce_reports
-from onion_fl.learning.model import load_arrays, state_arrays
+from onion_fl.learning.model import group_of, is_aux, load_arrays, state_arrays
 from onion_fl.learning.sharing import SharingPolicy, keys_crossing, keys_held_at
 from onion_fl.observability.diagnostics import RoundView
 from onion_fl.observability.diagnostics import diagnostics as diagnostic_plugins
@@ -53,15 +53,29 @@ def _due(every: int | None, round: int) -> bool:
     return bool(every) and round % every == 0
 
 
+def _model_part(state: Mapping[str, Any]) -> State:
+    """The model's own arrays, without auxiliary ones (control variates, …)."""
+    return {k: v for k, v in state.items() if not is_aux(k)}
+
+
 def _train_metrics(reports: Iterable[Mapping[str, float]]) -> dict[str, float]:
+    """``train_*`` of the children: examples and edges summed, the rest averaged by examples."""
     reports = [r for r in reports if r.get("train_examples")]
     examples = sum(r["train_examples"] for r in reports)
     if not examples:
         return {}
-    loss = (
-        sum(r.get("train_loss", 0.0) * r["train_examples"] for r in reports) / examples
-    )
-    return {"train_loss": float(loss), "train_examples": float(examples)}
+    out = {
+        "train_examples": float(examples),
+        "train_edges": float(sum(r.get("train_edges", 1.0) for r in reports)),
+    }
+    for name in sorted({k for r in reports for k in r if k.startswith("train_edges/")}):
+        out[name] = float(sum(r.get(name, 0.0) for r in reports))  # per group
+    names = sorted({k for r in reports for k in r if k.startswith("train_")} - set(out))
+    for name in names:
+        holders = [r for r in reports if name in r]
+        weight = sum(r["train_examples"] for r in holders)
+        out[name] = float(sum(r[name] * r["train_examples"] for r in holders) / weight)
+    return out
 
 
 def _eval_part(metrics: Mapping[str, float], model: str) -> tuple[dict, float]:
@@ -166,6 +180,14 @@ class _Collector(Node):
             for meta in self.registered.values()
             if meta.get("role") != "evaluator"
         )
+
+    def holders_below(self) -> dict[str, int]:
+        """Training edges below that send each parameter group up."""
+        holders: dict[str, int] = {}
+        for meta in self.registered.values():
+            for group, n in (meta.get("holders") or {}).items():
+                holders[group] = holders.get(group, 0) + int(n)
+        return dict(sorted(holders.items()))
 
     # --- rounds ---------------------------------------------------------------------
 
@@ -294,11 +316,14 @@ class _Collector(Node):
             return
         view = RoundView(
             round=self.round,
-            sent=self.sent,
-            contributions=fresh,
-            aggregated=aggregated,
-            previous=self.previous,
-            received=getattr(self, "received", {}),
+            sent=_model_part(self.sent),
+            contributions={
+                child: Contribution(c.source, _model_part(c.state), c.weights)
+                for child, c in fresh.items()
+            },
+            aggregated=_model_part(aggregated),
+            previous=None if self.previous is None else _model_part(self.previous),
+            received=_model_part(getattr(self, "received", {})),
             datasets={
                 c: meta["tags"]["dataset"]
                 for c, meta in self.registered.items()
@@ -496,8 +521,10 @@ class Coordinator(_Collector):
 
     def _closed(self, aggregated: Contribution, metrics: dict, ctx: Context) -> None:
         held = keys_held_at(aggregated.state, self.sharing, self.levels, self.level)
+        stats = dict(metrics) | {"edges_total": float(self.edges_below())}
+        stats |= {f"edges_total/{g}": float(n) for g, n in self.holders_below().items()}
         self.state = self.server_optimizer.apply(
-            self.state, _subset(aggregated.state, held)
+            self.state, _subset(aggregated.state, held), stats
         )
         if "train_loss" in metrics:
             ctx.emit(
@@ -539,7 +566,8 @@ class Aggregator(_Greeter, _Collector):
         self.parent_level = self.levels[self.levels.index(self.level) - 1]
 
     def _registered(self, ctx: Context) -> None:
-        self._say_hello({"role": "aggregator", "edges": self.edges_below()}, ctx)
+        meta = {"role": "aggregator", "edges": self.edges_below()}
+        self._say_hello(meta | {"holders": self.holders_below()}, ctx)
 
     def on_timer(self, name: str, ctx: Context) -> None:
         if name == "hello":
@@ -633,7 +661,14 @@ class Edge(_Greeter, Node):
             "edges": int(self.train),
             "tags": self.tags,
         }
+        if self.train:
+            meta["holders"] = dict.fromkeys(self._groups_up(self.model.state_dict()), 1)
         self._say_hello(meta, ctx)
+
+    def _groups_up(self, keys: Iterable[str]) -> list[str]:
+        """Parameter groups of ``keys`` that travel to the parent."""
+        up = keys_crossing(keys, self.sharing, self.levels, self.parent_level)
+        return sorted({group_of(k) for k in up if not is_aux(k)})
 
     def on_timer(self, name: str, ctx: Context) -> None:
         if name == "hello" and not self.acknowledged:
@@ -707,7 +742,11 @@ class Edge(_Greeter, Node):
         metrics: dict[str, float] = {}
         if scoring and "received" in self.eval_models:
             metrics |= self._score("received", msg.round, ctx)
+        model_before = state_arrays(self.model)
         try:
+            # What a diverged round rolls back to: the model, and the trainer's
+            # memory if it can snapshot it (built-ins can; a plugin may opt in).
+            saved = getattr(self.trainer, "snapshot", lambda: None)()
             result = self.trainer.train(
                 self.model, self.data, received=received, ctx=ctx
             )
@@ -719,6 +758,21 @@ class Edge(_Greeter, Node):
             )
             return
         ctx.compute(result.samples)
+        arrays = state_arrays(self.model) | dict(result.aux)
+        broken = sorted(k for k, v in arrays.items() if not np.isfinite(v).all())
+        if broken:  # a diverged edge rolls back and tells its parent at once
+            if saved is not None:
+                self.trainer.restore(saved)
+            load_arrays(self.model, model_before)
+            ctx.emit(
+                "edge.train_failed",
+                round=msg.round,
+                error=f"non-finite weights after training: {broken[:3]}",
+            )
+            ctx.send(
+                Message(kind="update", src=self.id, dst=self.parent, round=msg.round)
+            )
+            return
         if scoring and "local" in self.eval_models:
             metrics |= self._score("local", msg.round, ctx)
         try:
@@ -735,15 +789,19 @@ class Edge(_Greeter, Node):
                 round=msg.round,
                 error=f"{type(exc).__name__}: {exc}",
             )
-        arrays = state_arrays(self.model)
         up = keys_crossing(arrays, self.sharing, self.levels, self.parent_level)
         ctx.emit("edge.trained", result.loss, round=msg.round, examples=result.examples)
+        # One vote per edge for trainers whose papers average clients (SCAFFOLD).
+        uniform = getattr(self.trainer, "uniform_weights", False)
         payload = Payload(
             state=_subset(arrays, up),
-            weights=dict.fromkeys(up, float(result.examples)),
+            weights=dict.fromkeys(up, 1.0 if uniform else float(result.examples)),
             metrics={
                 "train_loss": float(result.loss),
                 "train_examples": float(result.examples),
+                "train_steps": float(result.batches),
+                "train_edges": 1.0,
+                **{f"train_edges/{g}": 1.0 for g in self._groups_up(up)},
                 **metrics,
             },
         )

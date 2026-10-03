@@ -11,7 +11,7 @@ import copy
 import fnmatch
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Literal, Protocol
@@ -43,6 +43,7 @@ class TrainResult:
     samples: int  # samples processed (epochs × examples): what compute is charged for
     examples: int  # distinct local examples: the FedAvg weight
     batches: int
+    aux: Mapping[str, np.ndarray] = field(default_factory=dict)  # sent with the update
 
 
 def batches_of(n: int, batch_size: int, rng: np.random.Generator) -> list[np.ndarray]:
@@ -140,9 +141,18 @@ class StandardParams(BaseModel):
 )
 class Standard:
     Params: type[StandardParams] = StandardParams
+    _memory: tuple[str, ...] = ()  # attributes a diverged round rolls back
 
     def __init__(self, **params: Any) -> None:
         self.params = self.Params(**params)
+
+    def snapshot(self) -> dict[str, Any]:
+        """What the edge restores if this round diverges."""
+        return {name: copy.deepcopy(getattr(self, name)) for name in self._memory}
+
+    def restore(self, saved: Mapping[str, Any]) -> None:
+        for name, value in saved.items():
+            setattr(self, name, value)
 
     def _check(self, received: Mapping[str, np.ndarray] | None) -> None:
         pass
@@ -150,6 +160,10 @@ class Standard:
     def _penalty(
         self, model: nn.Module, received: Any, names: Sequence[str]
     ) -> torch.Tensor | float:
+        return 0.0
+
+    def _batch_term(self, model: nn.Module, xb: torch.Tensor) -> torch.Tensor | float:
+        """An extra loss on each batch (MOON's contrast); none by default."""
         return 0.0
 
     def train(
@@ -177,7 +191,8 @@ class Standard:
                     optimizer.zero_grad()
                     loss = F.cross_entropy(model(xs[idx]), ys[idx])
                     total += float(loss.item()) * len(idx)
-                    (loss + self._penalty(model, received, names)).backward()
+                    extra = self._batch_term(model, xs[idx])
+                    (loss + self._penalty(model, received, names) + extra).backward()
                     optimizer.step()
                     batches += 1
         samples = p.local_epochs * len(xs)
@@ -231,6 +246,7 @@ class DittoParams(StandardParams):
     ),
 )
 class Ditto(Standard):
+    _memory = ("_personal",)
     Params = DittoParams
 
     def __init__(self, **params: Any) -> None:
@@ -290,6 +306,7 @@ class APFLParams(StandardParams):
     ),
 )
 class APFL(Standard):
+    _memory = ("alpha", "_v", "_w")
     Params = APFLParams
 
     def __init__(self, **params: Any) -> None:
@@ -436,6 +453,235 @@ class FedBABUParams(StandardParams):
 )
 class FedBABU(Standard):
     Params = FedBABUParams
+
+
+class ScaffoldParams(StandardParams):
+    optimizer: Literal["sgd"] = Field(
+        "sgd", description="La actualización de c_i supone SGD"
+    )
+
+
+@trainers.register(
+    "scaffold",
+    title="SCAFFOLD",
+    description="Corrige cada gradiente con las variables de control: g − c_i + c.",
+    params=ScaffoldParams,
+    explain=(
+        "c viaja con el modelo global y c_i se queda en el edge, que calcula "
+        "c_i⁺ = c_i − c + (x − y)/(K·η) y envía Δc_i = c_i⁺ − c_i (opción II de "
+        "Karimireddy et al., 2020). Exige server_optimizer scaffold, que guarda c. "
+        "Cada edge cuenta lo mismo, como en el artículo, no por muestras."
+    ),
+)
+class Scaffold(Standard):
+    Params = ScaffoldParams
+    PREFIX = "scaffold/"
+    server_optimizer = "scaffold"
+    uniform_weights = True  # the paper averages clients, not examples
+    _memory = ("_c_i",)
+
+    def __init__(self, **params: Any) -> None:
+        super().__init__(**params)
+        self._c_i: dict[str, np.ndarray] = {}
+        self._correction: dict[str, torch.Tensor] = {}
+
+    def _penalty(
+        self, model: nn.Module, received: Any, names: Sequence[str]
+    ) -> torch.Tensor | float:
+        # The gradient of <c − c_i, w> is c − c_i: the SCAFFOLD correction.
+        params = dict(model.named_parameters())
+        total: torch.Tensor | float = 0.0
+        for name in names:
+            if name in self._correction:
+                total = total + (params[name] * self._correction[name]).sum()
+        return total
+
+    def train(
+        self,
+        model: nn.Module,
+        data: Samples,
+        received: Mapping[str, np.ndarray] | None = None,
+        ctx: Any = None,
+    ) -> TrainResult:
+        received = dict(received or {})
+        names = trainable(model, self.params.frozen)
+        start = state_arrays(model)
+        c_i = {n: self._c_i.get(n, np.zeros_like(start[n])) for n in names}
+        # No c (a local group, or a round the server never applied): no correction.
+        c = {n: np.asarray(received.get(self.PREFIX + n, c_i[n])) for n in names}
+        params = dict(model.named_parameters())
+        self._correction = {
+            n: torch.as_tensor(c[n] - c_i[n], dtype=params[n].dtype) for n in names
+        }
+        result = super().train(model, data, received, ctx)
+        after = state_arrays(model)
+        scale = result.batches * self.params.lr
+        new = {n: c_i[n] - c[n] + (start[n] - after[n]) / scale for n in names}
+        aux = {self.PREFIX + n: (new[n] - c_i[n]).astype(start[n].dtype) for n in names}
+        self._c_i = new
+        return replace(result, aux=aux)
+
+
+class FedNovaParams(StandardParams):
+    optimizer: Literal["sgd"] = Field(
+        "sgd", description="La normalización por pasos supone SGD"
+    )
+
+
+@trainers.register(
+    "fednova",
+    title="FedNova",
+    description="Entrenamiento estándar que envía además su actualización normalizada por pasos.",
+    params=FedNovaParams,
+    explain=(
+        "Cada edge envía (y − x)/τ_i; el optimizador de servidor fednova aplica "
+        "x + τ̄·d̄, así los edges que dan más pasos no arrastran el modelo "
+        "(Wang et al., 2020). Exige server_optimizer fednova."
+    ),
+)
+class FedNova(Standard):
+    Params = FedNovaParams
+    server_optimizer = "fednova"
+
+    def train(
+        self,
+        model: nn.Module,
+        data: Samples,
+        received: Mapping[str, np.ndarray] | None = None,
+        ctx: Any = None,
+    ) -> TrainResult:
+        start = state_arrays(model)
+        result = super().train(model, data, received, ctx)
+        after = state_arrays(model)
+        names = trainable(model, self.params.frozen)
+        steps = np.full(1, float(result.batches), dtype=np.float32)
+        aux: dict[str, np.ndarray] = {}
+        for n in names:
+            aux[f"fednova/{n}"] = ((after[n] - start[n]) / result.batches).astype(
+                start[n].dtype
+            )
+            # Per key, so a key only some datasets hold gets its holders' mean steps.
+            aux[f"fednova_steps/{n}"] = steps
+        return replace(result, aux=aux)
+
+
+class FedDynParams(StandardParams):
+    alpha: float = Field(0.01, gt=0, description="α del regularizador dinámico")
+
+
+@trainers.register(
+    "feddyn",
+    title="FedDyn",
+    description="Regularizador dinámico: término proximal más el gradiente que el edge recuerda.",
+    params=FedDynParams,
+    explain=(
+        "Minimiza L_i(θ) − ⟨∇L_i(θ_i^{t−1}), θ⟩ + α/2·‖θ − θ^{t−1}‖² y actualiza "
+        "su gradiente recordado; exige server_optimizer feddyn con el mismo α "
+        "(Acar et al., 2021). Limitación: el edge actualiza su gradiente aunque su "
+        "actualización se pierda, así que con rondas perdidas el estado del "
+        "servidor se aparta del de los edges."
+    ),
+)
+class FedDyn(Standard):
+    Params = FedDynParams
+    server_optimizer = "feddyn"
+    uniform_weights = True  # θ̄ is the participants' plain mean
+    _memory = ("_grad",)
+
+    def __init__(self, **params: Any) -> None:
+        super().__init__(**params)
+        self._grad: dict[str, torch.Tensor] = {}
+
+    def _check(self, received: Mapping[str, np.ndarray] | None) -> None:
+        if received is None:
+            raise TrainError("feddyn needs the received global state")
+
+    def _penalty(
+        self, model: nn.Module, received: Any, names: Sequence[str]
+    ) -> torch.Tensor:
+        params = dict(model.named_parameters())
+        total = proximal_term(model, received, self.params.alpha, names)
+        for name in names:
+            if name in self._grad:
+                total = total - (params[name] * self._grad[name]).sum()
+        return total
+
+    def train(
+        self,
+        model: nn.Module,
+        data: Samples,
+        received: Mapping[str, np.ndarray] | None = None,
+        ctx: Any = None,
+    ) -> TrainResult:
+        result = super().train(model, data, received, ctx)
+        params = dict(model.named_parameters())
+        for name in trainable(model, self.params.frozen):
+            if name not in received:
+                continue
+            anchor = torch.as_tensor(
+                np.asarray(received[name]), dtype=params[name].dtype
+            )
+            drift = params[name].detach() - anchor
+            previous = self._grad.get(name, torch.zeros_like(drift))
+            self._grad[name] = previous - self.params.alpha * drift
+        return result
+
+
+class MoonParams(StandardParams):
+    mu: float = Field(1.0, ge=0, description="Peso de la pérdida contrastiva")
+    temperature: float = Field(0.5, gt=0, description="Temperatura τ del contraste")
+
+
+@trainers.register(
+    "moon",
+    title="MOON",
+    description="Contraste de modelo: la representación local se acerca a la del global y se aleja de la anterior.",
+    params=MoonParams,
+    explain=(
+        "Suma μ·ℓ_con con similitud coseno entre las features del modelo local, "
+        "las del global recibido y las del modelo local de la ronda anterior "
+        "(Li et al., 2021). En la primera ronda no hay modelo anterior."
+    ),
+)
+class Moon(Standard):
+    Params = MoonParams
+    shared_features = True  # the global model's features must reach the edge
+    _memory = ("_previous",)  # _global is the model as received, rebuilt each round
+
+    def __init__(self, **params: Any) -> None:
+        super().__init__(**params)
+        self._global: nn.Module | None = None
+        self._previous: nn.Module | None = None
+
+    def _batch_term(self, model: nn.Module, xb: torch.Tensor) -> torch.Tensor | float:
+        if self._previous is None or self._global is None:
+            return 0.0
+        z = model.features(xb)
+        with torch.no_grad():
+            z_global = self._global.features(xb)
+            z_previous = self._previous.features(xb)
+        tau = self.params.temperature
+        logits = torch.stack(
+            [
+                F.cosine_similarity(z, z_global, dim=-1) / tau,
+                F.cosine_similarity(z, z_previous, dim=-1) / tau,
+            ],
+            dim=1,
+        )
+        target = torch.zeros(len(xb), dtype=torch.long)
+        return self.params.mu * F.cross_entropy(logits, target)
+
+    def train(
+        self,
+        model: nn.Module,
+        data: Samples,
+        received: Mapping[str, np.ndarray] | None = None,
+        ctx: Any = None,
+    ) -> TrainResult:
+        self._global = copy.deepcopy(model).eval()  # the model as received
+        result = super().train(model, data, received, ctx)
+        self._previous = copy.deepcopy(model).eval()
+        return result
 
 
 class StubParams(BaseModel):

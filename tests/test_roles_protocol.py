@@ -7,11 +7,13 @@ arithmetic. No data is involved (docs/RULES.md).
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from pathlib import Path
 
 import numpy as np
 import pytest
+import torch
 
 from onion_fl.core.message import Message, Payload
 from onion_fl.core.registry import PluginError
@@ -69,6 +71,21 @@ def edge(
 class Broken:
     def train(self, *args, **kwargs):
         raise RuntimeError("out of memory")
+
+
+class AuxStub:
+    """The stub trainer plus one auxiliary array: what it last received, plus 1."""
+
+    def __init__(self) -> None:
+        self.stub = trainers.create("stub", {"shift": 1.0})
+        self.seen: list[np.ndarray | None] = []
+
+    def train(self, model, data=None, received=None, ctx=None):
+        result = self.stub.train(model, data, received, ctx)
+        last = (received or {}).get("algo/trunk.0.weight")
+        self.seen.append(None if last is None else np.asarray(last).copy())
+        base = np.zeros_like(received["trunk.0.weight"]) if last is None else last
+        return dataclasses.replace(result, aux={"algo/trunk.0.weight": base + 1})
 
 
 def run(topology, edges, rounds: int = 1, sharing: str = "fedavg", **kw):
@@ -726,3 +743,151 @@ def test_without_retries_a_lost_hello_stalls_the_registration() -> None:
     federation = run(lossy_tree(hello_retry=None), edges, seed=1)
 
     assert names(federation, "federation.registered") == []
+
+
+def test_auxiliary_arrays_go_up_and_come_back_down() -> None:
+    trainer = AuxStub()
+    edges = {"fog_0": [EdgeSpec("e1", model(A), trainer=trainer)]}
+
+    federation = run(tree(1), edges, rounds=3)
+
+    assert trainer.seen[0] is None
+    assert float(trainer.seen[1].mean()) == pytest.approx(1.0)
+    assert float(trainer.seen[2].mean()) == pytest.approx(2.0)
+    final = federation.coordinator.state["algo/trunk.0.weight"]
+    assert float(final.mean()) == pytest.approx(3.0)
+
+
+def test_auxiliary_arrays_do_not_reach_the_diagnostics() -> None:
+    def diagnostics(trainer) -> list:
+        other = trainers.create("stub", {"shift": 2.0})
+        edges = {
+            "fog_0": [
+                EdgeSpec("e1", model(A), trainer=trainer),
+                EdgeSpec("e2", model(A), trainer=other),
+            ]
+        }
+        federation = run(tree(1), edges, rounds=2)
+        return sorted(
+            (e["node"], e["name"], e["tags"].get("round"), round(float(e["value"]), 9))
+            for e in federation.runtime.events
+            if e["name"].startswith(("diagnostic.divergence", "diagnostic.drift"))
+        )
+
+    with_aux = diagnostics(AuxStub())
+
+    assert with_aux and with_aux == diagnostics(trainers.create("stub", {"shift": 1.0}))
+
+
+class StatsRecorder:
+    """A server optimizer that keeps the statistics of every round and replaces."""
+
+    def __init__(self) -> None:
+        self.stats: list[dict] = []
+
+    def apply(self, global_state, aggregated, stats=None):
+        self.stats.append(dict(stats or {}))
+        return {**global_state, **aggregated}
+
+
+def test_the_server_optimizer_gets_the_round_statistics() -> None:
+    recorder = StatsRecorder()
+    edges = {
+        "fog_0": [edge("e1", shift=1, examples=1), edge("e2", shift=1, examples=3)],
+        "fog_1": [edge("e3", shift=1, examples=4)],
+    }
+
+    run(tree(2), edges, server_optimizer=recorder)
+
+    (stats,) = recorder.stats
+    assert stats["train_edges"] == 3
+    assert stats["edges_total"] == 3
+    assert stats["train_examples"] == 8
+    assert stats["train_steps"] == pytest.approx(1.0)  # the stub reports one step
+
+
+class Exploding:
+    """A trainer whose weights overflow: a diverged local optimisation."""
+
+    def train(self, model, data=None, received=None, ctx=None):
+        result = trainers.create("stub").train(model, data, received, ctx)
+        with torch.no_grad():
+            next(model.parameters()).fill_(float("nan"))
+        return result
+
+
+def test_an_edge_with_non_finite_weights_does_not_poison_the_model() -> None:
+    edges = {
+        "fog_0": [
+            edge("e1", shift=2, examples=1),
+            EdgeSpec("e2", model(A), trainer=Exploding()),
+        ]
+    }
+
+    federation = run(tree(1, fog={"quorum": 0.5, "deadline": 10}), edges)
+
+    state = federation.coordinator.state
+    assert all(np.isfinite(v).all() for v in state.values())
+    assert_global(federation, "trunk.0.weight", 2.0)
+    (failed,) = names(federation, "edge.train_failed", "e2")
+    assert "non-finite" in failed["tags"]["error"]
+
+
+def test_the_statistics_count_the_holders_of_each_group() -> None:
+    recorder = StatsRecorder()
+    edges = {
+        "fog_0": [edge("e1"), edge("e2")],
+        "fog_1": [edge("e3", shape=B), EdgeSpec("e4", model(B), trainer=Broken())],
+    }
+
+    run(tree(2, fog={"quorum": 0.5, "deadline": 10}), edges, server_optimizer=recorder)
+
+    (stats,) = recorder.stats
+    assert stats["edges_total/adapter.a"] == 2 and stats["train_edges/adapter.a"] == 2
+    assert stats["edges_total/adapter.b"] == 2 and stats["train_edges/adapter.b"] == 1
+    assert stats["edges_total/trunk"] == 4 and stats["train_edges/trunk"] == 3
+
+
+class OneVote(trainers.create("stub").__class__):
+    """The stub trainer, asking for one vote per edge instead of one per example."""
+
+    uniform_weights = True
+
+
+def test_a_trainer_can_ask_for_one_vote_per_edge() -> None:
+    def voter(node_id: str, shift: float, examples: int) -> EdgeSpec:
+        trainer = OneVote(shift=shift, examples=examples)
+        return EdgeSpec(node_id, model(A), trainer=trainer)
+
+    edges = {
+        "fog_0": [voter("e1", 1, 1), voter("e2", 4, 3)],
+        "fog_1": [voter("e3", 4, 10)],
+    }
+
+    federation = run(tree(2), edges)
+
+    assert_global(federation, "trunk.0.weight", 3.0)  # by examples: 53/14
+
+
+class Locked(Exploding):
+    """A valid plugin trainer that cannot be deep-copied (it holds a lock)."""
+
+    def __init__(self) -> None:
+        import threading
+
+        self.lock = threading.Lock()
+
+
+def test_a_trainer_that_cannot_be_copied_still_rolls_back_its_model() -> None:
+    edges = {
+        "fog_0": [
+            edge("e1", shift=2, examples=1),
+            EdgeSpec("e2", model(A), trainer=Locked()),
+        ]
+    }
+
+    federation = run(tree(1, fog={"quorum": 0.5, "deadline": 10}), edges)
+
+    assert_global(federation, "trunk.0.weight", 2.0)
+    (failed,) = names(federation, "edge.train_failed", "e2")
+    assert "non-finite" in failed["tags"]["error"]

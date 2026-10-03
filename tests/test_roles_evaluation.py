@@ -271,6 +271,51 @@ def test_a_failed_round_still_reports_the_scores_that_arrived() -> None:
     assert cloud["value"] == pytest.approx(M0 + 1)
 
 
+def test_a_diverged_edge_recovers_and_reports_no_non_finite_score() -> None:
+    class DivergesOnce:
+        """Blows up on its first call and poisons its memory; a poisoned memory
+        poisons every later round, so only a restored trainer recovers."""
+
+        calls = 0  # on the class: the edge's snapshot cannot roll it back
+
+        def __init__(self) -> None:
+            self.memory = 0.0
+            self.stub = trainers.create("stub", {"shift": 1.0})
+
+        def snapshot(self) -> float:
+            return self.memory
+
+        def restore(self, saved: float) -> None:
+            self.memory = saved
+
+        def train(self, model, data=None, received=None, ctx=None):
+            type(self).calls += 1
+            result = self.stub.train(model, data, received, ctx)
+            if type(self).calls == 1:
+                self.memory = float("nan")
+            if self.memory != self.memory:
+                with torch.no_grad():
+                    dict(model.named_parameters())[KEY].fill_(float("nan"))
+            return result
+
+    edges = {
+        "fog_0": [
+            trainer_edge("e1", shift=2, val=4),
+            EdgeSpec("e2", model(A), trainer=DivergesOnce(), val_data=samples(4)),
+        ]
+    }
+
+    federation = run(tree(fog={"deadline": 5}, edge=EDGE_EVAL), edges, rounds=3)
+
+    events = federation.runtime.events
+    failed = [e for e in events if e["name"] == "edge.train_failed"]
+    assert [e["node"] for e in failed] == ["e2"]
+    scores = [e["value"] for e in events if e["name"].startswith("eval.")]
+    assert scores and np.isfinite(scores).all()
+    # round 1 is lost; rounds 2 and 3 move the trunk by (2 + 1) / 2 each
+    assert federation.coordinator.state[KEY].mean() == pytest.approx(M0 + 3.0)
+
+
 # --- fog --------------------------------------------------------------------------------------
 
 

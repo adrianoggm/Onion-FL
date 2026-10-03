@@ -148,7 +148,7 @@ class ModularMLP(nn.Module):
                 bound = 1 / math.sqrt(module.in_features)
                 nn.init.uniform_(module.bias, -bound, bound, generator=gen)
 
-    def forward(self, x: torch.Tensor, dataset: str | None = None) -> torch.Tensor:
+    def _dataset(self, dataset: str | None) -> str:
         if dataset is None:
             if len(self.shapes) != 1:
                 raise ValueError(
@@ -159,19 +159,39 @@ class ModularMLP(nn.Module):
             raise ValueError(
                 f"unknown dataset {dataset!r}; this model holds {sorted(self.shapes)}"
             )
+        return dataset
+
+    def features(self, x: torch.Tensor, dataset: str | None = None) -> torch.Tensor:
+        """The trunk output: the representation the head reads."""
+        dataset = self._dataset(dataset)
         shared = self.config.adapters == "shared"
         hidden = self.adapter(x) if shared else self.adapter[dataset](x)
-        hidden = (
+        return (
             self.trunk(hidden)
             if self.config.trunk == "shared"
             else self.trunk[dataset](hidden)
         )
-        return self.head[self._head_key(self.shapes[dataset])](hidden)
+
+    def forward(self, x: torch.Tensor, dataset: str | None = None) -> torch.Tensor:
+        dataset = self._dataset(dataset)
+        head = self.head[self._head_key(self.shapes[dataset])]
+        return head(self.features(x, dataset))
+
+
+AUX = "/"
+
+
+def is_aux(key: str) -> bool:
+    """An auxiliary array ``<algorithm>/<parameter key>`` (a control variate, …)."""
+    return AUX in key
 
 
 def group_of(key: str) -> str:
-    """Parameter group of a key: ``adapter.<dataset>``, ``trunk``, ``trunk.<dataset>``, ``head.<task>``."""
-    parts = key.split(".")
+    """Parameter group of a key: ``adapter.<dataset>``, ``trunk``, ``trunk.<dataset>``, ``head.<task>``.
+
+    An auxiliary key belongs to the group of the parameter it names.
+    """
+    parts = key.split(AUX, 1)[-1].split(".")
     if len(parts) < 2 or parts[0] not in NAMESPACES:
         raise ValueError(f"key {key!r} is outside the {'/'.join(NAMESPACES)} namespace")
     if parts[0] in ("adapter", "trunk") and parts[1][0].isdigit():

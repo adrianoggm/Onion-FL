@@ -202,8 +202,12 @@ def test_trainers_registry_lists_the_built_ins() -> None:
         "apfl",
         "ditto",
         "fedbabu",
+        "feddyn",
+        "fednova",
         "fedprox",
         "fedrep",
+        "moon",
+        "scaffold",
         "standard",
         "stub",
     ]
@@ -535,6 +539,219 @@ def test_apfl_keeps_its_personal_model_between_rounds(swell) -> None:
     assert any(not np.allclose(mine[k], theirs[k]) for k in mine)
 
 
+@real
+def test_scaffold_without_control_variates_is_sgd(swell) -> None:
+    params = {"local_epochs": 1, "lr": 0.05, "optimizer": "sgd"}
+    plain, corrected = build(), build()
+    received = state_arrays(plain)
+
+    trainers.create("standard", params).train(plain, swell, received, ctx())
+    trainers.create("scaffold", params).train(corrected, swell, received, ctx())
+
+    for key, value in state_arrays(plain).items():
+        np.testing.assert_array_equal(value, state_arrays(corrected)[key])
+
+
+@real
+def test_scaffold_sends_its_new_control_variate(swell) -> None:
+    model = build()
+    received = state_arrays(model)
+    trainer = trainers.create("scaffold", {"local_epochs": 1, "lr": 0.05})
+
+    result = trainer.train(model, swell, received, ctx())
+
+    after = state_arrays(model)
+    for key, x in received.items():
+        expected = (x - after[key]) / (result.batches * 0.05)  # c = c_i = 0
+        np.testing.assert_allclose(
+            result.aux[f"scaffold/{key}"], expected, rtol=1e-5, atol=1e-7
+        )
+
+
+@real
+def test_scaffold_corrects_with_the_received_control_variate(swell) -> None:
+    received = state_arrays(build())
+    shifted = received | {
+        f"scaffold/{k}": np.full_like(v, 0.1) for k, v in received.items()
+    }
+    plain, corrected = build(), build()
+    params = {"local_epochs": 1, "lr": 0.05}
+
+    trainers.create("scaffold", params).train(plain, swell, received, ctx())
+    trainers.create("scaffold", params).train(corrected, swell, shifted, ctx())
+
+    assert any(
+        not np.array_equal(v, state_arrays(corrected)[k])
+        for k, v in state_arrays(plain).items()
+    )
+
+
+@real
+def test_scaffold_trains_when_the_heads_stay_on_the_edge(swell) -> None:
+    model = build()
+    received = {
+        k: v for k, v in state_arrays(model).items() if not k.startswith("head.")
+    }
+
+    result = trainers.create("scaffold", {"lr": 0.05}).train(
+        model, swell, received, ctx()
+    )
+
+    assert any(k.startswith("scaffold/head.") for k in result.aux)
+
+
+@real
+def test_fednova_sends_its_normalised_update(swell) -> None:
+    model = build()
+    received = state_arrays(model)
+
+    result = trainers.create("fednova", {"lr": 0.05}).train(
+        model, swell, received, ctx()
+    )
+
+    after = state_arrays(model)
+    for key, x in received.items():
+        np.testing.assert_allclose(
+            result.aux[f"fednova/{key}"],
+            (after[key] - x) / result.batches,
+            rtol=1e-5,
+            atol=1e-8,
+        )
+
+
+@real
+def test_feddyn_without_history_is_proximal(swell) -> None:
+    received = state_arrays(build())
+    prox, dyn = build(), build()
+    params = {"local_epochs": 1, "lr": 0.05}
+
+    trainers.create("fedprox", params | {"mu": 0.3}).train(prox, swell, received, ctx())
+    trainers.create("feddyn", params | {"alpha": 0.3}).train(
+        dyn, swell, received, ctx()
+    )
+
+    for key, value in state_arrays(prox).items():
+        np.testing.assert_allclose(value, state_arrays(dyn)[key], rtol=1e-6)
+
+
+@real
+def test_feddyn_remembers_its_gradient_term(swell) -> None:
+    trainer = trainers.create("feddyn", {"lr": 0.05, "alpha": 0.3})
+    model = build()
+    trainer.train(model, swell, state_arrays(model), ctx())
+    second = state_arrays(model)
+    trainer.train(model, swell, second, ctx(1))
+
+    fresh, start = trainers.create("feddyn", {"lr": 0.05, "alpha": 0.3}), build()
+    load_arrays(start, second)
+    fresh.train(start, swell, second, ctx(1))
+
+    assert any(
+        not np.allclose(v, state_arrays(start)[k])
+        for k, v in state_arrays(model).items()
+    )
+
+
+@real
+def test_moon_in_its_first_round_is_standard(swell) -> None:
+    params = {"local_epochs": 1, "lr": 0.05}
+    plain, moon = build(), build()
+    received = state_arrays(plain)
+
+    trainers.create("standard", params).train(plain, swell, received, ctx())
+    trainers.create("moon", params).train(moon, swell, received, ctx())
+
+    for key, value in state_arrays(plain).items():
+        np.testing.assert_array_equal(value, state_arrays(moon)[key])
+
+
+@real
+def test_moon_pulls_towards_the_global_representation_from_round_two(swell) -> None:
+    params = {"local_epochs": 1, "lr": 0.05}
+    plain, moon = build(), build()
+    standard = trainers.create("standard", params)
+    contrastive = trainers.create("moon", params | {"mu": 5.0})
+    for model, trainer in ((plain, standard), (moon, contrastive)):
+        trainer.train(model, swell, state_arrays(model), ctx())
+
+    standard.train(plain, swell, state_arrays(plain), ctx(1))
+    contrastive.train(moon, swell, state_arrays(moon), ctx(1))
+
+    assert any(
+        not np.allclose(v, state_arrays(moon)[k])
+        for k, v in state_arrays(plain).items()
+    )
+
+
+@real
+def test_scaffold_alone_with_local_heads_is_sgd_for_two_rounds(swell) -> None:
+    # One edge: c equals its own c_i on shared keys and never arrives for the
+    # local head, so the correction must be zero everywhere, round after round.
+    params = {"local_epochs": 1, "lr": 0.05, "optimizer": "sgd"}
+    plain, corrected = build(), build()
+    sgd, scaffold = (
+        trainers.create("standard", params),
+        trainers.create("scaffold", params),
+    )
+    c: dict = {}
+    for round_ in range(2):
+        shared = {
+            k: v for k, v in state_arrays(plain).items() if not k.startswith("head.")
+        }
+        sgd.train(plain, swell, shared, ctx(round_))
+        received = {
+            k: v
+            for k, v in state_arrays(corrected).items()
+            if not k.startswith("head.")
+        } | {k: v for k, v in c.items() if not k.startswith("scaffold/head.")}
+        sent = dict(scaffold.train(corrected, swell, received, ctx(round_)).aux)
+        c = {k: c.get(k, 0.0) + v for k, v in sent.items()}  # the server, alone
+
+    for key, value in state_arrays(plain).items():
+        np.testing.assert_allclose(
+            value, state_arrays(corrected)[key], rtol=1e-5, atol=1e-6
+        )
+
+
+@real
+def test_fednova_sends_its_steps_with_every_key(swell) -> None:
+    model = build()
+
+    result = trainers.create("fednova", {"lr": 0.05}).train(
+        model, swell, state_arrays(model), ctx()
+    )
+
+    for key in state_arrays(model):
+        np.testing.assert_array_equal(
+            result.aux[f"fednova_steps/{key}"], [float(result.batches)]
+        )
+
+
+def test_fednova_defaults_to_sgd() -> None:
+    assert trainers.create("fednova").params.optimizer == "sgd"
+
+
+@pytest.mark.parametrize("name", ["scaffold", "fednova"])
+def test_step_based_trainers_refuse_adam(name: str) -> None:
+    with pytest.raises(ValueError, match="sgd"):
+        trainers.create(name, {"optimizer": "adam"})
+
+
+def test_moon_contrast_is_lower_near_the_global_than_near_the_previous() -> None:
+    import copy
+
+    trainer = trainers.create("moon", {"mu": 1.0, "temperature": 0.5})
+    local, other = build(seed=0).eval(), build(seed=1).eval()
+    x = torch.linspace(-1.0, 1.0, 4 * 16).reshape(4, 16)  # a shape fixture
+
+    trainer._global, trainer._previous = copy.deepcopy(local), other
+    near_global = float(trainer._batch_term(local, x))
+    trainer._global, trainer._previous = other, copy.deepcopy(local)
+    near_previous = float(trainer._batch_term(local, x))
+
+    assert near_global < near_previous
+
+
 def test_ditto_needs_the_received_state() -> None:
     data = SimpleNamespace(X=np.zeros((1, 16), np.float32), y=np.zeros(1, np.int64))
 
@@ -556,3 +773,43 @@ def test_the_stub_can_add_seeded_noise_per_node() -> None:
         np.testing.assert_array_equal(a[key], b[key])
     assert any(not np.array_equal(a[k], c[k]) for k in a)
     assert any(not np.array_equal(a[k], state_arrays(build())[k]) for k in a)
+
+
+@real
+def test_scaffold_sends_the_change_in_its_control_variate(swell) -> None:
+    model = build()
+    trainer = trainers.create("scaffold", {"local_epochs": 1, "lr": 0.05})
+    first = trainer.train(model, swell, state_arrays(model), ctx())
+    received = state_arrays(model)  # no c arrives: c = c_i, no correction
+
+    second = trainer.train(model, swell, received, ctx(1))
+
+    after = state_arrays(model)
+    for key, x in received.items():
+        c_i = (x - after[key]) / (second.batches * 0.05)
+        np.testing.assert_allclose(
+            second.aux[f"scaffold/{key}"],
+            c_i - first.aux[f"scaffold/{key}"],
+            rtol=1e-4,
+            atol=1e-6,
+        )
+
+
+@pytest.mark.parametrize(
+    "name, attribute",
+    [
+        ("ditto", "_personal"),
+        ("apfl", "_w"),
+        ("scaffold", "_c_i"),
+        ("feddyn", "_grad"),
+        ("moon", "_previous"),
+    ],
+)
+def test_stateful_trainers_snapshot_their_memory(name: str, attribute: str) -> None:
+    trainer = trainers.create(name)
+    saved = trainer.snapshot()
+
+    setattr(trainer, attribute, "poisoned")
+    trainer.restore(saved)
+
+    assert getattr(trainer, attribute) != "poisoned"
