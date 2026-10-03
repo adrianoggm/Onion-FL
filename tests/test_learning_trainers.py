@@ -197,7 +197,7 @@ def test_the_stub_needs_no_data() -> None:
 
 
 def test_trainers_registry_lists_the_built_ins() -> None:
-    assert trainers.names() == ["ditto", "fedprox", "standard", "stub"]
+    assert trainers.names() == ["apfl", "ditto", "fedprox", "standard", "stub"]
     assert inits.names() == ["checkpoint", "random"]
 
 
@@ -404,6 +404,32 @@ def test_ditto_trains_when_the_heads_stay_on_the_edge(swell) -> None:
     trainer.train(model, swell, received, ctx())
 
     assert trainer.personal() is not None
+
+
+@real
+def test_apfl_with_alpha_zero_is_the_global_model(swell) -> None:
+    model = build()
+    trainer = trainers.create("apfl", {"lr": 0.05, "alpha": 0.0, "adapt_alpha": False})
+
+    trainer.train(model, swell, state_arrays(model), ctx())
+
+    for key, value in state_arrays(trainer.personal()).items():
+        np.testing.assert_allclose(value, state_arrays(model)[key])
+
+
+@real
+def test_apfl_learns_its_alpha_within_bounds(swell) -> None:
+    model = build()
+    trainer = trainers.create(
+        "apfl", {"local_epochs": 2, "lr": 0.05, "alpha": 0.5, "alpha_lr": 0.5}
+    )
+
+    result = trainer.train(model, swell, state_arrays(model), ctx())
+
+    assert trainer.alpha != 0.5 and 0.0 <= trainer.alpha <= 1.0
+    personal = state_arrays(trainer.personal())
+    assert any(not np.allclose(personal[k], v) for k, v in state_arrays(model).items())
+    assert result.samples == 2 * 2 * len(swell.y)  # two models per batch
 
 
 def test_ditto_needs_the_received_state() -> None:

@@ -20,6 +20,7 @@ import torch
 import torch.nn.functional as F
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt
 from torch import nn
+from torch.func import functional_call
 
 from onion_fl.core.registry import Registry
 from onion_fl.learning.model import group_of, load_arrays, state_arrays
@@ -262,6 +263,93 @@ class Ditto(Standard):
 
     def personal(self) -> nn.Module | None:
         return self._personal
+
+
+class APFLParams(StandardParams):
+    alpha: float = Field(
+        0.5, ge=0, le=1, description="Peso inicial del modelo personal en la mezcla"
+    )
+    adapt_alpha: bool = Field(True, description="Cada edge aprende su α")
+    alpha_lr: float = Field(0.01, gt=0, description="Paso del descenso sobre α")
+
+
+@trainers.register(
+    "apfl",
+    title="APFL",
+    description="Mezcla un modelo personal con el global: α·v + (1−α)·w.",
+    params=APFLParams,
+    explain=(
+        "En cada paso entrena el global w con sus datos y el personal v a través "
+        "de la mezcla; con adapt_alpha cada edge ajusta su α (Deng et al., 2020)."
+    ),
+)
+class APFL(Standard):
+    Params = APFLParams
+
+    def __init__(self, **params: Any) -> None:
+        super().__init__(**params)
+        self.alpha = self.params.alpha
+        self._v: nn.Module | None = None
+        self._w: dict[str, torch.Tensor] = {}
+
+    def train(
+        self,
+        model: nn.Module,
+        data: Samples,
+        received: Mapping[str, np.ndarray] | None = None,
+        ctx: Any = None,
+    ) -> TrainResult:
+        xs, ys = _samples(data)
+        p = self.params
+        names = trainable(model, p.frozen)
+        if not names:
+            raise TrainError(f"every parameter is frozen by {p.frozen}")
+        if self._v is None:
+            self._v = copy.deepcopy(model)
+        w, v = dict(model.named_parameters()), dict(self._v.named_parameters())
+        make = OPTIMIZERS[p.optimizer]
+        opt_w = make([w[n] for n in names], lr=p.lr, weight_decay=p.weight_decay)
+        opt_v = make([v[n] for n in names], lr=p.lr, weight_decay=p.weight_decay)
+        alpha = torch.tensor(self.alpha, requires_grad=p.adapt_alpha)
+        rng = ctx.rng if ctx is not None else np.random.default_rng(0)
+        total, batches = 0.0, 0
+        with _training([model, self._v], names, rng):
+            for _ in range(p.local_epochs):
+                for idx in batches_of(len(xs), p.batch_size, rng):
+                    opt_w.zero_grad()
+                    loss = F.cross_entropy(model(xs[idx]), ys[idx])
+                    loss.backward()
+                    opt_w.step()
+                    opt_v.zero_grad()
+                    alpha.grad = None
+                    mixed = {n: alpha * v[n] + (1 - alpha) * w[n].detach() for n in v}
+                    out = functional_call(self._v, mixed, (xs[idx],))
+                    F.cross_entropy(out, ys[idx]).backward()
+                    opt_v.step()
+                    if p.adapt_alpha:
+                        with torch.no_grad():
+                            alpha -= p.alpha_lr * alpha.grad
+                            alpha.clamp_(0.0, 1.0)
+                    total += float(loss.item()) * len(idx)
+                    batches += 1
+        self.alpha = float(alpha)
+        self._w = {n: t.detach().clone() for n, t in w.items()}
+        seen = p.local_epochs * len(xs)
+        return TrainResult(
+            loss=total / seen,
+            samples=2 * seen,  # the global and the personal model per batch
+            examples=len(xs),
+            batches=batches,
+        )
+
+    def personal(self) -> nn.Module | None:
+        if self._v is None:
+            return None
+        out = copy.deepcopy(self._v)
+        with torch.no_grad():
+            for name, tensor in out.named_parameters():
+                tensor.copy_(self.alpha * tensor + (1 - self.alpha) * self._w[name])
+        return out
 
 
 class StubParams(BaseModel):
