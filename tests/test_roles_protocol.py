@@ -846,7 +846,7 @@ class Spy:
         return aggregators.create("fedavg").aggregate(contributions, source)
 
     def report(self):
-        return [("aggregation.dropped", 1.0, {"dropped": ["e2"]})]
+        return [("diagnostic.selection", 1.0, {"dropped": ["e2"]})]
 
 
 def test_aggregators_get_the_reference_and_a_stream_and_are_heard(
@@ -861,13 +861,15 @@ def test_aggregators_get_the_reference_and_a_stream_and_are_heard(
     malicious = EdgeSpec(
         "e2", model(A), trainer=trainers.create("stub"), tags={"malicious": True}
     )
-    edges = {"fog_0": [edge("e1", shift=1), malicious]}
+    # A malicious edge whose update is discarded was not aggregated: not counted.
+    diverged = EdgeSpec("e3", model(A), trainer=Exploding(), tags={"malicious": True})
+    edges = {"fog_0": [edge("e1", shift=1), malicious, diverged]}
 
-    federation = run(tree(1), edges)
+    federation = run(tree(1, fog={"quorum": 0.5, "deadline": 10}), edges)
 
     reference, rng = spy.calls[0]
     assert set(reference) >= set(INITIAL) and rng is not None
-    (dropped,) = names(federation, "aggregation.dropped", "fog_0")
+    (dropped,) = names(federation, "diagnostic.selection", "fog_0")
     assert dropped["tags"]["malicious_dropped"] == 1
     assert dropped["tags"]["malicious"] == 1
 
@@ -890,5 +892,5 @@ def test_an_edge_with_local_dp_reports_its_epsilon_each_round() -> None:
 
     federation = run(tree(1), {"fog_0": [spec]}, rounds=2)
 
-    values = [e["value"] for e in names(federation, "privacy.epsilon", "e1")]
+    values = [e["value"] for e in names(federation, "diagnostic.privacy_epsilon", "e1")]
     assert len(values) == 2 and values[0] < values[1]

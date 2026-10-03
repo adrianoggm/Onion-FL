@@ -216,7 +216,7 @@ class _Selection:
     def report(self) -> list[tuple[str, float, dict[str, Any]]]:
         return [
             (
-                "aggregation.dropped",
+                "diagnostic.selection",
                 float(len(self.dropped)),
                 {
                     "dropped": list(self.dropped),
@@ -466,7 +466,7 @@ class NormClip:
         self.clipped = 0
 
     def report(self) -> list[tuple[str, float, dict[str, Any]]]:
-        return [("aggregation.clipped", float(self.clipped), {})]
+        return [("diagnostic.clipped", float(self.clipped), {})]
 
     def aggregate(
         self,
@@ -509,7 +509,7 @@ class DPFedAvg:
 
     def report(self) -> list[tuple[str, float, dict[str, Any]]]:
         epsilon = gaussian_epsilon(self.sigma, self.rounds, self.delta)
-        return [("privacy.epsilon", epsilon, {"mechanism": "central"})]
+        return [("diagnostic.privacy_epsilon", epsilon, {"mechanism": "central"})]
 
     def aggregate(
         self,

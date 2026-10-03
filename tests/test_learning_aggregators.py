@@ -464,7 +464,7 @@ def test_norm_clip_bounds_each_update_against_the_reference() -> None:
     out = clip.aggregate(children, "fog", reference=reference)
 
     np.testing.assert_allclose(out.state["w"], [(0.6 + 0.3) / 2, (0.8 + 0.4) / 2])
-    assert clip.report() == [("aggregation.clipped", 1.0, {})]
+    assert clip.report() == [("diagnostic.clipped", 1.0, {})]
 
 
 def test_dp_fedavg_adds_seeded_noise_and_reports_epsilon() -> None:
@@ -483,7 +483,7 @@ def test_dp_fedavg_adds_seeded_noise_and_reports_epsilon() -> None:
     np.testing.assert_array_equal(first.state["w"], second.state["w"])
     assert not np.allclose(first.state["w"], [1.0, 1.0, 1.0])  # noise σ·C/m = 5
     ((name, value, tags),) = dp.report()
-    assert name == "privacy.epsilon" and tags == {"mechanism": "central"}
+    assert name == "diagnostic.privacy_epsilon" and tags == {"mechanism": "central"}
     assert value == pytest.approx(5.298, abs=0.01)  # one round at σ=1
 
 

@@ -287,13 +287,11 @@ class _Collector(Node):
                 self._children_scores(list(reports.values()), ctx)
             self._failed(ctx)
             return
+        given = [*fresh.values(), *stale]
         aggregated = self.aggregator.aggregate(
-            [*fresh.values(), *stale],
-            source=self.id,
-            reference=self.sent,
-            rng=child_rng(ctx.rng),
+            given, source=self.id, reference=self.sent, rng=child_rng(ctx.rng)
         )
-        self._report_aggregation(ctx)
+        self._report_aggregation({c.source for c in given}, ctx)
         self._diagnose(fresh, aggregated.state, reports, ctx, failed=False)
         self.previous = dict(aggregated.state)
         reports = list(reports.values())
@@ -303,8 +301,8 @@ class _Collector(Node):
         ctx.emit("round.closed", ctx.now() - self.opened_at, stale=len(stale), **tags)
         self._closed(aggregated, metrics, ctx)
 
-    def _report_aggregation(self, ctx: Context) -> None:
-        """Emit what the aggregator reports; dropped children get their malicious count."""
+    def _report_aggregation(self, sources: set[str], ctx: Context) -> None:
+        """Emit what the aggregator reports; a selection gets its malicious counts."""
         malicious = {
             child
             for child, meta in self.registered.items()
@@ -314,7 +312,7 @@ class _Collector(Node):
             tags = dict(tags)
             if "dropped" in tags:
                 tags["malicious_dropped"] = len(set(tags["dropped"]) & malicious)
-                tags["malicious"] = len(malicious & set(self.participants))
+                tags["malicious"] = len(malicious & sources)
             ctx.emit(name, value, round=self.round, **tags)
 
     def _diagnose(
@@ -798,7 +796,7 @@ class Edge(_Greeter, Node):
             arrays = self.privacy.on_update(arrays, received, child_rng(ctx.rng))
             self._released += 1
             ctx.emit(
-                "privacy.epsilon",
+                "diagnostic.privacy_epsilon",
                 self.privacy.epsilon(self._released),
                 round=msg.round,
                 mechanism="local",
