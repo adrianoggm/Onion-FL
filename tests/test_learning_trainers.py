@@ -19,6 +19,7 @@ from onion_fl.learning.model import (
     DataShape,
     ModularMLP,
     ModularMLPConfig,
+    load_arrays,
     state_arrays,
 )
 from onion_fl.learning.trainers import (
@@ -466,6 +467,72 @@ def test_fedbabu_leaves_the_head_as_it_was_initialised(swell) -> None:
     after = state_arrays(model)
     for key, value in before.items():
         assert np.array_equal(after[key], value) == key.startswith("head."), key
+
+
+def rounds(trainer, swell, n: int = 2):
+    """Train ``n`` rounds as an edge does: each starts from the current global."""
+    model, context = build(), ctx(5)
+    for _ in range(n):
+        trainer.train(model, swell, state_arrays(model), context)
+    return state_arrays(model)
+
+
+@real
+@pytest.mark.parametrize("name", ["ditto", "apfl"])
+def test_the_global_model_trains_exactly_as_standard(swell, name: str) -> None:
+    params = {"local_epochs": 1, "lr": 0.05}
+
+    plain = rounds(trainers.create("standard", params), swell)
+    personalised = rounds(trainers.create(name, params), swell)
+
+    for key, value in plain.items():
+        np.testing.assert_array_equal(value, personalised[key], err_msg=key)
+
+
+@real
+def test_ditto_keeps_its_personal_model_between_rounds(swell) -> None:
+    trainer = trainers.create("ditto", {"lr": 0.05})
+    model = build()
+    trainer.train(model, swell, state_arrays(model), ctx())
+    kept = trainer.personal()
+    second = state_arrays(model)
+    trainer.train(model, swell, second, ctx(1))
+
+    fresh = trainers.create("ditto", {"lr": 0.05})
+    fresh.train(build(), swell, second, ctx(1))
+
+    assert trainer.personal() is kept
+    mine, theirs = state_arrays(kept), state_arrays(fresh.personal())
+    assert any(not np.array_equal(mine[k], theirs[k]) for k in mine)
+
+
+@real
+def test_apfl_starts_each_round_from_its_last_alpha(swell) -> None:
+    trainer = trainers.create("apfl", {"lr": 0.05, "alpha_lr": 1e-9})
+    model = build()
+    trainer.train(model, swell, state_arrays(model), ctx())
+
+    trainer.alpha = 0.9  # as if the first round had learnt it
+    trainer.train(model, swell, state_arrays(model), ctx(1))
+
+    assert trainer.alpha == pytest.approx(0.9, abs=1e-4)
+
+
+@real
+def test_apfl_keeps_its_personal_model_between_rounds(swell) -> None:
+    params = {"lr": 0.05, "adapt_alpha": False}
+    trainer = trainers.create("apfl", params)
+    model = build()
+    trainer.train(model, swell, state_arrays(model), ctx())
+    second = state_arrays(model)
+    trainer.train(model, swell, second, ctx(1))
+
+    fresh, start = trainers.create("apfl", params), build()
+    load_arrays(start, second)
+    fresh.train(start, swell, second, ctx(1))
+
+    mine, theirs = state_arrays(trainer.personal()), state_arrays(fresh.personal())
+    assert any(not np.allclose(mine[k], theirs[k]) for k in mine)
 
 
 def test_ditto_needs_the_received_state() -> None:

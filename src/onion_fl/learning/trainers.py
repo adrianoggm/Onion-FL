@@ -13,6 +13,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Literal, Protocol
 
 import numpy as np
@@ -22,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, PositiveInt
 from torch import nn
 from torch.func import functional_call
 
+from onion_fl.core.context import child_rng
 from onion_fl.core.registry import Registry
 from onion_fl.learning.model import group_of, load_arrays, state_arrays
 
@@ -253,7 +255,11 @@ class Ditto(Standard):
             local_epochs=p.personal_epochs or p.local_epochs,
             mu=p.lam,
         )
-        own = tied.train(self._personal, data, received, ctx)
+        # Its own stream: the global model trains exactly as with standard.
+        rng = ctx.rng if ctx is not None else np.random.default_rng(0)
+        own = tied.train(
+            self._personal, data, received, SimpleNamespace(rng=child_rng(rng))
+        )
         return TrainResult(
             loss=result.loss,
             samples=result.samples + own.samples,
@@ -312,6 +318,7 @@ class APFL(Standard):
         opt_v = make([v[n] for n in names], lr=p.lr, weight_decay=p.weight_decay)
         alpha = torch.tensor(self.alpha, requires_grad=p.adapt_alpha)
         rng = ctx.rng if ctx is not None else np.random.default_rng(0)
+        side = child_rng(rng)  # dropout of the personal pass, apart from w's
         total, batches = 0.0, 0
         with _training([model, self._v], names, rng):
             for _ in range(p.local_epochs):
@@ -322,8 +329,12 @@ class APFL(Standard):
                     opt_w.step()
                     opt_v.zero_grad()
                     alpha.grad = None
+                    # Uses w after this batch's step; Deng et al. take the previous
+                    # iterate, as common implementations do not: the gap is one step.
                     mixed = {n: alpha * v[n] + (1 - alpha) * w[n].detach() for n in v}
-                    out = functional_call(self._v, mixed, (xs[idx],))
+                    with torch.random.fork_rng(devices=[]):
+                        torch.manual_seed(int(side.integers(2**63)))
+                        out = functional_call(self._v, mixed, (xs[idx],))
                     F.cross_entropy(out, ys[idx]).backward()
                     opt_v.step()
                     if p.adapt_alpha:
