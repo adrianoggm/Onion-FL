@@ -683,6 +683,35 @@ def test_moon_pulls_towards_the_global_representation_from_round_two(swell) -> N
     )
 
 
+@real
+def test_scaffold_alone_with_local_heads_is_sgd_for_two_rounds(swell) -> None:
+    # One edge: c equals its own c_i on shared keys and never arrives for the
+    # local head, so the correction must be zero everywhere, round after round.
+    params = {"local_epochs": 1, "lr": 0.05, "optimizer": "sgd"}
+    plain, corrected = build(), build()
+    sgd, scaffold = (
+        trainers.create("standard", params),
+        trainers.create("scaffold", params),
+    )
+    sent: dict = {}
+    for round_ in range(2):
+        shared = {
+            k: v for k, v in state_arrays(plain).items() if not k.startswith("head.")
+        }
+        sgd.train(plain, swell, shared, ctx(round_))
+        received = {
+            k: v
+            for k, v in state_arrays(corrected).items()
+            if not k.startswith("head.")
+        } | {k: v for k, v in sent.items() if not k.startswith("scaffold/head.")}
+        sent = dict(scaffold.train(corrected, swell, received, ctx(round_)).aux)
+
+    for key, value in state_arrays(plain).items():
+        np.testing.assert_allclose(
+            value, state_arrays(corrected)[key], rtol=1e-5, atol=1e-6
+        )
+
+
 def test_ditto_needs_the_received_state() -> None:
     data = SimpleNamespace(X=np.zeros((1, 16), np.float32), y=np.zeros(1, np.int64))
 

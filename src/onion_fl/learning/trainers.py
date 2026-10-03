@@ -492,9 +492,9 @@ class Scaffold(Standard):
         received = dict(received or {})
         names = trainable(model, self.params.frozen)
         start = state_arrays(model)
-        zero = {n: np.zeros_like(start[n]) for n in names}
-        c = {n: np.asarray(received.get(self.PREFIX + n, zero[n])) for n in names}
-        c_i = {n: self._c_i.get(n, zero[n]) for n in names}
+        c_i = {n: self._c_i.get(n, np.zeros_like(start[n])) for n in names}
+        # No c (a local group, or a round the server never applied): no correction.
+        c = {n: np.asarray(received.get(self.PREFIX + n, c_i[n])) for n in names}
         params = dict(model.named_parameters())
         self._correction = {
             n: torch.as_tensor(c[n] - c_i[n], dtype=params[n].dtype) for n in names
