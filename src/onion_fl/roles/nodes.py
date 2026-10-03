@@ -297,9 +297,11 @@ class _Collector(Node):
                 self._children_scores(list(reports.values()), ctx)
             self._failed(ctx)
             return
+        given = [*fresh.values(), *stale]
         aggregated = self.aggregator.aggregate(
-            [*fresh.values(), *stale], source=self.id
+            given, source=self.id, reference=self.sent, rng=child_rng(ctx.rng)
         )
+        self._report_aggregation({c.source for c in given}, ctx)
         self._diagnose(fresh, aggregated.state, reports, ctx, failed=False)
         self.previous = dict(aggregated.state)
         reports = list(reports.values())
@@ -308,6 +310,22 @@ class _Collector(Node):
             metrics |= self._children_scores(reports, ctx)
         ctx.emit("round.closed", ctx.now() - self.opened_at, stale=len(stale), **tags)
         self._closed(aggregated, metrics, ctx)
+
+    def _report_aggregation(self, sources: set[str], ctx: Context) -> None:
+        """Emit what the aggregator reports; a selection gets its malicious counts."""
+        malicious = {
+            child
+            for child, meta in self.registered.items()
+            if (meta.get("tags") or {}).get("malicious")
+        }
+        for name, value, tags in getattr(self.aggregator, "report", list)():
+            tags = dict(tags)
+            if "dropped" in tags:
+                tags["malicious_dropped"] = len(set(tags["dropped"]) & malicious)
+                tags["malicious"] = len(malicious & sources)
+            if "excluded" in tags:
+                tags["malicious_excluded"] = len(set(tags["excluded"]) & malicious)
+            ctx.emit(name, value, round=self.round, **tags)
 
     def _diagnose(
         self, fresh, aggregated: State, reports, ctx: Context, failed: bool
@@ -643,12 +661,16 @@ class Edge(_Greeter, Node):
         tags: Mapping[str, Any] | None = None,
         hello_retry: float | None = 5.0,
         finetuner: Any = None,
+        attack: Any = None,
+        privacy: Any = None,
     ) -> None:
         super().__init__(node_id)
         self.hello_retry = hello_retry
         self.parent, self.model, self.data = parent, model, data
         self.trainer, self.train = trainer, train
         self.finetuner = finetuner
+        self.attack = attack
+        self.privacy, self._released = privacy, 0
         self.sharing, self.levels = sharing, list(levels)
         self.parent_level = self.levels[-2]
         self.val_data, self.evaluate = val_data, evaluate
@@ -739,6 +761,8 @@ class Edge(_Greeter, Node):
             scoring and "finetuned" in self.eval_models and self.finetuner is not None
         )
         start = copy.deepcopy(self.model) if finetuning else None
+        attacking = self.attack is not None and msg.round >= self.attack.start_round
+        data = self.attack.on_data(self.data) if attacking else self.data
         metrics: dict[str, float] = {}
         if scoring and "received" in self.eval_models:
             metrics |= self._score("received", msg.round, ctx)
@@ -747,9 +771,7 @@ class Edge(_Greeter, Node):
             # What a diverged round rolls back to: the model, and the trainer's
             # memory if it can snapshot it (built-ins can; a plugin may opt in).
             saved = getattr(self.trainer, "snapshot", lambda: None)()
-            result = self.trainer.train(
-                self.model, self.data, received=received, ctx=ctx
-            )
+            result = self.trainer.train(self.model, data, received=received, ctx=ctx)
         except Exception as exc:  # the edge counts as absent; the run goes on
             ctx.emit(
                 "edge.train_failed",
@@ -790,11 +812,23 @@ class Edge(_Greeter, Node):
                 error=f"{type(exc).__name__}: {exc}",
             )
         up = keys_crossing(arrays, self.sharing, self.levels, self.parent_level)
+        arrays = _subset(arrays, up)  # the hooks see only what is released
+        if attacking:
+            arrays = self.attack.on_update(arrays, received, child_rng(ctx.rng))
+        if self.privacy is not None:
+            arrays = self.privacy.on_update(arrays, received, child_rng(ctx.rng))
+            self._released += 1
+            ctx.emit(
+                "diagnostic.privacy_epsilon",
+                self.privacy.epsilon(self._released),
+                round=msg.round,
+                mechanism="local",
+            )
         ctx.emit("edge.trained", result.loss, round=msg.round, examples=result.examples)
         # One vote per edge for trainers whose papers average clients (SCAFFOLD).
         uniform = getattr(self.trainer, "uniform_weights", False)
         payload = Payload(
-            state=_subset(arrays, up),
+            state=arrays,
             weights=dict.fromkeys(up, 1.0 if uniform else float(result.examples)),
             metrics={
                 "train_loss": float(result.loss),

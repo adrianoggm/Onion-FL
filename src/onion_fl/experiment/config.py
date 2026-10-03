@@ -48,8 +48,10 @@ from onion_fl.data.ingest import readers, steps
 from onion_fl.data.placement import placements
 from onion_fl.data.roles import RolesConfig
 from onion_fl.learning.aggregators import aggregators, server_optimizers
+from onion_fl.learning.attacks import attacks
 from onion_fl.learning.metrics import metrics
 from onion_fl.learning.model import models
+from onion_fl.learning.privacy import privacies
 from onion_fl.learning.sharing import sharing
 from onion_fl.learning.trainers import inits, trainers
 from onion_fl.observability.diagnostics import diagnostics
@@ -87,6 +89,8 @@ REGISTRIES: dict[str, Registry] = {
     "reader": readers,
     "step": steps,
     "baseline": baseline_models,
+    "attack": attacks,
+    "privacy": privacies,
 }
 
 
@@ -133,8 +137,16 @@ class LearningConfig(Strict):
         description="Optimizador de servidor de la raíz; sin él, el de la topología",
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
+    aggregator: PluginRef | None = Field(
+        None,
+        description="Agregador de los nodos cuyos hijos son edges; sin él, el de la topología",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
 
     _model = field_validator("model")(lambda v: _plugin(models, v))
+    _aggregator = field_validator("aggregator")(
+        lambda v: v if v is None else _plugin(aggregators, v)
+    )
     _server_optimizer = field_validator("server_optimizer")(
         lambda v: v if v is None else _plugin(server_optimizers, v)
     )
@@ -232,6 +244,24 @@ class ExperimentConfig(Strict):
     sweep: dict[str, list[Any]] = Field(default_factory=dict)
     sinks: list[PluginRef] = Field(default_factory=list)
     paths: PathsConfig = Field(default_factory=PathsConfig)
+    attack: PluginRef | None = Field(
+        None,
+        description="Ataque de una fracción de edges de cada dataset",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+
+    privacy: PluginRef | None = Field(
+        None,
+        description="Privacidad diferencial local en cada edge que entrena",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+
+    _privacy = field_validator("privacy")(
+        lambda v: v if v is None else _plugin(privacies, v)
+    )
+    _attack = field_validator("attack")(
+        lambda v: v if v is None else _plugin(attacks, v)
+    )
 
     @field_validator("sinks")
     @classmethod

@@ -194,10 +194,13 @@ def test_report_reads_run_folders_too(capsys, workspace: Path) -> None:
     assert code == 0 and report.exists()
 
 
-def test_run_can_pick_one_scenario(capsys, workspace: Path) -> None:
-    code, out, _ = run(capsys, "run", str(workspace / "exp.yaml"), "--scenario", "nope")
+def test_run_refuses_a_scenario_that_does_not_exist(capsys, workspace: Path) -> None:
+    code, out, err = run(
+        capsys, "run", str(workspace / "exp.yaml"), "--scenario", "nope"
+    )
 
-    assert code == 0 and out.strip() == ""
+    assert code != 0 and out.strip() == ""
+    assert "nope" in err and "base" in err
 
 
 def test_the_real_mode_needs_a_reachable_broker(capsys, workspace: Path) -> None:

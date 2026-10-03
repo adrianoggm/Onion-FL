@@ -276,7 +276,18 @@ def test_optimizers_keep_the_dtype() -> None:
 
 
 def test_registries_list_the_built_ins() -> None:
-    assert aggregators.names() == ["fedavg", "mean", "median", "trimmed_mean"]
+    assert aggregators.names() == [
+        "bulyan",
+        "dp_fedavg",
+        "fedavg",
+        "geometric_median",
+        "krum",
+        "mean",
+        "median",
+        "multi_krum",
+        "norm_clip",
+        "trimmed_mean",
+    ]
     assert server_optimizers.names() == [
         "fedadam",
         "fedavgm",
@@ -361,6 +372,184 @@ def test_fednova_scales_each_key_by_the_steps_of_its_holders() -> None:
     assert not [k for k in out if k.startswith("fednova")]
 
 
+def vec(source: str, w, n: float = 1.0, **extra) -> Contribution:
+    state = {"w": np.asarray(w, dtype=np.float64)}
+    state |= {k: np.asarray(v, dtype=np.float64) for k, v in extra.items()}
+    return Contribution(source, state, dict.fromkeys(state, n))
+
+
+HONEST = [vec(f"h{i}", [1.0 + 0.1 * i, 1.0]) for i in range(5)]
+BYZANTINE = [vec("b0", [50.0, -50.0]), vec("b1", [60.0, -40.0])]
+
+
+def test_krum_picks_an_honest_update() -> None:
+    krum = aggregators.create("krum", {"f": 2})
+
+    out = krum.aggregate(HONEST + BYZANTINE, "fog")
+
+    assert out.state["w"][0] < 2.0
+    ((_, _, tags),) = krum.report()
+    assert {"b0", "b1"} <= set(tags["dropped"]) and tags["f_used"] == 2
+
+
+def test_multi_krum_averages_the_m_best() -> None:
+    multi = aggregators.create("multi_krum", {"f": 2, "m": 5})
+
+    out = multi.aggregate(HONEST + BYZANTINE, "fog")
+
+    expected = np.mean([h.state["w"] for h in HONEST], axis=0)
+    np.testing.assert_allclose(out.state["w"], expected)
+
+
+def test_too_few_children_lower_f_instead_of_failing() -> None:
+    krum = aggregators.create("krum", {"f": 2})
+
+    krum.aggregate(HONEST[:3], "fog")  # n=3 fits f=0 only (n >= 2f + 3)
+
+    assert krum.report()[0][2]["f_used"] == 0
+
+
+def test_the_geometric_median_resists_an_outlier() -> None:
+    points = [
+        vec("a", [0.0, 0.0]),
+        vec("b", [1.0, 0.0]),
+        vec("c", [0.0, 1.0]),
+        vec("d", [100.0, 100.0]),
+    ]
+
+    out = aggregators.create("geometric_median").aggregate(points, "fog")
+
+    assert np.linalg.norm(out.state["w"]) < 1.0
+
+
+def test_bulyan_bounds_an_extreme_coordinate() -> None:
+    children = [*HONEST, vec("h5", [1.2, 1.0]), vec("b0", [1000.0, 1.0])]  # n=7: f=1
+
+    bulyan = aggregators.create("bulyan", {"f": 1})
+    out = bulyan.aggregate(children, "fog")
+
+    assert out.state["w"][0] < 2.0
+    assert bulyan.report()[0][2]["f_used"] == 1
+
+
+def test_selection_scores_common_keys_and_combines_every_key() -> None:
+    children = [
+        vec("s0", [1.0], adapter_s=[1.0]),
+        vec("s1", [1.1], adapter_s=[3.0]),
+        vec("t0", [0.9], adapter_t=[5.0]),
+        vec("t1", [90.0], adapter_t=[7.0]),
+    ]
+
+    out = aggregators.create("multi_krum", {"f": 1, "m": 3}).aggregate(children, "fog")
+
+    np.testing.assert_allclose(out.state["adapter_s"], [2.0])  # both holders kept
+    np.testing.assert_allclose(out.state["adapter_t"], [5.0])  # only the honest one
+
+
+def test_auxiliary_arrays_follow_the_selected_children_unscored() -> None:
+    children = [*HONEST, vec("b0", [50.0, -50.0])]
+    for child in children:
+        child.state["scaffold/w"] = np.full(2, 500.0 if child.source == "b0" else 1.0)
+        child.weights["scaffold/w"] = 1.0
+
+    out = aggregators.create("multi_krum", {"f": 1, "m": 5}).aggregate(children, "fog")
+
+    np.testing.assert_allclose(out.state["scaffold/w"], [1.0, 1.0])
+
+
+def test_norm_clip_bounds_each_update_against_the_reference() -> None:
+    reference = {"w": np.zeros(2)}
+    children = [vec("a", [3.0, 4.0]), vec("b", [0.3, 0.4])]  # norms 5 and 0.5
+    clip = aggregators.create("norm_clip", {"bound": 1.0})
+
+    out = clip.aggregate(children, "fog", reference=reference)
+
+    np.testing.assert_allclose(out.state["w"], [(0.6 + 0.3) / 2, (0.8 + 0.4) / 2])
+    assert clip.report() == [("diagnostic.clipped", 1.0, {})]
+
+
+def test_dp_fedavg_adds_seeded_noise_and_reports_epsilon() -> None:
+    reference = {"w": np.zeros(3)}
+    children = [vec("a", [1.0, 1.0, 1.0]), vec("b", [1.0, 1.0, 1.0])]
+    params = {"clip": 10.0, "sigma": 1.0, "delta": 1e-5}
+
+    dp = aggregators.create("dp_fedavg", params)
+    first = dp.aggregate(
+        children, "fog", reference=reference, rng=np.random.default_rng(0)
+    )
+    second = aggregators.create("dp_fedavg", params).aggregate(
+        children, "fog", reference=reference, rng=np.random.default_rng(0)
+    )
+
+    np.testing.assert_array_equal(first.state["w"], second.state["w"])
+    assert not np.allclose(first.state["w"], [1.0, 1.0, 1.0])  # noise σ·C/m = 5
+    ((name, value, tags),) = dp.report()
+    assert name == "diagnostic.privacy_epsilon" and tags == {"mechanism": "central"}
+    assert value == pytest.approx(5.298, abs=0.01)  # one round at σ=1
+
+
+def test_dp_fedavg_leaves_auxiliary_arrays_unclipped_and_unnoised() -> None:
+    reference = {"w": np.zeros(1), "scaffold/w": np.zeros(1)}
+    children = [vec("a", [1.0]), vec("b", [1.0])]
+    for child in children:
+        child.state["scaffold/w"] = np.full(1, 9.0)
+        child.weights["scaffold/w"] = 1.0
+
+    out = aggregators.create("dp_fedavg", {"clip": 0.1, "sigma": 1.0}).aggregate(
+        children, "fog", reference=reference, rng=np.random.default_rng(0)
+    )
+
+    np.testing.assert_allclose(out.state["scaffold/w"], [9.0])
+
+
+SWELL_ONLY = [
+    vec(f"s{i}", [1.0 + 0.02 * i]) for i in range(6)
+]  # 7 children: Bulyan keeps f = 1
+OUTLIER_WITH_ITS_OWN_KEY = vec("t0", [9.0], adapter_t=[7.0])
+
+
+@pytest.mark.parametrize("name", ["krum", "multi_krum", "bulyan"])
+def test_a_key_whose_holders_were_all_dropped_comes_from_its_best_holder(
+    name: str,
+) -> None:
+    selector = aggregators.create(name, {"f": 1})
+
+    out = selector.aggregate([*SWELL_ONLY, OUTLIER_WITH_ITS_OWN_KEY], "fog")
+
+    report = selector.report()[0][2]
+    assert "t0" in report["dropped"]
+    np.testing.assert_allclose(out.state["adapter_t"], [7.0])
+    # t0 lost the selection, but its own key still shaped the result.
+    assert report["rescued"] == {"adapter_t": ["t0"]}
+    assert "t0" not in report["excluded"]
+
+
+def test_bulyan_averages_auxiliary_arrays_of_the_selected_children() -> None:
+    children = [vec(f"h{i}", [1.0 + 0.01 * i]) for i in range(7)]
+    for i, child in enumerate(children):
+        child.state["scaffold/w"] = np.full(1, float(i**2))  # skewed: mean != median
+        child.weights["scaffold/w"] = 1.0
+    bulyan = aggregators.create("bulyan", {"f": 1})
+
+    out = bulyan.aggregate(children, "fog")
+
+    kept = [c for c in children if c.source not in bulyan.report()[0][2]["dropped"]]
+    expected = np.mean([c.state["scaffold/w"] for c in kept])
+    np.testing.assert_allclose(out.state["scaffold/w"], [expected])
+
+
+def test_a_selection_reports_before_any_round() -> None:
+    assert aggregators.create("krum").report()[0][1] == 0.0
+
+
+def test_dp_fedavg_refuses_to_noise_without_a_stream() -> None:
+    dp = aggregators.create("dp_fedavg")
+
+    # A fixed fallback stream would repeat the same noise every round.
+    with pytest.raises(ValueError, match="random stream"):
+        dp.aggregate(HONEST, "fog", reference={"w": np.zeros(2)})
+
+
 def test_scaffold_moves_c_by_the_share_of_its_holders_that_trained() -> None:
     # Two holders, one trained with Δc = 2: c = 0 + (1/2)·2 (Karimireddy et al.).
     out = server_optimizers.create("scaffold").apply(
@@ -405,3 +594,26 @@ def test_feddyn_uses_the_share_of_each_keys_holders() -> None:
 
     # h = −0.5·(1/2)·2 = −0.5 ; w = 2 + 1 = 3 (the round's 3/4 would give 3.5)
     np.testing.assert_allclose(out["adapter.a.0.weight"], [3.0])
+
+
+@pytest.mark.parametrize("name", ["krum", "multi_krum", "bulyan"])
+def test_a_selection_names_the_children_it_excluded_entirely(name: str) -> None:
+    selector = aggregators.create(name, {"f": 1})
+
+    selector.aggregate([*SWELL_ONLY, vec("t0", [9.0])], "fog")
+
+    report = selector.report()[0][2]
+    assert "t0" in report["dropped"] and "t0" in report["excluded"]
+    assert report["rescued"] == {}
+
+
+def test_bulyan_selects_recursively_with_krum() -> None:
+    # Krum (4 nearest of 7, then 3 of 6, 2 of 5, 1...) picks 3, 2, 8, 0, 7 one at a
+    # time; a single Krum ranking would keep 1 and drop 8 instead.
+    values = [0.0, 1.0, 2.0, 3.0, 7.0, 8.0, 10.0]
+    children = [vec(f"c{i}", [v]) for i, v in enumerate(values)]
+    bulyan = aggregators.create("bulyan", {"f": 1})
+
+    bulyan.aggregate(children, "fog")
+
+    assert bulyan.report()[0][2]["dropped"] == ["c1", "c6"]

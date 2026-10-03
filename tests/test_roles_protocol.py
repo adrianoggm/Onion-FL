@@ -18,6 +18,8 @@ import torch
 from onion_fl.core.message import Message, Payload
 from onion_fl.core.registry import PluginError
 from onion_fl.core.topology import parse_topology
+from onion_fl.learning.aggregators import aggregators
+from onion_fl.learning.attacks import attacks
 from onion_fl.learning.model import (
     DataShape,
     ModularMLP,
@@ -831,6 +833,83 @@ def test_an_edge_with_non_finite_weights_does_not_poison_the_model() -> None:
     assert_global(federation, "trunk.0.weight", 2.0)
     (failed,) = names(federation, "edge.train_failed", "e2")
     assert "non-finite" in failed["tags"]["error"]
+
+
+class Spy:
+    """FedAvg that records what it is given and reports one dropped child."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[dict, object]] = []
+
+    def aggregate(self, contributions, source, reference=None, rng=None):
+        self.calls.append((dict(reference or {}), rng))
+        return aggregators.create("fedavg").aggregate(contributions, source)
+
+    def report(self):
+        return [("diagnostic.selection", 1.0, {"dropped": ["e2"], "excluded": ["e2"]})]
+
+
+def test_aggregators_get_the_reference_and_a_stream_and_are_heard(
+    monkeypatch,
+) -> None:
+    from onion_fl.roles import federation as module
+
+    spy, original = Spy(), module._round_settings
+    monkeypatch.setattr(
+        module, "_round_settings", lambda raw: original(raw) | {"aggregator": spy}
+    )
+    malicious = EdgeSpec(
+        "e2", model(A), trainer=trainers.create("stub"), tags={"malicious": True}
+    )
+    # A malicious edge whose update is discarded was not aggregated: not counted.
+    diverged = EdgeSpec("e3", model(A), trainer=Exploding(), tags={"malicious": True})
+    edges = {"fog_0": [edge("e1", shift=1), malicious, diverged]}
+
+    federation = run(tree(1, fog={"quorum": 0.5, "deadline": 10}), edges)
+
+    reference, rng = spy.calls[0]
+    assert set(reference) >= set(INITIAL) and rng is not None
+    (dropped,) = names(federation, "diagnostic.selection", "fog_0")
+    assert dropped["tags"]["malicious_dropped"] == 1
+    assert dropped["tags"]["malicious_excluded"] == 1
+    assert dropped["tags"]["malicious"] == 1
+
+
+def test_a_malicious_edge_attacks_from_its_start_round() -> None:
+    attack = attacks.create("scale", {"factor": 3.0, "start_round": 2})
+    stub = trainers.create("stub", {"shift": 1.0})
+    edges = {"fog_0": [EdgeSpec("e1", model(A), trainer=stub, attack=attack)]}
+
+    federation = run(tree(1), edges, rounds=2)
+
+    assert_global(federation, "trunk.0.weight", 1.0 + 3.0)  # honest, then ×3
+
+
+def test_an_edge_with_local_dp_reports_its_epsilon_each_round() -> None:
+    from onion_fl.learning.privacy import privacies
+
+    dp = privacies.create("local_dp", {"clip": 10.0, "sigma": 1.0})
+    spec = EdgeSpec("e1", model(A), trainer=trainers.create("stub"), privacy=dp)
+
+    federation = run(tree(1), {"fog_0": [spec]}, rounds=2)
+
+    values = [e["value"] for e in names(federation, "diagnostic.privacy_epsilon", "e1")]
+    assert len(values) == 2 and values[0] < values[1]
+
+
+def test_local_dp_clips_only_what_crosses_to_the_parent() -> None:
+    from onion_fl.learning.privacy import privacies
+
+    # The stub moves every weight by 1; a clip at the norm of the crossing keys
+    # leaves them whole, unless the local head (sent down in round 1) counts too.
+    crossing = [k for k in state_arrays(model(A)) if not k.startswith("head.")]
+    clip = float(np.sqrt(sum(INITIAL[k].size for k in crossing)))
+    dp = privacies.create("local_dp", {"clip": clip, "sigma": 1e-9})
+    spec = edge("e1", shift=1, privacy=dp)
+
+    federation = run(tree(1), {"fog_0": [spec]}, sharing="fedper")
+
+    assert_global(federation, "trunk.0.weight", 1.0)
 
 
 def test_the_statistics_count_the_holders_of_each_group() -> None:

@@ -476,6 +476,7 @@ class ScaffoldParams(StandardParams):
 class Scaffold(Standard):
     Params = ScaffoldParams
     PREFIX = "scaffold/"
+    sends_aux = True
     server_optimizer = "scaffold"
     uniform_weights = True  # the paper averages clients, not examples
     _memory = ("_c_i",)
@@ -542,6 +543,7 @@ class FedNovaParams(StandardParams):
 class FedNova(Standard):
     Params = FedNovaParams
     server_optimizer = "fednova"
+    sends_aux = True
 
     def train(
         self,

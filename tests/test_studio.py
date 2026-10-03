@@ -111,15 +111,9 @@ def test_the_schema_and_the_plugin_catalogue(client: TestClient) -> None:
 def test_the_tutorial_explains_every_axis(client: TestClient) -> None:
     axes = client.get("/api/tutorial").json()
 
-    names = {axis["kind"] for axis in axes}
-    assert {
-        "sharing",
-        "placement",
-        "aggregator",
-        "trainer",
-        "link_profile",
-        "transport",
-    } <= names
+    from onion_fl.experiment.config import REGISTRIES
+
+    assert {axis["kind"] for axis in axes} == set(REGISTRIES)
     sharing = next(a for a in axes if a["kind"] == "sharing")
     assert sharing["title"] and sharing["explain"]
     assert {p["name"] for p in sharing["plugins"]} >= {"fedavg", "fedper", "zone"}

@@ -244,7 +244,10 @@ def cmd_pr(a) -> None:
         body += f"\n\n**Verificación local:** {a.note}"
     pr = _open_pr(a.number)
     if pr:
-        pr, _ = api("PATCH", f"{R}/pulls/{pr['number']}", {"body": body})
+        # A refresh also moves the base, e.g. a stacked PR once its base merged.
+        pr, _ = api(
+            "PATCH", f"{R}/pulls/{pr['number']}", {"body": body, "base": a.base}
+        )
     else:
         payload = {
             "title": branch,

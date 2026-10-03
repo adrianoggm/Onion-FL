@@ -272,6 +272,107 @@ def test_feddyn_needs_the_same_alpha_on_both_sides(workspace: Path) -> None:
         plan(parse_experiment(experiment(workspace, learning=learning)))
 
 
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"privacy": "local_dp"},
+        {"attack": "sign_flip"},
+        {"learning": {"aggregator": "dp_fedavg"}},
+        {"learning": {"aggregator": "norm_clip"}},
+    ],
+)
+@pytest.mark.parametrize("trainer", ["scaffold", "fednova"])
+def test_auxiliary_arrays_cannot_bypass_a_clip_noise_or_attack(
+    workspace: Path, trainer: str, extra: dict
+) -> None:
+    learning = experiment(workspace)["learning"] | {"trainer": trainer}
+    if trainer == "fednova":
+        learning["server_optimizer"] = "fednova"
+    extra = dict(extra)  # the parametrized dict is shared between trainers
+    learning |= extra.pop("learning", {})
+
+    with pytest.raises(ConfigError, match="auxiliary arrays"):
+        plan(parse_experiment(experiment(workspace, learning=learning, **extra)))
+
+
+def test_the_experiment_can_set_the_leaf_aggregators(workspace: Path) -> None:
+    from onion_fl.experiment.runner import resolve_topology
+
+    learning = experiment(workspace)["learning"] | {"aggregator": "median"}
+    config = parse_experiment(experiment(workspace, learning=learning))
+    topology = resolve_topology(config)
+
+    leaves = {leaf.id for leaf in topology.leaves()}
+    for node in topology.nodes:
+        expected = "median" if node.id in leaves else None
+        assert node.settings.get("aggregator") == expected, node.id
+
+
+def test_an_unset_aggregator_stays_out_of_the_config(workspace: Path) -> None:
+    dumped = parse_experiment(experiment(workspace)).dump()["learning"]
+
+    assert "aggregator" not in dumped
+
+
+def test_malicious_edges_are_a_seeded_fraction_of_each_dataset(
+    workspace: Path,
+) -> None:
+    from onion_fl.experiment.runner import _scenario_data, malicious_edges
+
+    attack = {"name": "sign_flip", "fraction": 0.5}
+    config = parse_experiment(experiment(workspace, attack=attack))
+    (scenario,) = scenarios(config)
+    _, split, _, _ = _scenario_data(scenario)
+
+    chosen = malicious_edges(scenario.config, split.clients, scenario.seed)
+
+    assert len(chosen) == round(0.5 * len(split.clients))
+    assert chosen == malicious_edges(scenario.config, split.clients, scenario.seed)
+
+
+def test_a_malicious_fraction_rounds_half_up(workspace: Path) -> None:
+    from types import SimpleNamespace
+
+    from onion_fl.experiment.runner import malicious_edges
+
+    attack = {"name": "sign_flip", "fraction": 0.5}
+    config = parse_experiment(experiment(workspace, attack=attack))
+    clients = [SimpleNamespace(id=f"e{i}", dataset="a") for i in range(5)]
+
+    assert len(malicious_edges(config, clients, 0)) == 3  # 2.5, not banker's 2
+
+
+def test_the_data_record_names_the_malicious_edges(workspace: Path) -> None:
+    from onion_fl.experiment.runner import _scenario_data, record_data
+
+    class Recorder:
+        def __init__(self) -> None:
+            self.names: list[str] = []
+
+        def record(self, name, value=None, **tags) -> None:
+            self.names.append(name)
+
+    attack = {"name": "sign_flip", "fraction": 0.5}
+    (scenario,) = scenarios(parse_experiment(experiment(workspace, attack=attack)))
+    _, split, placement, _ = _scenario_data(scenario)
+    run = Recorder()
+
+    record_data(run, scenario, split, placement)  # real runs record through it too
+
+    assert "data.attack" in run.names
+
+
+def test_an_unset_attack_stays_out_of_the_config(workspace: Path) -> None:
+    assert "attack" not in parse_experiment(experiment(workspace)).dump()
+
+
+def test_an_unknown_scenario_name_is_an_error(workspace: Path) -> None:
+    config = parse_experiment(experiment(workspace))
+
+    with pytest.raises(ConfigError, match="nope.*base"):
+        run_experiment(config, only="nope")
+
+
 def test_finetuned_scores_need_a_finetune_trainer(workspace: Path) -> None:
     raw = experiment(workspace, evaluation={"edge": {"models": ["finetuned"]}})
 
