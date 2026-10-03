@@ -11,7 +11,7 @@ import copy
 import fnmatch
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Literal, Protocol
@@ -437,6 +437,69 @@ class FedBABUParams(StandardParams):
 )
 class FedBABU(Standard):
     Params = FedBABUParams
+
+
+class ScaffoldParams(StandardParams):
+    optimizer: Literal["adam", "sgd"] = Field(
+        "sgd", description="La actualización de c_i supone SGD"
+    )
+
+
+@trainers.register(
+    "scaffold",
+    title="SCAFFOLD",
+    description="Corrige cada gradiente con las variables de control: g − c_i + c.",
+    params=ScaffoldParams,
+    explain=(
+        "c viaja con el modelo global y c_i se queda en el edge; el edge envía "
+        "c_i⁺ = c_i − c + (x − y)/(K·η) y el agregado es el nuevo c (opción II "
+        "de Karimireddy et al., 2020). Con participación parcial, c es la media "
+        "de los participantes."
+    ),
+)
+class Scaffold(Standard):
+    Params = ScaffoldParams
+    PREFIX = "scaffold/"
+
+    def __init__(self, **params: Any) -> None:
+        super().__init__(**params)
+        self._c_i: dict[str, np.ndarray] = {}
+        self._correction: dict[str, torch.Tensor] = {}
+
+    def _penalty(
+        self, model: nn.Module, received: Any, names: Sequence[str]
+    ) -> torch.Tensor | float:
+        # The gradient of <c − c_i, w> is c − c_i: the SCAFFOLD correction.
+        params = dict(model.named_parameters())
+        total: torch.Tensor | float = 0.0
+        for name in names:
+            if name in self._correction:
+                total = total + (params[name] * self._correction[name]).sum()
+        return total
+
+    def train(
+        self,
+        model: nn.Module,
+        data: Samples,
+        received: Mapping[str, np.ndarray] | None = None,
+        ctx: Any = None,
+    ) -> TrainResult:
+        received = dict(received or {})
+        names = trainable(model, self.params.frozen)
+        start = state_arrays(model)
+        zero = {n: np.zeros_like(start[n]) for n in names}
+        c = {n: np.asarray(received.get(self.PREFIX + n, zero[n])) for n in names}
+        c_i = {n: self._c_i.get(n, zero[n]) for n in names}
+        params = dict(model.named_parameters())
+        self._correction = {
+            n: torch.as_tensor(c[n] - c_i[n], dtype=params[n].dtype) for n in names
+        }
+        result = super().train(model, data, received, ctx)
+        after = state_arrays(model)
+        scale = result.batches * self.params.lr
+        self._c_i = {n: c_i[n] - c[n] + (start[n] - after[n]) / scale for n in names}
+        aux = {self.PREFIX + n: v.astype(start[n].dtype) for n, v in self._c_i.items()}
+        return replace(result, aux=aux)
 
 
 class StubParams(BaseModel):

@@ -204,6 +204,7 @@ def test_trainers_registry_lists_the_built_ins() -> None:
         "fedbabu",
         "fedprox",
         "fedrep",
+        "scaffold",
         "standard",
         "stub",
     ]
@@ -533,6 +534,67 @@ def test_apfl_keeps_its_personal_model_between_rounds(swell) -> None:
 
     mine, theirs = state_arrays(trainer.personal()), state_arrays(fresh.personal())
     assert any(not np.allclose(mine[k], theirs[k]) for k in mine)
+
+
+@real
+def test_scaffold_without_control_variates_is_sgd(swell) -> None:
+    params = {"local_epochs": 1, "lr": 0.05, "optimizer": "sgd"}
+    plain, corrected = build(), build()
+    received = state_arrays(plain)
+
+    trainers.create("standard", params).train(plain, swell, received, ctx())
+    trainers.create("scaffold", params).train(corrected, swell, received, ctx())
+
+    for key, value in state_arrays(plain).items():
+        np.testing.assert_array_equal(value, state_arrays(corrected)[key])
+
+
+@real
+def test_scaffold_sends_its_new_control_variate(swell) -> None:
+    model = build()
+    received = state_arrays(model)
+    trainer = trainers.create("scaffold", {"local_epochs": 1, "lr": 0.05})
+
+    result = trainer.train(model, swell, received, ctx())
+
+    after = state_arrays(model)
+    for key, x in received.items():
+        expected = (x - after[key]) / (result.batches * 0.05)  # c = c_i = 0
+        np.testing.assert_allclose(
+            result.aux[f"scaffold/{key}"], expected, rtol=1e-5, atol=1e-7
+        )
+
+
+@real
+def test_scaffold_corrects_with_the_received_control_variate(swell) -> None:
+    received = state_arrays(build())
+    shifted = received | {
+        f"scaffold/{k}": np.full_like(v, 0.1) for k, v in received.items()
+    }
+    plain, corrected = build(), build()
+    params = {"local_epochs": 1, "lr": 0.05}
+
+    trainers.create("scaffold", params).train(plain, swell, received, ctx())
+    trainers.create("scaffold", params).train(corrected, swell, shifted, ctx())
+
+    assert any(
+        not np.array_equal(v, state_arrays(corrected)[k])
+        for k, v in state_arrays(plain).items()
+    )
+
+
+@real
+def test_scaffold_trains_when_the_heads_stay_on_the_edge(swell) -> None:
+    model = build()
+    received = {
+        k: v for k, v in state_arrays(model).items() if not k.startswith("head.")
+    }
+
+    result = trainers.create("scaffold", {"lr": 0.05}).train(
+        model, swell, received, ctx()
+    )
+
+    assert any(k.startswith("scaffold/head.") for k in result.aux)
 
 
 def test_ditto_needs_the_received_state() -> None:
