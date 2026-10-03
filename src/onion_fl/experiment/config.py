@@ -137,9 +137,24 @@ class LearningConfig(Strict):
 
 class EdgeEval(Strict):
     every: PositiveInt | None = None
-    models: list[Literal["received", "local"]] = Field(
+    models: list[Literal["received", "local", "personal", "finetuned"]] = Field(
         default_factory=lambda: ["received", "local"]
     )
+    finetune: PluginRef | None = Field(
+        None,
+        description="Entrenador del ajuste fino antes de puntuar 'finetuned'",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+
+    _finetune = field_validator("finetune")(
+        lambda v: v if v is None else _plugin(trainers, v)
+    )
+
+    @model_validator(mode="after")
+    def _finetuned_needs_a_trainer(self) -> EdgeEval:
+        if "finetuned" in self.models and self.finetune is None:
+            raise ValueError("models: 'finetuned' needs evaluation.edge.finetune")
+        return self
 
 
 class AggregatorEval(Strict):

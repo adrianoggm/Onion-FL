@@ -149,6 +149,19 @@ def test_the_schema_includes_the_plugin_catalogue() -> None:
     assert {p["name"] for p in plugins["transport"]} == {"memory", "mqtt"}
 
 
+def test_finetuned_scores_need_a_finetune_trainer(workspace: Path) -> None:
+    raw = experiment(workspace, evaluation={"edge": {"models": ["finetuned"]}})
+
+    with pytest.raises(ConfigError, match="finetune"):
+        parse_experiment(raw)
+
+
+def test_an_unset_finetune_stays_out_of_the_config(workspace: Path) -> None:
+    config = parse_experiment(experiment(workspace))
+
+    assert "finetune" not in config.dump()["evaluation"]["edge"]
+
+
 # --- sweeps ------------------------------------------------------------------------------------
 
 
