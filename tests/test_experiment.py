@@ -169,6 +169,60 @@ def test_a_bad_scenario_fails_before_any_run_starts(workspace: Path) -> None:
     assert not list((workspace / "runs").glob("*"))
 
 
+def test_the_experiment_can_set_the_root_server_optimizer(workspace: Path) -> None:
+    from onion_fl.experiment.runner import resolve_topology
+
+    learning = experiment(workspace)["learning"] | {"server_optimizer": "fedadam"}
+    config = parse_experiment(experiment(workspace, learning=learning))
+
+    assert resolve_topology(config).root.settings["server_optimizer"] == "fedadam"
+
+
+def test_an_unset_server_optimizer_stays_out_of_the_config(workspace: Path) -> None:
+    config = parse_experiment(experiment(workspace))
+
+    assert "server_optimizer" not in config.dump()["learning"]
+
+
+@pytest.mark.xfail(reason="the fednova plugins arrive in Task 5", strict=True)
+@pytest.mark.parametrize(
+    "trainer, optimizer, message",
+    [
+        ("fednova", "replace", "needs server_optimizer 'fednova'"),
+        ("stub", "fednova", "fednova needs the fednova trainer"),
+    ],
+)
+def test_paired_trainers_and_optimizers_are_checked_both_ways(
+    workspace: Path, trainer: str, optimizer: str, message: str
+) -> None:
+    learning = experiment(workspace)["learning"] | {
+        "trainer": trainer,
+        "server_optimizer": optimizer,
+    }
+
+    with pytest.raises(ConfigError, match=message):
+        plan(parse_experiment(experiment(workspace, learning=learning)))
+
+
+def test_a_trainer_that_needs_an_optimizer_is_checked(
+    workspace: Path, monkeypatch
+) -> None:
+    from onion_fl.core.registry import PluginSpec
+    from onion_fl.learning.trainers import Stub, StubParams, trainers
+
+    class Needy(Stub):
+        server_optimizer = "fedadam"
+
+    spec = PluginSpec("needy_test", Needy, "t", "d", StubParams)
+    monkeypatch.setitem(trainers._specs, "needy_test", spec)
+    learning = experiment(workspace)["learning"] | {"trainer": "needy_test"}
+
+    with pytest.raises(ConfigError, match="fedadam"):
+        plan(parse_experiment(experiment(workspace, learning=learning)))
+    ok = learning | {"server_optimizer": "fedadam"}
+    assert plan(parse_experiment(experiment(workspace, learning=ok)))
+
+
 def test_finetuned_scores_need_a_finetune_trainer(workspace: Path) -> None:
     raw = experiment(workspace, evaluation={"edge": {"models": ["finetuned"]}})
 

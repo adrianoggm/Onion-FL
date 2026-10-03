@@ -23,6 +23,7 @@ from onion_fl.data.placement import Placement, place
 from onion_fl.data.roles import DataSplit, split_subjects
 from onion_fl.experiment.config import ConfigError, ExperimentConfig
 from onion_fl.experiment.sweep import Scenario, identity, scenarios
+from onion_fl.learning.aggregators import server_optimizers
 from onion_fl.learning.model import models, param_groups, state_arrays
 from onion_fl.learning.sharing import not_local, sharing, traffic
 from onion_fl.learning.trainers import inits, trainers
@@ -54,6 +55,9 @@ def resolve_topology(config: ExperimentConfig) -> Topology:
         ]
         if config.runtime.codec and node["link_up"] is not None:
             node["link_up"]["codec"] = config.runtime.codec
+    if config.learning.server_optimizer is not None:
+        root = next(n for n in general["nodes"] if n["parent"] is None)
+        root["settings"]["server_optimizer"] = config.learning.server_optimizer
     general["edge"]["settings"] = {
         "eval": evaluation.edge.model_dump(exclude_none=True)
     } | general["edge"]["settings"]
@@ -107,24 +111,41 @@ def _initial_state(config: ExperimentConfig, shapes: Sequence[Any], seed: int):
     model = family.build(shapes, seed=seed)
     create(inits, config.learning.init).init(model)
     state = state_arrays(model)
-    _check_local_groups(config, state)
+    _check_learning(config, state)
     return family, state
 
 
-def _check_local_groups(config: ExperimentConfig, state: Mapping[str, Any]) -> None:
-    """A trainer that keeps groups on the edge (FedRep) needs sharing that keeps them."""
+def _name(ref: Any) -> str:
+    return ref if isinstance(ref, str) else ref["name"]
+
+
+def _check_learning(config: ExperimentConfig, state: Mapping[str, Any]) -> None:
+    """The trainer fits the sharing (FedRep) and pairs with the root optimizer (FedNova)."""
     trainer = create(trainers, config.learning.trainer)
+    name = _name(config.learning.trainer)
     patterns = list(getattr(trainer, "local_groups", ()))
     policy = create(sharing, config.learning.sharing)
     leaving = not_local(policy, param_groups(state), patterns)
     if leaving:
-        ref = config.learning.trainer
-        name = ref if isinstance(ref, str) else ref["name"]
         raise ConfigError(
             f"learning.trainer: {name} keeps {patterns} on the edge, but sharing "
             f"{policy.name!r} sends {leaving} up; use fedper or a custom rule "
             "that keeps them local"
         )
+    ref = resolve_topology(config).root.settings.get("server_optimizer") or "replace"
+    optimizer_name = _name(ref)
+    needed = getattr(trainer, "server_optimizer", None)
+    if needed is not None and optimizer_name != needed:
+        raise ConfigError(
+            f"learning.trainer: {name} needs server_optimizer {needed!r}, "
+            f"not {optimizer_name!r}; set learning.server_optimizer"
+        )
+    check = getattr(create(server_optimizers, ref), "check_trainer", None)
+    if check is not None:
+        try:
+            check(name, trainer)
+        except ValueError as exc:
+            raise ConfigError(f"learning.server_optimizer: {exc}") from None
 
 
 def link_warnings(topology: Topology) -> list[str]:
