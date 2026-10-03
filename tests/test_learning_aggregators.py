@@ -278,12 +278,14 @@ def test_optimizers_keep_the_dtype() -> None:
 def test_registries_list_the_built_ins() -> None:
     assert aggregators.names() == [
         "bulyan",
+        "dp_fedavg",
         "fedavg",
         "geometric_median",
         "krum",
         "mean",
         "median",
         "multi_krum",
+        "norm_clip",
         "trimmed_mean",
     ]
     assert server_optimizers.names() == [
@@ -452,3 +454,48 @@ def test_auxiliary_arrays_follow_the_selected_children_unscored() -> None:
     out = aggregators.create("multi_krum", {"f": 1, "m": 5}).aggregate(children, "fog")
 
     np.testing.assert_allclose(out.state["scaffold/w"], [1.0, 1.0])
+
+
+def test_norm_clip_bounds_each_update_against_the_reference() -> None:
+    reference = {"w": np.zeros(2)}
+    children = [vec("a", [3.0, 4.0]), vec("b", [0.3, 0.4])]  # norms 5 and 0.5
+    clip = aggregators.create("norm_clip", {"bound": 1.0})
+
+    out = clip.aggregate(children, "fog", reference=reference)
+
+    np.testing.assert_allclose(out.state["w"], [(0.6 + 0.3) / 2, (0.8 + 0.4) / 2])
+    assert clip.report() == [("aggregation.clipped", 1.0, {})]
+
+
+def test_dp_fedavg_adds_seeded_noise_and_reports_epsilon() -> None:
+    reference = {"w": np.zeros(3)}
+    children = [vec("a", [1.0, 1.0, 1.0]), vec("b", [1.0, 1.0, 1.0])]
+    params = {"clip": 10.0, "sigma": 1.0, "delta": 1e-5}
+
+    dp = aggregators.create("dp_fedavg", params)
+    first = dp.aggregate(
+        children, "fog", reference=reference, rng=np.random.default_rng(0)
+    )
+    second = aggregators.create("dp_fedavg", params).aggregate(
+        children, "fog", reference=reference, rng=np.random.default_rng(0)
+    )
+
+    np.testing.assert_array_equal(first.state["w"], second.state["w"])
+    assert not np.allclose(first.state["w"], [1.0, 1.0, 1.0])  # noise σ·C/m = 5
+    ((name, value, tags),) = dp.report()
+    assert name == "privacy.epsilon" and tags == {"mechanism": "central"}
+    assert value == pytest.approx(5.298, abs=0.01)  # one round at σ=1
+
+
+def test_dp_fedavg_leaves_auxiliary_arrays_unclipped_and_unnoised() -> None:
+    reference = {"w": np.zeros(1), "scaffold/w": np.zeros(1)}
+    children = [vec("a", [1.0]), vec("b", [1.0])]
+    for child in children:
+        child.state["scaffold/w"] = np.full(1, 9.0)
+        child.weights["scaffold/w"] = 1.0
+
+    out = aggregators.create("dp_fedavg", {"clip": 0.1, "sigma": 1.0}).aggregate(
+        children, "fog", reference=reference, rng=np.random.default_rng(0)
+    )
+
+    np.testing.assert_allclose(out.state["scaffold/w"], [9.0])

@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field, PositiveInt
 
 from onion_fl.core.registry import Registry
 from onion_fl.learning.model import is_aux
+from onion_fl.learning.privacy import gaussian_epsilon
 
 
 class AggregationError(ValueError):
@@ -387,6 +388,116 @@ class Bulyan(Krum):
         out = _combine_per_key(selected, source, around_median, needs_weights=False)
         totals = _combine_per_key(selected, source, _weighted_mean, needs_weights=True)
         return Contribution(source, out.state, totals.weights)
+
+
+def _clipped(
+    item: Contribution, reference: Mapping[str, np.ndarray], bound: float
+) -> tuple[Contribution, bool]:
+    """``item`` with its model-key update scaled to norm ≤ ``bound``; aux keys untouched."""
+    keys = [k for k in item.state if not is_aux(k) and k in reference]
+    delta = {
+        k: np.asarray(item.state[k], np.float64) - np.asarray(reference[k], np.float64)
+        for k in keys
+    }
+    norm = float(np.sqrt(sum(float((d**2).sum()) for d in delta.values())))
+    scale = min(1.0, bound / norm) if norm > 0 else 1.0
+    state = dict(item.state)
+    for key in keys:
+        clipped = np.asarray(reference[key], np.float64) + scale * delta[key]
+        state[key] = clipped.astype(np.asarray(item.state[key]).dtype)
+    return Contribution(item.source, state, item.weights), scale < 1.0
+
+
+class NormClipParams(BaseModel):
+    bound: float = Field(
+        1.0, gt=0, description="Norma máxima de la actualización de cada hijo"
+    )
+
+
+@aggregators.register(
+    "norm_clip",
+    title="Recorte de norma",
+    description="Recorta la actualización de cada hijo a una norma máxima y aplica FedAvg.",
+    params=NormClipParams,
+    explain="Acota la influencia de cualquier hijo, malicioso o no (Sun et al., 2019).",
+)
+class NormClip:
+    def __init__(self, bound: float = 1.0) -> None:
+        self.bound = bound
+        self.clipped = 0
+
+    def report(self) -> list[tuple[str, float, dict[str, Any]]]:
+        return [("aggregation.clipped", float(self.clipped), {})]
+
+    def aggregate(
+        self,
+        contributions: Sequence[Contribution],
+        source: str,
+        reference: Mapping[str, np.ndarray] | None = None,
+        rng: np.random.Generator | None = None,
+    ) -> Contribution:
+        pairs = [_clipped(c, reference or {}, self.bound) for c in contributions]
+        self.clipped = sum(1 for _, was in pairs if was)
+        clipped = [c for c, _ in pairs]
+        return _combine_per_key(clipped, source, _weighted_mean, needs_weights=True)
+
+
+class DPFedAvgParams(BaseModel):
+    clip: float = Field(1.0, gt=0, description="Norma máxima C de cada actualización")
+    sigma: float = Field(1.0, gt=0, description="Multiplicador de ruido σ")
+    delta: float = Field(1e-5, gt=0, lt=1, description="δ del presupuesto (ε, δ)")
+
+
+@aggregators.register(
+    "dp_fedavg",
+    title="DP-FedAvg (central)",
+    description="Recorta cada actualización a C, promedia y suma ruido N(0, (σ·C/m)²).",
+    params=DPFedAvgParams,
+    explain=(
+        "Privacidad diferencial a nivel de hijo en un agregador de confianza; "
+        "informa ε por ronda con un contable RDP sin amplificación por submuestreo "
+        "(McMahan et al., 2018). Las claves auxiliares no se recortan ni se ruidean."
+    ),
+)
+class DPFedAvg:
+    def __init__(
+        self, clip: float = 1.0, sigma: float = 1.0, delta: float = 1e-5
+    ) -> None:
+        self.clip, self.sigma, self.delta = clip, sigma, delta
+        self.rounds = 0
+
+    def report(self) -> list[tuple[str, float, dict[str, Any]]]:
+        epsilon = gaussian_epsilon(self.sigma, self.rounds, self.delta)
+        return [("privacy.epsilon", epsilon, {"mechanism": "central"})]
+
+    def aggregate(
+        self,
+        contributions: Sequence[Contribution],
+        source: str,
+        reference: Mapping[str, np.ndarray] | None = None,
+        rng: np.random.Generator | None = None,
+    ) -> Contribution:
+        reference = reference or {}
+        rng = rng if rng is not None else np.random.default_rng(0)
+        clipped = [_clipped(c, reference, self.clip)[0] for c in contributions]
+        uniform = [
+            Contribution(c.source, c.state, dict.fromkeys(c.state, 1.0))
+            for c in clipped
+        ]
+        mean = _combine_per_key(uniform, source, _weighted_mean, needs_weights=True)
+        totals = _combine_per_key(clipped, source, _weighted_mean, needs_weights=True)
+        state = dict(totals.state)  # auxiliary arrays: plain FedAvg
+        for key, value in mean.state.items():
+            if is_aux(key) or key not in reference:
+                continue
+            holders = sum(1 for c in clipped if key in c.state)
+            scale = self.sigma * self.clip / holders
+            noisy = np.asarray(value, np.float64) + rng.normal(
+                0.0, scale, size=np.shape(value)
+            )
+            state[key] = noisy.astype(np.asarray(value).dtype)
+        self.rounds += 1
+        return Contribution(source, state, totals.weights)
 
 
 # --- server optimizers -----------------------------------------------------------
