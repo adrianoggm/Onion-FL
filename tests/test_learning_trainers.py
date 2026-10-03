@@ -206,6 +206,7 @@ def test_trainers_registry_lists_the_built_ins() -> None:
         "fednova",
         "fedprox",
         "fedrep",
+        "moon",
         "scaffold",
         "standard",
         "stub",
@@ -648,6 +649,37 @@ def test_feddyn_remembers_its_gradient_term(swell) -> None:
     assert any(
         not np.allclose(v, state_arrays(start)[k])
         for k, v in state_arrays(model).items()
+    )
+
+
+@real
+def test_moon_in_its_first_round_is_standard(swell) -> None:
+    params = {"local_epochs": 1, "lr": 0.05}
+    plain, moon = build(), build()
+    received = state_arrays(plain)
+
+    trainers.create("standard", params).train(plain, swell, received, ctx())
+    trainers.create("moon", params).train(moon, swell, received, ctx())
+
+    for key, value in state_arrays(plain).items():
+        np.testing.assert_array_equal(value, state_arrays(moon)[key])
+
+
+@real
+def test_moon_pulls_towards_the_global_representation_from_round_two(swell) -> None:
+    params = {"local_epochs": 1, "lr": 0.05}
+    plain, moon = build(), build()
+    standard = trainers.create("standard", params)
+    contrastive = trainers.create("moon", params | {"mu": 5.0})
+    for model, trainer in ((plain, standard), (moon, contrastive)):
+        trainer.train(model, swell, state_arrays(model), ctx())
+
+    standard.train(plain, swell, state_arrays(plain), ctx(1))
+    contrastive.train(moon, swell, state_arrays(moon), ctx(1))
+
+    assert any(
+        not np.allclose(v, state_arrays(moon)[k])
+        for k, v in state_arrays(plain).items()
     )
 
 

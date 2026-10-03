@@ -287,3 +287,14 @@ def test_auxiliary_keys_belong_to_their_parameter_group() -> None:
     assert is_aux("scaffold/trunk.0.weight") and not is_aux("trunk.0.weight")
     assert group_of("scaffold/trunk.0.weight") == "trunk"
     assert group_of("fednova/adapter.swell.0.weight") == "adapter.swell"
+
+
+def test_the_head_reads_the_features() -> None:
+    config = ModularMLPConfig(adapter_width=4, trunk_hidden=[3], dropout=0.0)
+    model = ModularMLP(config, [SWELL], seed=0).eval()
+    x = torch.zeros((2, SWELL.n_features))  # a shape fixture
+
+    features = model.features(x)
+
+    assert features.shape == (2, 3)
+    torch.testing.assert_close(model(x), model.head[SWELL.task](features))

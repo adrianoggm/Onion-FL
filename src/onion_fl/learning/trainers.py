@@ -153,6 +153,10 @@ class Standard:
     ) -> torch.Tensor | float:
         return 0.0
 
+    def _batch_term(self, model: nn.Module, xb: torch.Tensor) -> torch.Tensor | float:
+        """An extra loss on each batch (MOON's contrast); none by default."""
+        return 0.0
+
     def train(
         self,
         model: nn.Module,
@@ -178,7 +182,8 @@ class Standard:
                     optimizer.zero_grad()
                     loss = F.cross_entropy(model(xs[idx]), ys[idx])
                     total += float(loss.item()) * len(idx)
-                    (loss + self._penalty(model, received, names)).backward()
+                    extra = self._batch_term(model, xs[idx])
+                    (loss + self._penalty(model, received, names) + extra).backward()
                     optimizer.step()
                     batches += 1
         samples = p.local_epochs * len(xs)
@@ -591,6 +596,61 @@ class FedDyn(Standard):
             drift = params[name].detach() - anchor
             previous = self._grad.get(name, torch.zeros_like(drift))
             self._grad[name] = previous - self.params.alpha * drift
+        return result
+
+
+class MoonParams(StandardParams):
+    mu: float = Field(1.0, ge=0, description="Peso de la pérdida contrastiva")
+    temperature: float = Field(0.5, gt=0, description="Temperatura τ del contraste")
+
+
+@trainers.register(
+    "moon",
+    title="MOON",
+    description="Contraste de modelo: la representación local se acerca a la del global y se aleja de la anterior.",
+    params=MoonParams,
+    explain=(
+        "Suma μ·ℓ_con con similitud coseno entre las features del modelo local, "
+        "las del global recibido y las del modelo local de la ronda anterior "
+        "(Li et al., 2021). En la primera ronda no hay modelo anterior."
+    ),
+)
+class Moon(Standard):
+    Params = MoonParams
+
+    def __init__(self, **params: Any) -> None:
+        super().__init__(**params)
+        self._global: nn.Module | None = None
+        self._previous: nn.Module | None = None
+
+    def _batch_term(self, model: nn.Module, xb: torch.Tensor) -> torch.Tensor | float:
+        if self._previous is None or self._global is None:
+            return 0.0
+        z = model.features(xb)
+        with torch.no_grad():
+            z_global = self._global.features(xb)
+            z_previous = self._previous.features(xb)
+        tau = self.params.temperature
+        logits = torch.stack(
+            [
+                F.cosine_similarity(z, z_global, dim=-1) / tau,
+                F.cosine_similarity(z, z_previous, dim=-1) / tau,
+            ],
+            dim=1,
+        )
+        target = torch.zeros(len(xb), dtype=torch.long)
+        return self.params.mu * F.cross_entropy(logits, target)
+
+    def train(
+        self,
+        model: nn.Module,
+        data: Samples,
+        received: Mapping[str, np.ndarray] | None = None,
+        ctx: Any = None,
+    ) -> TrainResult:
+        self._global = copy.deepcopy(model).eval()  # the model as received
+        result = super().train(model, data, received, ctx)
+        self._previous = copy.deepcopy(model).eval()
         return result
 
 
