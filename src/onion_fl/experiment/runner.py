@@ -94,14 +94,45 @@ def load_data(config: ExperimentConfig) -> tuple[list[Any], dict[str, str]]:
     return subjects, digests
 
 
-def _parent(config: ExperimentConfig) -> tuple[Path, Bundle, Any] | None:
-    """The run that ``init: run`` continues: its folder, verified bundle and restore."""
+def _newest_run(runs: Path, experiment: str, seed: int) -> Path | None:
+    """The newest finished run of ``experiment`` with ``seed`` that has a bundle."""
+    found = []
+    for path in sorted(runs.iterdir()) if runs.is_dir() else []:
+        if not (path / "run.json").is_file() or not (path / "bundle").is_dir():
+            continue
+        meta = json.loads((path / "run.json").read_text(encoding="utf-8"))
+        if (
+            meta["config"]["name"] == experiment
+            and meta["seed"] == seed
+            and meta.get("status") == "finished"
+        ):
+            found.append(path)
+    return found[-1] if found else None  # run ids start with their UTC time
+
+
+def _parent(config: ExperimentConfig, seed: int) -> tuple[Path, Bundle, Any] | None:
+    """The run that ``init: run`` continues: its folder, verified bundle and restore.
+
+    ``run`` is a run id, a run folder, or ``experiment:<name>``: the newest
+    finished run of that experiment with this scenario's seed.
+    """
     if _name(config.learning.init) != "run":
         return None
     init = create(inits, config.learning.init)
-    path = Path(init.run)
-    if not path.is_dir():
-        path = Path(config.paths.runs) / init.run
+    runs = Path(config.paths.runs)
+    if init.run.startswith("experiment:"):
+        name = init.run.split(":", 1)[1]
+        newest = _newest_run(runs, name, seed)
+        if newest is None:
+            raise ConfigError(
+                f"learning.init: no finished run of experiment {name!r} with seed "
+                f"{seed} in {runs}"
+            )
+        path = newest
+    else:
+        path = Path(init.run)
+        if not path.is_dir():
+            path = runs / init.run
     if not (path / "run.json").is_file():
         raise ConfigError(f"learning.init: run {init.run!r} not found in {path.parent}")
     if not verify_run(path):
@@ -139,7 +170,7 @@ def _scenario_data(
     config = scenario.config
     topology = resolve_topology(config)
     subjects, digests = load_data(config)
-    parent = _parent(config)
+    parent = _parent(config, scenario.seed)
     frozen = parent[1].preprocessing if parent and parent[2].preprocessing else None
     split = split_subjects(subjects, config.data.roles, frozen=frozen)
     placement_ref = config.data.placement
@@ -411,7 +442,7 @@ def build_scenario(
     """The federation of a scenario, on ``runtime`` (a new SimRuntime by default)."""
     config = scenario.config
     edges, initial = edge_specs(scenario, topology, split, placement)
-    parent = _parent(config)
+    parent = _parent(config, scenario.seed)
     start = parent[1].snapshot.round if parent else 0
     federation = build_federation(
         topology,
@@ -450,7 +481,7 @@ def run_scenario(
         scenario=scenario.name,
         sinks=_sinks(config),
     )
-    parent = _parent(config)
+    parent = _parent(config, scenario.seed)
     lineage_parent = None
     if parent:
         meta = json.loads((parent[0] / "run.json").read_text(encoding="utf-8"))

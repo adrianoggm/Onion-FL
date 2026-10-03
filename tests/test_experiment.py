@@ -842,3 +842,21 @@ def test_a_continuation_can_start_from_a_fresh_model(workspace: Path) -> None:
     state = federation.coordinator.state
     assert federation.coordinator.round == 2  # the numbering still continues
     assert any(not (state[k] == trained[k]).all() for k in trained)
+
+
+def test_a_parent_can_be_named_by_experiment_and_seed(workspace: Path) -> None:
+    parent_config = experiment(workspace, name="parent_exp", seeds=[0, 1])
+    parents = {
+        s.seed: run_scenario(s, evaluate=stub_score)
+        for s in scenarios(parse_experiment(parent_config))
+    }
+    learning = experiment(workspace)["learning"] | {
+        "init": {"name": "run", "run": "experiment:parent_exp"}
+    }
+    child_config = experiment(workspace, learning=learning, seeds=[1])
+    (child,) = scenarios(parse_experiment(child_config))
+
+    path = run_scenario(child, evaluate=stub_score)
+
+    meta = json.loads((path / "run.json").read_text(encoding="utf-8"))
+    assert meta["parent"]["run_id"] == parents[1].name
