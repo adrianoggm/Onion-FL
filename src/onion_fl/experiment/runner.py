@@ -11,12 +11,13 @@ from __future__ import annotations
 """
 
 import hashlib
+import json
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from onion_fl.continuum.bundle import save_bundle
+from onion_fl.continuum.bundle import Bundle, load_bundle, save_bundle
 from onion_fl.core.context import node_rng
 from onion_fl.core.topology import Topology, load_topology, parse_topology
 from onion_fl.data.cache import load_prepared, prepare
@@ -31,9 +32,16 @@ from onion_fl.learning.model import models, param_groups, state_arrays
 from onion_fl.learning.privacy import privacies
 from onion_fl.learning.sharing import not_local, sharing, traffic
 from onion_fl.learning.trainers import inits, trainers
-from onion_fl.observability.run import Run, save_model
+from onion_fl.observability.run import Run, save_model, verify_run
 from onion_fl.observability.sinks import OtelSink, PrometheusSink, otlp_provider
-from onion_fl.roles import EdgeSpec, build_federation, snapshot_federation
+from onion_fl.roles import (
+    EdgeSpec,
+    FederationSnapshot,
+    NodeState,
+    build_federation,
+    restore_federation,
+    snapshot_federation,
+)
 from onion_fl.roles.policies import create
 from onion_fl.runtime.devices import availability_models, compute_models
 from onion_fl.runtime.network import resolve_profile
@@ -86,13 +94,54 @@ def load_data(config: ExperimentConfig) -> tuple[list[Any], dict[str, str]]:
     return subjects, digests
 
 
+def _parent(config: ExperimentConfig) -> tuple[Path, Bundle, Any] | None:
+    """The run that ``init: run`` continues: its folder, verified bundle and restore."""
+    if _name(config.learning.init) != "run":
+        return None
+    init = create(inits, config.learning.init)
+    path = Path(init.run)
+    if not path.is_dir():
+        path = Path(config.paths.runs) / init.run
+    if not (path / "run.json").is_file():
+        raise ConfigError(f"learning.init: run {init.run!r} not found in {path.parent}")
+    if not verify_run(path):
+        raise ConfigError(
+            f"learning.init: run {path.name!r} does not verify against its run_hash"
+        )
+    if not (path / "bundle" / "bundle.json").is_file():
+        raise ConfigError(f"learning.init: run {path.name!r} has no bundle")
+    return path, load_bundle(path / "bundle"), init.restore
+
+
+def _restore(federation: Any, bundle: Bundle, restore: Any) -> None:
+    """Continue the parent's bundle, leaving out what ``restore`` does not ask for."""
+    snapshot = bundle.snapshot
+    nodes = {}
+    for node_id, node in snapshot.nodes.items():
+        arrays = dict(node.arrays)
+        if node_id == snapshot.root:
+            dropped = [] if restore.model else ["state/"]
+            dropped += [] if restore.server_state else ["server/"]
+            arrays = {
+                k: v for k, v in arrays.items() if not k.startswith(tuple(dropped))
+            }
+        elif node_id in federation.edges and not restore.edge_state:
+            continue
+        nodes[node_id] = NodeState(arrays, node.meta)
+    restore_federation(
+        federation, FederationSnapshot(snapshot.round, nodes, snapshot.root)
+    )
+
+
 def _scenario_data(
     scenario: Scenario,
 ) -> tuple[Topology, DataSplit, Placement, dict[str, str]]:
     config = scenario.config
     topology = resolve_topology(config)
     subjects, digests = load_data(config)
-    split = split_subjects(subjects, config.data.roles)
+    parent = _parent(config)
+    frozen = parent[1].preprocessing if parent and parent[2].preprocessing else None
+    split = split_subjects(subjects, config.data.roles, frozen=frozen)
     placement_ref = config.data.placement
     name = placement_ref if isinstance(placement_ref, str) else placement_ref["name"]
     params = (
@@ -362,17 +411,22 @@ def build_scenario(
     """The federation of a scenario, on ``runtime`` (a new SimRuntime by default)."""
     config = scenario.config
     edges, initial = edge_specs(scenario, topology, split, placement)
-    return build_federation(
+    parent = _parent(config)
+    start = parent[1].snapshot.round if parent else 0
+    federation = build_federation(
         topology,
         edges,
         initial_state=initial,
-        rounds=config.rounds,
+        rounds=start + config.rounds,  # a continuation's numbering goes on
         sharing=config.learning.sharing,
         seed=scenario.seed,
         metrics=config.evaluation.metrics,
         evaluate=evaluate,
         runtime=runtime,
     )
+    if parent:
+        _restore(federation, parent[1], parent[2])
+    return federation
 
 
 def run_scenario(
@@ -396,6 +450,16 @@ def run_scenario(
         scenario=scenario.name,
         sinks=_sinks(config),
     )
+    parent = _parent(config)
+    lineage_parent = None
+    if parent:
+        meta = json.loads((parent[0] / "run.json").read_text(encoding="utf-8"))
+        lineage_parent = {
+            "run_id": meta["run_id"],
+            "run_hash": meta["run_hash"],
+            "version": parent[1].snapshot.round,
+        }
+        run.meta["parent"] = lineage_parent  # signed with the rest at finish
     try:
         record_data(run, scenario, split, placement)
         federation = build_scenario(
@@ -412,7 +476,7 @@ def run_scenario(
             lineage={
                 "version": federation.coordinator.round,
                 "run_id": run.run_id,
-                "parent": None,
+                "parent": lineage_parent,
             },
             config=identity(config),
         )

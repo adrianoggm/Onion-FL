@@ -765,3 +765,80 @@ def test_every_simulated_run_writes_its_bundle_and_signs_it(workspace: Path) -> 
     assert verify_run(path)
     (path / "bundle" / "server.npz").write_bytes(b"tampered")
     assert not verify_run(path)
+
+
+# --- continuing a run (continuum C2) ------------------------------------------------
+
+
+def _final_model(path: Path) -> dict:
+    import numpy as np
+
+    with np.load(path / "model.npz") as archive:
+        return {k: archive[k] for k in archive.files}
+
+
+def _noisy(workspace: Path, **learning) -> dict:
+    base = experiment(workspace)["learning"] | {
+        "trainer": {"name": "stub", "noise": 0.1}
+    }
+    return base | learning
+
+
+def test_a_continued_run_equals_one_that_never_stopped(workspace: Path) -> None:
+    import numpy as np
+
+    straight = experiment(workspace, learning=_noisy(workspace), rounds=4)
+    (whole,) = scenarios(parse_experiment(straight))
+    expected = _final_model(run_scenario(whole, evaluate=stub_score))
+
+    first = experiment(workspace, learning=_noisy(workspace), rounds=2)
+    (head,) = scenarios(parse_experiment(first))
+    parent = run_scenario(head, evaluate=stub_score)
+    resume = {"name": "run", "run": parent.name}
+    second = experiment(workspace, learning=_noisy(workspace, init=resume), rounds=2)
+    (tail,) = scenarios(parse_experiment(second))
+    child = run_scenario(tail, evaluate=stub_score)
+
+    for key, value in expected.items():
+        np.testing.assert_array_equal(_final_model(child)[key], value, err_msg=key)
+    meta = json.loads((child / "run.json").read_text(encoding="utf-8"))
+    parent_meta = json.loads((parent / "run.json").read_text(encoding="utf-8"))
+    assert meta["parent"] == {
+        "run_id": parent.name,
+        "run_hash": parent_meta["run_hash"],
+        "version": 2,
+    }
+    from onion_fl.continuum.bundle import load_bundle
+
+    assert load_bundle(child / "bundle").lineage["version"] == 4
+    assert verify_run(child)
+
+
+def test_a_tampered_parent_is_refused(workspace: Path) -> None:
+    (head,) = scenarios(parse_experiment(experiment(workspace)))
+    parent = run_scenario(head, evaluate=stub_score)
+    (parent / "summary.json").write_text("{}", encoding="utf-8")
+    learning = experiment(workspace)["learning"] | {
+        "init": {"name": "run", "run": parent.name}
+    }
+
+    with pytest.raises(ConfigError, match="does not verify"):
+        plan(parse_experiment(experiment(workspace, learning=learning)))
+
+
+def test_a_continuation_can_start_from_a_fresh_model(workspace: Path) -> None:
+    from onion_fl.experiment.runner import _scenario_data, build_scenario
+
+    (head,) = scenarios(parse_experiment(experiment(workspace)))
+    parent = run_scenario(head, evaluate=stub_score)
+    resume = {"name": "run", "run": parent.name, "restore": {"model": False}}
+    learning = experiment(workspace)["learning"] | {"init": resume}
+    (tail,) = scenarios(parse_experiment(experiment(workspace, learning=learning)))
+    topology, split, placement, _ = _scenario_data(tail)
+
+    federation = build_scenario(tail, topology, split, placement, evaluate=stub_score)
+
+    trained = _final_model(parent)
+    state = federation.coordinator.state
+    assert federation.coordinator.round == 2  # the numbering still continues
+    assert any(not (state[k] == trained[k]).all() for k in trained)

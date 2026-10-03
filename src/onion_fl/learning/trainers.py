@@ -814,6 +814,45 @@ class RandomInit:
         return list(model.state_dict())
 
 
+class RestoreParams(BaseModel):
+    model: bool = Field(True, description="El modelo global del padre")
+    preprocessing: bool = Field(True, description="El preprocesado congelado del padre")
+    server_state: bool = Field(
+        True, description="El estado del optimizador de servidor"
+    )
+    edge_state: bool = Field(
+        True, description="El modelo, la memoria y el stream de cada edge"
+    )
+
+
+class RunInitParams(BaseModel):
+    run: str = Field(description="run_id del padre (en paths.runs) o ruta a su carpeta")
+    restore: RestoreParams = Field(default_factory=RestoreParams)
+
+
+@inits.register(
+    "run",
+    title="Desde una ejecución",
+    description="Continúa una ejecución anterior desde su bundle.",
+    params=RunInitParams,
+    explain=(
+        "Verifica el run_hash del padre y restaura lo que pide restore: modelo, "
+        "preprocesado, servidor y edges. La numeración de rondas continúa y el "
+        "linaje queda en run.json. Los datasets nuevos ajustan su preprocesado y "
+        "estrenan adaptador."
+    ),
+)
+class RunInit:
+    """The runner restores the parent's bundle; the model starts as a fresh build."""
+
+    def __init__(self, run: str, restore: Any = None) -> None:
+        self.run = run
+        self.restore = RestoreParams.model_validate(restore or {})
+
+    def init(self, model: nn.Module, ctx: Any = None) -> list[str]:
+        return list(model.state_dict())
+
+
 class CheckpointParams(BaseModel):
     path: str = Field(description="Fichero .npz con el estado (save_checkpoint)")
     groups: list[str] = Field(

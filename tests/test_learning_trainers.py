@@ -211,7 +211,7 @@ def test_trainers_registry_lists_the_built_ins() -> None:
         "standard",
         "stub",
     ]
-    assert inits.names() == ["checkpoint", "random"]
+    assert inits.names() == ["checkpoint", "random", "run"]
 
 
 # --- initialisation ---------------------------------------------------------------------

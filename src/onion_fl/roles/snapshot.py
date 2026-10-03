@@ -87,7 +87,8 @@ def restore_federation(federation: Federation, snapshot: FederationSnapshot) -> 
         node.previous = _part(saved.arrays, "previous") or None
         restore_rng(runtime._rng(node_id), saved.meta["rng"])
         if node is root:
-            root.state = _part(saved.arrays, "state")
+            # New datasets keep their initial keys; the parent's override the rest.
+            root.state = {**root.state, **_part(saved.arrays, "state")}
             load = getattr(root.server_optimizer, "load_state", None)
             if load is not None:
                 load(_part(saved.arrays, "server"))
