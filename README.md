@@ -42,7 +42,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | CLI | ✅ | `onion_fl data · topology · plan · run · node · report · baseline · schema · serve` |
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
-| Tests | ✅ | 860 tests. With SWELL, WESAD and a local broker, 856 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
+| Tests | ✅ | 864 tests. With SWELL, WESAD and a local broker, 860 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
 
@@ -297,7 +297,7 @@ Source: [results/techniques_drift/](results/techniques_drift/INDEX.md), `topolog
 
 ### New framework: robust aggregation under attack
 
-Source: [results/techniques_robustness/](results/techniques_robustness/INDEX.md), `topology_id` `ff55fe4d…`, commit `5995082`. It is `experiments/techniques_robustness.yaml`: SWELL + WESAD on four fogs at α = 0.5, over lossless links. Every fog runs the scenario's aggregator, and 20% of each dataset's edges flip the sign of their update, x − s·(y − x). Global macro-F1, mean ± 95% CI over 3 seeds:
+Source: [results/techniques_robustness/](results/techniques_robustness/INDEX.md), `topology_id` `ff55fe4d…`, commit `30ea239`. It is `experiments/techniques_robustness.yaml`: SWELL + WESAD on four fogs at α = 0.5, over lossless links. Every fog runs the scenario's aggregator, and 20% of each dataset's edges flip the sign of their update, x − s·(y − x). Global macro-F1, mean ± 95% CI over 3 seeds:
 
 | Fog aggregator | SWELL, no attack | SWELL, s = 5 | WESAD, no attack | WESAD, s = 5 |
 |---|---|---|---|---|
@@ -307,13 +307,13 @@ Source: [results/techniques_robustness/](results/techniques_robustness/INDEX.md)
 | Krum (f = 2) | 0.582 ± 0.036 | 0.549 ± 0.143 | 0.743 ± 0.021 | 0.486 ± 0.768 |
 | Multi-Krum (f = 2) | 0.599 ± 0.064 | 0.564 ± 0.104 | 0.788 ± 0.099 | 0.445 ± 1.006 |
 | Geometric median | 0.587 ± 0.062 | 0.569 ± 0.156 | 0.751 ± 0.000 | 0.648 ± 0.752 |
-| Bulyan (f = 1) | 0.597 ± 0.059 | 0.492 ± 0.213 | 0.754 ± 0.014 | 0.217 ± 0.117 |
+| Bulyan (f = 1) | 0.587 ± 0.043 | 0.503 ± 0.280 | 0.754 ± 0.014 | 0.213 ± 0.147 |
 | Norm clip (1.0) | 0.589 ± 0.059 | 0.575 ± 0.132 | 0.751 ± 0.000 | 0.777 ± 0.127 |
 
 - **The strong attack (s = 5) collapses FedAvg**, and the trimmed mean does not stop it.
 - **In these runs, norm clipping is the most stable defence against the strong attack on both datasets.** It keeps SWELL near the clean scenario and avoids the WESAD degradation seen with the other robust aggregators.
 - **The other robust aggregators hold SWELL, but their WESAD scores vary widely between seeds.** The half-widths near 1 are correct for 3 seeds that disagree; the INDEX gives the per-seed values.
-- **Selection detects the strong attackers.** Multi-Krum drops 75% of them, with 74% precision. Bulyan runs at f = 0 in the 6-edge fogs, about half its selections.
+- **Selection detects the strong attackers, though rescued keys let some back in.** Multi-Krum drops 75% of them from its selection and fully excludes 64%. Bulyan, which picks with Krum one at a time as in its paper, runs at f = 0 in the 6-edge fogs, about half its selections.
 
 ### New framework: differential privacy
 
