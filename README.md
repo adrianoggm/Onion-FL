@@ -6,7 +6,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
-> **About this README.** It describes the redesigned framework as of v0.3.0 (October 2026), which adds Onion-FL Studio to v0.2.0. Every number in it comes from a file in the repository, cited next to it. The datasets are not in git, so **no experiment of the new framework has been run on real data in this repository yet**; [§1](#1-status) says exactly what is verified and how.
+> **About this README.** It describes the redesigned framework as of v0.3.0 (October 2026), which adds Onion-FL Studio to v0.2.0. Every number in it comes from a file in the repository, cited next to it. The datasets are not in git. SWELL-KW and WESAD were downloaded and checked against their descriptors in October 2026, and the first results of the new framework on real data are in [§7](#7-results). SWEET is still unchecked. [§1](#1-status) says exactly what is verified and how.
 
 ## Contents
 
@@ -16,7 +16,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 4. [Experiments](#4-experiments)
 5. [Datasets](#5-datasets)
 6. [Observability](#6-observability)
-7. [Results from before the redesign](#7-results-from-before-the-redesign)
+7. [Results](#7-results)
 8. [Repository map](#8-repository-map)
 9. [Development and CI](#9-development-and-ci)
 10. [Known limitations](#10-known-limitations)
@@ -33,7 +33,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Area | Status | Summary |
 |---|---|---|
 | Topologies | ✅ | Trees of any depth in YAML (compact or general form), each with a `topology_id` (SHA-256 of its structure and links) and a JSON/Mermaid graph |
-| Data | ✅ / ⚠️ | Declarative ingestion (readers and steps), a signed cache, subject roles fixed across scenarios, and placement plugins. The SWELL, SWEET and WESAD descriptors are **not yet checked against the raw files** ([§5](#5-datasets)) |
+| Data | ✅ / ⚠️ | Declarative ingestion (readers and steps), a signed cache, subject roles fixed across scenarios, and placement plugins. The SWELL and WESAD descriptors are checked against the published files and the loaders from before the redesign; **SWEET is not** ([§5](#5-datasets)) |
 | Learning | ✅ | Modular model (adapter per dataset, shared or per-dataset trunk, head per task or dataset). Sharing scopes: global, per level, local. Per-key aggregators and server optimizers; `standard` and `fedprox` trainers; random or checkpoint init |
 | Round protocol | ✅ | Coordinator, aggregators at any level, edges and evaluators. Registration with acknowledged `hello`, quorum and deadline, staleness and participation plugins, per-key weights, evaluation at edge, zone and global level |
 | Simulation | ✅ | Virtual clock; links with latency, jitter, bandwidth and loss; compute and availability models; deterministic for a seed |
@@ -42,13 +42,14 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | CLI | ✅ | `onion_fl data · topology · plan · run · node · report · baseline · schema · serve` |
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
-| Tests | ✅ | 690 pass and 20 skip locally: the skips need `data/` or an MQTT broker. The CI starts a broker, so only the data-dependent ones skip there |
+| Tests | ✅ | 719 tests. With SWELL, WESAD and a local broker, 715 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
 
-- **No result of the new framework on real data is committed.** The datasets are not in git, and the framework was developed without them. Everything that trains or evaluates learning has a real-data test that skips without `data/` ([docs/RULES.md](docs/RULES.md)). Protocol tests use a stub trainer that learns nothing.
-- **The reference SWELL setup is reproduced, not re-run.** `experiments/swell_reference.yaml` has the same subjects per fog, the same held-out test subjects and the same training schedule as the old reference runs. Running it needs `data/SWELL`.
-- **Legacy numbers stay legacy.** [§7](#7-results-from-before-the-redesign) lists the baselines from before the redesign with their caveats. Some of them predate the `blok` leak fix.
+- **Two experiments of the new framework have run on real data**, and both are committed in [§7](#7-results): the SWELL reference run and a SWELL + WESAD mixing sweep. Neither has a strong result. On SWELL, no model beats always predicting "stress" on the held-out subjects. On WESAD, the federated model reaches 0.77 accuracy where centralised logistic regression reaches 0.91. Placement (segregated vs mixed) shows no measurable effect with three seeds.
+- **Checking the data found real problems,** now fixed. 999 means "missing" in the SWELL physiology file, for 53% of the heart-rate values, and both the old and the new loaders read it as a value. The facial and physiology joins and the WESAD chest signals `Resp` and `Temp` failed to load. The SWELL posture file has every date a month early, so posture is left out.
+- **Tests that need data** skip without `data/` ([docs/RULES.md](docs/RULES.md)). Protocol tests use a stub trainer that learns nothing.
+- **Legacy numbers stay legacy.** [§7](#7-results) lists the baselines from before the redesign with their caveats. Some of them predate the `blok` leak fix.
 - **The real-data-only rule holds.** Two old preprocessing scripts once wrote `np.random` values under the real SWELL file names. Both are deleted; if either ran on your machine, restore `data/SWELL/` from the original download. The dataset card (`onion_fl data inspect`) flags any feature whose correlation with the label is above 0.95.
 
 ---
@@ -71,11 +72,11 @@ Or run `just install-dev`. The command line is `onion_fl` (also `python -m onion
 
 The data is not in git. Download each dataset from its source and place it where its descriptor in `datasets/` expects it:
 
-| Dataset | Path | Descriptor |
-|---|---|---|
-| SWELL-KW | `data/SWELL/3 - Feature dataset/per sensor/*.csv` | `datasets/swell.yaml` (computer file; facial, posture and physiology as options), `datasets/swell_physiology.yaml` |
-| SWEET | `data/SWEET/{sample_subjects,selection1/users,selection2/users}/<user>/` | `datasets/sweet.yaml` |
-| WESAD | `data/WESAD/S<n>/S<n>.pkl` | `datasets/wesad.yaml` |
+| Dataset | Source | Path | Descriptor |
+|---|---|---|---|
+| SWELL-KW | [DANS](https://doi.org/10.17026/dans-x55-69zp), open access: the 11 files of `3 - Feature dataset/per sensor` (18 MB; download the two `.tab` files in their original format, CSV) | `data/SWELL/3 - Feature dataset/per sensor/` | `datasets/swell.yaml` (computer file; facial and physiology as options), `datasets/swell_physiology.yaml` |
+| SWEET | — | `data/SWEET/{sample_subjects,selection1/users,selection2/users}/<user>/` | `datasets/sweet.yaml` |
+| WESAD | [University of Siegen](https://uni-siegen.sciebo.de/s/HGdUkoNlW1Ub0Gx) (`WESAD.zip`, 2.2 GB; publications must cite Schmidt et al., 2018); extract the `S<n>/S<n>.pkl` files (13 GB) into `data/` | `data/WESAD/S<n>/S<n>.pkl` | `datasets/wesad.yaml` |
 
 ### Run
 
@@ -168,6 +169,7 @@ sweep: {data.placement.alpha: [0.0, 0.5, 1.0]}
 - **Scenarios.** Each combination of the swept values, times each seed, is one run. Its `config_id` hashes the validated config without the seed, so the seeds of a scenario group together.
 - **Subject roles.** They use their own seed, so the test subjects are the same in every scenario and seed.
 - **Validation.** Errors name their exact path, for example `learning.trainer: plugin 'standard': invalid parameters: lr …`.
+- **Downloadable data.** `experiments/mix_swell_wesad.yaml` runs the same sweep with SWELL and WESAD, the two datasets that can be downloaded. It trains for 10 local epochs: with one, the model only learns the majority class ([§7](#7-results)).
 
 Each run writes `runs/<run_id>/`:
 
@@ -186,11 +188,11 @@ Each run writes `runs/<run_id>/`:
 
 | Dataset | Label strategies | Unit | Notes |
 |---|---|---|---|
-| **SWELL-KW** | `binary` (N vs T, I, R), `binary_no_r` | One row per minute and subject | The computer file by default; facial, posture and physiology are optional joins. `swell_physiology.yaml` is physiology only |
+| **SWELL-KW** | `binary` (N vs T, I, R), `binary_no_r` | One row per minute and subject | The computer file by default; facial and physiology are optional joins (posture is left out: its file has every date a month early). 999 is missing in facial and physiology. `swell_physiology.yaml` is physiology only |
 | **SWEET** | `binary` (stress ≥ 2), `ordinal` (1–5), `three_class` | One self-report matched to the feature minute | `selection` option: `sample_subjects`, `selection1/users`, `selection2/users`; subjects with fewer than 5 samples are dropped |
 | **WESAD** | `binary` (baseline vs stress), `three_class` (+ amusement) | 60 s windows, 50% overlap, five statistics per channel | `location`: wrist (default) or chest; `signals` option |
 
-Missing values stay missing in the cache. Imputation, scaling and the removal of constant features are fitted on the training subjects only. The descriptors list their unverified assumptions in their comments, for example which keys join the SWELL modalities and how wrist signals are resampled. `tests/test_datasets_descriptors.py` compares each descriptor with the loader from before the redesign, and it runs as soon as `data/` is present.
+Missing values stay missing in the cache. Imputation, scaling and the removal of constant features are fitted on the training subjects only. The descriptors record in their comments what was found in the published files, for example the keys that join the SWELL modalities. `tests/test_datasets_descriptors.py` compares each descriptor with the loader from before the redesign, and it runs as soon as `data/` is present. It passes for SWELL (computer file) and WESAD (chest, subject S2).
 
 ---
 
@@ -219,11 +221,40 @@ Every runtime event is enriched into one schema and written to `events.jsonl`, t
 
 ---
 
-## 7. Results from before the redesign
+## 7. Results
 
-**Only results backed by a committed file are listed.** They are centralised baselines from the old scripts (removed in F7.2), and they live in `results/legacy/`, whose [INDEX.md](results/legacy/INDEX.md) gives each file's origin and caveats. Use `onion_fl baseline` to produce new ones on the current data layer.
+**Only results backed by a committed file are listed.**
 
-### WESAD: subject-disjoint holdout
+### New framework: the SWELL reference run
+
+Source: [results/swell_reference/](results/swell_reference/INDEX.md), `config_id` `dbf79b91…`, `topology_id` `38ee627b…`, commit `1696c05`. It is `experiments/swell_reference.yaml`: physiology only, three fogs, 18 training subjects and 5 held-out test subjects (646 minutes, 67.3% stress), 12 rounds, seeds 0–9.
+
+| Model | Accuracy | Macro-F1 | Balanced accuracy |
+|---|---|---|---|
+| Federated MLP (mean ± 95% CI over 10 seeds) | 0.669 ± 0.009 | 0.489 ± 0.011 | — |
+| Centralised logistic regression | 0.689 | 0.463 | 0.527 |
+| Centralised random forest | 0.613 | 0.495 | 0.506 |
+| Always "stress" | 0.673 | 0.402 | 0.500 |
+
+No model beats the majority class on these subjects. Per-minute physiology barely separates stress across unseen subjects, and heart rate is missing in 53% of the minutes. The pipeline works on real data; this is a weak signal, not a bug.
+
+### New framework: SWELL and WESAD mixing sweep
+
+Source: [results/mix_swell_wesad/](results/mix_swell_wesad/INDEX.md), `topology_id` `9033d1cf…`, commit `3d4db6f`. It is `experiments/mix_swell_wesad.yaml`: four fogs (two with SWELL as home, two with WESAD) on lossy links, a modular MLP with one adapter per dataset, 20 rounds, 3 seeds per α. Global model on the held-out subjects, mean ± 95% CI:
+
+| α | SWELL macro-F1 | WESAD accuracy | WESAD macro-F1 |
+|---|---|---|---|
+| 0.0 (segregated) | 0.576 ± 0.048 | 0.775 ± 0.017 | 0.748 ± 0.021 |
+| 0.5 | 0.578 ± 0.043 | 0.777 ± 0.008 | 0.750 ± 0.012 |
+| 1.0 (mixed) | 0.584 ± 0.056 | 0.766 ± 0.030 | 0.736 ± 0.032 |
+
+Placement has no measurable effect with three seeds. On the same subjects, centralised logistic regression gives WESAD 0.913 accuracy and 0.899 macro-F1, and the random forest gives SWELL 0.612 macro-F1. The lossy links cost the cloud 7–11 of its 20 rounds per run, which failed quorum.
+
+### Before the redesign
+
+The rest of this section lists centralised baselines from the old scripts (removed in F7.2). They live in `results/legacy/`, whose [INDEX.md](results/legacy/INDEX.md) gives each file's origin and caveats. Use `onion_fl baseline` to produce new ones on the current data layer.
+
+#### WESAD: subject-disjoint holdout
 
 Source: `results/legacy/advanced_ml_results/wesad_baseline_results.json`. The subjects are split 7 train / 3 val / 5 test, and the 22 wrist features give 1,057 test windows.
 
@@ -233,7 +264,7 @@ Source: `results/legacy/advanced_ml_results/wesad_baseline_results.json`. The su
 | SVM | 0.780 | 0.544 | 0.215 |
 | Logistic Regression | 0.770 | 0.577 | 0.292 |
 
-### Subject-level 5-fold cross-validation
+#### Subject-level 5-fold cross-validation
 
 Source: `results/legacy/subject_cv_results/subject_cv_summary.json` (2025-09-28). Values are mean ± std.
 
@@ -246,7 +277,7 @@ Source: `results/legacy/subject_cv_results/subject_cv_summary.json` (2025-09-28)
 
 ⚠️ These SWELL rows predate the `blok` leak fix (commit `002246f`, 2025-10-25), when an experimental-block id was used as a feature. The last report after the fix (commit `791a397`, 2025-11-27; no longer in the tree) gave SWELL 0.669 ± 0.014 (LR) and 0.670 ± 0.014 (RF) accuracy.
 
-### SWELL: four-modality holdout
+#### SWELL: four-modality holdout
 
 Source: `results/legacy/advanced_ml_results/swell_baseline_results.json` (2025-12-04): a random 50,000-row sample, 163 features, a subject-disjoint 50/20/30 split.
 
@@ -256,7 +287,7 @@ Source: `results/legacy/advanced_ml_results/swell_baseline_results.json` (2025-1
 | Logistic Regression | 0.544 | 0.544 |
 | Linear SVM | 0.515 | 0.514 |
 
-### SWEET selection1: three classes
+#### SWEET selection1: three classes
 
 102 subjects and 3,927 samples. The largest class holds **0.552** of them, and every model stays at that rate: the best XGBoost reaches 0.551 ± 0.026 over subject 5-fold (`results/legacy/baseline_models/sweet/training_report.json`), and macro-F1 stays between 0.24 and 0.34. On those 14 features no model learns more than the class prior.
 
@@ -314,10 +345,9 @@ The workflows run only on release PRs into `main`, to save CI minutes; task PRs 
 
 ## 10. Known limitations
 
-- **Unverified descriptors.** The descriptors were written without the raw files. Run `onion_fl data inspect` and the parity tests before citing results. Specific assumptions:
-  - The SWELL modality joins assume shared `pp`, `blok`, `condition` and `timestamp` columns.
-  - WESAD wrist signals are held at the label rate (700 Hz), so their statistics match the previous loader only approximately; chest signals match exactly.
-  - The SWEET minute deduplication can keep a report that has no stress value.
+- **SWEET is unchecked.** Its descriptor was written without the raw files, and its minute deduplication can keep a report that has no stress value. Run `onion_fl data inspect sweet` and the parity test before citing results.
+- **WESAD wrist signals** are held at the label rate (700 Hz), so their statistics match the previous loader only approximately; chest signals match exactly.
+- **SWELL posture is not loaded:** the per-minute Kinect file has every date one month early, so its rows only align with the other modalities by position.
 - **Global evaluation with personal or zone heads.** With `fedper` or `zone` sharing, the global model has no trained heads. Use the edge and zone scores.
 - **Lossy links need deadlines.** The simulator drops messages on lossy profiles (`wifi`, `4g`, `lora`) without retransmitting them. An aggregator without a `deadline` then waits for a lost update for ever, and the run ends `incomplete`. `onion_fl plan` and the Studio warn about it.
 - **The Studio is local.** It listens on `127.0.0.1` with no authentication; don't expose it.
