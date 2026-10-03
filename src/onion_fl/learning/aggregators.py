@@ -405,11 +405,12 @@ class GeometricMedian:
 @aggregators.register(
     "bulyan",
     title="Bulyan",
-    description="Multi-Krum y después media recortada alrededor de la mediana, coordenada a coordenada.",
+    description="Krum iterativo y después media recortada alrededor de la mediana, coordenada a coordenada.",
     params=KrumParams,
     explain=(
-        "Con menos de 4f + 3 hijos baja f; selecciona con un único ranking de "
-        "Multi-Krum en lugar del Krum iterativo del artículo (El Mhamdi et al., 2018). "
+        "Elige θ = n − 2f hijos con Krum de uno en uno, retirando cada elegido antes "
+        "del siguiente, y recorta coordenada a coordenada alrededor de la mediana "
+        "(El Mhamdi et al., 2018). Con menos de 4f + 3 hijos baja f. "
         "Las claves auxiliares se promedian sobre los seleccionados. "
         "Una clave que solo tenían hijos descartados sale de los mejor puntuados que la tienen."
     ),
@@ -417,6 +418,24 @@ class GeometricMedian:
 class Bulyan(Krum):
     def _feasible(self, n: int) -> int:
         return max(0, min(self.f, (n - 3) // 4))
+
+    def _ranked(
+        self,
+        ordered: Sequence[Contribution],
+        reference: Mapping[str, np.ndarray] | None,
+    ) -> tuple[np.ndarray, int]:
+        """The θ = n − 2f picks of Krum, one at a time over what is left, in the
+        order they were picked; then the rest by their Krum score over everyone."""
+        f = self._feasible(len(ordered))
+        vectors = _vectors(ordered, _common_model_keys(ordered), reference)
+        left = list(range(len(ordered)))
+        picked: list[int] = []
+        while len(picked) < len(ordered) - 2 * f:
+            best = left[int(np.argmin(_krum_scores(vectors[left], f)))]
+            picked.append(best)
+            left.remove(best)
+        first = _krum_scores(vectors, f)
+        return np.array(picked + sorted(left, key=lambda i: (first[i], i))), f
 
     def aggregate(
         self,

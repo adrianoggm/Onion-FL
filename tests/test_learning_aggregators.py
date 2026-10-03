@@ -605,3 +605,15 @@ def test_a_selection_names_the_children_it_excluded_entirely(name: str) -> None:
     report = selector.report()[0][2]
     assert "t0" in report["dropped"] and "t0" in report["excluded"]
     assert report["rescued"] == {}
+
+
+def test_bulyan_selects_recursively_with_krum() -> None:
+    # Krum (4 nearest of 7, then 3 of 6, 2 of 5, 1...) picks 3, 2, 8, 0, 7 one at a
+    # time; a single Krum ranking would keep 1 and drop 8 instead.
+    values = [0.0, 1.0, 2.0, 3.0, 7.0, 8.0, 10.0]
+    children = [vec(f"c{i}", [v]) for i, v in enumerate(values)]
+    bulyan = aggregators.create("bulyan", {"f": 1})
+
+    bulyan.aggregate(children, "fog")
+
+    assert bulyan.report()[0][2]["dropped"] == ["c1", "c6"]
