@@ -24,7 +24,7 @@ classifiers = [
 ]
 dependencies = [
     "torch>=2.2,<3",
-    "numpy>=1.24,<3",
+    "numpy>=1.25,<3",  # BitGenerator.seed_seq (fine-tune scoring)
     "pandas>=1.5,<3",
     "scikit-learn>=1.2,<2",
     "paho-mqtt>=2.0,<3",
@@ -32,7 +32,7 @@ dependencies = [
     "opentelemetry-sdk>=1.24,<2",
     "opentelemetry-exporter-otlp>=1.24,<2",
     "prometheus-client>=0.17,<1",
-    "pydantic>=2,<3",
+    "pydantic>=2.12,<3",  # Field(exclude_if=...) keeps config_ids stable
 ]
 
 [project.optional-dependencies]
