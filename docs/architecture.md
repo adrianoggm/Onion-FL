@@ -85,10 +85,13 @@ flowchart LR
 
 A group crosses a link, in both directions, when its scope is `global`, or `level:X` with X at the parent's level or above it. The presets are `fedavg`, `fedper` (local heads), `lg_fedavg` (local adapters and trunk, global heads), `zone(level)`, `independent` and `harmonized`; `custom` takes rules by glob.
 
-**Aggregation.** Aggregators work per key, only among the contributions that hold it, and send up the summed samples, so a tree of `fedavg` equals a flat FedAvg. Contributions are sorted by sender before combining. The aggregators are `fedavg`, `mean`, `median` and `trimmed_mean(β)`. The coordinator then applies a server optimizer: `replace`, `fedavgm` or `fedadam`.
+**Aggregation.** Aggregators work per key, only among the contributions that hold it, and send up the summed samples, so a tree of `fedavg` equals a flat FedAvg. Contributions are sorted by sender before combining. The aggregators are `fedavg`, `mean`, `median` and `trimmed_mean(β)`. The coordinator then applies a server optimizer, `replace`, `fedavgm`, `fedadam`, `fednova` or `feddyn`, with the round's statistics. These are `train_*` metrics reduced up the tree (steps and loss averaged by examples, examples and edges summed) plus `edges_total`. `learning.server_optimizer` overrides the topology's root setting.
+
+**Auxiliary arrays.** A trainer can return arrays named `<algorithm>/<parameter key>`, for example SCAFFOLD's control variates or FedNova's normalised update. They travel where their parameter travels and are combined per key. Server optimizers replace them instead of stepping them, and diagnostics ignore them.
 
 **Training and initialisation.**
 - Trainers: `standard` (epochs, batch, learning rate, optimizer, frozen groups) and `fedprox(μ)`.
+- Drift trainers: `scaffold` (control variates as auxiliary arrays), `moon` (contrast on `ModularMLP.features`), and the pairs `fednova` and `feddyn` (trainer + server optimizer, checked before the first scenario). An edge whose training leaves non-finite weights reports `edge.train_failed` and sends nothing.
 - Personalisation trainers: `ditto(λ)` and `apfl(α)` keep a personal model per edge across rounds and expose it through `personal()`. `fedrep` trains the local head, then the shared body, and declares the head as `local_groups`: `plan` refuses a sharing policy that sends it up. `fedbabu` freezes the head.
 - `stub` learns nothing and is for protocol tests; with `noise` each node sends a different, seeded update.
 - Inits: `random(seed)`, and `checkpoint(path, groups)`, which loads a saved `model.npz` such as a pooled run's.
@@ -233,8 +236,8 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | model | `modular_mlp` |
 | sharing | `fedavg`, `fedper`, `lg_fedavg`, `zone`, `independent`, `harmonized`, `custom` |
 | aggregator | `fedavg`, `mean`, `median`, `trimmed_mean` |
-| server_optimizer | `replace`, `fedavgm`, `fedadam` |
-| trainer | `standard`, `fedprox`, `ditto`, `apfl`, `fedrep`, `fedbabu`, `stub` |
+| server_optimizer | `replace`, `fedavgm`, `fedadam`, `fednova`, `feddyn` |
+| trainer | `standard`, `fedprox`, `ditto`, `apfl`, `fedrep`, `fedbabu`, `scaffold`, `fednova`, `feddyn`, `moon`, `stub` |
 | init | `random`, `checkpoint` |
 | metric | `loss`, `accuracy`, `macro_f1`, `recall_per_class`, `confusion_matrix` |
 | diagnostic | `divergence`, `dataset_conflict`, `drift`, `participation`, `fairness` |

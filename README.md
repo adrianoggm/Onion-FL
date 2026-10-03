@@ -34,7 +34,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 |---|---|---|
 | Topologies | ✅ | Trees of any depth in YAML (compact or general form), each with a `topology_id` (SHA-256 of its structure and links) and a JSON/Mermaid graph |
 | Data | ✅ / ⚠️ | Declarative ingestion (readers and steps), a signed cache, subject roles fixed across scenarios, and placement plugins. The SWELL and WESAD descriptors are checked against the published files and the loaders from before the redesign; **SWEET is not** ([§5](#5-datasets)) |
-| Learning | ✅ | Modular model (adapter per dataset, shared or per-dataset trunk, head per task or dataset). Sharing scopes: global, per level, local. Per-key aggregators and server optimizers; trainers `standard`, `fedprox` and, for personalisation, `ditto`, `apfl`, `fedrep`, `fedbabu`, plus the `lg_fedavg` sharing preset; edges also score personal and fine-tuned models; random or checkpoint init |
+| Learning | ✅ | Modular model (adapter per dataset, shared or per-dataset trunk, head per task or dataset). Sharing scopes: global, per level, local. Per-key aggregators and server optimizers; trainers `standard`, `fedprox`; for personalisation `ditto`, `apfl`, `fedrep`, `fedbabu` and the `lg_fedavg` sharing preset; for non-IID drift `scaffold`, `moon`, and the trainer + server optimizer pairs `fednova` and `feddyn`. Algorithms exchange extra state (control variates) as auxiliary arrays, and the server optimizer gets each round's statistics (steps, edges). Edges also score personal and fine-tuned models; random or checkpoint init |
 | Round protocol | ✅ | Coordinator, aggregators at any level, edges and evaluators. Registration with acknowledged `hello`, quorum and deadline, staleness and participation plugins, per-key weights, evaluation at edge, zone and global level |
 | Simulation | ✅ | Virtual clock; links with latency, jitter, bandwidth and loss; compute and availability models; deterministic for a seed |
 | Real runs | ✅ | One process per aggregator over MQTT; a manual `onion_fl node` start for several machines. Verified locally against Mosquitto: 3 processes, every message delivered, latencies measured, and the same final model as the simulation |
@@ -42,7 +42,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | CLI | ✅ | `onion_fl data · topology · plan · run · node · report · baseline · schema · serve` |
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
-| Tests | ✅ | 758 tests. With SWELL, WESAD and a local broker, 754 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
+| Tests | ✅ | 787 tests. With SWELL, WESAD and a local broker, 783 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
 
@@ -169,7 +169,8 @@ sweep: {data.placement.alpha: [0.0, 0.5, 1.0]}
 - **Scenarios.** Each combination of the swept values, times each seed, is one run. Its `config_id` hashes the validated config without the seed, so the seeds of a scenario group together.
 - **Subject roles.** They use their own seed, so the test subjects are the same in every scenario and seed.
 - **Validation.** Errors name their exact path, for example `learning.trainer: plugin 'standard': invalid parameters: lr …`.
-- **Paired values.** A key `a,b` sweeps several paths together: `learning.sharing,learning.trainer.name: [[fedper, fedrep], [fedavg, ditto]]` gives one scenario per pair.
+- **Paired values.** A key `a,b` sweeps several paths together: `learning.sharing,learning.trainer.name: [[fedper, fedrep], [fedavg, ditto]]` gives one scenario per pair. A whole plugin can be a value; its scenario is named `name(k=v,…)`.
+- **Server optimizer.** `learning.server_optimizer` sets the root's optimizer. Pairs such as `fednova` and `feddyn` are checked against the trainer before the first scenario runs.
 - **Edge validation.** `data.roles.local_val_split: class_tail` holds out the last rows of each class instead of the last rows of the recording, which are usually a single condition.
 - **Downloadable data.** `experiments/mix_swell_wesad.yaml` runs the same sweep with SWELL and WESAD, the two datasets that can be downloaded. It trains for 10 local epochs: with one, the model only learns the majority class ([§7](#7-results)).
 
@@ -273,6 +274,26 @@ Source: [results/techniques_personalisation/](results/techniques_personalisation
 - **Who wins on the edges.** APFL's personal model and LG-FedAvg are the only techniques whose edge intervals clear FedAvg's. Ditto's personal model falls in between.
 - **The global model is not hurt.** Ditto, APFL and FedBABU keep it as good as FedAvg's.
 - **Edge scores are optimistic.** The held-out rows are close in time to the training rows, so the edge scores are optimistic for every technique alike. They rank the techniques, but don't compare with the global test scores.
+
+### New framework: non-IID drift techniques
+
+Source: [results/techniques_drift/](results/techniques_drift/INDEX.md), `topology_id` `9033d1cf…`, commit `2564b81`. It is `experiments/techniques_drift.yaml`: SWELL + WESAD on four fogs at α = 0 (segregated), SGD, 20 rounds, 3 seeds. Each technique's learning rate was chosen on the validation subjects, never on the test ones. Macro-F1, mean ± 95% CI:
+
+| Technique | Global SWELL | Global WESAD | Edge, trained | Trunk alignment |
+|---|---|---|---|---|
+| FedAvg | 0.579 ± 0.034 | 0.749 ± 0.009 | 0.581 ± 0.028 | 0.159 ± 0.087 |
+| FedProx | 0.578 ± 0.046 | 0.751 ± 0.000 | 0.582 ± 0.016 | 0.160 ± 0.087 |
+| SCAFFOLD | 0.403 ± 0.000 | 0.789 ± 0.126 | 0.503 ± 0.011 | 0.208 ± 0.028 |
+| FedNova | 0.585 ± 0.031 | 0.751 ± 0.000 | 0.588 ± 0.033 | 0.133 ± 0.094 |
+| FedDyn | 0.533 ± 0.078 | 0.775 ± 0.045 | 0.604 ± 0.053 | 0.134 ± 0.139 |
+| MOON | 0.542 ± 0.074 | 0.737 ± 0.059 | 0.555 ± 0.009 | 0.153 ± 0.073 |
+
+- **No technique beats FedAvg on SWELL.**
+- **SCAFFOLD trades SWELL for WESAD.** It gives the most aligned trunk updates and the best WESAD score. But at the rate it needs to stay stable (0.1), its global model never leaves "always stress" on SWELL; at 0.3 one edge diverged.
+- **FedDyn helps WESAD and the edges a little.**
+- **MOON's contrast hurts on this tabular task.**
+
+With three seeds most intervals overlap.
 
 ### Before the redesign
 
