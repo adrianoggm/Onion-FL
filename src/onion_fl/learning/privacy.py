@@ -44,7 +44,8 @@ class LocalDPParams(BaseModel):
     params=LocalDPParams,
     explain=(
         "No confía en el agregador; informa ε por ronda con un contable RDP sin "
-        "amplificación. Las claves auxiliares y los grupos locales no se tocan."
+        "amplificación, con sensibilidad 2C porque cualquier actualización puede "
+        "sustituirse por otra. Los grupos locales no se tocan."
     ),
 )
 class LocalDP:
@@ -54,7 +55,9 @@ class LocalDP:
         self.clip, self.sigma, self.delta = clip, sigma, delta
 
     def epsilon(self, rounds: int) -> float:
-        return gaussian_epsilon(self.sigma, rounds, self.delta)
+        # Replace-one adjacency: any update in the C-ball may become any other,
+        # so the sensitivity is 2C and the noise counts as σ/2.
+        return gaussian_epsilon(self.sigma / 2, rounds, self.delta)
 
     def on_update(
         self,
