@@ -33,9 +33,9 @@ evaluation:
 seeds: [0, 1, 2]
 sweep:
   learning.trainer,learning.server_optimizer:
-    - [{<<: *sgd, name: standard, lr: 0.3}, replace]   # FedAvg
-    - [{<<: *sgd, name: fedprox, lr: 0.3}, replace]
+    - [{<<: *sgd, name: standard, lr: 0.1}, replace]   # FedAvg
+    - [{<<: *sgd, name: fedprox, lr: 0.1}, replace]
     - [{<<: *sgd, name: scaffold, lr: 0.1}, scaffold]
-    - [{<<: *sgd, name: fednova, lr: 0.3}, fednova]
+    - [{<<: *sgd, name: fednova, lr: 0.1}, fednova]
     - [{<<: *sgd, name: feddyn, lr: 0.1}, feddyn]
-    - [{<<: *sgd, name: moon, lr: 0.3, mu: 0.1}, replace]
+    - [{<<: *sgd, name: moon, lr: 0.1, mu: 0.1}, replace]
