@@ -34,7 +34,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 |---|---|---|
 | Topologies | ✅ | Trees of any depth in YAML (compact or general form), each with a `topology_id` (SHA-256 of its structure and links) and a JSON/Mermaid graph |
 | Data | ✅ / ⚠️ | Declarative ingestion (readers and steps), a signed cache, subject roles fixed across scenarios, and placement plugins. The SWELL and WESAD descriptors are checked against the published files and the loaders from before the redesign; **SWEET is not** ([§5](#5-datasets)) |
-| Learning | ✅ | Modular model (adapter per dataset, shared or per-dataset trunk, head per task or dataset). Sharing scopes: global, per level, local. Per-key aggregators and server optimizers; trainers `standard`, `fedprox`; for personalisation `ditto`, `apfl`, `fedrep`, `fedbabu` and the `lg_fedavg` sharing preset; for non-IID drift `scaffold`, `moon`, and the trainer + server optimizer pairs `fednova` and `feddyn`. Algorithms exchange extra state (control variates) as auxiliary arrays, and the server optimizer gets each round's statistics (steps, edges). Edges also score personal and fine-tuned models; random or checkpoint init |
+| Learning | ✅ | Modular model (adapter per dataset, shared or per-dataset trunk, head per task or dataset). Sharing scopes: global, per level, local. Per-key aggregators and server optimizers; trainers `standard`, `fedprox`; for personalisation `ditto`, `apfl`, `fedrep`, `fedbabu` and the `lg_fedavg` sharing preset; for non-IID drift `scaffold`, `moon`, and the trainer + server optimizer pairs `fednova` and `feddyn`. Algorithms exchange extra state (control variates) as auxiliary arrays, and the server optimizer gets each round's statistics (steps, edges). Robust aggregators (`krum`, `multi_krum`, `bulyan`, `geometric_median`, `norm_clip`), central and local differential privacy (`dp_fedavg`, `local_dp`) with ε per round, and an attack axis (`label_flip`, `sign_flip`, `gaussian`, `scale`) on a seeded fraction of edges. Edges also score personal and fine-tuned models; random or checkpoint init |
 | Round protocol | ✅ | Coordinator, aggregators at any level, edges and evaluators. Registration with acknowledged `hello`, quorum and deadline, staleness and participation plugins, per-key weights, evaluation at edge, zone and global level |
 | Simulation | ✅ | Virtual clock; links with latency, jitter, bandwidth and loss; compute and availability models; deterministic for a seed |
 | Real runs | ✅ | One process per aggregator over MQTT; a manual `onion_fl node` start for several machines. Verified locally against Mosquitto: 3 processes, every message delivered, latencies measured, and the same final model as the simulation |
@@ -42,7 +42,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | CLI | ✅ | `onion_fl data · topology · plan · run · node · report · baseline · schema · serve` |
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
-| Tests | ✅ | 795 tests. With SWELL, WESAD and a local broker, 791 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
+| Tests | ✅ | 823 tests. With SWELL, WESAD and a local broker, 819 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
 
@@ -170,6 +170,7 @@ sweep: {data.placement.alpha: [0.0, 0.5, 1.0]}
 - **Subject roles.** They use their own seed, so the test subjects are the same in every scenario and seed.
 - **Validation.** Errors name their exact path, for example `learning.trainer: plugin 'standard': invalid parameters: lr …`.
 - **Paired values.** A key `a,b` sweeps several paths together: `learning.sharing,learning.trainer.name: [[fedper, fedrep], [fedavg, ditto]]` gives one scenario per pair. A whole plugin can be a value; its scenario is named `name(k=v,…)`.
+- **Aggregator, attack and privacy.** `learning.aggregator` sets the aggregator of the leaf aggregators (the fogs over the edges). `attack` makes a seeded fraction of each dataset's edges malicious, and `privacy` adds local DP at every edge. Unset, they stay out of the `config_id`.
 - **Server optimizer.** `learning.server_optimizer` sets the root's optimizer. Pairs such as `fednova` and `feddyn` are checked against the trainer before the first scenario runs.
 - **Edge validation.** `data.roles.local_val_split: class_tail` holds out the last rows of each class instead of the last rows of the recording, which are usually a single condition.
 - **Downloadable data.** `experiments/mix_swell_wesad.yaml` runs the same sweep with SWELL and WESAD, the two datasets that can be downloaded. It trains for 10 local epochs: with one, the model only learns the majority class ([§7](#7-results)).
@@ -294,6 +295,40 @@ Source: [results/techniques_drift/](results/techniques_drift/INDEX.md), `topolog
 - **MOON's contrast does not help on this tabular task.**
 
 With three seeds most intervals overlap; the INDEX lists each technique's limits.
+
+### New framework: robust aggregation under attack
+
+Source: [results/techniques_robustness/](results/techniques_robustness/INDEX.md), `topology_id` `9033d1cf…`, commits `5c91004` and `e346733` (identical training). It is `experiments/techniques_robustness.yaml`: SWELL + WESAD on four fogs at α = 0.5. Every fog runs the scenario's aggregator, and 20% of each dataset's edges flip the sign of their update, x − s·(y − x). Global macro-F1, mean ± 95% CI over 3 seeds:
+
+| Fog aggregator | SWELL, no attack | SWELL, s = 5 | WESAD, no attack | WESAD, s = 5 |
+|---|---|---|---|---|
+| FedAvg | 0.568 ± 0.092 | 0.244 ± 0.000 | 0.751 ± 0.000 | 0.392 ± 0.000 |
+| Trimmed mean | 0.577 ± 0.103 | 0.244 ± 0.000 | 0.751 ± 0.000 | 0.389 ± 0.013 |
+| Median | 0.578 ± 0.020 | 0.541 ± 0.113 | 0.741 ± 0.043 | 0.500 ± 0.915 |
+| Krum | 0.556 ± 0.108 | 0.548 ± 0.066 | 0.617 ± 0.575 | 0.369 ± 0.468 |
+| Multi-Krum | 0.577 ± 0.076 | 0.489 ± 0.143 | 0.759 ± 0.109 | 0.660 ± 0.772 |
+| Geometric median | 0.567 ± 0.116 | 0.555 ± 0.135 | 0.747 ± 0.018 | 0.647 ± 0.541 |
+| Bulyan | 0.583 ± 0.044 | 0.453 ± 0.215 | 0.738 ± 0.026 | 0.296 ± 0.178 |
+| Norm clip (1.0) | 0.573 ± 0.069 | 0.548 ± 0.134 | 0.747 ± 0.018 | 0.763 ± 0.324 |
+
+- **The strong attack (s = 5) collapses FedAvg and the trimmed mean.**
+- **Norm clipping withstands it best.** Its bound is the median honest update norm, so a reversed update weighs no more than an honest one.
+- **Selection detects the strong attackers.** Multi-Krum and Bulyan drop about 55% of the malicious updates, with 82% precision, but neither protects WESAD reliably.
+- **At s = 1 the attack barely hurts FedAvg.** The INDEX has that column and the detection table.
+
+### New framework: differential privacy
+
+Source: [results/techniques_privacy/](results/techniques_privacy/INDEX.md), commit `5c91004`. It is `experiments/techniques_privacy.yaml`: central DP at the fogs and local DP at the edges, with C = 1.0. ε is for δ = 1e-5, an upper bound without subsampling amplification:
+
+| Scenario | SWELL | WESAD | ε after 20 rounds |
+|---|---|---|---|
+| FedAvg (no DP) | 0.568 ± 0.092 | 0.751 ± 0.000 | — |
+| Central DP, σ = 0.5 | 0.544 ± 0.048 | 0.529 ± 0.318 | 76.7 |
+| Central DP, σ = 1.0 | 0.466 ± 0.122 | 0.282 ± 0.048 | 28.6 |
+| Local DP, σ = 0.5 | 0.420 ± 0.037 | 0.356 ± 0.227 | 82.9 |
+| Local DP, σ = 1.0 | 0.437 ± 0.133 | 0.345 ± 0.365 | 31.5 |
+
+Privacy is expensive at this data size. Central DP keeps more utility than local DP at the same σ, and ε stays large because every one of the 20 rounds counts.
 
 ### Before the redesign
 

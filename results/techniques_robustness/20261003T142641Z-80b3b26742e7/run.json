@@ -1,0 +1,111 @@
+{
+  "run_id": "20261003T142641Z-80b3b26742e7",
+  "topology_id": "9033d1cf2c9e348b4067c92173a36fd151b3077cf0c93b5a592d8d188df05f32",
+  "config_id": "d1cdc0b8fe17a90ae15eebe9721228fd6129c4543014e4e47adc5f81f1d259ae",
+  "data_id": "06ac5ff0d43080f42ccd968956b1f1e666a651cf8caecfa4ecd4e2b695e1f64e",
+  "code_version": {
+    "commit": "e346733b094ad63ac538d5d74c81c94200d721ca",
+    "dirty": false
+  },
+  "seed": 2,
+  "scenario": "attack=sign_flip(fraction=0.2,scale=5.0),learning.aggregator=median",
+  "started_at": "2026-10-03T14:26:42.120339+00:00",
+  "status": "finished",
+  "config": {
+    "name": "techniques_robustness",
+    "description": "Agregaci\u00f3n robusta frente a inversi\u00f3n de signo sobre SWELL y WESAD.",
+    "topology": "four_fogs_swell_wesad",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        },
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.2,
+        "local_val_split": "class_tail",
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.5
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.3
+      },
+      "init": "random",
+      "aggregator": "median"
+    },
+    "rounds": 20,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": null,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": null,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    },
+    "attack": {
+      "name": "sign_flip",
+      "fraction": 0.2,
+      "scale": 5.0
+    }
+  },
+  "finished_at": "2026-10-03T14:27:45.642829+00:00",
+  "run_hash": "d4f7806e5971c984edacf307ff0078741f34ef9a2c0bd9d931e6ee244af28fc4"
+}

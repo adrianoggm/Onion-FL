@@ -85,7 +85,7 @@ flowchart LR
 
 A group crosses a link, in both directions, when its scope is `global`, or `level:X` with X at the parent's level or above it. The presets are `fedavg`, `fedper` (local heads), `lg_fedavg` (local adapters and trunk, global heads), `zone(level)`, `independent` and `harmonized`; `custom` takes rules by glob.
 
-**Aggregation.** Aggregators work per key, only among the contributions that hold it, and send up the summed samples, so a tree of `fedavg` equals a flat FedAvg. Contributions are sorted by sender before combining. The aggregators are `fedavg`, `mean`, `median` and `trimmed_mean(β)`. The coordinator then applies a server optimizer, `replace`, `fedavgm`, `fedadam`, `fednova` or `feddyn`, with the round's statistics. These are `train_*` metrics reduced up the tree (steps and loss averaged by examples, examples and edges summed) plus `edges_total`. `learning.server_optimizer` overrides the topology's root setting. A server optimizer is called as `apply(global_state, aggregated, stats)`; one written for the old two-argument form needs the third.
+**Aggregation.** Aggregators work per key, only among the contributions that hold it, and send up the summed samples, so a tree of `fedavg` equals a flat FedAvg. Contributions are sorted by sender before combining. The aggregators are `fedavg`, `mean`, `median` and `trimmed_mean(β)`. The coordinator then applies a server optimizer, `replace`, `fedavgm`, `fedadam`, `fednova` or `feddyn`, with the round's statistics. These are `train_*` metrics reduced up the tree (steps and loss averaged by examples, examples and edges summed) plus `edges_total`. `learning.server_optimizer` overrides the topology's root setting. Aggregators are called as `aggregate(contributions, source, reference, rng)`, where `reference` is the state the node sent down that round and `rng` is a child random stream. An optional `report()` lists events the collector emits; dropped children are counted against edges tagged `malicious`. The robust aggregators (Krum, Multi-Krum, Bulyan, geometric median) score whole updates over the model keys every child holds, lower `f` when too few children answer, and combine each key over the selected holders. `norm_clip` and `dp_fedavg` clip each child's update against `reference`; `dp_fedavg` and the edge-side `local_dp` report ε per round. An `attack` plugin on a seeded fraction of edges poisons their data or the model keys they send. A server optimizer is called as `apply(global_state, aggregated, stats)`; one written for the old two-argument form needs the third.
 
 **Auxiliary arrays.** A trainer can return arrays named `<algorithm>/<parameter key>`, for example SCAFFOLD's control variates or FedNova's normalised update. They travel where their parameter travels and are combined per key. Server optimizers replace them instead of stepping them, and diagnostics ignore them.
 
@@ -235,7 +235,9 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | transport | `memory`, `mqtt` |
 | model | `modular_mlp` |
 | sharing | `fedavg`, `fedper`, `lg_fedavg`, `zone`, `independent`, `harmonized`, `custom` |
-| aggregator | `fedavg`, `mean`, `median`, `trimmed_mean` |
+| aggregator | `fedavg`, `mean`, `median`, `trimmed_mean`, `krum`, `multi_krum`, `geometric_median`, `bulyan`, `norm_clip`, `dp_fedavg` |
+| attack | `label_flip`, `sign_flip`, `gaussian`, `scale` |
+| privacy | `local_dp` |
 | server_optimizer | `replace`, `fedavgm`, `fedadam`, `fednova`, `feddyn` |
 | trainer | `standard`, `fedprox`, `ditto`, `apfl`, `fedrep`, `fedbabu`, `scaffold`, `fednova`, `feddyn`, `moon`, `stub` |
 | init | `random`, `checkpoint` |
