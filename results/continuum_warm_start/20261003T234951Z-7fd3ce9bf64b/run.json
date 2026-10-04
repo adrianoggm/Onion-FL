@@ -1,0 +1,101 @@
+{
+  "run_id": "20261003T234951Z-7fd3ce9bf64b",
+  "topology_id": "6de5106032a2c0c70e3e0afe3619a02eaa1df7c77f2c3fdb0d8a3ffab7b11ab2",
+  "config_id": "d7e3dff389f03537e39cad0a91eea6129a2aeaab262890b9da821c1bba8e57c3",
+  "data_id": "c1bce4b610e309d484f249852bf2324de082161b59ab908860b4873a4f853db1",
+  "code_version": {
+    "commit": "63b0e47adcbe19a834196a1c24d4b8fb45e72765",
+    "dirty": false
+  },
+  "seed": 1,
+  "scenario": "base",
+  "started_at": "2026-10-03T23:49:52.084275+00:00",
+  "status": "finished",
+  "config": {
+    "name": "continuum_parent",
+    "description": "Modelo padre del continuum entrenado solo con SWELL.",
+    "topology": "two_fogs_swell_lossless",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.2,
+        "local_val_split": "class_tail",
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.1
+      },
+      "init": "random"
+    },
+    "rounds": 20,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": 5,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": 5,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    }
+  },
+  "finished_at": "2026-10-03T23:50:45.166529+00:00",
+  "run_hash": "acc950d8639e6a661de8bc229b09f45809c4a41fd1fd15380ce683536cb31326"
+}

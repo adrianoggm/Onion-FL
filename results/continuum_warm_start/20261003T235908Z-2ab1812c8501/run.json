@@ -1,0 +1,113 @@
+{
+  "run_id": "20261003T235908Z-2ab1812c8501",
+  "topology_id": "ff55fe4d2ce1a807f764bcc5205a8d2d4d43ab3d533163a1d13e173a9a6725fa",
+  "config_id": "9fc5a928980471579e2572dc370a65ffba399bd980e581704145f60b9f0a14eb",
+  "data_id": "06ac5ff0d43080f42ccd968956b1f1e666a651cf8caecfa4ecd4e2b695e1f64e",
+  "code_version": {
+    "commit": "915bbe65dc3939fd36d9c2d552c9b3bc25f21295",
+    "dirty": false
+  },
+  "seed": 0,
+  "scenario": "base",
+  "started_at": "2026-10-03T23:59:08.173051+00:00",
+  "status": "finished",
+  "config": {
+    "name": "continuum_exactness",
+    "description": "Comprobar con datos reales que continuar una ejecuci\u00f3n equivale a no haberla parado.",
+    "topology": "four_fogs_swell_wesad_lossless",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        },
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.2,
+        "local_val_split": "class_tail",
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.1
+      },
+      "init": {
+        "name": "run",
+        "run": "experiment:continuum_warm_start/learning.init,rounds,learning.trainer=random,20,standard(batch_size=32,local_epochs=10,lr=0.1,optimizer=sgd)"
+      }
+    },
+    "rounds": 20,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": 5,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": 5,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    }
+  },
+  "parent": {
+    "run_id": "20261003T235100Z-25caabd6744d",
+    "run_hash": "1147d979bc50ccf41f171497ca8c3ff6d40ed9d546d7da26caff2bafa61f01c7",
+    "version": 20
+  },
+  "finished_at": "2026-10-04T00:00:13.355483+00:00",
+  "run_hash": "27682cdc5bd6c732a5c6f4e231cb8a114ce56e5e99531926fe6dc34d6f031e21"
+}
