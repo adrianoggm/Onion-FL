@@ -19,6 +19,7 @@ from typing import Any
 from onion_fl.core.context import node_rng
 from onion_fl.core.topology import Topology, load_topology, parse_topology
 from onion_fl.data.cache import load_prepared, prepare
+from onion_fl.data.contract import natural_key
 from onion_fl.data.ingest import load_spec
 from onion_fl.data.placement import Placement, place
 from onion_fl.data.roles import DataSplit, split_subjects
@@ -304,6 +305,13 @@ def malicious_edges(
     return chosen
 
 
+def _placed(placement: Placement) -> list[Any]:
+    """The training edges as placed, in the split's order: a merging placement
+    (pooled) replaces its clients, so the attackers follow these."""
+    clients = [c for group in placement.edges.values() for c in group]
+    return sorted(clients, key=lambda c: (c.dataset, natural_key(c.id)))
+
+
 def edge_specs(
     scenario: Scenario, topology: Topology, split: DataSplit, placement: Placement
 ) -> tuple[dict[str, list[EdgeSpec]], dict[str, Any]]:
@@ -322,7 +330,7 @@ def edge_specs(
             tags={"dataset": data.dataset},
         )
 
-    bad = malicious_edges(config, split.clients, scenario.seed)
+    bad = malicious_edges(config, _placed(placement), scenario.seed)
     edges: dict[str, list[EdgeSpec]] = {}
     for leaf, clients in placement.edges.items():
         edges[leaf] = [
@@ -423,7 +431,7 @@ def record_data(
     run.record("data.roles", None, roles=split.roles)
     for leaf, composition in placement.composition().items():
         run.record("data.composition", composition["samples"], leaf=leaf, **composition)
-    bad = malicious_edges(scenario.config, split.clients, scenario.seed)
+    bad = malicious_edges(scenario.config, _placed(placement), scenario.seed)
     if bad:
         run.record("data.attack", float(len(bad)), edges=sorted(bad))
 
