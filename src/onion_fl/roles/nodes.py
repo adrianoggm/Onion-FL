@@ -857,6 +857,12 @@ class Edge(_Greeter, Node):
 
     def _train(self, msg: Message, ctx: Context) -> None:
         received = dict(msg.payload.state)
+        # The trainer is anchored to the model it shares: the first model a child
+        # gets is whole, and its local groups must not be pulled to their start.
+        anchor = _subset(
+            received,
+            keys_crossing(received, self.sharing, self.levels, self.parent_level),
+        )
         load_arrays(self.model, received)
         scoring = (
             self.evaluate is not None
@@ -877,7 +883,7 @@ class Edge(_Greeter, Node):
             # What a diverged round rolls back to: the model, and the trainer's
             # memory if it can snapshot it (built-ins can; a plugin may opt in).
             saved = getattr(self.trainer, "snapshot", lambda: None)()
-            result = self.trainer.train(self.model, data, received=received, ctx=ctx)
+            result = self.trainer.train(self.model, data, received=anchor, ctx=ctx)
         except Exception as exc:  # the edge counts as absent; the run goes on
             ctx.emit(
                 "edge.train_failed",
@@ -909,7 +915,7 @@ class Edge(_Greeter, Node):
                 if personal is not None:
                     metrics |= self._score("personal", msg.round, ctx, personal)
             if finetuning:
-                finetuned = self._finetuned(start, received, ctx)
+                finetuned = self._finetuned(start, anchor, ctx)
                 metrics |= self._score("finetuned", msg.round, ctx, finetuned)
         except Exception as exc:  # scoring never costs the edge its update
             ctx.emit(
