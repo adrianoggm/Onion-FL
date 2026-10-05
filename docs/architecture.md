@@ -200,6 +200,11 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
 - **Participation.** An edge handles its stream when a round reaches it, so streams require participation `all`. `close_at_quorum` and time-based availability are outside the temporal guarantee until C6.
 - **Evaluation.** Validation evaluators with a stream score what arrived since their previous request. Test evaluators score whole test subjects, so the final test score stays comparable.
 - **The bootstrap fit.** `split_subjects(fit_rows=...)` fits the preprocessing on the rows before t₀ only.
+- **Replay memory** (`continual: {memory, replay_ratio}`, `onion_fl.continuum.memory`).
+  - **Plugins.** `none`, `fifo`, `reservoir` and `class_balanced`, each keeping indices into its edge's own stream on a stream seeded per edge.
+  - **What enters.** The rows of a training that ended with finite weights, offered in time order: nothing enters on a failed round.
+  - **Replay.** Each training adds r·n / (1 − r) rows sampled from the memory to its n recent ones. An edge with nothing new stays idle.
+  - **Records.** The edge reports `diagnostic.memory` each round, and the bundle saves the memory.
 
 ## 8. Observability
 
