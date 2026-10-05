@@ -28,7 +28,7 @@ from onion_fl.core.context import Context, child_rng
 from onion_fl.core.message import Message, Payload
 from onion_fl.core.node import Node
 from onion_fl.learning.aggregators import Contribution
-from onion_fl.learning.metrics import reduce_reports
+from onion_fl.learning.metrics import compute, predict, reduce_reports
 from onion_fl.learning.model import group_of, is_aux, load_arrays, state_arrays
 from onion_fl.learning.sharing import SharingPolicy, keys_crossing, keys_held_at
 from onion_fl.observability.diagnostics import RoundView
@@ -83,6 +83,16 @@ def _eval_part(metrics: Mapping[str, float], model: str) -> tuple[dict, float]:
     prefix = f"eval.{model}."
     values = {k[len(prefix) :]: v for k, v in metrics.items() if k.startswith(prefix)}
     return values, values.pop("samples", 0)
+
+
+def _send_idle(node: Any, round: int, scores: Mapping[str, float], ctx) -> None:
+    """An update with nothing trained: the parent leaves it out of the quorum."""
+    payload = Payload(metrics={"idle": 1.0, **scores})
+    ctx.send(
+        Message(
+            kind="update", src=node.id, dst=node.parent, round=round, payload=payload
+        )
+    )
 
 
 def _emit_scores(ctx: Context, scores: Mapping[str, float], **tags: Any) -> None:
@@ -372,6 +382,10 @@ class _Collector(Node):
         ctx.cancel_timer("deadline")
         self.open = False
         fresh = {s: c for s, (c, _) in self.responses.items() if c.state}
+        # A child with nothing to train on (a stream's empty buffer) is idle.
+        idle = {
+            s for s, (c, m) in self.responses.items() if not c.state and "idle" in m
+        }
         rebased = {s: self._rebased(s) for s in sorted(self.stale) if s not in fresh}
         late = [s for s, c in rebased.items() if c is not None]
         stale = [rebased[s] for s in late]
@@ -385,7 +399,7 @@ class _Collector(Node):
         age |= {s: self.stale_age[s] for s in late}
         ages = [age[s] for s in sorted(age)]
         self.stale, self.stale_age, self.stale_round = {}, {}, {}
-        needed = quorum_needed(self.quorum, len(self.participants))
+        needed = quorum_needed(self.quorum, len(self.participants) - len(idle))
         count = len(fresh) + (len(stale) if self.close_at_quorum else 0)
         tags = {
             "responded": len(fresh),
@@ -393,6 +407,14 @@ class _Collector(Node):
             "round": self.round,
         }
         reports = {s: m for s, (_, m) in sorted(self.responses.items()) if s in fresh}
+        scored = [m for s, (_, m) in sorted(self.responses.items()) if s in idle]
+        if not count and not stale and idle and len(idle) == len(self.participants):
+            ctx.emit("round.idle", self.round, idle=len(idle), round=self.round)
+            scores = (
+                self._children_scores(scored, ctx) if self.aggregate_children else {}
+            )
+            self._idle(scores, ctx)
+            return
         if not count or count < needed:
             ctx.emit("round.quorum_failed", self.round, needed=needed, **tags)
             self._diagnose(fresh, {}, reports, ctx, failed=True)
@@ -410,6 +432,7 @@ class _Collector(Node):
         self.previous = dict(aggregated.state)
         reports = list(reports.values())
         metrics = _train_metrics(reports)
+        reports += scored  # idle children scored what arrived
         if any(ages):  # absent means 0, so synchronous runs send nothing new
             metrics["staleness"] = float(np.mean(ages))
         if self.aggregate_children:
@@ -609,6 +632,7 @@ class Coordinator(_Collector):
         state: Mapping[str, np.ndarray],
         rounds: int,
         server_optimizer: Any,
+        round_every: float | None = None,
         **kw: Any,
     ) -> None:
         super().__init__(node_id, children, **kw)
@@ -616,6 +640,14 @@ class Coordinator(_Collector):
         self.rounds = rounds
         self.server_optimizer = server_optimizer
         self.finished = False
+        # Virtual seconds between round starts (a stream's pace); None: at once.
+        self.round_every, self.started_at = round_every, None
+
+    def on_timer(self, name: str, ctx: Context) -> None:
+        if name == "round":
+            self._next(ctx)
+        else:
+            super().on_timer(name, ctx)
 
     def _registered(self, ctx: Context) -> None:
         ctx.emit(
@@ -630,6 +662,13 @@ class Coordinator(_Collector):
             if not self.pending_eval:
                 self._finish(ctx)
             return
+        if self.round_every is not None:
+            if self.started_at is None:
+                self.started_at = ctx.now()
+            wait = self.started_at + self.round * self.round_every - ctx.now()
+            if wait > 1e-9:
+                ctx.set_timer(wait, "round")
+                return
         ctx.emit("round.started", self.round + 1, round=self.round + 1)
         self._open(self.round + 1, self.state, ctx, bootstrap=self.round == 0)
 
@@ -657,10 +696,16 @@ class Coordinator(_Collector):
                 examples=metrics["train_examples"],
                 round=self.round,
             )
+        self._evaluate_and_go_on(ctx)
+
+    def _evaluate_and_go_on(self, ctx: Context) -> None:
         last = self.round == self.rounds
         if self.eval_every and (_due(self.eval_every, self.round) or last):
             self._request_eval(self.round, self.state, "global", ctx)
         self._next(ctx)
+
+    def _idle(self, scores: dict[str, float], ctx: Context) -> None:
+        self._evaluate_and_go_on(ctx)  # nothing trained: the model stays
 
     def _failed(self, ctx: Context) -> None:
         self._next(ctx)
@@ -745,6 +790,9 @@ class Aggregator(_Greeter, _Collector):
     def _failed(self, ctx: Context) -> None:
         ctx.send(Message(kind="update", src=self.id, dst=self.parent, round=self.round))
 
+    def _idle(self, scores: dict[str, float], ctx: Context) -> None:
+        _send_idle(self, self.round, scores, ctx)
+
 
 class Edge(_Greeter, Node):
     """Trains when the model arrives; an evaluator (``train=False``) only answers eval requests."""
@@ -769,9 +817,20 @@ class Edge(_Greeter, Node):
         finetuner: Any = None,
         attack: Any = None,
         privacy: Any = None,
+        stream: Any = None,
+        metrics: Sequence[str] = ("loss", "accuracy"),
     ) -> None:
         super().__init__(node_id)
         self.hello_retry = hello_retry
+        # A stream (continuum C3): rows arrive over time, are predicted by the
+        # model the edge serves when they come, and train once labelled.
+        self.stream, self.metrics = stream, tuple(metrics)
+        self._clock = -np.inf  # continuum time up to which arrivals are handled
+        self._served: State | None = None  # the last model received, as served
+        if stream is not None:
+            shape = (len(stream.data.y), stream.data.n_classes)
+            self._logits = np.full(shape, np.nan)
+            self._predicted = np.zeros(len(stream.data.y), bool)
         self.parent, self.model, self.data = parent, model, data
         self.trainer, self.train = trainer, train
         self.finetuner = finetuner
@@ -855,9 +914,67 @@ class Edge(_Greeter, Node):
         )
         return start
 
+    def _arrivals(self, round: int, ctx: Context) -> tuple[Any, dict[str, float]]:
+        """What came since the last round, predicted by the model served when it
+        came and scored; then the rows to train on now (None: nothing)."""
+        s = self.stream
+        lo, now = self._clock, s.clock(ctx.now())
+        self._clock = now
+        arrived = s.arrived(lo, now)
+        with_label = arrived & (s.label_at <= s.available_at)
+        late = s.labelled(lo, now) & (s.label_at > s.available_at)
+        ctx.emit(
+            "data.arrived",
+            float(arrived.sum()),
+            round=round,
+            labelled=int(with_label.sum()),
+            unlabelled=int((arrived & ~with_label).sum()),
+            history=int((arrived & s.history).sum()),
+            **self.tags,
+        )
+        ctx.emit("data.labelled", float(late.sum()), round=round, **self.tags)
+        new = arrived & ~s.history
+        if self._served is not None and new.any():
+            served = copy.deepcopy(self.model)
+            load_arrays(served, self._served)
+            self._logits[new] = predict(served, s.data.X[new])
+            self._predicted |= new
+        metrics: dict[str, float] = {}
+        # Every arrival against its truth (simulation only), and what a
+        # deployment could score: the stored predictions whose label came.
+        for model, rows in (("prequential", new), ("prequential_labelled", None)):
+            rows = (s.labelled(lo, now) if rows is None else rows) & self._predicted
+            if not rows.any():
+                continue
+            scores = compute(
+                self._logits[rows], s.data.y[rows], s.data.n_classes, self.metrics
+            )
+            samples = int(rows.sum())
+            _emit_scores(
+                ctx,
+                scores,
+                model=model,
+                source="edge",
+                round=round,
+                samples=samples,
+                **self.tags,
+            )
+            metrics |= {f"eval.{model}.{k}": float(v) for k, v in scores.items()}
+            metrics[f"eval.{model}.samples"] = float(samples)
+        buffer = s.trainable(now - s.window, now)
+        return (s.take(buffer) if buffer.any() else None), metrics
+
     def _train(self, msg: Message, ctx: Context) -> None:
         received = dict(msg.payload.state)
+        own, metrics = self.data, {}
+        if self.stream is not None:
+            own, metrics = self._arrivals(msg.round, ctx)
         load_arrays(self.model, received)
+        if self.stream is not None:
+            self._served = state_arrays(self.model)
+            if own is None:  # nothing to train on: idle, with what it scored
+                _send_idle(self, msg.round, metrics, ctx)
+                return
         scoring = (
             self.evaluate is not None
             and self.val_data is not None
@@ -868,8 +985,7 @@ class Edge(_Greeter, Node):
         )
         start = copy.deepcopy(self.model) if finetuning else None
         attacking = self.attack is not None and msg.round >= self.attack.start_round
-        data = self.attack.on_data(self.data) if attacking else self.data
-        metrics: dict[str, float] = {}
+        data = self.attack.on_data(own) if attacking else own
         if scoring and "received" in self.eval_models:
             metrics |= self._score("received", msg.round, ctx)
         model_before = state_arrays(self.model)

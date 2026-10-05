@@ -59,6 +59,7 @@ class EdgeSpec:
     tags: dict[str, Any] = field(default_factory=dict)
     attack: Any = None
     privacy: Any = None
+    stream: Any = None  # an EdgeStream: rows arrive over time (continuum C3)
 
 
 @dataclass
@@ -117,6 +118,7 @@ def build_federation(
     metrics: Sequence[str] = ("loss", "accuracy"),
     evaluate: Evaluate | None = None,
     server_optimizer: Any = None,
+    round_every: float | None = None,
 ) -> Federation:
     """Coordinator, aggregators and edges of ``topology`` on ``runtime`` (a new SimRuntime).
 
@@ -154,6 +156,7 @@ def build_federation(
         children[root.id],
         state=initial_state,
         rounds=rounds,
+        round_every=round_every,
         server_optimizer=server_optimizer
         or create(server_optimizers, root.settings.get("server_optimizer"), "replace"),
         level=root.level,
@@ -191,6 +194,8 @@ def build_federation(
                 eval_models=edge_eval.get("models", ("received", "local")),
                 attack=spec.attack,
                 privacy=spec.privacy,
+                stream=spec.stream,
+                metrics=list(metrics),
                 finetuner=(
                     create(trainer_plugins, finetune)
                     if finetune is not None and spec.train

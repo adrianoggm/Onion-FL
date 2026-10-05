@@ -102,6 +102,7 @@ class EdgeStream:
     label_at: np.ndarray  # inf for a row that is never labelled
     history: np.ndarray  # before t₀: never predicted
     speed: float
+    window: float  # the buffer: what became trainable this long ago at most
 
     @property
     def trainable_at(self) -> np.ndarray:
@@ -172,4 +173,5 @@ def edge_stream(
         label_at=label_at,
         history=history,
         speed=stream.speed,
+        window=stream.window or stream.round_every,
     )
