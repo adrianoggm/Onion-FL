@@ -391,19 +391,25 @@ class Recording:
 
 
 def test_round_one_sends_the_full_state_and_later_rounds_only_what_crosses() -> None:
+    # The first model carries the local heads too (here 5 off a fresh build),
+    # though they never travel again; the trainer is anchored to what crosses.
+    start = {k: v + (5.0 if k.startswith("head.") else 0.0) for k, v in INITIAL.items()}
     recorder = Recording()
-
-    run(
+    federation = build_federation(
         tree(1),
         {"fog_0": [EdgeSpec("e1", model(A), trainer=recorder)]},
+        initial_state=start,
         rounds=2,
         sharing="fedper",
     )
+    federation.run()
 
+    head = state_arrays(federation.edges["e1"].model)["head.t.weight"]
+    shift = recorder.stub.params.shift
+    np.testing.assert_allclose(head, start["head.t.weight"] + 2 * shift, rtol=1e-6)
     first, second = recorder.received
-    assert "head.t.weight" in first and "adapter.b.0.weight" in first
-    assert not any(k.startswith("head.") for k in second)
-    assert "trunk.0.weight" in second
+    assert "trunk.0.weight" in first and "trunk.0.weight" in second
+    assert not any(k.startswith("head.") for k in first | second)
 
 
 def test_an_edge_sends_up_only_what_its_link_lets_through() -> None:
@@ -1193,3 +1199,30 @@ def test_an_edges_dp_budget_continues_across_a_snapshot_with_another_sigma() -> 
     expected = float((rdp + np.log(1e5) / (ORDERS - 1)).min())
     last = names(second, "diagnostic.privacy_epsilon", "e1")[-1]["value"]
     assert last == pytest.approx(expected)
+
+
+# --- the first model each child gets is the whole one (QA2, #174) ------------------
+
+
+class Anchors:
+    """The stub trainer, keeping the keys of every model it was anchored to."""
+
+    def __init__(self) -> None:
+        self.stub = trainers.create("stub", {"shift": 1.0})
+        self.anchors: list[set[str]] = []
+
+    def train(self, model, data=None, received=None, ctx=None):
+        self.anchors.append(set(received or {}))
+        return self.stub.train(model, data, received, ctx)
+
+
+def test_a_trainer_is_anchored_only_to_what_crosses_to_its_parent() -> None:
+    recording = Anchors()
+    spec = EdgeSpec("e1", model(A), trainer=recording)
+
+    run(tree(1), {"fog_0": [spec]}, rounds=2, sharing="fedper")
+
+    assert len(recording.anchors) == 2
+    assert all(
+        not any(k.startswith("head.") for k in keys) for keys in recording.anchors
+    )
