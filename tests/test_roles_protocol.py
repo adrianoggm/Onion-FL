@@ -292,6 +292,23 @@ def test_an_edge_offline_at_the_start_joins_when_it_is_back() -> None:
     }
 
 
+def test_an_aggregator_tells_its_parent_about_children_that_register_late() -> None:
+    federation = build_federation(
+        tree(1, fog={"register_timeout": 1}),
+        {"fog_0": [edge("e1")]},
+        initial_state=INITIAL,
+        rounds=1,
+    )
+    fog, ctx = federation.aggregators["fog_0"], FakeContext("fog_0")
+    fog.on_timer("register", ctx)  # nobody has said hello yet
+    hello = {"role": "edge", "edges": 1, "holders": {"trunk": 1}}
+    for _ in range(2):  # a retry changes nothing
+        fog.on_message(Message(kind="hello", src="e1", dst="fog_0", meta=hello), ctx)
+
+    sent = [m.meta for m in ctx.sent if m.kind == "hello"]
+    assert [(m["edges"], m["holders"]) for m in sent] == [(0, {}), (1, {"trunk": 1})]
+
+
 def test_late_updates_are_dropped_by_default() -> None:
     edges = {"fog_0": [edge("fast", shift=1), slow("slow", shift=7)]}
 

@@ -168,6 +168,11 @@ class _Collector(Node):
         ctx.send(ack)  # every hello, so a lost ack is answered by the next retry
         if not self.ready and self.children <= set(self.registered):
             self._finish_registration(ctx)
+        elif self.ready:
+            self._late_child(ctx)
+
+    def _late_child(self, ctx: Context) -> None:
+        """A child said hello after registration ended (``register_timeout``)."""
 
     def _finish_registration(self, ctx: Context) -> None:
         self.ready = True
@@ -748,8 +753,18 @@ class Aggregator(_Greeter, _Collector):
         self.parent_level = self.levels[self.levels.index(self.level) - 1]
 
     def _registered(self, ctx: Context) -> None:
-        meta = {"role": "aggregator", "edges": self.edges_below()}
-        self._say_hello(meta | {"holders": self.holders_below()}, ctx)
+        self._say_hello(self._meta(), ctx)
+
+    def _late_child(self, ctx: Context) -> None:
+        if self._meta() != self._hello_meta:  # the parent counts what is below now
+            self._say_hello(self._meta(), ctx)
+
+    def _meta(self) -> dict[str, Any]:
+        return {
+            "role": "aggregator",
+            "edges": self.edges_below(),
+            "holders": self.holders_below(),
+        }
 
     def on_timer(self, name: str, ctx: Context) -> None:
         if name == "hello":
