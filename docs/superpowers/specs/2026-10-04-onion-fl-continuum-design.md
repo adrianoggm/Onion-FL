@@ -169,10 +169,21 @@ bundle/
     - de un padre no terminado o con otra semilla;
     - con otro coordinador raíz;
     - con otro trainer y `edge_state`, o con otro optimizador de servidor y `server_state`;
-    - cuyos sujetos de test o validación entrenaron al padre;
+    - con `restore.model` y un modelo que no encaja: otra estructura (`adapter_width`, `trunk_hidden`…) o, en un dataset que el linaje ya conocía, otra tarea u otras clases;
+    - con otro mecanismo de DP en los edges o en un agregador que ya estaba en el padre (σ, C y δ sí pueden cambiar);
+    - con `restore.preprocessing` y `scaler: local`, porque el preprocesado local congelado aún no existe;
+    - cuyos sujetos de test o validación entrenaron al padre o a una ejecución anterior del linaje;
     - en modo real, hasta C9.
-  - **`restore.model: false`.** Deja nuevos el modelo global, las zonas y el agregado anterior.
-  - **Lo liberado se acumula.** El contable de la DP central y las liberaciones de la DP local continúan siempre: lo liberado no se olvida.
+  - **Qué restaura cada opción.**
+    - `model` gobierna todos los pesos: el modelo global, las zonas, el agregado anterior, los modelos de los edges y la memoria del entrenador que guarda pesos (el modelo personal de Ditto, los de APFL, el modelo anterior de MOON).
+    - `edge_state` gobierna el resto del estado de cada edge: la memoria del entrenador (c_i de SCAFFOLD, la corrección de FedDyn, α de APFL) y su stream aleatorio.
+    - `server_state` gobierna el optimizador de servidor.
+  - **Lo liberado se acumula.**
+    - Cada contable de DP, central en el agregador o local en el edge, guarda el RDP acumulado en cada orden α: Σ_t α/(2σ_t²), con σ/2 en la DP local, porque su sensibilidad es 2C.
+    - Continúa siempre, aunque cambie σ: lo liberado no se olvida.
+  - **El linaje tiene memoria.**
+    - Por dataset, el bundle conserva el preprocesado, la tarea y las clases, y los sujetos que alguna vez entrenaron, validaron o fueron de test, aunque una generación no cargue ese dataset.
+    - La comprobación de fugas mira todo el linaje: A → B → C no olvida que un sujeto entrenó en A.
 - **Edges que cambian.**
   - Un edge nuevo empieza sin estado de edge.
   - El estado de un edge que ya no está se conserva en el bundle, pero no se usa.
