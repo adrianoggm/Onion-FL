@@ -9,6 +9,7 @@ well (docs/RULES.md).
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from onion_fl.core.topology import parse_topology
 from onion_fl.data.contract import SubjectData
@@ -294,3 +295,46 @@ def test_a_failed_round_keeps_the_scores_of_its_idle_children() -> None:
         if e["tags"]["model"] == "prequential" and e["tags"]["source"] == "children"
     ]
     assert [e["tags"]["round"] for e in kept] == [2, 3, 4]
+
+
+class Flaky(Recording):
+    """Fails its first call, by raising or by leaving non-finite weights."""
+
+    def __init__(self, how: str) -> None:
+        super().__init__()
+        self.how, self.failed = how, None
+
+    def train(self, model, data=None, received=None, ctx=None):
+        if self.failed is not None:
+            return super().train(model, data, received, ctx)
+        self.failed = np.asarray(data.t).copy()
+        if self.how == "raise":
+            raise RuntimeError("out of memory")
+        result = self.stub.train(model, data, received, ctx)
+        import torch
+
+        with torch.no_grad():
+            for parameter in model.parameters():
+                parameter.fill_(float("nan"))
+        return result
+
+
+@pytest.mark.parametrize("how", ["raise", "nan"])
+def test_the_rows_of_a_failed_training_are_trained_next_time(how: str) -> None:
+    flaky = Flaky(how)
+    spec = EdgeSpec(
+        "a1", ModularMLP(CONFIG, [A], seed=0), trainer=flaky, stream=stream_of("a-1")
+    )
+    federation = build_federation(
+        tree(1, fog={"deadline": 1}),
+        {"fog_0": [spec]},
+        initial_state=INITIAL,
+        rounds=6,
+        round_every=EVERY / SPEED,
+    )
+    federation.run()
+
+    assert len(flaky.failed) and events(federation, "edge.train_failed", "a1")
+    trained = np.concatenate([t for _, t in flaky.calls])  # the calls that worked
+    assert set(flaky.failed) <= set(flaky.calls[0][1])  # retried at once
+    assert len(trained) == len(set(trained))  # and still once each

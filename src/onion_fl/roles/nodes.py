@@ -831,6 +831,11 @@ class Edge(_Greeter, Node):
             shape = (len(stream.data.y), stream.data.n_classes)
             self._logits = np.full(shape, np.nan)
             self._predicted = np.zeros(len(stream.data.y), bool)
+            # The round whose training first used each row (-1: not yet). A row
+            # counts as used only once that training finished with finite
+            # weights, so a failed round trains the same rows next time.
+            self._consumed_by = np.full(len(stream.data.y), -1)
+            self._pending = np.zeros(len(stream.data.y), bool)
         self.parent, self.model, self.data = parent, model, data
         self.trainer, self.train = trainer, train
         self.finetuner = finetuner
@@ -961,10 +966,11 @@ class Edge(_Greeter, Node):
             )
             metrics |= {f"eval.{model}.{k}": float(v) for k, v in scores.items()}
             metrics[f"eval.{model}.samples"] = float(samples)
-        # What became trainable since this edge's last round: a late or skipped
-        # round loses and repeats nothing. A window caps how old it may be.
-        since = lo if s.window is None else max(lo, now - s.window)
-        buffer = s.trainable(since, now)
+        # Every trainable row not used yet: a late, skipped or failed round loses
+        # and repeats nothing. A window caps how old a row may be.
+        since = -np.inf if s.window is None else now - s.window
+        buffer = s.trainable(since, now) & (self._consumed_by < 0)
+        self._pending = buffer
         return (s.take(buffer) if buffer.any() else None), metrics
 
     def _train(self, msg: Message, ctx: Context) -> None:
@@ -1020,6 +1026,8 @@ class Edge(_Greeter, Node):
                 Message(kind="update", src=self.id, dst=self.parent, round=msg.round)
             )
             return
+        if self.stream is not None:  # trained with finite weights: now used
+            self._consumed_by[self._pending] = msg.round
         if scoring and "local" in self.eval_models:
             metrics |= self._score("local", msg.round, ctx)
         try:
