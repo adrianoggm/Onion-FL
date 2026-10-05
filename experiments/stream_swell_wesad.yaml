@@ -2,14 +2,15 @@
 #
 # Each training subject replays its real rows to its edge in time order: one
 # SWELL minute or one WESAD 60 s window at a time, at the moment it ends.
-# - Bootstrap: the first 20 minutes are history. They fit the preprocessing
-#   and train v0. SWELL's hold both classes; WESAD's are all baseline, since
-#   its protocol starts with about 20 minutes of baseline.
+# - Bootstrap: the first 20 minutes are history. They fit the preprocessing,
+#   and v0 trains on the history whose labels are already due (the rest joins
+#   as its labels arrive). SWELL's hold both classes; WESAD's are all
+#   baseline, since its protocol starts with about 20 minutes of baseline.
 # - Rounds: every 10 minutes of data. Each edge trains on what became
-#   trainable since the last round (no replay memory yet: C4).
-# - Scoring: every arrival is first scored by the model the edge was serving
-#   (prequential). Validation subjects stream for evaluation only; test
-#   subjects never reach an edge.
+#   trainable since its previous round (no replay memory yet: C4).
+# - Scoring: every arrival after the first round is first scored by the model
+#   the edge was serving (prequential). Validation subjects stream for
+#   evaluation only; test subjects never reach an edge.
 # - Labels: every row, or a seeded fifth of them, each arriving 10 minutes late.
 #
 # The training settings are the drift comparison's FedAvg, not tuned for
