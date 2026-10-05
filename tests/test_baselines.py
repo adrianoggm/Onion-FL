@@ -105,3 +105,19 @@ def test_subject_cross_validation_on_swell() -> None:
         {s for f in folds for s in f["test_subjects"]}
     )
     assert 0.0 <= out["swell"]["mean"]["balanced_accuracy"] <= 1.0
+
+
+@pytest.mark.skipif(not Path("data/SWELL").exists(), reason="data/SWELL not available")
+def test_cross_validation_keeps_the_excluded_subjects_out() -> None:
+    from onion_fl.baselines import cross_validate
+    from onion_fl.data.ingest import ingest, load_spec
+    from onion_fl.data.roles import RoleOverride, RolesConfig
+
+    subjects = ingest(load_spec("datasets/swell.yaml"))
+    out = [s.subject for s in subjects[:2]]
+    roles = RolesConfig(overrides={"swell": RoleOverride(exclude=out)})
+
+    folds = cross_validate(subjects, model="lr", k=3, roles=roles)["swell"]["folds"]
+
+    tested = {s for f in folds for s in f["test_subjects"]}
+    assert tested == {s.subject for s in subjects} - set(out)
