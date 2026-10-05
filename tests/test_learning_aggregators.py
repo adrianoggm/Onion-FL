@@ -493,6 +493,23 @@ def test_dp_fedavg_adds_seeded_noise_and_reports_epsilon() -> None:
     assert value == pytest.approx(5.298, abs=0.01)  # one round at σ=1
 
 
+def test_dp_fedavg_composes_its_budget_across_a_change_of_sigma() -> None:
+    from onion_fl.learning.privacy import ORDERS
+
+    reference = {"w": np.zeros(3)}
+    children = [vec("a", [1.0, 1.0, 1.0]), vec("b", [1.0, 1.0, 1.0])]
+    before = aggregators.create("dp_fedavg", {"clip": 10.0, "sigma": 0.5})
+    before.aggregate(children, "fog", reference=reference, rng=np.random.default_rng(0))
+    after = aggregators.create("dp_fedavg", {"clip": 10.0, "sigma": 1.0})
+    after.load_state(before.state())
+    after.aggregate(children, "fog", reference=reference, rng=np.random.default_rng(0))
+
+    rdp = ORDERS / (2 * 0.5**2) + ORDERS / (2 * 1.0**2)
+    expected = float((rdp + np.log(1e5) / (ORDERS - 1)).min())
+    ((_, value, _),) = after.report()
+    assert value == pytest.approx(expected)
+
+
 def test_dp_fedavg_leaves_auxiliary_arrays_unclipped_and_unnoised() -> None:
     reference = {"w": np.zeros(1), "scaffold/w": np.zeros(1)}
     children = [vec("a", [1.0]), vec("b", [1.0])]
@@ -667,3 +684,33 @@ def test_fedasync_mixes_by_a_staleness_discounted_weight() -> None:
 
     np.testing.assert_allclose(fresh["w"], [2.0])  # α_s = 0.5
     np.testing.assert_allclose(stale["w"], [1.0])  # α_s = 0.5·(1 + 3)^-0.5 = 0.25
+
+
+@pytest.mark.parametrize(
+    "name, params",
+    [
+        ("fedavgm", {"server_lr": 1.0, "momentum": 0.5}),
+        ("fedadam", {"server_lr": 0.1}),
+        ("fedyogi", {"server_lr": 0.1}),
+        ("fedadagrad", {"server_lr": 0.1}),
+        ("feddyn", {"alpha": 0.5}),
+    ],
+)
+def test_server_optimizer_state_survives_save_and_load(name: str, params: dict) -> None:
+    stats = {"train_edges": 2.0, "edges_total": 4.0}
+    one = server_optimizers.create(name, params)
+    first = one.apply(g(w=[0.0, 1.0]), g(w=[2.0, 3.0]), stats)
+
+    two = server_optimizers.create(name, params)
+    two.load_state(one.state())
+
+    np.testing.assert_array_equal(
+        one.apply(first, g(w=[1.0, 5.0]), stats)["w"],
+        two.apply(first, g(w=[1.0, 5.0]), stats)["w"],
+    )
+    assert all(isinstance(v, np.ndarray) for v in one.state().values())
+
+
+def test_stateless_server_optimizers_have_an_empty_state() -> None:
+    for name in ("replace", "fednova", "scaffold", "fedasync_mix"):
+        assert server_optimizers.create(name).state() == {}

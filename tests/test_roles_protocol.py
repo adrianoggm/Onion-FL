@@ -1092,3 +1092,104 @@ def test_a_trainer_that_cannot_be_copied_still_rolls_back_its_model() -> None:
     assert_global(federation, "trunk.0.weight", 2.0)
     (failed,) = names(federation, "edge.train_failed", "e2")
     assert "non-finite" in failed["tags"]["error"]
+
+
+# --- snapshot and continuation ------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "sharing", ["fedavg", "fedper", {"name": "zone", "level": "fog"}], ids=str
+)
+def test_a_federation_continues_from_its_snapshot_as_if_it_never_stopped(
+    sharing,
+) -> None:
+    from onion_fl.learning.aggregators import server_optimizers
+    from onion_fl.roles import restore_federation, snapshot_federation
+
+    def build(rounds: int):
+        def noisy(node_id: str, shift: float) -> EdgeSpec:
+            stub = trainers.create("stub", {"shift": shift, "noise": 0.1})
+            return EdgeSpec(node_id, model(A), trainer=stub)
+
+        edges = {
+            "fog_0": [noisy("e1", 1.0), noisy("e2", 2.0)],
+            "fog_1": [noisy("e3", 3.0)],
+        }
+        momentum = server_optimizers.create("fedavgm", {"momentum": 0.5})
+        return build_federation(
+            tree(2),
+            edges,
+            initial_state=INITIAL,
+            rounds=rounds,
+            sharing=sharing,
+            server_optimizer=momentum,
+        )
+
+    straight = build(4)
+    straight.run()
+    first = build(2)
+    first.run()
+
+    second = build(4)
+    restore_federation(second, snapshot_federation(first))
+    second.run()
+
+    for key, value in straight.coordinator.state.items():
+        np.testing.assert_array_equal(second.coordinator.state[key], value, err_msg=key)
+    for edge_id, node in straight.edges.items():
+        theirs = state_arrays(second.edges[edge_id].model)
+        for key, value in state_arrays(node.model).items():
+            np.testing.assert_array_equal(theirs[key], value, err_msg=edge_id + key)
+    rounds = [e["value"] for e in names(second, "round.started", "cloud")]
+    assert rounds == [3, 4]  # the round numbering continues
+
+
+def test_the_central_dp_accountant_continues_across_a_snapshot() -> None:
+    from onion_fl.roles import restore_federation, snapshot_federation
+
+    private = {"aggregator": {"name": "dp_fedavg", "clip": 10.0, "sigma": 1.0}}
+
+    def build(rounds: int):
+        stub = trainers.create("stub", {"shift": 1.0})
+        edges = {"fog_0": [EdgeSpec("e1", model(A), trainer=stub)]}
+        return build_federation(
+            tree(1, fog=private), edges, initial_state=INITIAL, rounds=rounds
+        )
+
+    def epsilons(federation) -> list[float]:
+        events = names(federation, "diagnostic.privacy_epsilon", "fog_0")
+        return [e["value"] for e in events if e["tags"]["round"] > 2]
+
+    straight = build(4)
+    straight.run()
+    first = build(2)
+    first.run()
+    second = build(4)
+    restore_federation(second, snapshot_federation(first))
+    second.run()
+
+    assert epsilons(second) == epsilons(straight) and len(epsilons(straight)) == 2
+
+
+def test_an_edges_dp_budget_continues_across_a_snapshot_with_another_sigma() -> None:
+    from onion_fl.learning.privacy import ORDERS, privacies
+    from onion_fl.roles import restore_federation, snapshot_federation
+
+    def build(rounds: int, sigma: float):
+        dp = privacies.create("local_dp", {"clip": 10.0, "sigma": sigma})
+        spec = EdgeSpec("e1", model(A), trainer=trainers.create("stub"), privacy=dp)
+        return build_federation(
+            tree(1), {"fog_0": [spec]}, initial_state=INITIAL, rounds=rounds
+        )
+
+    first = build(2, 0.5)
+    first.run()
+    second = build(4, 1.0)
+    restore_federation(second, snapshot_federation(first))
+    second.run()
+
+    # replace-one: σ counts as σ/2; two releases at 0.5, then two at 1.0
+    rdp = 2 * ORDERS / (2 * 0.25**2) + 2 * ORDERS / (2 * 0.5**2)
+    expected = float((rdp + np.log(1e5) / (ORDERS - 1)).min())
+    last = names(second, "diagnostic.privacy_epsilon", "e1")[-1]["value"]
+    assert last == pytest.approx(expected)

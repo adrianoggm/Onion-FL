@@ -390,3 +390,76 @@ def test_a_test_subject_cannot_also_be_excluded() -> None:
 
     with pytest.raises(DataError, match="1"):
         split_subjects(cohort(4), config)
+
+
+# --- preprocessing as an artifact ----------------------------------------------------
+
+
+def test_the_split_records_its_preprocessing_per_dataset() -> None:
+    import json
+
+    split = two_way([[3.0], [8.0]])
+
+    prep = split.preprocessing["swell"]
+    assert prep["features"] == ["f0"] and prep["scaler"] == "global"
+    np.testing.assert_allclose(prep["mean"], [3.0])
+    np.testing.assert_allclose(prep["std"], [np.sqrt(5)])
+    assert json.loads(json.dumps(split.preprocessing)) == split.preprocessing
+
+
+def test_a_frozen_preprocessing_is_applied_instead_of_refitted() -> None:
+    parent = two_way([[3.0], [8.0]])
+    shifted = [subject("1", [[100.0], [102.0]]), subject("2", [[104.0], [106.0]])]
+    held = [subject("3", [[3.0], [8.0]])]
+    config = RolesConfig(overrides={"swell": {"test": ["3"]}})
+
+    child = split_subjects(shifted + held, config, frozen=parent.preprocessing)
+
+    np.testing.assert_array_equal(child.test[0].X, parent.test[0].X)
+    assert child.preprocessing["swell"] == parent.preprocessing["swell"]
+
+
+def test_a_frozen_preprocessing_keeps_its_features_and_new_datasets_are_fitted() -> (
+    None
+):
+    flat = [
+        subject("1", [[0.0, 1.0], [2.0, 1.0]]),
+        subject("2", [[4.0, 1.0], [6.0, 1.0]]),
+    ]
+    parent = split_subjects(flat, RolesConfig(test=0.0))  # f1 is constant: dropped
+    varied = [
+        subject("1", [[0.0, 5.0], [2.0, 1.0]]),
+        subject("2", [[4.0, 9.0], [6.0, 3.0]]),
+    ]
+    wesad = [subject(str(i), [[i], [i + 2.0]], dataset="wesad") for i in (1, 2)]
+
+    child = split_subjects(
+        varied + wesad, RolesConfig(test=0.0), frozen=parent.preprocessing
+    )
+
+    swell = [c for c in child.clients if c.dataset == "swell"]
+    assert all(c.train.feature_names == ["f0"] for c in swell)
+    assert child.preprocessing["swell"] == parent.preprocessing["swell"]
+    np.testing.assert_allclose(child.preprocessing["wesad"]["mean"], [2.5])
+
+
+def test_a_frozen_feature_the_data_lacks_is_an_error() -> None:
+    parent = two_way([[3.0], [8.0]])
+    renamed = dict(parent.preprocessing["swell"], features=["missing"])
+
+    with pytest.raises(DataError, match="missing"):
+        split_subjects(cohort(4), RolesConfig(test=0.0), frozen={"swell": renamed})
+
+
+def test_a_frozen_preprocessing_reproduces_the_parents_arrays_bit_for_bit() -> None:
+    # Heavy-tailed values, where x - mean is inexact in float32 (HRV, EDA, ...).
+    values = np.random.default_rng(0).lognormal(3, 2, size=(5, 40, 2))
+    data = [subject(str(i), v) for i, v in enumerate(values, 1)]
+    parent = split_subjects(data, RolesConfig(test=0.2))
+
+    child = split_subjects(data, RolesConfig(test=0.2), frozen=parent.preprocessing)
+
+    for mine, theirs in zip(child.clients, parent.clients, strict=True):
+        assert mine.train.X.dtype == theirs.train.X.dtype
+        np.testing.assert_array_equal(mine.train.X, theirs.train.X)
+    np.testing.assert_array_equal(child.test[0].X, parent.test[0].X)

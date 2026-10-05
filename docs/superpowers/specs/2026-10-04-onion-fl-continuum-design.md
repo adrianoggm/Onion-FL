@@ -163,9 +163,33 @@ bundle/
   ```
 
   Verifica el `run_hash` del padre y registra el linaje en `run.json`. Reanudar con todo restaurado equivale a no haber parado; un test lo comprueba.
+  - **Padre.** `run` es un `run_id`, una carpeta o `experiment:<nombre>[/<escenario>]`, que se resuelve a la última ejecución terminada de ese experimento con la misma semilla. Si hay varios escenarios, hay que nombrar uno.
+  - **Alcance de la exactitud.** Es exacta con rondas síncronas, enlaces sin pérdidas y sin disponibilidad que dependa del reloj. Los streams de los enlaces, el reloj virtual y las tardías ya guardadas para la ronda siguiente empiezan de nuevo.
+  - **Se rechaza** (al planificar) una continuación:
+    - de un padre no terminado o con otra semilla;
+    - con otro coordinador raíz;
+    - con otro trainer y `edge_state`, o con otro optimizador de servidor y `server_state`;
+    - con `restore.model` y un modelo que no encaja: otra estructura (`adapter_width`, `trunk_hidden`, `adapters`, `trunk`, `heads`…) o, en un dataset que el linaje ya conocía, otra tarea u otras clases;
+    - con otro mecanismo de DP en los edges o en un agregador que el linaje ya conocía (σ, C y δ sí pueden cambiar);
+    - con DP local y un edge nuevo que reúne sujetos que ya liberaron, porque su presupuesto volvería a cero (pasa al cambiar `subjects_per_client` o los sujetos de entrenamiento);
+    - con SCAFFOLD o FedDyn, si `server_state` y `edge_state` no van juntos: c sin c_i, o h sin las correcciones de los edges, sesgaría la corrección para siempre;
+    - con `restore.preprocessing` y `scaler: local`, porque el preprocesado local congelado aún no existe;
+    - que cambia de rol a un sujeto que ya entrenó, validó o fue de test en el linaje (test → train, val → test…); los sujetos nuevos pueden entrar en cualquier rol;
+    - en modo real, hasta C9.
+  - **Qué restaura cada opción.**
+    - `model` gobierna todos los pesos: el modelo global, las zonas, el agregado anterior, los modelos de los edges y la memoria del entrenador que guarda pesos (el modelo personal de Ditto, los de APFL, el modelo anterior de MOON).
+    - `edge_state` gobierna el resto del estado de cada edge: la memoria del entrenador (c_i de SCAFFOLD, la corrección de FedDyn, α de APFL) y su stream aleatorio.
+    - `server_state` gobierna el optimizador de servidor y el estado de algoritmo del modelo global (la c de SCAFFOLD, que viaja como claves auxiliares).
+  - **Lo liberado se acumula.**
+    - Cada contable de DP, central en el agregador o local en el edge, guarda el RDP acumulado en cada orden α: Σ_t α/(2σ_t²), con σ/2 en la DP local, porque su sensibilidad es 2C.
+    - Continúa siempre, aunque cambie σ: lo liberado no se olvida.
+    - Un edge con presupuesto conserva también su stream aleatorio, aun sin `edge_state`: uno nuevo repetiría el ruido del padre.
+  - **El linaje tiene memoria.**
+    - Por dataset, el bundle conserva el preprocesado, la tarea y las clases, y los sujetos que alguna vez entrenaron, validaron o fueron de test, aunque una generación no cargue ese dataset.
+    - La comprobación de roles mira todo el linaje: A → B → C no olvida que un sujeto entrenó en A. Como un sujeto nunca cambia de rol, los roles del bundle siguen siendo una partición.
 - **Edges que cambian.**
   - Un edge nuevo empieza sin estado de edge.
-  - El estado de un edge que ya no está se conserva en el bundle, pero no se usa.
+  - El estado de un nodo que ya no está (edge o agregador) pasa al bundle tal como esta ejecución lo conservó, con su presupuesto de DP, y se retoma si el nodo vuelve.
   - El estado global que depende del número de edges (por ejemplo, N en la fracción de SCAFFOLD) se recalcula con los `holders` registrados.
 - **Evolución del esquema.**
   - Para un dataset existente, el preprocesado del bundle se congela.

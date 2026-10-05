@@ -11,14 +11,20 @@ from __future__ import annotations
 """
 
 import hashlib
+import json
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
+from itertools import permutations
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
+from onion_fl.continuum.bundle import Bundle, load_bundle, save_bundle
 from onion_fl.core.context import node_rng
 from onion_fl.core.topology import Topology, load_topology, parse_topology
 from onion_fl.data.cache import load_prepared, prepare
+from onion_fl.data.contract import natural_key
 from onion_fl.data.ingest import load_spec
 from onion_fl.data.placement import Placement, place
 from onion_fl.data.roles import DataSplit, split_subjects
@@ -26,16 +32,31 @@ from onion_fl.experiment.config import ConfigError, ExperimentConfig
 from onion_fl.experiment.sweep import Scenario, identity, scenarios
 from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.attacks import attacks
-from onion_fl.learning.model import models, param_groups, state_arrays
-from onion_fl.learning.privacy import privacies
+from onion_fl.learning.model import (
+    group_of,
+    is_aux,
+    models,
+    param_groups,
+    state_arrays,
+)
+from onion_fl.learning.privacy import Accountant, privacies
 from onion_fl.learning.sharing import not_local, sharing, traffic
 from onion_fl.learning.trainers import inits, trainers
-from onion_fl.observability.run import Run, save_model
+from onion_fl.observability.run import Run, save_model, verify_run
 from onion_fl.observability.sinks import OtelSink, PrometheusSink, otlp_provider
-from onion_fl.roles import EdgeSpec, build_federation
+from onion_fl.roles import (
+    EdgeSpec,
+    FederationSnapshot,
+    NodeState,
+    build_federation,
+    restore_federation,
+    snapshot_federation,
+)
 from onion_fl.roles.policies import create
 from onion_fl.runtime.devices import availability_models, compute_models
 from onion_fl.runtime.network import resolve_profile
+
+ROLES = ("train", "val", "test")  # kept apart along a lineage
 
 
 def resolve_topology(config: ExperimentConfig) -> Topology:
@@ -85,13 +106,310 @@ def load_data(config: ExperimentConfig) -> tuple[list[Any], dict[str, str]]:
     return subjects, digests
 
 
+def _newest_run(runs: Path, reference: str, seed: int) -> Path:
+    """``experiment:<name>[/<scenario>]``: the newest finished run of that
+    experiment (and scenario) with ``seed``, among the runs with a bundle."""
+    name, _, scenario = reference.partition("/")
+    found: dict[str, list[Path]] = {}
+    for path in sorted(runs.iterdir()) if runs.is_dir() else []:
+        if not (path / "run.json").is_file() or not (path / "bundle").is_dir():
+            continue
+        meta = json.loads((path / "run.json").read_text(encoding="utf-8"))
+        if (
+            meta["config"]["name"] == name
+            and meta["seed"] == seed
+            and meta.get("status") == "finished"
+            and (not scenario or meta.get("scenario") == scenario)
+        ):
+            found.setdefault(meta.get("scenario"), []).append(path)
+    if not found:
+        raise ConfigError(
+            f"learning.init: no finished run of experiment {reference!r} with seed "
+            f"{seed} in {runs}"
+        )
+    if len(found) > 1:
+        raise ConfigError(
+            f"learning.init: experiment {name!r} has runs of several scenarios "
+            f"{sorted(found)}; name one as experiment:{name}/<scenario>"
+        )
+    (paths,) = found.values()
+    return paths[-1]  # run ids start with their UTC time
+
+
+def _algorithms(config: ExperimentConfig) -> dict[str, Any]:
+    """The trainer, server optimizer and DP mechanisms whose state a bundle holds."""
+    topology = resolve_topology(config)
+    root = topology.root
+    central = {
+        node.id: _name(node.settings["aggregator"])
+        for node in topology.nodes
+        if isinstance(
+            create(aggregators, node.settings.get("aggregator"), "fedavg"), Accountant
+        )
+    }
+    return {
+        "trainer": _name(config.learning.trainer),
+        "server_optimizer": _name(root.settings.get("server_optimizer") or "replace"),
+        "root": root.id,
+        "privacy": {
+            "edges": _name(config.privacy) if config.privacy else None,
+            "aggregators": central,
+        },
+    }
+
+
+def _nodes_of(topology: Topology) -> set[str]:
+    return {node.id for node in topology.nodes}
+
+
+def _check_privacy(
+    saved: Mapping[str, Any], here: Mapping[str, Any], shared: set[str]
+) -> None:
+    """The edges and every aggregator ``shared`` with the parent keep their DP
+    mechanism, so each budget composes; σ, C and δ may change."""
+    central = saved.get("aggregators", {})
+    for where, before, now in [
+        ("the edges", saved.get("edges"), here["edges"]),
+        *[(n, central.get(n), here["aggregators"].get(n)) for n in sorted(shared)],
+    ]:
+        if before != now:
+            raise ConfigError(
+                f"learning.init: {where} used privacy {before!r} in the parent, here "
+                f"{now!r}; a continuation keeps each DP mechanism so its budget "
+                "composes (σ, C and δ may change)"
+            )
+
+
+def _parent(config: ExperimentConfig, seed: int) -> tuple[Path, Bundle, Any] | None:
+    """The run that ``init: run`` continues: its folder, verified bundle and restore.
+
+    ``run`` is a run id, a run folder, or ``experiment:<name>[/<scenario>]``:
+    the newest finished run of that experiment with this scenario's seed. The
+    parent must be finished, signed and continuable exactly: same seed, same
+    root, and the same trainer and server optimizer for the state it restores.
+    """
+    if _name(config.learning.init) != "run":
+        return None
+    if config.runtime.mode == "real":
+        raise ConfigError(
+            "learning.init: run continues only in simulation for now; real runs "
+            "write no bundle until the distributed continuum (C9)"
+        )
+    init = create(inits, config.learning.init)
+    if init.restore.preprocessing and config.data.roles.scaler == "local":
+        raise ConfigError(
+            "learning.init: frozen local preprocessing is not supported yet (each "
+            "holder would refit its own scaler); use scaler: global, or set "
+            "restore.preprocessing: false"
+        )
+    trainer = create(trainers, config.learning.trainer)
+    paired = getattr(trainer, "server_optimizer", None) and trainer._memory
+    if paired and init.restore.server_state != init.restore.edge_state:
+        raise ConfigError(
+            f"learning.init: {_name(config.learning.trainer)} pairs the server's "
+            "state with each edge's (c and c_i, h and the edge corrections); "
+            "restore server_state and edge_state together"
+        )
+    runs = Path(config.paths.runs)
+    if init.run.startswith("experiment:"):
+        path = _newest_run(runs, init.run.split(":", 1)[1], seed)
+    else:
+        path = Path(init.run)
+        if not path.is_dir():
+            path = runs / init.run
+    if not (path / "run.json").is_file():
+        raise ConfigError(f"learning.init: run {init.run!r} not found in {path.parent}")
+    if not verify_run(path):
+        raise ConfigError(
+            f"learning.init: run {path.name!r} does not verify against its run_hash"
+        )
+    meta = json.loads((path / "run.json").read_text(encoding="utf-8"))
+    if meta.get("status") != "finished":
+        raise ConfigError(
+            f"learning.init: run {path.name!r} is {meta.get('status')!r}; only a "
+            "finished run can be continued"
+        )
+    if meta["seed"] != seed:
+        raise ConfigError(
+            f"learning.init: run {path.name!r} has seed {meta['seed']}, this scenario "
+            f"{seed}; continue each seed from its own parent (experiment:<name>)"
+        )
+    if not (path / "bundle" / "bundle.json").is_file():
+        raise ConfigError(f"learning.init: run {path.name!r} has no bundle")
+    bundle = load_bundle(path / "bundle")
+    saved, here = bundle.lineage.get("algorithms", {}), _algorithms(config)
+    if saved.get("root") != here["root"]:
+        raise ConfigError(
+            f"learning.init: the parent's root is {saved.get('root')!r}, here "
+            f"{here['root']!r}; a continuation keeps the coordinator"
+        )
+    for part, flag in (("trainer", "edge_state"), ("server_optimizer", "server_state")):
+        if getattr(init.restore, flag) and saved.get(part) != here[part]:
+            raise ConfigError(
+                f"learning.init: the parent's {part} is {saved.get(part)!r}, here "
+                f"{here[part]!r}; its state does not fit: set restore.{flag}: false"
+            )
+    shared = _nodes_of(resolve_topology(config)) & set(bundle.snapshot.nodes)
+    _check_privacy(saved.get("privacy", {}), here["privacy"], shared)
+    return path, bundle, init.restore
+
+
+def _check_roles(parent: Mapping[str, Any], child: Mapping[str, Any]) -> None:
+    """A subject keeps its role along a lineage: once it trained, validated or
+    tested, it never takes another role; new subjects may join any. A bundle's
+    roles are its whole lineage's, so they stay a partition."""
+    if not parent:
+        raise ConfigError("learning.init: the parent's bundle records no data roles")
+    for dataset, roles in sorted(child.items()):
+        before = parent.get(dataset) or {}
+        for role, earlier in permutations(ROLES, 2):
+            moved = set(roles.get(role, [])) & set(before.get(earlier, []))
+            if moved:
+                raise ConfigError(
+                    f"learning.init: {dataset} subjects "
+                    f"{sorted(moved, key=natural_key)} were {earlier} subjects in "
+                    f"the lineage but are {role} subjects here; a subject keeps its "
+                    "role along a lineage (keep the parent's data.roles; new "
+                    "subjects may join)"
+                )
+
+
+def _lineage_roles(
+    parent: Mapping[str, Any], child: Mapping[str, Any]
+) -> dict[str, dict[str, list[str]]]:
+    """Every subject that ever trained, validated or tested, per dataset, along
+    the lineage, kept even for a dataset this run does not load."""
+    return {
+        dataset: {
+            role: sorted(
+                set((parent.get(dataset) or {}).get(role, []))
+                | set((child.get(dataset) or {}).get(role, [])),
+                key=natural_key,
+            )
+            for role in ROLES
+        }
+        for dataset in sorted(set(parent) | set(child))
+    }
+
+
+def _check_structure(
+    bundle: Bundle, config: ExperimentConfig, split: DataSplit, seed: int
+) -> None:
+    """A restored model must fit: each dataset the parent knew keeps its task and
+    classes, and each parameter group both models hold keeps its shapes."""
+    for dataset, schema in schema_of(split).items():
+        saved = bundle.schema.get(dataset)
+        if saved is not None and saved != schema:
+            raise ConfigError(
+                f"learning.init: {dataset} had task and classes {saved} in the "
+                f"parent, here {schema}; set restore.model: false"
+            )
+    _, state = _initial_state(config, _shapes(split), seed)
+    root = bundle.snapshot.nodes[bundle.snapshot.root].arrays
+    parent = {k[6:]: v for k, v in root.items() if k.startswith("state/")}
+
+    def shapes(arrays: Mapping[str, Any], group: str) -> dict[str, tuple]:
+        return {
+            k: np.shape(v)
+            for k, v in arrays.items()
+            if not is_aux(k) and group_of(k) == group
+        }
+
+    mine = set(param_groups(state))
+    loaded = set(schema_of(split)) | {s["task"] for s in schema_of(split).values()}
+    for group in sorted(param_groups(parent)):
+        # a group of a dataset or task this run does not load may be absent
+        absent = group not in mine and group.partition(".")[2] not in loaded | {""}
+        if not absent and shapes(parent, group) != shapes(state, group):
+            raise ConfigError(
+                f"learning.init: the parameters of {group} differ from the "
+                "parent's: the model's structure changed (adapter_width, "
+                "trunk_hidden, adapters, trunk, heads...); set restore.model: false"
+            )
+
+
+def _check_budgets(bundle: Bundle, split: DataSplit) -> None:
+    """Under local DP, a new edge may not hold a subject that already released:
+    its budget is the edge's, so it would start again at zero."""
+    for client in split.clients:
+        trained = (bundle.roles.get(client.dataset) or {}).get("train", [])
+        released = sorted(set(trained) & set(client.subjects), key=natural_key)
+        if released and client.id not in bundle.snapshot.nodes:
+            raise ConfigError(
+                f"learning.init: edge {client.id} is new, but {released} already "
+                "released updates under local DP and their budget would restart; "
+                "keep subjects_per_client and the training subjects"
+            )
+
+
+def _restore_parts(
+    snapshot: FederationSnapshot, restore: Any, edges: set[str]
+) -> FederationSnapshot:
+    """The part of a parent's snapshot that ``restore`` asks for.
+
+    ``model`` governs every model weight: the global model, zones, previous
+    aggregates, edge models and the trainer memory that holds weights.
+    ``server_state`` governs the server optimizer; ``edge_state`` the rest of an
+    edge, its trainer memory and random stream. SCAFFOLD's c, auxiliary keys of
+    the global state, is server state. DP budgets always carry over, and so does
+    the stream of an edge that has one: what was released stays released.
+    """
+
+    def kept(key: str) -> bool:
+        part, _, rest = key.partition("/")
+        if part == "state":  # SCAFFOLD's c rides in the global state, auxiliary
+            return restore.server_state if is_aux(rest) else restore.model
+        if part in ("zone", "previous", "model"):
+            return restore.model
+        return restore.server_state if part == "server" else True
+
+    nodes = {}
+    for node_id, node in snapshot.nodes.items():
+        meta = dict(node.meta)
+        arrays = {k: v for k, v in node.arrays.items() if kept(k)}
+        if "memory" in meta:  # weights follow model, the rest edge_state
+            meta["memory"] = {
+                name: info
+                for name, info in meta["memory"].items()
+                if (restore.model if info.get("weights") else restore.edge_state)
+            }
+            arrays = {
+                k: v
+                for k, v in arrays.items()
+                if not k.startswith("memory/") or k.split("/")[1] in meta["memory"]
+            }
+        # A DP edge keeps its stream: a fresh one would replay the parent's noise.
+        private = any(k.startswith("privacy/") for k in node.arrays)
+        if node_id in edges and not restore.edge_state and not private:
+            meta.pop("rng", None)
+        nodes[node_id] = NodeState(arrays, meta)
+    return FederationSnapshot(snapshot.round, nodes, snapshot.root)
+
+
+def _restore(federation: Any, bundle: Bundle, restore: Any) -> None:
+    """Continue the parent's bundle, leaving out what ``restore`` does not ask for."""
+    parts = _restore_parts(bundle.snapshot, restore, set(federation.edges))
+    restore_federation(federation, parts)
+
+
 def _scenario_data(
-    scenario: Scenario,
+    scenario: Scenario, parent: Any = ...
 ) -> tuple[Topology, DataSplit, Placement, dict[str, str]]:
+    """Topology, split, placement and data digests; ``parent`` as ``_parent`` gives
+    it (resolved here when not passed)."""
     config = scenario.config
     topology = resolve_topology(config)
     subjects, digests = load_data(config)
-    split = split_subjects(subjects, config.data.roles)
+    if parent is ...:
+        parent = _parent(config, scenario.seed)
+    frozen = parent[1].preprocessing if parent and parent[2].preprocessing else None
+    split = split_subjects(subjects, config.data.roles, frozen=frozen)
+    if parent:
+        _check_roles(parent[1].roles, split.roles)
+        if parent[2].model:
+            _check_structure(parent[1], config, split, scenario.seed)
+        if config.privacy is not None:
+            _check_budgets(parent[1], split)
     placement_ref = config.data.placement
     name = placement_ref if isinstance(placement_ref, str) else placement_ref["name"]
     params = (
@@ -357,21 +675,28 @@ def build_scenario(
     *,
     evaluate: Callable[..., Any] | None = None,
     runtime: Any = None,
+    parent: Any = ...,
 ) -> Any:
     """The federation of a scenario, on ``runtime`` (a new SimRuntime by default)."""
     config = scenario.config
     edges, initial = edge_specs(scenario, topology, split, placement)
-    return build_federation(
+    if parent is ...:
+        parent = _parent(config, scenario.seed)
+    start = parent[1].snapshot.round if parent else 0
+    federation = build_federation(
         topology,
         edges,
         initial_state=initial,
-        rounds=config.rounds,
+        rounds=start + config.rounds,  # a continuation's numbering goes on
         sharing=config.learning.sharing,
         seed=scenario.seed,
         metrics=config.evaluation.metrics,
         evaluate=evaluate,
         runtime=runtime,
     )
+    if parent:
+        _restore(federation, parent[1], parent[2])
+    return federation
 
 
 def run_scenario(
@@ -385,7 +710,8 @@ def run_scenario(
         from onion_fl.experiment.real import run_real
 
         return run_real(scenario)
-    topology, split, placement, digests = _scenario_data(scenario)
+    parent = _parent(config, scenario.seed)  # resolved once for the whole run
+    topology, split, placement, digests = _scenario_data(scenario, parent)
     run = Run(
         config.paths.runs,
         config=identity(config),
@@ -395,20 +721,66 @@ def run_scenario(
         scenario=scenario.name,
         sinks=_sinks(config),
     )
+    lineage_parent = None
+    if parent:
+        meta = json.loads((parent[0] / "run.json").read_text(encoding="utf-8"))
+        lineage_parent = {
+            "run_id": meta["run_id"],
+            "run_hash": meta["run_hash"],
+            "version": parent[1].snapshot.round,
+        }
+        run.meta["parent"] = lineage_parent  # signed with the rest at finish
     try:
         record_data(run, scenario, split, placement)
         federation = build_scenario(
-            scenario, topology, split, placement, evaluate=evaluate
+            scenario, topology, split, placement, evaluate=evaluate, parent=parent
         )
         run.attach(federation)
         federation.run()
         save_model(run.path, federation.coordinator.state)
+        # What the lineage knows of a dataset or node outlives a run without it.
+        earlier = parent[1] if parent else None
+        snapshot, algorithms = snapshot_federation(federation), _algorithms(config)
+        if earlier:  # nodes gone here keep what this run kept of them
+            kept = _restore_parts(earlier.snapshot, parent[2], set(federation.edges))
+            snapshot.nodes = {**kept.nodes, **snapshot.nodes}
+            saved = earlier.lineage.get("algorithms", {}).get("privacy", {})
+            central = saved.get("aggregators", {})
+            algorithms["privacy"]["aggregators"] = {
+                **{n: m for n, m in central.items() if n not in _nodes_of(topology)},
+                **algorithms["privacy"]["aggregators"],
+            }
+        save_bundle(
+            run.path / "bundle",
+            snapshot,
+            preprocessing={
+                **(earlier.preprocessing if earlier else {}),
+                **split.preprocessing,
+            },
+            schema={**(earlier.schema if earlier else {}), **schema_of(split)},
+            lineage={
+                "version": federation.coordinator.round,
+                "run_id": run.run_id,
+                "parent": lineage_parent,
+                "algorithms": algorithms,
+            },
+            config=identity(config),
+            roles=_lineage_roles(earlier.roles if earlier else {}, split.roles),
+        )
     except BaseException:
         run.finish(status="failed")
         raise
     # The queue can run dry before the last round (lost messages, no deadlines).
     run.finish(status="finished" if federation.coordinator.finished else "incomplete")
     return run.path
+
+
+def schema_of(split: DataSplit) -> dict[str, dict[str, Any]]:
+    """Per dataset, the task and classes its heads were built for."""
+    return {
+        c.dataset: {"task": c.train.task, "n_classes": c.train.n_classes}
+        for c in sorted(split.clients, key=lambda c: c.dataset)
+    }
 
 
 def record_data(

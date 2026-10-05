@@ -19,8 +19,8 @@ its own statistics, which use no labels.
 """
 
 import warnings
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Annotated, Any, Literal
 
 import numpy as np
@@ -91,6 +91,8 @@ class DataSplit:
     val: list[SubjectData]
     test: list[SubjectData]
     roles: dict[str, dict[str, list[str]]]  # dataset -> role -> subjects
+    # dataset -> kept features, fill, mean, std: JSON-ready, frozen by a continuation
+    preprocessing: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def describe(self) -> dict[str, Any]:
         return {
@@ -124,7 +126,7 @@ class _Fit:
             reduce = np.nanmedian if impute == "median" else np.nanmean
             fill = reduce(X, axis=0) if len(X) else np.full(X.shape[1], np.nan)
         if fallback is not None:
-            fill = np.where(np.isnan(fill), fallback, fill)
+            fill = np.where(np.isnan(fill), fallback.astype(fill.dtype), fill)
         fill = np.nan_to_num(fill)
         filled = np.where(np.isnan(X), fill, X)
         if not len(X):
@@ -219,9 +221,15 @@ def _held_out(y: np.ndarray, share: float, split: str) -> np.ndarray:
 
 
 def split_subjects(
-    subjects: Sequence[SubjectData], config: RolesConfig | None = None
+    subjects: Sequence[SubjectData],
+    config: RolesConfig | None = None,
+    frozen: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> DataSplit:
-    """Assign roles per dataset, group the training subjects into clients and preprocess."""
+    """Assign roles per dataset, group the training subjects into clients and preprocess.
+
+    A dataset in ``frozen`` (a parent run's ``preprocessing``) keeps those features
+    and statistics instead of fitting new ones; the other datasets are fitted.
+    """
     config = config or RolesConfig()
     by_dataset: dict[str, dict[str, SubjectData]] = {}
     for data in subjects:
@@ -232,6 +240,7 @@ def split_subjects(
 
     scale, local = config.scaler != "none", config.scaler == "local"
     clients, val, test, roles = [], [], [], {}
+    preprocessing: dict[str, dict[str, Any]] = {}
     for dataset in sorted(by_dataset):
         pool = by_dataset[dataset]
         names = sorted(pool, key=natural_key)
@@ -244,18 +253,45 @@ def split_subjects(
         }
         bag = np.concatenate([pool[s].X[~held[s]] for s in held])
 
-        fit = _Fit.on(bag, config.impute)
-        keep = np.arange(bag.shape[1])
-        if config.drop_constant:
-            keep = np.flatnonzero(
-                np.where(np.isnan(bag), fit.fill, bag).std(axis=0) > 0
-            )
-            if not len(keep):
+        own = pool[names[0]].feature_names
+        if frozen is not None and dataset in frozen:
+            saved = dict(frozen[dataset])
+            missing = [f for f in saved["features"] if f not in own]
+            if missing:
                 raise DataError(
-                    f"{dataset}: every feature is constant in the training bag"
+                    f"{dataset}: the frozen preprocessing needs features {missing} "
+                    "that the data lacks"
                 )
-        shared = fit.take(keep)
-        feature_names = [pool[names[0]].feature_names[i] for i in keep]
+            if saved["scaler"] != config.scaler:
+                raise DataError(
+                    f"{dataset}: the frozen preprocessing scales {saved['scaler']!r}, "
+                    f"not {config.scaler!r}"
+                )
+            keep = np.array([own.index(f) for f in saved["features"]])
+            # float32 like the parent's fit, so re-applying it is bit for bit
+            shared = _Fit(
+                *(np.asarray(saved[k], np.float32) for k in ("fill", "mean", "std"))
+            )
+        else:
+            fit = _Fit.on(bag, config.impute)
+            keep = np.arange(bag.shape[1])
+            if config.drop_constant:
+                keep = np.flatnonzero(
+                    np.where(np.isnan(bag), fit.fill, bag).std(axis=0) > 0
+                )
+                if not len(keep):
+                    raise DataError(
+                        f"{dataset}: every feature is constant in the training bag"
+                    )
+            shared = fit.take(keep)
+            saved = {
+                "scaler": config.scaler,
+                "impute": config.impute,
+                "features": [own[i] for i in keep],
+                **{k: getattr(shared, k).tolist() for k in ("fill", "mean", "std")},
+            }
+        preprocessing[dataset] = saved
+        feature_names = [own[i] for i in keep]
 
         def holder_fit(X: np.ndarray, shared: _Fit = shared) -> _Fit:
             return _Fit.on(X, config.impute, fallback=shared.fill) if local else shared
@@ -314,4 +350,6 @@ def split_subjects(
                 )
             )
     clients.sort(key=lambda c: (c.dataset, natural_key(c.id)))
-    return DataSplit(clients=clients, val=val, test=test, roles=roles)
+    return DataSplit(
+        clients=clients, val=val, test=test, roles=roles, preprocessing=preprocessing
+    )

@@ -154,6 +154,29 @@ sequenceDiagram
 
 With full quorum and the same seed, simulation and MQTT give the same final model. `tests/test_runtime_equivalence.py` checks it.
 
+## 7b. Continuing a run (continuum)
+
+- **Bundle.** Every simulated run writes `runs/<run_id>/bundle/` (`onion_fl.continuum.bundle`), which `run_hash` covers. It holds the state `snapshot_federation` captures, with `.npz` and JSON only:
+  - the global model, round and server optimizer;
+  - each aggregator's zone, previous aggregate and own state (the central DP budget);
+  - each edge's model, trainer memory (`export_memory`) and local DP budget;
+  - every node's random stream (`rng_state`, with its spawned children).
+
+  Next to that state it keeps the lineage and, per dataset, what the whole lineage knows of it, even when this run does not load that dataset: the frozen preprocessing (`DataSplit.preprocessing`), the task and classes, and every subject that ever trained, validated or tested. A subject keeps its role along a lineage, so these roles stay a partition.
+- **Continuation.** `learning.init: {name: run, run, restore}` verifies the parent and refuses a continuation that cannot be exact or would leak (spec §6). Then it:
+  - re-applies the frozen preprocessing, bit for bit;
+  - continues the round numbering;
+  - restores what `restore` asks for, through `restore_federation`;
+  - records the parent in `run.json`.
+- **What `restore` covers.**
+  - `model`: every model weight, meaning the global model, the zones, the previous aggregates, the edge models, and the trainer memory that holds weights (marked `weights` by `export_memory`).
+  - `edge_state`: the rest of each edge, meaning its trainer memory (SCAFFOLD's c_i, for example) and its random stream.
+  - `server_state`: the server optimizer, and the algorithm state riding in the global model as auxiliary keys (SCAFFOLD's c). SCAFFOLD and FedDyn need it restored together with `edge_state`.
+- **DP budgets.** They always carry over. Each budget (`privacy.Accountant`) is the Rényi DP accumulated at each order, Σ α/(2σ²), so σ may change between generations and ε stays right.
+  - An edge with a budget also keeps its random stream, since a fresh one would replay its parent's noise.
+  - The bundle carries the nodes a run lacks, as the run kept them, so a node that skips a generation keeps its budget.
+- **Changes allowed.** New datasets get a fitted preprocessing and fresh adapters. `group_lr` can scale the steps of the groups a continuation keeps.
+
 ## 8. Observability
 
 **Event schema.** Every event becomes:

@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Literal, Protocol
+from typing import Annotated, Any, Literal, Protocol
 
 import numpy as np
 import torch
@@ -130,6 +130,27 @@ class StandardParams(BaseModel):
         default_factory=list,
         description="Grupos que no se entrenan, por nombre o patrón (trunk, adapter.*)",
     )
+    group_lr: dict[str, Annotated[float, Field(gt=0)]] = Field(
+        default_factory=dict,
+        description="Factor del lr por grupo, por nombre o patrón (trunk*: 0.1); "
+        "para no entrenar un grupo, frozen",
+    )
+
+
+def lr_factor(name: str, group_lr: Mapping[str, float]) -> float:
+    """The factor of the first ``group_lr`` pattern matching ``name``'s group, else 1."""
+    group = group_of(name)
+    return next((f for p, f in group_lr.items() if fnmatch.fnmatchcase(group, p)), 1.0)
+
+
+def _param_groups(
+    params: Mapping[str, Any], names: Sequence[str], p: StandardParams
+) -> list[dict[str, Any]]:
+    """Optimizer groups: one per lr factor, so a continuation can move some slower."""
+    by_factor: dict[float, list[Any]] = {}
+    for name in names:
+        by_factor.setdefault(lr_factor(name, p.group_lr), []).append(params[name])
+    return [{"params": ps, "lr": p.lr * f} for f, ps in by_factor.items()]
 
 
 @trainers.register(
@@ -142,6 +163,7 @@ class StandardParams(BaseModel):
 class Standard:
     Params: type[StandardParams] = StandardParams
     _memory: tuple[str, ...] = ()  # attributes a diverged round rolls back
+    _weights: tuple[str, ...] = ()  # the memory that holds model weights
 
     def __init__(self, **params: Any) -> None:
         self.params = self.Params(**params)
@@ -152,6 +174,71 @@ class Standard:
 
     def restore(self, saved: Mapping[str, Any]) -> None:
         for name, value in saved.items():
+            setattr(self, name, value)
+
+    def export_memory(self) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+        """The memory as arrays and a JSON-ready description, for a bundle (no pickles)."""
+        arrays: dict[str, np.ndarray] = {}
+        meta: dict[str, Any] = {}
+        for name in self._memory:
+            value = getattr(self, name)
+            if value is None:
+                meta[name] = {"kind": "none"}
+            elif isinstance(value, nn.Module):
+                meta[name] = {"kind": "module", "training": value.training}
+                arrays |= {
+                    f"{name}/{k}": v.detach().cpu().numpy()
+                    for k, v in value.state_dict().items()
+                }
+            elif isinstance(value, Mapping):
+                tensors = any(isinstance(v, torch.Tensor) for v in value.values())
+                meta[name] = {"kind": "tensors" if tensors else "arrays"}
+                arrays |= {
+                    f"{name}/{k}": (
+                        v.detach().cpu().numpy()
+                        if isinstance(v, torch.Tensor)
+                        else np.asarray(v)
+                    )
+                    for k, v in value.items()
+                }
+            else:
+                meta[name] = {"kind": "scalar", "value": float(value)}
+            if name in self._weights:  # restore.model governs it, not edge_state
+                meta[name]["weights"] = True
+        return arrays, meta
+
+    def import_memory(
+        self,
+        arrays: Mapping[str, np.ndarray],
+        meta: Mapping[str, Any],
+        model: nn.Module,
+    ) -> None:
+        """Rebuild the memory from ``export_memory``; ``model`` gives the architecture.
+
+        An entry ``meta`` leaves out keeps the trainer's own value.
+        """
+        for name in self._memory:
+            if name not in meta:
+                continue
+            info = meta[name]
+            part = {
+                key.split("/", 1)[1]: np.asarray(value)
+                for key, value in arrays.items()
+                if key.split("/", 1)[0] == name
+            }
+            kind = info["kind"]
+            if kind == "none":
+                value: Any = None
+            elif kind == "module":
+                value = copy.deepcopy(model)
+                value.load_state_dict({k: torch.as_tensor(v) for k, v in part.items()})
+                value.train(bool(info["training"]))
+            elif kind == "tensors":
+                value = {k: torch.as_tensor(v) for k, v in part.items()}
+            elif kind == "arrays":
+                value = {k: v.copy() for k, v in part.items()}
+            else:
+                value = float(info["value"])
             setattr(self, name, value)
 
     def _check(self, received: Mapping[str, np.ndarray] | None) -> None:
@@ -181,7 +268,7 @@ class Standard:
             raise TrainError(f"every parameter is frozen by {p.frozen}")
         params = dict(model.named_parameters())
         optimizer = OPTIMIZERS[p.optimizer](
-            [params[n] for n in names], lr=p.lr, weight_decay=p.weight_decay
+            _param_groups(params, names, p), lr=p.lr, weight_decay=p.weight_decay
         )
         rng = ctx.rng if ctx is not None else np.random.default_rng(0)
         total, batches = 0.0, 0
@@ -246,7 +333,7 @@ class DittoParams(StandardParams):
     ),
 )
 class Ditto(Standard):
-    _memory = ("_personal",)
+    _memory = _weights = ("_personal",)
     Params = DittoParams
 
     def __init__(self, **params: Any) -> None:
@@ -307,6 +394,7 @@ class APFLParams(StandardParams):
 )
 class APFL(Standard):
     _memory = ("alpha", "_v", "_w")
+    _weights = ("_v", "_w")
     Params = APFLParams
 
     def __init__(self, **params: Any) -> None:
@@ -331,8 +419,8 @@ class APFL(Standard):
             self._v = copy.deepcopy(model)
         w, v = dict(model.named_parameters()), dict(self._v.named_parameters())
         make = OPTIMIZERS[p.optimizer]
-        opt_w = make([w[n] for n in names], lr=p.lr, weight_decay=p.weight_decay)
-        opt_v = make([v[n] for n in names], lr=p.lr, weight_decay=p.weight_decay)
+        opt_w = make(_param_groups(w, names, p), lr=p.lr, weight_decay=p.weight_decay)
+        opt_v = make(_param_groups(v, names, p), lr=p.lr, weight_decay=p.weight_decay)
         alpha = torch.tensor(self.alpha, requires_grad=p.adapt_alpha)
         rng = ctx.rng if ctx is not None else np.random.default_rng(0)
         side = child_rng(rng)  # dropout of the personal pass, apart from w's
@@ -516,8 +604,12 @@ class Scaffold(Standard):
         }
         result = super().train(model, data, received, ctx)
         after = state_arrays(model)
-        scale = result.batches * self.params.lr
-        new = {n: c_i[n] - c[n] + (start[n] - after[n]) / scale for n in names}
+        # Each parameter's own step size, so group_lr keeps (x − y)/(K·η) exact.
+        scale = {
+            n: result.batches * self.params.lr * lr_factor(n, self.params.group_lr)
+            for n in names
+        }
+        new = {n: c_i[n] - c[n] + (start[n] - after[n]) / scale[n] for n in names}
         aux = {self.PREFIX + n: (new[n] - c_i[n]).astype(start[n].dtype) for n in names}
         self._c_i = new
         return replace(result, aux=aux)
@@ -649,6 +741,7 @@ class Moon(Standard):
     Params = MoonParams
     shared_features = True  # the global model's features must reach the edge
     _memory = ("_previous",)  # _global is the model as received, rebuilt each round
+    _weights = ("_previous",)
 
     def __init__(self, **params: Any) -> None:
         super().__init__(**params)
@@ -753,6 +846,60 @@ class RandomInit:
     def init(self, model: nn.Module, ctx: Any = None) -> list[str]:
         if self.seed is not None:
             model.init_parameters(self.seed)
+        return list(model.state_dict())
+
+
+class RestoreParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model: bool = Field(
+        True,
+        description="Todos los pesos del padre: modelo global, zonas, modelos de "
+        "los edges y la memoria del entrenador que guarda pesos",
+    )
+    preprocessing: bool = Field(True, description="El preprocesado congelado del padre")
+    server_state: bool = Field(
+        True,
+        description="El estado del optimizador de servidor y el del algoritmo en "
+        "el modelo global (la c de SCAFFOLD)",
+    )
+    edge_state: bool = Field(
+        True,
+        description="El resto del estado de cada edge: memoria del entrenador "
+        "(c_i, α…) y su stream aleatorio",
+    )
+
+
+class RunInitParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run: str = Field(
+        description="run_id del padre (en paths.runs), ruta a su carpeta, o "
+        "experiment:<nombre>[/<escenario>] para la última ejecución con la misma semilla"
+    )
+    restore: RestoreParams = Field(default_factory=RestoreParams)
+
+
+@inits.register(
+    "run",
+    title="Desde una ejecución",
+    description="Continúa una ejecución anterior desde su bundle.",
+    params=RunInitParams,
+    explain=(
+        "Verifica el run_hash del padre y restaura lo que pide restore: modelo, "
+        "preprocesado, servidor y edges. La numeración de rondas continúa y el "
+        "linaje queda en run.json. Los datasets nuevos ajustan su preprocesado y "
+        "estrenan adaptador."
+    ),
+)
+class RunInit:
+    """The runner restores the parent's bundle; the model starts as a fresh build."""
+
+    def __init__(self, run: str, restore: Any = None) -> None:
+        self.run = run
+        self.restore = RestoreParams.model_validate(restore or {})
+
+    def init(self, model: nn.Module, ctx: Any = None) -> list[str]:
         return list(model.state_dict())
 
 
