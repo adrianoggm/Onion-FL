@@ -877,8 +877,48 @@ def test_a_continuation_refuses_test_subjects_that_trained_the_parent(
     raw["learning"] = raw["learning"] | {"init": {"name": "run", "run": parent.name}}
     raw["data"] = raw["data"] | {"roles": {"test": 0.25, "val": 0.17, "seed": 1}}
 
-    with pytest.raises(ConfigError, match="trained the parent"):
+    with pytest.raises(ConfigError, match="keeps its role"):
         plan(parse_experiment(raw))
+
+
+@pytest.mark.parametrize(
+    "test, val, refused",
+    [
+        (["2"], ["3", "4"], True),  # 1: test -> train
+        (["1", "2"], ["3"], True),  # 4: val -> train
+        (["1", "2", "5"], ["3", "4"], True),  # 5: train -> test
+        (["1", "2", "3"], ["4"], True),  # 3: val -> test
+        (["1", "2"], ["3", "4", "5"], True),  # 5: train -> val
+        (["1"], ["2", "3", "4"], True),  # 2: test -> val
+        (["1", "2", "12"], ["3", "4"], False),  # 12 is new: it may join any role
+    ],
+    ids=[
+        "test_to_train",
+        "val_to_train",
+        "train_to_test",
+        "val_to_test",
+        "train_to_val",
+        "test_to_val",
+        "new_subject",
+    ],
+)
+def test_a_subject_keeps_its_role_along_a_lineage(
+    workspace: Path, test: list[str], val: list[str], refused: bool
+) -> None:
+    def roles(raw: dict, override: dict) -> dict:
+        raw["data"]["roles"] = raw["data"]["roles"] | {"overrides": {"demo": override}}
+        return raw
+
+    first = {"test": ["1", "2"], "val": ["3", "4"], "exclude": ["12"]}
+    (head,) = scenarios(parse_experiment(roles(experiment(workspace), first)))
+    parent = run_scenario(head, evaluate=stub_score)
+    child = roles(_child(workspace, parent.name), {"test": test, "val": val})
+
+    if refused:
+        with pytest.raises(ConfigError, match="keeps its role"):
+            plan(parse_experiment(child))
+    else:
+        assert plan(parse_experiment(child))
 
 
 def _parent_run(workspace: Path, **overrides) -> Path:
@@ -1282,7 +1322,7 @@ def test_the_lineage_remembers_a_dataset_a_generation_did_not_load(
     assert b_bundle.roles["other"]["train"] == a_bundle.roles["other"]["train"]
     assert "1" in a_bundle.roles["other"]["train"]
     back = {"other": {"test": ["1", "2"], "val": []}}  # trained in A, not in B
-    with pytest.raises(ConfigError, match="trained the parent"):
+    with pytest.raises(ConfigError, match="keeps its role"):
         plan(parse_experiment(_datasets(_child(workspace, b.name), back)))
 
 

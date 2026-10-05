@@ -14,6 +14,7 @@ import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
+from itertools import permutations
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +55,8 @@ from onion_fl.roles import (
 from onion_fl.roles.policies import create
 from onion_fl.runtime.devices import availability_models, compute_models
 from onion_fl.runtime.network import resolve_profile
+
+ROLES = ("train", "val", "test")  # kept apart along a lineage
 
 
 def resolve_topology(config: ExperimentConfig) -> Topology:
@@ -252,20 +255,23 @@ def _parent(config: ExperimentConfig, seed: int) -> tuple[Path, Bundle, Any] | N
 
 
 def _check_roles(parent: Mapping[str, Any], child: Mapping[str, Any]) -> None:
-    """No test or validation subject of the child may have trained the parent or
-    any run before it: a bundle's roles are its whole lineage's."""
+    """A subject keeps its role along a lineage: once it trained, validated or
+    tested, it never takes another role; new subjects may join any. A bundle's
+    roles are its whole lineage's, so they stay a partition."""
     if not parent:
         raise ConfigError("learning.init: the parent's bundle records no data roles")
     for dataset, roles in sorted(child.items()):
-        trained = set((parent.get(dataset) or {}).get("train", []))
-        held = set(roles.get("test", [])) | set(roles.get("val", []))
-        leaked = sorted(trained & held)
-        if leaked:
-            raise ConfigError(
-                f"learning.init: {dataset} subjects {leaked} trained the parent (or "
-                "a run before it) but are test or validation subjects here; keep "
-                "the parent's data.roles"
-            )
+        before = parent.get(dataset) or {}
+        for role, earlier in permutations(ROLES, 2):
+            moved = set(roles.get(role, [])) & set(before.get(earlier, []))
+            if moved:
+                raise ConfigError(
+                    f"learning.init: {dataset} subjects "
+                    f"{sorted(moved, key=natural_key)} were {earlier} subjects in "
+                    f"the lineage but are {role} subjects here; a subject keeps its "
+                    "role along a lineage (keep the parent's data.roles; new "
+                    "subjects may join)"
+                )
 
 
 def _lineage_roles(
@@ -280,7 +286,7 @@ def _lineage_roles(
                 | set((child.get(dataset) or {}).get(role, [])),
                 key=natural_key,
             )
-            for role in ("train", "val", "test")
+            for role in ROLES
         }
         for dataset in sorted(set(parent) | set(child))
     }
