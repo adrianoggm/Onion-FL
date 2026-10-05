@@ -420,7 +420,7 @@ class _Collector(Node):
             self._diagnose(fresh, {}, reports, ctx, failed=True)
             if self.aggregate_children:
                 # Scores that arrived are evaluation, not aggregation: keep them.
-                self._children_scores(list(reports.values()), ctx)
+                self._children_scores([*reports.values(), *scored], ctx)
             self._failed(ctx)
             return
         given = [*fresh.values(), *stale]

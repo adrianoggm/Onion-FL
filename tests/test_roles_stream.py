@@ -262,3 +262,35 @@ def test_a_round_that_runs_late_skips_and_repeats_no_row() -> None:
     ]
     assert sorted(trained.tolist()) == sorted(due.tolist())  # each once, none skipped
 
+
+class Broken:
+    def train(self, *args, **kwargs):
+        raise RuntimeError("out of memory")
+
+
+def test_a_failed_round_keeps_the_scores_of_its_idle_children() -> None:
+    idle = EdgeSpec(
+        "a1",
+        ModularMLP(CONFIG, [A], seed=0),
+        trainer=Recording(),
+        stream=stream_of("a-1", fraction=0.0),
+    )
+    broken = EdgeSpec(
+        "a2", ModularMLP(CONFIG, [A], seed=0), trainer=Broken(), stream=stream_of("a-2")
+    )
+    federation = build_federation(
+        tree(1, fog={"deadline": 1}),
+        {"fog_0": [idle, broken]},
+        initial_state=INITIAL,
+        rounds=4,
+        round_every=EVERY / SPEED,
+    )
+    federation.run()
+
+    assert events(federation, "round.quorum_failed", "fog_0")
+    kept = [
+        e
+        for e in events(federation, "eval.accuracy", "fog_0")
+        if e["tags"]["model"] == "prequential" and e["tags"]["source"] == "children"
+    ]
+    assert [e["tags"]["round"] for e in kept] == [2, 3, 4]
