@@ -36,6 +36,7 @@ steps:
         na_values: ["999", "#VALUE!"]
         normalize_columns: true
       by: [pp, blok, condition, timestamp]
+      pad: {timestamp: 18}      # as the time step: stamps that lost their zeros
     when: {facial: true}
   - join:
       source:
@@ -46,6 +47,7 @@ steps:
         na_values: ["999", "#VALUE!"]
         normalize_columns: true
       by: [pp, condition, timestamp]
+      pad: {timestamp: 18}
     when: {physiology: true}
   - time:                   # each minute row's stamp; meta, never a feature
       column: timestamp

@@ -368,6 +368,21 @@ def test_join_on_keys(tmp_path: Path) -> None:
     assert out["hr"].tolist() == [60, 70]
 
 
+def test_join_pads_keys_that_lost_their_trailing_zeros(tmp_path: Path) -> None:
+    # A sheet stored 20120918T131600000 as 20120918T1316 on one side only.
+    write(tmp_path / "a.csv", "pp,timestamp,keys\n1,20120918T131600000,10\n")
+    write(tmp_path / "b.csv", "pp,timestamp,hr\n1,20120918T1316,60\n")
+    params = {"source": {"reader": "csv", "path": "b.csv"}, "by": ["pp", "timestamp"]}
+    left = pd.read_csv(tmp_path / "a.csv")
+
+    out = steps.create("join", params | {"pad": {"timestamp": 18}}).apply(
+        left, ctx=_ctx(tmp_path)
+    )
+
+    assert out["hr"].tolist() == [60]
+    assert out["timestamp"].tolist() == ["20120918T131600000"]
+
+
 def test_join_by_time_floors_both_sides(tmp_path: Path) -> None:
     write(
         tmp_path / "u1" / "labels.csv",
