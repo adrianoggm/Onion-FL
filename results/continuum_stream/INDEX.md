@@ -16,16 +16,17 @@ This run checks that the stream works on the real recordings. It is not a benchm
   - Data time runs 60 times faster than the simulation's clock (`speed: 60`).
   - A round opens every 10 minutes of data. The run lasts until the last row has arrived: 17 rounds, set by SWELL's longest session (159 minutes after the bootstrap).
 - **Bootstrap.**
-  - The first 20 minutes of each subject are history: they fit the preprocessing and train v0, in round 1.
+  - The first 20 minutes of each subject are history: they fit the preprocessing.
+  - In round 1, v0 trains on the history whose labels are already due: half of it, given the 10-minute delay. The rest joins in round 2.
   - SWELL's first 20 minutes hold both classes. WESAD's are all baseline, because its protocol starts with about 20 minutes of baseline, so v0 has never seen WESAD stress.
 - **Labels.**
   - Two scenarios: every row labelled, or a seeded fifth of each edge's rows.
   - Either way, each label arrives 10 minutes after its row. A history label already due before the stream started is there at the start.
 - **Training.**
-  - Each round, each edge trains on what became trainable in the last 10 minutes, with nothing older: there is no replay memory before C4.
+  - Each round, each edge trains on what became trainable since its previous round, with nothing older: there is no replay memory before C4.
   - The model and the FedAvg settings are those of the drift comparison (SGD at lr 0.1, 10 local epochs), not tuned for streams.
 - **Evaluation.**
-  - **Prequential.** Every arriving row is scored by the model the edge was serving when the row came, before the row can train. `prequential` scores every arrival against its true label, which only a simulation can know; `prequential_labelled` scores only the predictions whose label has arrived, which is what a deployment could measure.
+  - **Prequential.** Every row that arrives after round 1 is scored by the model the edge was serving when the row came, before the row can train. The few rows that arrive with round 1, before any model is served, are not scored. `prequential` scores every arrival against its true label, which only a simulation can know; `prequential_labelled` scores only the predictions whose label has arrived, which is what a deployment could measure.
   - **Validation subjects** stream for evaluation only.
   - **Test subjects** never reach an edge. The global model is scored on them every 5 rounds and at the end.
 - **Seeds** 0–2.
@@ -34,7 +35,7 @@ This run checks that the stream works on the real recordings. It is not a benchm
 |---|---|
 | `topology_id` | `ff55fe4d2ce1a807f764bcc5205a8d2d4d43ab3d533163a1d13e173a9a6725fa` |
 | `data_id` | `f79c1afad836591c82f72c11c6409118eeeb9e60c814b60214f166762d92b2c0` |
-| code | commit `c3e7868`, clean tree |
+| code | commit `2da1542`, clean tree |
 | `config_id`, every row labelled | `82b775953ad9bd6093420ea89e6de76b781264d4034aa2bbd189bab42c6b553f` |
 | `config_id`, a fifth labelled | `64dffbbe3fe898ad7920c27ae54c67b31e05f3630d743b77117f3cf8d8a045a7` |
 
@@ -63,6 +64,10 @@ The prequential scores pool every edge's predictions per dataset over the whole 
 
 **Determinism** (`determinism.csv`): running each scenario and seed twice gives the same final model, bit for bit, and the same events, in all 6 pairs.
 
+**The review's buffer fix.**
+- These runs are from after the fix. The first version of the buffer took the last 10 minutes before each round, which can lose or repeat rows when rounds run late; the fix takes what became trainable since the previous round.
+- In these evenly spaced runs, the final models are bit-identical to the first runs, made at commit `c3e7868`.
+
 ## Reading
 
 - **The stream mechanics hold on the real recordings.**
@@ -73,9 +78,9 @@ The prequential scores pool every edge's predictions per dataset over the whole 
   - After the bootstrap, every WESAD window is stress, and the served model predicts baseline for all of them, in every seed and both scenarios.
   - WESAD edges do train on the stress windows as their labels arrive (rounds 3–7). But each round brings only a few windows, and the head is shared by task with 18 SWELL edges, so the served model never flips before WESAD's sessions end, by round 6.
 - **SWELL's high prequential score mostly measures persistence.**
-  - A SWELL condition lasts many minutes, and the model trained on the last 10 minutes predicts the condition the next minute is in. Per round, most windows hold a single class, so the per-round score is 0.5 (all right) or 0 (all wrong), and the misses come at the block changes.
+  - A SWELL condition lasts many minutes, and the model trained on the latest rows predicts the condition the next minute is in. Per round, most windows hold a single class, so the per-round score is 0.5 (all right) or 0 (all wrong), and the misses come at the block changes.
   - On held-out subjects, the same models score 0.403: the always-stress score.
-- **Training on the last 10 minutes alone forgets.**
+- **Training on the latest rows alone forgets.**
   - At the end, in every run, the global model predicts stress for every test row of both datasets (the confusion matrices are in `summary.json`). A constant predictor scores the same whatever the seed, which is why the test scores have no spread.
   - This is the failure that replay memory (C4) is meant to address.
 - **A fifth of the labels changes little in these runs.** Its intervals overlap those of full labelling on every measure.

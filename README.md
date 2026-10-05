@@ -374,7 +374,7 @@ Source: [results/continuum_warm_start/](results/continuum_warm_start/INDEX.md), 
 
 ### New framework: SWELL and WESAD as streams
 
-Source: [results/continuum_stream/](results/continuum_stream/INDEX.md), commit `c3e7868`. It is `experiments/stream_swell_wesad.yaml`:
+Source: [results/continuum_stream/](results/continuum_stream/INDEX.md), commit `2da1542`. It is `experiments/stream_swell_wesad.yaml`:
 - each training subject replays its rows in time order, after a 20-minute bootstrap;
 - a round comes every 10 minutes of data, 17 in all;
 - every label, or a seeded fifth of them, arrives 10 minutes late;
