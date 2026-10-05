@@ -17,6 +17,8 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from onion_fl.continuum.bundle import Bundle, load_bundle, save_bundle
 from onion_fl.core.context import node_rng
 from onion_fl.core.topology import Topology, load_topology, parse_topology
@@ -29,7 +31,13 @@ from onion_fl.experiment.config import ConfigError, ExperimentConfig
 from onion_fl.experiment.sweep import Scenario, identity, scenarios
 from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.attacks import attacks
-from onion_fl.learning.model import models, param_groups, state_arrays
+from onion_fl.learning.model import (
+    group_of,
+    is_aux,
+    models,
+    param_groups,
+    state_arrays,
+)
 from onion_fl.learning.privacy import Accountant, privacies
 from onion_fl.learning.sharing import not_local, sharing, traffic
 from onion_fl.learning.trainers import inits, trainers
@@ -267,6 +275,38 @@ def _lineage_roles(
     }
 
 
+def _check_structure(
+    bundle: Bundle, config: ExperimentConfig, split: DataSplit, seed: int
+) -> None:
+    """A restored model must fit: each dataset the parent knew keeps its task and
+    classes, and each parameter group both models hold keeps its shapes."""
+    for dataset, schema in schema_of(split).items():
+        saved = bundle.schema.get(dataset)
+        if saved is not None and saved != schema:
+            raise ConfigError(
+                f"learning.init: {dataset} had task and classes {saved} in the "
+                f"parent, here {schema}; set restore.model: false"
+            )
+    _, state = _initial_state(config, _shapes(split), seed)
+    root = bundle.snapshot.nodes[bundle.snapshot.root].arrays
+    parent = {k[6:]: v for k, v in root.items() if k.startswith("state/")}
+
+    def shapes(arrays: Mapping[str, Any], group: str) -> dict[str, tuple]:
+        return {
+            k: np.shape(v)
+            for k, v in arrays.items()
+            if not is_aux(k) and group_of(k) == group
+        }
+
+    for group in sorted(set(param_groups(parent)) & set(param_groups(state))):
+        if shapes(parent, group) != shapes(state, group):
+            raise ConfigError(
+                f"learning.init: the parameters of {group} differ from the "
+                "parent's: the model's structure changed (adapter_width, "
+                "trunk_hidden...); set restore.model: false"
+            )
+
+
 def _restore_parts(
     snapshot: FederationSnapshot, restore: Any, edges: set[str]
 ) -> FederationSnapshot:
@@ -318,6 +358,8 @@ def _scenario_data(
     split = split_subjects(subjects, config.data.roles, frozen=frozen)
     if parent:
         _check_roles(parent[1].roles, split.roles)
+        if parent[2].model:
+            _check_structure(parent[1], config, split, scenario.seed)
     placement_ref = config.data.placement
     name = placement_ref if isinstance(placement_ref, str) else placement_ref["name"]
     params = (

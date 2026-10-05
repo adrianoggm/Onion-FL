@@ -1143,3 +1143,31 @@ def test_frozen_local_preprocessing_is_refused(workspace: Path) -> None:
     raw = _child(workspace, parent.name, {"preprocessing": False})
     raw["data"]["roles"] = raw["data"]["roles"] | {"scaler": "local"}
     assert plan(parse_experiment(raw))
+
+
+@pytest.mark.parametrize(
+    "model",
+    [{"adapter_width": 8}, {"trunk_hidden": [4, 4]}],
+    ids=["adapter_width", "trunk_hidden"],
+)
+def test_a_restored_model_must_keep_its_structure(workspace: Path, model) -> None:
+    parent = _parent_run(workspace)
+    learning = experiment(workspace)["learning"]
+    learning = learning | {"model": learning["model"] | model}
+
+    with pytest.raises(ConfigError, match="structure"):
+        plan(parse_experiment(_child(workspace, parent.name, learning=learning)))
+    fresh = _child(workspace, parent.name, {"model": False}, learning=learning)
+    assert plan(parse_experiment(fresh))
+
+
+def test_a_restored_model_must_keep_each_datasets_task(workspace: Path) -> None:
+    parent = _parent_run(workspace)
+    descriptor = workspace / "datasets" / "demo.yaml"
+    descriptor.write_text(
+        descriptor.read_text(encoding="utf-8").replace("task: stress", "task: mood"),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="task"):
+        plan(parse_experiment(_child(workspace, parent.name)))
