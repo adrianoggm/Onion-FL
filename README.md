@@ -234,7 +234,7 @@ Every runtime event is enriched into one schema and written to `events.jsonl`, t
 - **Analysis.** `load_runs("runs/").compare(level="fog", metric="accuracy", by=["topology_id"])` gives the mean ± 95% CI over seeds per round, plus the spread across the nodes of the level. `onion_fl report` builds an HTML page from it.
 - **Studio.** `onion_fl serve` gives the same views in the browser, and follows running runs live.
 - **Live.**
-  - The `prometheus` sink serves `onionfl_*` series on port 9464 for the Grafana dashboard.
+  - The `prometheus` sink serves `onionfl_*` series on port 9464 for the Grafana dashboard. One server per process holds the runs of a sweep, told apart by `run_id`, so it needs `--workers 1`.
   - The `otel` sink creates one span per send and per receive, linked by the message id. It exports them to the collector of the Docker stack.
 
 ---

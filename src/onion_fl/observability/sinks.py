@@ -43,6 +43,7 @@ METRICS = (
     "onionfl_run_finished",
 )
 EXTRA_LABELS = ("name", "model", "source", "group", "kind")
+_SERVED: dict[tuple[str, int], PrometheusSink] = {}  # one server per port
 
 
 def _text(value: Any) -> str:
@@ -126,8 +127,18 @@ class PrometheusSink:
         """Expose ``/metrics`` for Prometheus to scrape; returns the server and its thread."""
         return start_http_server(port, addr=addr, registry=self.registry)
 
+    @classmethod
+    def serving(cls, port: int = 9464, addr: str = "0.0.0.0") -> PrometheusSink:
+        """The sink this process serves on ``port``, bound once: every run of a
+        sweep reports to it, its series told apart by ``run_id``."""
+        if (addr, port) not in _SERVED:
+            sink = cls()
+            sink.serve(port, addr)
+            _SERVED[(addr, port)] = sink
+        return _SERVED[(addr, port)]
+
     def close(self) -> None:
-        pass
+        pass  # the server stays up for the process's next runs and a last scrape
 
 
 def otlp_provider(

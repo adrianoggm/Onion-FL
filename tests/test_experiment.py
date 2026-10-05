@@ -679,6 +679,29 @@ def test_live_sinks_can_be_switched_on(workspace: Path) -> None:
     )
 
 
+def test_the_scenarios_of_a_process_share_one_metrics_server(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from onion_fl.observability import sinks as live
+
+    bound = []
+    monkeypatch.setattr(live, "start_http_server", lambda port, **_: bound.append(port))
+    monkeypatch.setattr(live, "_SERVED", {})
+    sinks = [{"name": "prometheus", "port": 9999}]
+    config = parse_experiment(experiment(workspace, sinks=sinks, seeds=[0, 1]))
+
+    run_experiment(config, evaluate=stub_score)
+
+    assert bound == [9999]  # a second bind of the port would fail on Linux
+
+
+def test_worker_processes_cannot_share_a_metrics_port(workspace: Path) -> None:
+    config = parse_experiment(experiment(workspace, sinks=["prometheus"], seeds=[0, 1]))
+
+    with pytest.raises(ConfigError, match="workers"):
+        run_experiment(config, workers=2)
+
+
 def test_a_custom_scorer_cannot_go_to_worker_processes(workspace: Path) -> None:
     with pytest.raises(ValueError, match="workers=1"):
         run_experiment(

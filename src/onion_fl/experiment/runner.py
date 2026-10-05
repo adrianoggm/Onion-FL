@@ -642,9 +642,8 @@ def _sinks(config: ExperimentConfig) -> list[Any]:
     for sink in config.sinks:
         name = sink if isinstance(sink, str) else sink["name"]
         if name == "prometheus":
-            prometheus = PrometheusSink()
-            prometheus.serve(sink.get("port", 9464) if isinstance(sink, dict) else 9464)
-            out.append(prometheus)
+            port = sink.get("port", 9464) if isinstance(sink, dict) else 9464
+            out.append(PrometheusSink.serving(port))
         elif name == "otel":
             endpoint = sink.get("endpoint") if isinstance(sink, dict) else None
             out.append(OtelSink(otlp_provider(endpoint) if endpoint else None))
@@ -946,6 +945,16 @@ def run_experiment(
     if workers > 1 and evaluate is not None:
         raise ValueError(
             "a custom evaluate cannot be sent to worker processes; use workers=1"
+        )
+    live = [
+        s
+        for s in config.sinks
+        if (s if isinstance(s, str) else s["name"]) == "prometheus"
+    ]
+    if workers > 1 and live:
+        raise ConfigError(
+            "sinks: prometheus serves one port per process, and worker processes "
+            "would all bind it; use workers=1"
         )
     check_scenarios(todo)  # also fills the caches before any worker reads them
     if workers <= 1:
