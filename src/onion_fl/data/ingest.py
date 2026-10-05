@@ -32,7 +32,14 @@ from typing import Any, Literal
 import numpy as np
 import pandas as pd
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PositiveFloat,
+    PositiveInt,
+    model_validator,
+)
 
 from onion_fl.core.registry import Registry
 from onion_fl.data.contract import DataError, SubjectData, natural_key
@@ -470,6 +477,78 @@ class JoinStep:
         return out.drop(columns=["_time"], errors="ignore")
 
 
+TIME = "__time__"  # each row's seconds: metadata for streams, never a feature
+
+
+class TimeParams(BaseModel):
+    column: str | None = Field(
+        None, description="Columna con la marca de tiempo de cada fila"
+    )
+    format: str | None = Field(
+        None,
+        description="Formato strptime de la columna; sin él, segundos o una fecha "
+        "que pandas entienda",
+    )
+    rate: PositiveFloat | None = Field(
+        None,
+        description="Filas por segundo: el tiempo sale de la posición de la fila en "
+        "su fichero",
+    )
+    pad_to: PositiveInt | None = Field(
+        None,
+        description="Rellena con ceros por la derecha hasta esta longitud antes de "
+        "leer (hojas que perdieron los ceros finales)",
+    )
+
+    @model_validator(mode="after")
+    def _one_source(self) -> TimeParams:
+        if (self.column is None) == (self.rate is None):
+            raise ValueError("time needs a column or rate, and only one of them")
+        return self
+
+
+@steps.register(
+    "time",
+    title="Tiempo",
+    description="El tiempo de cada fila en segundos, de una columna o de su posición.",
+    params=TimeParams,
+    explain=(
+        "Es un metadato para los streams: nunca es una feature, y su columna de "
+        "origen tampoco. Cada ventana toma el tiempo de su última fila, y cada "
+        "sujeto cuenta desde su primera observación."
+    ),
+)
+class TimeStep:
+    def __init__(
+        self,
+        column: str | None,
+        format: str | None,
+        rate: float | None,
+        pad_to: int | None,
+    ) -> None:
+        self.column, self.format, self.rate, self.pad_to = column, format, rate, pad_to
+
+    def apply(self, df: pd.DataFrame, ctx: IngestContext | None) -> pd.DataFrame:
+        if self.rate is not None:
+            return df.assign(**{TIME: np.arange(len(df)) / self.rate})
+        _require(df, [self.column], "time")
+        raw = df[self.column]
+        if self.format is None and pd.api.types.is_numeric_dtype(raw):
+            seconds = raw.astype(float)
+        else:
+            text = raw.astype(str)
+            if self.pad_to is not None:
+                text = text.str.ljust(self.pad_to, "0")
+            stamps = pd.to_datetime(text, format=self.format, errors="coerce")
+            seconds = (stamps - pd.Timestamp(0)).dt.total_seconds()
+        bad = raw[seconds.isna()].unique()[:3].tolist()
+        if bad:
+            raise DataError(f"time: rows of {self.column!r} without a time: {bad}")
+        if ctx is not None:
+            ctx.meta_columns.add(self.column)
+        return df.assign(**{TIME: seconds.to_numpy(np.float64)})
+
+
 STATS: dict[str, Callable[[np.ndarray], np.ndarray]] = {
     "mean": lambda a: a.mean(axis=0),
     "std": lambda a: a.std(axis=0),
@@ -512,7 +591,7 @@ class WindowStep:
     def apply(self, df: pd.DataFrame, ctx: IngestContext | None) -> pd.DataFrame:
         if "subject" not in df.columns:
             raise DataError("window runs per subject: put a subject step before it")
-        reserved = {"subject", "label"} | (ctx.meta_columns if ctx else set())
+        reserved = {"subject", "label", TIME} | (ctx.meta_columns if ctx else set())
         columns = self.columns or [
             c
             for c in df.columns
@@ -520,11 +599,12 @@ class WindowStep:
         ]
         _require(df, columns, "window")
         names = [f"{c}_{s}" for c in columns for s in self.stats]
-        has_label = "label" in df.columns
+        has_label, timed = "label" in df.columns, TIME in df.columns
         rows = []
         for subject, group in df.groupby("subject", sort=False):
             values = group[columns].to_numpy(dtype=np.float64)
             labels = group["label"].to_numpy(dtype=np.float64) if has_label else None
+            times = group[TIME].to_numpy(dtype=np.float64) if timed else None
             for start in range(0, len(group) - self.size + 1, self.step):
                 end = start + self.size
                 row: list[Any] = [subject]
@@ -533,11 +613,14 @@ class WindowStep:
                     if np.isnan(window_labels).any():
                         continue
                     row.append(REDUCE[self.label](window_labels))
+                if times is not None:  # observable once the window is complete
+                    row.append(float(times[end - 1]))
                 stats = np.stack(
                     [STATS[s](values[start:end]) for s in self.stats], axis=1
                 )
                 rows.append(row + stats.ravel().tolist())  # channel-major, then stat
         head = ["subject", "label"] if has_label else ["subject"]
+        head += [TIME] if timed else []
         return pd.DataFrame(rows, columns=head + names)
 
 
@@ -668,7 +751,7 @@ class FeaturesStep:
         self.regex = re.compile(regex) if regex else None
 
     def apply(self, df: pd.DataFrame, ctx: IngestContext | None) -> pd.DataFrame:
-        reserved = {"subject", "label"} | (ctx.meta_columns if ctx else set())
+        reserved = {"subject", "label", TIME} | (ctx.meta_columns if ctx else set())
         if self.include is not None:
             _require(df, self.include, "features")
             taken = sorted(reserved & set(self.include))
@@ -684,7 +767,7 @@ class FeaturesStep:
         columns = [c for c in columns if c not in self.exclude]
         if not columns:
             raise DataError("no feature columns left")
-        out = df[[c for c in ("subject", "label") if c in df.columns]].copy()
+        out = df[[c for c in ("subject", "label", TIME) if c in df.columns]].copy()
         for column in columns:
             out[column] = _numeric(df[column], column)
         return out
@@ -772,6 +855,11 @@ def _compile(spec: DatasetSpec, options: Mapping[str, Any] | None):
     return resolved, source, reader, active
 
 
+def _since_first(seconds: pd.Series) -> np.ndarray:
+    values = seconds.to_numpy(np.float64)
+    return values - values.min()
+
+
 def check_spec(spec: DatasetSpec, options: Mapping[str, Any] | None = None) -> None:
     """Validate a description and its options without touching the data."""
     _compile(spec, options)
@@ -817,7 +905,7 @@ def ingest(
         raise DataError("no label step")
     if "features" not in ran:
         raise DataError("add a features step: meta columns are excluded explicitly")
-    features = [c for c in df.columns if c not in ("subject", "label")]
+    features = [c for c in df.columns if c not in ("subject", "label", TIME)]
     df = df.dropna(subset=["label"]).assign(subject=lambda d: d["subject"].astype(str))
     return [
         SubjectData(
@@ -828,6 +916,7 @@ def ingest(
             task=ctx.task,
             n_classes=ctx.n_classes,
             feature_names=[str(c) for c in features],
+            t=_since_first(part[TIME]) if TIME in part.columns else None,
         )
         for subject, part in sorted(
             df.groupby("subject"), key=lambda kv: natural_key(kv[0])

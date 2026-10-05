@@ -22,6 +22,7 @@ source:
   location: "{location}"
   signals: "{signals}"
 steps:
+  - time: {rate: 700}       # label samples at 700 Hz; a window is timed at its end
   - label:
       default: binary
       strategies:

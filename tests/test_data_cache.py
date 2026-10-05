@@ -180,3 +180,28 @@ def test_losing_a_race_to_another_process_keeps_its_cache(
     assert sorted(p.name for p in out.parent.iterdir()) == [
         out.name
     ]  # no stray temp folder
+
+
+def test_the_cache_keeps_each_rows_time_under_its_digest(
+    raw: Path, tmp_path: Path
+) -> None:
+    (raw / "table.csv").write_text(
+        "pp,cond,sec,keys\n1,N,0,10\n1,T,30,20\n2,N,5,30\n2,T,9,40\n",
+        encoding="utf-8",
+    )
+    steps = [STEPS[0], {"time": {"column": "sec"}}, STEPS[1], {"features": {}}]
+    spec = DatasetSpec(
+        name="demo",
+        root=str(raw),
+        source={"reader": "csv", "path": "table.csv"},
+        steps=steps,
+    )
+    out = prepare(spec, cache_dir=tmp_path / "cache")
+
+    first, second = load_prepared(out)
+    assert first.t.tolist() == [0.0, 30.0] and second.t.tolist() == [0.0, 4.0]
+    with np.load(out / "subject_1.npz") as archive:
+        X, y = archive["X"], archive["y"]
+    np.savez(out / "subject_1.npz", X=X, y=y, t=np.array([0.0, 31.0]))
+    with pytest.raises(ValueError, match="digest"):
+        load_prepared(out)

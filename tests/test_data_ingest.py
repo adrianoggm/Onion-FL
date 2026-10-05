@@ -707,3 +707,106 @@ def test_wesad_reader_truncates_to_the_shortest_signal(tmp_path: Path) -> None:
 def test_wesad_reader_rejects_unknown_signals() -> None:
     with pytest.raises(ValueError, match="BVP"):
         readers.create("wesad_pickle", {"location": "chest", "signals": ["BVP"]})
+
+
+# --- time (continuum C3) ------------------------------------------------------------
+
+
+STAMPS = """
+pp,cond,stamp,keys
+1,N,20120918T131600000,10
+1,T,20120918T131700000,20
+1,T,20120918T131900000,30
+2,N,20120919T090000000,40
+2,T,20120919T090100000,50
+"""
+
+
+def test_a_time_column_becomes_seconds_and_never_a_feature(tmp_path: Path) -> None:
+    write(tmp_path / "table.csv", STAMPS)
+    time = {"time": {"column": "stamp", "format": "%Y%m%dT%H%M%S%f"}}
+
+    first, second = ingest(
+        spec(
+            tmp_path,
+            {"reader": "csv", "path": "table.csv"},
+            [BASIC[0], time, BASIC[1], {"features": {}}],
+        )
+    )
+
+    assert first.feature_names == ["keys"]  # the stamp is meta: never a feature
+    assert first.t.tolist() == [0.0, 60.0, 180.0]  # from each subject's first row
+    assert second.t.tolist() == [0.0, 60.0]
+
+
+def test_time_can_come_from_the_row_position_at_a_rate(tmp_path: Path) -> None:
+    write(tmp_path / "S2" / "s.csv", "x,condition\n1,1\n2,1\n3,2\n4,2\n5,2\n")
+    steps = [
+        {"time": {"rate": 2}},
+        {"label": {"task": "t", "column": "condition", "map": {1: 0, 2: 1}}},
+        {"features": {}},
+    ]
+
+    (s,) = ingest(spec(tmp_path, {"reader": "csv", "path": "{subject}/s.csv"}, steps))
+
+    assert s.t.tolist() == [0.0, 0.5, 1.0, 1.5, 2.0]
+    assert s.feature_names == ["x"]
+
+
+def test_a_window_is_timed_at_its_last_row(tmp_path: Path) -> None:
+    write(tmp_path / "S2" / "s.csv", "x,condition\n1,1\n2,1\n3,2\n4,2\n5,2\n6,2\n")
+    steps = [
+        {"time": {"rate": 1}},
+        {"label": {"task": "t", "column": "condition", "map": {1: 0, 2: 1}}},
+        {"window": {"size": 2, "stats": ["mean"]}},
+        {"features": {}},
+    ]
+
+    (s,) = ingest(spec(tmp_path, {"reader": "csv", "path": "{subject}/s.csv"}, steps))
+
+    assert s.feature_names == ["x_mean"]  # time is not a channel
+    assert s.t.tolist() == [0.0, 2.0, 4.0]  # ends at rows 1, 3, 5, from the first
+
+
+def test_a_time_step_needs_one_source(tmp_path: Path) -> None:
+    write(tmp_path / "table.csv", STAMPS)
+
+    with pytest.raises(Exception, match="column or rate"):
+        ingest(
+            spec(
+                tmp_path,
+                {"reader": "csv", "path": "table.csv"},
+                [BASIC[0], {"time": {}}, BASIC[1], {"features": {}}],
+            )
+        )
+
+
+def test_rows_without_a_time_are_an_error(tmp_path: Path) -> None:
+    write(tmp_path / "table.csv", STAMPS.replace("20120918T131700000", "nope"))
+    time = {"time": {"column": "stamp", "format": "%Y%m%dT%H%M%S%f"}}
+
+    with pytest.raises(DataError, match="time"):
+        ingest(
+            spec(
+                tmp_path,
+                {"reader": "csv", "path": "table.csv"},
+                [BASIC[0], time, BASIC[1], {"features": {}}],
+            )
+        )
+
+
+def test_a_time_can_be_padded_where_a_sheet_dropped_trailing_zeros(
+    tmp_path: Path,
+) -> None:
+    write(tmp_path / "table.csv", STAMPS.replace("20120918T131700000", "20120918T1317"))
+    time = {"time": {"column": "stamp", "format": "%Y%m%dT%H%M%S%f", "pad_to": 18}}
+
+    first, _ = ingest(
+        spec(
+            tmp_path,
+            {"reader": "csv", "path": "table.csv"},
+            [BASIC[0], time, BASIC[1], {"features": {}}],
+        )
+    )
+
+    assert first.t.tolist() == [0.0, 60.0, 180.0]
