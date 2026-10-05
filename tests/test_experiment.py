@@ -125,6 +125,8 @@ def test_a_valid_experiment_loads_from_yaml(workspace: Path) -> None:
         ({"evaluation": {"metrics": ["accuracy", "vibes"]}}, "evaluation.metrics"),
         ({"sinks": ["carrier_pigeon"]}, "sinks"),
         ({"surprise": True}, "surprise"),
+        ({"sweep": {"seeds": [[0], [1]]}}, "sweep"),  # it would do nothing
+        ({"sweep": {"rounds, sweep.rounds": [[1, [2]]]}}, "sweep"),
     ],
 )
 def test_errors_name_the_exact_path(workspace: Path, change: dict, where: str) -> None:

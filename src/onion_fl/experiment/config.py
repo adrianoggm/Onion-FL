@@ -283,6 +283,18 @@ class ExperimentConfig(Strict):
         lambda v: v if v is None else _plugin(attacks, v)
     )
 
+    @field_validator("sweep")
+    @classmethod
+    def _sweepable(cls, value: dict[str, list[Any]]) -> dict[str, list[Any]]:
+        for key in value:
+            for path in key.split(","):
+                if path.strip().split(".")[0] in ("seeds", "sweep"):
+                    raise ValueError(
+                        f"{key}: {path.strip()} cannot be swept, every scenario runs "
+                        "all the seeds; list them in seeds"
+                    )
+        return value
+
     @field_validator("sinks")
     @classmethod
     def _known_sinks(cls, value: list[PluginRef]) -> list[PluginRef]:
