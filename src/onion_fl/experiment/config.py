@@ -42,6 +42,7 @@ from pydantic import (
 )
 
 from onion_fl.baselines import baseline_models
+from onion_fl.continuum.memory import memories
 from onion_fl.core.codec import codecs
 from onion_fl.core.registry import PluginError, Registry
 from onion_fl.data.ingest import readers, steps
@@ -92,6 +93,7 @@ REGISTRIES: dict[str, Registry] = {
     "baseline": baseline_models,
     "attack": attacks,
     "privacy": privacies,
+    "memory": memories,
 }
 
 
@@ -109,6 +111,20 @@ def _plugin(registry: Registry, value: PluginRef) -> PluginRef:
 
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+class ContinualConfig(Strict):
+    memory: PluginRef = Field(
+        "none", description="Memoria de replay de cada edge que entrena"
+    )
+    replay_ratio: float = Field(
+        0.25,
+        ge=0,
+        lt=1,
+        description="Fracción de cada entrenamiento que sale de la memoria",
+    )
+
+    _memory = field_validator("memory")(lambda v: _plugin(memories, v))
 
 
 class DatasetUse(Strict):
@@ -275,6 +291,11 @@ class ExperimentConfig(Strict):
         description="Fracción etiquetada de un stream y retraso de sus etiquetas",
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
+    continual: ContinualConfig | None = Field(
+        None,
+        description="Memoria de replay de los edges de un stream",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
 
     _privacy = field_validator("privacy")(
         lambda v: v if v is None else _plugin(privacies, v)
@@ -309,6 +330,10 @@ class ExperimentConfig(Strict):
         """What a stream cannot do yet (continuum C3) is refused before any run."""
         if self.labels is not None and self.stream is None:
             raise ValueError("labels: they belong to a stream; set stream too")
+        if self.continual is not None and self.stream is None:
+            raise ValueError(
+                "continual: a replay memory keeps rows of a stream; set stream too"
+            )
         if self.stream is None:
             return self
         roles, init, ref = self.data.roles, self.learning.init, self.data.placement

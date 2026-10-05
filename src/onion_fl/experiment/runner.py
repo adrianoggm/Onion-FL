@@ -22,6 +22,7 @@ from typing import Any
 import numpy as np
 
 from onion_fl.continuum.bundle import Bundle, load_bundle, save_bundle
+from onion_fl.continuum.memory import memories
 from onion_fl.core.context import node_rng
 from onion_fl.core.topology import Topology, load_topology, parse_topology
 from onion_fl.data.cache import load_prepared, prepare
@@ -711,6 +712,16 @@ def _stream_summary(config: ExperimentConfig, streams: Mapping[str, Any]) -> dic
     }
 
 
+def _replay(scenario: Scenario, edge: str) -> dict[str, Any]:
+    """An edge's replay memory, on its own seeded stream, and its share."""
+    continual = scenario.config.continual
+    if continual is None:
+        return {}
+    memory = create(memories, continual.memory)
+    memory.rng = node_rng(scenario.seed, f"memory/{edge}")
+    return {"replay": memory, "replay_ratio": continual.replay_ratio}
+
+
 def edge_specs(
     scenario: Scenario, topology: Topology, split: DataSplit, placement: Placement
 ) -> tuple[dict[str, list[EdgeSpec]], dict[str, Any]]:
@@ -756,6 +767,7 @@ def edge_specs(
                     else create(privacies, config.privacy)
                 ),
                 stream=streams.get(client.id),
+                **_replay(scenario, client.id),
                 **device,
             )
             for client in clients

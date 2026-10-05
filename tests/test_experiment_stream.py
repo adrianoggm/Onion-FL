@@ -256,3 +256,30 @@ def test_a_stream_needs_every_edge_in_every_round(workspace: Path) -> None:
 
     with pytest.raises(ConfigError, match="participation"):
         plan(parse_experiment(experiment(workspace, topology=topology)))
+
+
+# --- replay memory (continuum C4) ---------------------------------------------------
+
+REPLAY = {"memory": {"name": "reservoir", "capacity": 64}, "replay_ratio": 0.5}
+
+
+def test_a_stream_run_can_replay_each_edges_memory(workspace: Path) -> None:
+    path = run(workspace, continual=REPLAY)
+
+    memory = events(path, "diagnostic.memory")
+    edges = {e["node"] for e in events(path, "data.arrived")}
+    assert {e["node"] for e in memory} == edges
+    assert all(e["value"] <= 64 and e["tags"]["capacity"] == 64 for e in memory)
+    assert sum(e["tags"]["replayed"] for e in memory) > 0
+
+
+def test_replay_needs_a_stream(workspace: Path) -> None:
+    raw = experiment(workspace, continual=REPLAY)
+    del raw["stream"], raw["labels"]
+
+    with pytest.raises(ConfigError, match="continual"):
+        parse_experiment(raw)
+
+
+def test_a_stream_without_replay_keeps_its_config_id(workspace: Path) -> None:
+    assert "continual" not in parse_experiment(experiment(workspace)).dump()
