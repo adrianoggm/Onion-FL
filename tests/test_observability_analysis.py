@@ -259,3 +259,23 @@ def test_load_runs_reads_what_run_writes(tmp_path: Path) -> None:
 
     assert table["round"].tolist() == [1, 1, 2, 2]  # overall and dataset a, per round
     assert set(table["value"]) == {0.5}
+
+
+# --- different series are never averaged (QA2, #174) -------------------------------
+
+
+def test_compare_keeps_models_and_datasets_apart(tmp_path: Path) -> None:
+    events = [
+        ("cloud", "global", 1, 0.9, {"model": "global", "source": "evaluators"}),
+        ("cloud", "global", 1, 0.5, {"model": "received", "source": "children"}),
+        ("cloud", "global", 1, 0.7, {"model": "global", "dataset": "swell"}),
+    ]
+    write_run(tmp_path, "r1", "topo", 0, events)
+
+    out = load_runs(tmp_path).compare(
+        level="global", metric="accuracy", by=["topology_id"]
+    )
+
+    assert sorted(out["mean"]) == [0.5, 0.7, 0.9]  # three series, none averaged
+    assert {"model", "dataset", "source"} <= set(out.columns)
+    assert out.attrs["by"][0] == "topology_id"

@@ -486,7 +486,7 @@ async function compareView() {
     try {
       const rows = await api(`/api/compare?${query}`);
       if (!rows.length) return output.replaceChildren(h("p", { class: "muted" }, "Nada que comparar con esos filtros."));
-      const keyCols = keys.split(",").filter(Boolean);
+      const keyCols = rows.length && rows[0]._by ? rows[0]._by : keys.split(",").filter(Boolean);
       const label = (r) => keyCols.map((k) => `${k}=${k.endsWith("_id") ? short(r[k]) : r[k] ?? "∅"}`).join(" · ");
       const groups = {};
       for (const row of rows) (groups[label(row)] ||= []).push(row);

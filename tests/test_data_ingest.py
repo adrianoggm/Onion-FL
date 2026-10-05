@@ -810,3 +810,29 @@ def test_a_time_can_be_padded_where_a_sheet_dropped_trailing_zeros(
     )
 
     assert first.t.tolist() == [0.0, 60.0, 180.0]
+
+
+# --- step order cannot turn a meta column into a feature (QA2, #174) ---------------
+
+
+@pytest.mark.parametrize(
+    "late",
+    [
+        {"label": {"task": "t", "column": "score", "map": {0: 0, 1: 1}}},
+        {"time": {"column": "sec"}},
+        {"subject": {"column": "pp"}},
+    ],
+    ids=["label", "time", "subject"],
+)
+def test_a_step_after_features_keeps_its_column_out_of_them(
+    tmp_path: Path, late: dict
+) -> None:
+    write(tmp_path / "t.csv", "pp,score,sec,x\n1,1,0,5\n1,0,60,6\n2,1,0,7\n2,0,60,8\n")
+    label = {"label": {"task": "t", "column": "score", "map": {0: 0, 1: 1}}}
+    first = [s for s in ({"subject": {"column": "pp"}}, label) if s != late]
+    steps = [*first, {"features": {}}, late]
+
+    data = ingest(spec(tmp_path, {"reader": "csv", "path": "t.csv"}, steps))[0]
+
+    column = next(iter(late.values()))["column"]
+    assert column not in data.feature_names and "x" in data.feature_names
