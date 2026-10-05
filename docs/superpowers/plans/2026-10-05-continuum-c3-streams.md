@@ -19,7 +19,10 @@
 ## Rulings (where the spec leaves a choice)
 
 - **R1 Pacing.** `stream.round_every` (data time) is required with `stream`. Round r opens at the first round's virtual time plus (r − 1)·`round_every`/`speed`. Without it, rounds run back to back and almost no data arrives.
-- **R2 End.** The run lasts `min(rounds, rounds that reach the horizon)`. `horizon: session` is the latest end of a training subject's stream. C6 lets the coordinator run until the horizon.
+- **R2 End.**
+  - `horizon: session` ends the observations with the last row of a training subject.
+  - The run then drains: it lasts `min(rounds, rounds that reach the drain)`, where the drain is when the last chosen label arrives. Every label chosen can thus arrive and train.
+  - C6 lets the coordinator run until then by itself.
 - **R3 Labels.** `labels.fraction` and `labels.delay` apply to every row, history included, so `fraction: 0` means no label ever reaches training (the issue's acceptance criterion).
   - Each subject labels exactly round(fraction·n) of its rows, drawn with `node_rng(seed, "labels/<dataset>/<subject>")`.
   - The mask therefore does not depend on placement, and draws nothing from the edge's stream.
@@ -31,7 +34,10 @@
 - **R6 Two prequential scores, both on the predictions stored at arrival:**
   - `prequential`: every row that arrived in the window, against its true label. Simulation only, since unlabelled truth is hidden from the learner.
   - `prequential_labelled`: the predictions whose label arrived in the window. This is what a deployment could measure.
-- **R7 Buffer.** Rows that became trainable since the edge's previous round; `stream.window`, when set, caps how old they may be. Older ones are C4's memory. (The first version anchored the buffer to the last window before now, which lost or repeated rows when rounds ran late; the review's fix pass changed it.)
+- **R7 Buffer.** Every trainable row not yet used for training; `stream.window`, when set, caps how old it may be.
+  - A row counts as used (`first_consumed_by_version`, the round) only once a training that used it ends with finite weights, so a failed or rolled-back round trains the same rows next time.
+  - Older rows are C4's memory.
+  - The time cursor only handles arrivals and labels, once each. The reviews changed the first versions: one anchored the buffer to the last window before now, which lost or repeated rows in late rounds; the other tied it to the cursor, which lost the rows of a failed training.
 - **R8 Idle edges.**
   - An edge with an empty buffer sends an idle update, with no state but with its scores.
   - Collectors leave idle children out of the quorum.
@@ -45,8 +51,10 @@
   - real mode, and `init: run`, until the bundle holds the stream state;
   - `local_val > 0` (a positional tail conflicts with time order);
   - `scaler: local`;
-  - `staggered` with `subjects_per_client > 1`;
+  - `staggered` or a bootstrap in samples with `subjects_per_client > 1` or a merging placement;
+  - participation other than `all`. An edge handles its stream when a round reaches it, so an edge left out until the end would lose its last arrivals. C6 decouples the data clock from the federation's.
   - a dataset without per-row time.
+- **Outside the temporal guarantee until C6.** `close_at_quorum` and time-based availability (an edge offline for the last rounds) are not refused, but the same reasoning applies to them.
 
 ## Global constraints
 

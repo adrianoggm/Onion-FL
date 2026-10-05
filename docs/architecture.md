@@ -188,7 +188,7 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
   1. it predicts the new rows with the model it was serving, and stores the predictions;
   2. it scores `prequential` (every arrival against its truth, which only the simulation knows) and `prequential_labelled` (the stored predictions whose label arrived) into its update metrics, which the collectors reduce per fog and globally;
   3. it emits `data.arrived` and `data.labelled`;
-  4. it serves the new model, and trains on what became trainable since its previous round (`window`, when set, caps how old a row may be).
+  4. it serves the new model, and trains on every trainable row not yet used (`window`, when set, caps how old a row may be). A row counts as used, with its round, only once that training ends with finite weights.
 
   The served model only changes when a global model arrives, so the lazy handling is exact and needs no timers.
 - **Idle rounds.**
@@ -196,7 +196,8 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
   - Collectors leave idle children out of the quorum, and a round where every child is idle closes as `round.idle` without changing the model.
 - **Pacing.**
   - The coordinator opens a round every `round_every` of data time (`round_every` / `speed` virtual seconds).
-  - The run lasts until one round after the last arrival, bounded by `rounds`. C6 replaces this with triggers.
+  - The observations end with the last row. The run then drains: it lasts until one round after the last chosen label arrives, bounded by `rounds`. C6 replaces this with triggers.
+- **Participation.** An edge handles its stream when a round reaches it, so streams require participation `all`. `close_at_quorum` and time-based availability are outside the temporal guarantee until C6.
 - **Evaluation.** Validation evaluators with a stream score what arrived since their previous request. Test evaluators score whole test subjects, so the final test score stays comparable.
 - **The bootstrap fit.** `split_subjects(fit_rows=...)` fits the preprocessing on the rows before t₀ only.
 
