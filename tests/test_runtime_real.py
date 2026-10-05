@@ -484,3 +484,24 @@ def test_unknown_groups_and_scenarios_are_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="nope"):
         load_scenario(Path("experiments/mix_ab.yaml"), scenario="nope")
+
+
+# --- robustness of real runs (QA3, #175) ---------------------------------------------
+
+
+def test_a_message_delivered_twice_is_handled_once() -> None:
+    # Two transport specs on one bus subscribe the echo's inbox twice.
+    rt = RealRuntime("run-dup", heartbeat_s=None)
+    rt.add_node(Ping("ping"))
+    rt.add_node(Echo("echo"))
+    rt.add_node(Echo("other"))
+    rt.add_link("ping", "echo", transport="memory")
+    rt.add_link("echo", "other", transport={"name": "memory", "bus": "default"})
+
+    rt.run(timeout=5)
+
+    handled = [
+        e for e in rt.events if e["name"] == "message.delivered" and e["node"] == "echo"
+    ]
+    assert len(handled) == 1
+    assert any(e["name"] == "message.duplicate" for e in rt.events)
