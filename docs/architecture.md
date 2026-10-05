@@ -202,7 +202,7 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
 - **The bootstrap fit.** `split_subjects(fit_rows=...)` fits the preprocessing on the rows before t₀ only.
 - **Replay memory** (`continual: {memory, replay_ratio}`, `onion_fl.continuum.memory`).
   - **Plugins.** `none`, `fifo`, `reservoir` and `class_balanced`, each keeping indices into its edge's own stream on a stream seeded per edge.
-  - **What enters.** The rows of a training that ended with finite weights, offered in time order: nothing enters on a failed round.
+  - **What enters.** The rows of a training that ended with finite weights, offered in time order: nothing enters on a failed training, even if its round then fails for other reasons.
   - **Replay.** Each training adds r·n / (1 − r) rows sampled from the memory to its n recent ones. An edge with nothing new stays idle.
   - **Records.** The edge reports `diagnostic.memory` each round, and the bundle saves the memory.
 
@@ -294,7 +294,7 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | privacy | `local_dp` |
 | server_optimizer | `replace`, `fedavgm`, `fedadam`, `fedyogi`, `fedadagrad`, `fedasync_mix`, `scaffold`, `fednova`, `feddyn` |
 | trainer | `standard`, `fedprox`, `ditto`, `apfl`, `fedrep`, `fedbabu`, `scaffold`, `fednova`, `feddyn`, `moon`, `stub` |
-| init | `random`, `checkpoint` |
+| init | `random`, `checkpoint`, `run` |
 | metric | `loss`, `accuracy`, `macro_f1`, `recall_per_class`, `confusion_matrix` |
 | diagnostic | `divergence`, `dataset_conflict`, `drift`, `participation`, `fairness` |
 | participation | `all`, `fraction` |
@@ -302,5 +302,6 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | stale_weighting | `constant`, `polynomial` |
 | placement | `explicit`, `mixing`, `dirichlet`, `label_skew`, `pooled` |
 | reader | `csv`, `excel`, `parquet`, `pickle`, `npz`, `wesad_pickle` |
-| step | `subject`, `label`, `features`, `replace`, `join`, `window`, `select` |
+| step | `subject`, `label`, `features`, `replace`, `join`, `window`, `select`, `time` |
+| memory | `none`, `fifo`, `reservoir`, `class_balanced` |
 | baseline | `lr`, `rf`, `xgboost` |

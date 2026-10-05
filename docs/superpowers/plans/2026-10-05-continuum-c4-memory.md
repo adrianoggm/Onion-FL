@@ -43,7 +43,7 @@
 ### Task 1: memory plugins
 - `onion_fl.continuum.memory`: the `memories` registry and `none`, `fifo`, `reservoir` and `class_balanced`. Each has:
   - `add(rows, y)`, `rows()` and `sample(k)`;
-  - `state()`, `load_state()` and `describe()`.
+  - `state()` and `load_state()`. (The edge reports a memory's occupancy, age and classes itself, so no `describe()` was needed.)
 - **Tests:**
   - the capacity is never exceeded;
   - `fifo` keeps the latest rows;

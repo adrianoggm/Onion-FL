@@ -43,7 +43,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
 | Continuum | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, and a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`). Semi-supervision, triggers and versions are next (C5–C7, [#160](https://github.com/adrianoggm/Onion-FL/issues/160)–[#163](https://github.com/adrianoggm/Onion-FL/issues/163)) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
-| Tests | ✅ | 1027 tests. With SWELL, WESAD and a local broker, 1023 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
+| Tests | ✅ | 1049 tests. With SWELL, WESAD and a local broker, 1045 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
 
@@ -403,12 +403,12 @@ Source: [results/continuum_replay/](results/continuum_replay/INDEX.md), commit `
 | Scenario | Prequential SWELL | Prequential WESAD | Test SWELL | Test WESAD |
 |---|---|---|---|---|
 | Recent only | 0.783 ± 0.045 | 0.000 ± 0.000 | 0.404 ± 0.000 | 0.262 ± 0.000 |
-| Replay | 0.633 ± 0.031 | 0.000 ± 0.000 | 0.354 ± 0.237 | 0.387 ± 0.304 |
+| Replay | 0.633 ± 0.031 | 0.000 ± 0.000 | 0.351 ± 0.229 | 0.305 ± 0.187 |
 
 - **Replay does not help in this setup.**
   - It slows the switch after a SWELL condition change, which costs a prequential score that mostly measures persistence.
-  - The final models still collapse, to one class or the other depending on the seed.
-  - At the untuned lr 0.1 it makes some SWELL edges diverge (1, 73 and 3 failed trainings in the three seeds).
+  - At the untuned lr 0.1, training on twice the rows makes SWELL edges diverge: 1, 73 and 3 failed trainings in the three seeds. With quorum 1.0, that costs the cloud 1, 5 and 3 rounds, and two of the three final global models diverge too.
+  - Every final model, with or without replay, predicts a single class for every test row. The test scores are the final models', scored offline.
 - **Recent only reproduces the stream runs above bit for bit.** The benchmark (C8) chooses the learning rate and replay settings on validation.
 
 ### Before the redesign
