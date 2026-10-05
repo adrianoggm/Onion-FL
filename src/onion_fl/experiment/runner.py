@@ -195,6 +195,14 @@ def _parent(config: ExperimentConfig, seed: int) -> tuple[Path, Bundle, Any] | N
             "holder would refit its own scaler); use scaler: global, or set "
             "restore.preprocessing: false"
         )
+    trainer = create(trainers, config.learning.trainer)
+    paired = getattr(trainer, "server_optimizer", None) and trainer._memory
+    if paired and init.restore.server_state != init.restore.edge_state:
+        raise ConfigError(
+            f"learning.init: {_name(config.learning.trainer)} pairs the server's "
+            "state with each edge's (c and c_i, h and the edge corrections); "
+            "restore server_state and edge_state together"
+        )
     runs = Path(config.paths.runs)
     if init.run.startswith("experiment:"):
         path = _newest_run(runs, init.run.split(":", 1)[1], seed)

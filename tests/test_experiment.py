@@ -1101,6 +1101,17 @@ def test_restore_puts_scaffolds_global_control_variate_under_server_state() -> N
     assert kept(server_state=False) == ["state/trunk.0.weight"]
 
 
+@pytest.mark.parametrize("trainer", ["scaffold", "feddyn"])
+def test_a_paired_algorithm_restores_its_server_and_edge_state_together(
+    workspace: Path, trainer: str
+) -> None:
+    learning = experiment(workspace)["learning"] | {"trainer": trainer}
+    raw = _child(workspace, "anything", {"server_state": False}, learning=learning)
+
+    with pytest.raises(ConfigError, match="together"):
+        plan(parse_experiment(raw))
+
+
 @pytest.mark.parametrize(
     "parent_change, child_change",
     [
