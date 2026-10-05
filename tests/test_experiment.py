@@ -1300,8 +1300,14 @@ def test_frozen_local_preprocessing_is_refused(workspace: Path) -> None:
 
 @pytest.mark.parametrize(
     "model",
-    [{"adapter_width": 8}, {"trunk_hidden": [4, 4]}],
-    ids=["adapter_width", "trunk_hidden"],
+    [
+        {"adapter_width": 8},
+        {"trunk_hidden": [4, 4]},
+        {"trunk": "per_dataset"},
+        {"heads": "per_dataset"},
+        {"adapters": "shared"},
+    ],
+    ids=["adapter_width", "trunk_hidden", "trunk", "heads", "adapters"],
 )
 def test_a_restored_model_must_keep_its_structure(workspace: Path, model) -> None:
     parent = _parent_run(workspace)

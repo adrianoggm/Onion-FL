@@ -309,12 +309,16 @@ def _check_structure(
             if not is_aux(k) and group_of(k) == group
         }
 
-    for group in sorted(set(param_groups(parent)) & set(param_groups(state))):
-        if shapes(parent, group) != shapes(state, group):
+    mine = set(param_groups(state))
+    loaded = set(schema_of(split)) | {s["task"] for s in schema_of(split).values()}
+    for group in sorted(param_groups(parent)):
+        # a group of a dataset or task this run does not load may be absent
+        absent = group not in mine and group.partition(".")[2] not in loaded | {""}
+        if not absent and shapes(parent, group) != shapes(state, group):
             raise ConfigError(
                 f"learning.init: the parameters of {group} differ from the "
                 "parent's: the model's structure changed (adapter_width, "
-                "trunk_hidden...); set restore.model: false"
+                "trunk_hidden, adapters, trunk, heads...); set restore.model: false"
             )
 
 
