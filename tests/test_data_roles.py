@@ -463,3 +463,49 @@ def test_a_frozen_preprocessing_reproduces_the_parents_arrays_bit_for_bit() -> N
         assert mine.train.X.dtype == theirs.train.X.dtype
         np.testing.assert_array_equal(mine.train.X, theirs.train.X)
     np.testing.assert_array_equal(child.test[0].X, parent.test[0].X)
+
+
+# --- streams: time is kept, the fit uses the bootstrap only (continuum C3) ----------
+
+
+def timed(name: str, X, t) -> SubjectData:
+    from dataclasses import replace
+
+    return replace(subject(name, X), t=np.asarray(t, float))
+
+
+def test_each_row_keeps_its_time_through_the_split() -> None:
+    train = [timed("1", [[0.0], [2.0], [4.0]], [0, 60, 120]), timed("2", [[1.0]], [5])]
+    held = timed("3", [[3.0], [8.0]], [0, 30])
+    config = RolesConfig(
+        overrides={"swell": {"test": ["3"]}}, subjects_per_client=2, drop_constant=False
+    )
+
+    split = split_subjects([*train, held], config)
+
+    (client,) = split.clients
+    assert sorted(client.train.t.tolist()) == [0, 5, 60, 120]
+    assert split.test[0].t.tolist() == [0, 30]
+
+
+def test_the_preprocessing_is_fitted_on_the_bootstrap_rows_only() -> None:
+    early = [[0.0], [2.0]]
+    train = [timed("1", early + [[100.0]], [0, 60, 600]), timed("2", early, [0, 60])]
+    config = RolesConfig(overrides={"swell": {"test": []}})
+
+    split = split_subjects(train, config, fit_rows=lambda d: d.t < 120)
+
+    # the bag is {0, 2, 0, 2}: mean 1 and std 1, whatever comes after t0
+    assert split.preprocessing["swell"]["mean"] == [1.0]
+    assert split.preprocessing["swell"]["std"] == [1.0]
+
+
+def test_a_bootstrap_with_no_rows_is_an_error() -> None:
+    train = [timed("1", [[0.0], [2.0]], [100, 200])]
+
+    with pytest.raises(DataError, match="bootstrap"):
+        split_subjects(
+            train,
+            RolesConfig(overrides={"swell": {"test": []}}),
+            fit_rows=lambda d: d.t < 50,
+        )

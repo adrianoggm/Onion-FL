@@ -115,15 +115,20 @@ def evaluate(
     model: nn.Module, data: Any, names: Sequence[str] = ("loss", "accuracy")
 ) -> tuple[dict[str, float], int]:
     """Metrics of ``model`` on ``data`` (``X``, ``y``, ``n_classes``) and the sample count."""
-    X, y = np.asarray(data.X, np.float32), np.asarray(data.y, np.int64)
+    y = np.asarray(data.y, np.int64)
     if not len(y):
         return {}, 0
+    return compute(predict(model, data.X), y, data.n_classes, names), len(y)
+
+
+def predict(model: nn.Module, X: np.ndarray) -> np.ndarray:
+    """Logits of ``model`` on ``X``, in evaluation mode."""
     was_training = model.training
     model.eval()
     with torch.no_grad():
-        logits = model(torch.from_numpy(X)).numpy().astype(np.float64)
+        logits = model(torch.from_numpy(np.asarray(X, np.float32))).numpy()
     model.train(was_training)
-    return compute(logits, y, data.n_classes, names), len(y)
+    return logits.astype(np.float64)
 
 
 def reduce_reports(

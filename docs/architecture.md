@@ -177,6 +177,30 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
   - The bundle carries the nodes a run lacks, as the run kept them, so a node that skips a generation keeps its budget.
 - **Changes allowed.** New datasets get a fitted preprocessing and fresh adapters. `group_lr` can scale the steps of the groups a continuation keeps.
 
+## 7c. Streams (continuum)
+
+- **Time per row.** `SubjectData.t` holds each row's seconds since the subject's first observation. It is metadata, never a feature, and comes from the `time` ingest step: a parsed column, or the row position at a rate. A window is timed at its last row.
+- **The schedule.** `data.stream.edge_stream` turns one edge's rows plus `stream` and `labels` into an `EdgeStream` in continuum time (data time since the stream started). It is a pure function of the rows, the config and the seed. For each row it gives:
+  - `available_at`: rows arrive in batches, each at its last row; rows before t₀ are history, there from the start;
+  - `label_at`: a seeded fraction of the rows, each labelled `delay` after it arrived, ∞ for the rest;
+  - `trainable_at`: once both the row and its label have arrived.
+- **The edge works lazily.** When a global model arrives, the edge reads `ctx.now()` × `speed` and handles what arrived since the last round:
+  1. it predicts the new rows with the model it was serving, and stores the predictions;
+  2. it scores `prequential` (every arrival against its truth, which only the simulation knows) and `prequential_labelled` (the stored predictions whose label arrived) into its update metrics, which the collectors reduce per fog and globally;
+  3. it emits `data.arrived` and `data.labelled`;
+  4. it serves the new model, and trains on every trainable row not yet used (`window`, when set, caps how old a row may be). A row counts as used, with its round, only once that training ends with finite weights.
+
+  The served model only changes when a global model arrives, so the lazy handling is exact and needs no timers.
+- **Idle rounds.**
+  - An edge with nothing to train on answers idle, with its scores.
+  - Collectors leave idle children out of the quorum, and a round where every child is idle closes as `round.idle` without changing the model.
+- **Pacing.**
+  - The coordinator opens a round every `round_every` of data time (`round_every` / `speed` virtual seconds).
+  - The observations end with the last row. The run then drains: it lasts until one round after the last chosen label arrives, bounded by `rounds`. C6 replaces this with triggers.
+- **Participation.** An edge handles its stream when a round reaches it, so streams require participation `all`. `close_at_quorum` and time-based availability are outside the temporal guarantee until C6.
+- **Evaluation.** Validation evaluators with a stream score what arrived since their previous request. Test evaluators score whole test subjects, so the final test score stays comparable.
+- **The bootstrap fit.** `split_subjects(fit_rows=...)` fits the preprocessing on the rows before t₀ only.
+
 ## 8. Observability
 
 **Event schema.** Every event becomes:

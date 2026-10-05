@@ -124,3 +124,21 @@ def test_wesad_chest_reads_like_the_previous_loader() -> None:
     assert new.feature_names == names
     np.testing.assert_array_equal(new.y, y)
     np.testing.assert_allclose(new.X, X, rtol=1e-5)
+
+
+# --- per-row time on the real recordings (continuum C3) ----------------------------
+
+
+@pytest.mark.skipif(not Path("data/SWELL").exists(), reason="data/SWELL not available")
+def test_swell_rows_are_timed_in_order() -> None:
+    for data in ingest(descriptor("swell")):
+        assert data.t[0] == 0 and np.all(np.diff(data.t) >= 0), data.subject
+        assert data.t[-1] > 3600, data.subject  # the sessions last about three hours
+
+
+@pytest.mark.skipif(not Path("data/WESAD").exists(), reason="data/WESAD not available")
+def test_wesad_windows_are_timed_in_order() -> None:
+    for data in ingest(descriptor("wesad")):
+        steps = np.diff(data.t)
+        assert data.t[0] == 0 and np.all(steps > 0), data.subject
+        assert np.isclose(steps.min(), 30.0), data.subject  # 60 s windows, half overlap

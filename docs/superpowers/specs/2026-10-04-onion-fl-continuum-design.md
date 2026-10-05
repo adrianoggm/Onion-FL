@@ -216,6 +216,27 @@ labels:
   - `data.arrived`: por edge, con cuántas filas llegaron sin etiqueta y cuántas con ella;
   - `data.labelled`: etiquetas que llegan tarde.
 - **Determinismo.** La misma semilla da el mismo flujo, la misma fracción etiquetada y los mismos retrasos.
+- **Decisiones de C3** (#158; el plan, `docs/superpowers/plans/2026-10-05-continuum-c3-streams.md`, da el detalle):
+  - **Ritmo.** Hasta C6, las rondas llegan cada `stream.round_every` de tiempo de datos.
+  - **Final.** Las observaciones acaban con la última fila (`horizon: session`). Después, la ejecución sigue hasta que llega la última etiqueta elegida (el drenaje), con `rounds` como tope.
+  - **Etiquetas.** `labels.fraction` y `labels.delay` valen para todas las filas, histórico incluido, así que con `fraction: 0` no entrena nada.
+    - Cada edge etiqueta exactamente round(f·n) filas con una semilla propia.
+    - La etiqueta de una fila del histórico cuenta su retraso desde que se observó.
+  - **Bootstrap.** `{samples: N}` cuenta por edge, y se rechaza con varios sujetos por edge, igual que `staggered`.
+  - **Dos puntuaciones prequential**, ambas sobre la predicción guardada al llegar:
+    - `prequential`: toda llegada contra su verdad, solo en simulación;
+    - `prequential_labelled`: solo las etiquetas que llegaron.
+  - **Búfer.** Toda fila entrenable que aún no se ha usado; `stream.window`, si se da, limita su antigüedad.
+    - Una fila cuenta como usada (`first_consumed_by_version`) solo cuando el entrenamiento que la usó termina con pesos finitos, así que una ronda fallida no la pierde y ninguna la repite.
+  - **Edges ociosos.** Un edge sin nada que entrenar responde ocioso, con sus puntuaciones. No cuenta para el quórum, y una ronda toda ociosa se cierra como `round.idle`.
+  - **Tiempo de una ventana.** Una ventana de WESAD toma el tiempo de su final, porque solo es observable completa. `t` cuenta desde la primera observación de cada sujeto.
+  - **Se rechaza con un stream, por ahora:**
+    - el modo real;
+    - `init: run`, porque el bundle no guarda aún el estado del stream;
+    - `local_val`;
+    - `scaler: local`;
+    - una participación distinta de `all`. El edge procesa su stream cuando una ronda le llega, así que un edge que no vuelve a ser elegido perdería sus últimas llegadas. C6 desacopla el reloj de los datos del de la federación.
+  - **Fuera de la garantía temporal hasta C6, aunque no se rechazan:** `close_at_quorum` y la disponibilidad que depende del reloj.
 
 ## 8. Memoria e incremental (C4)
 
