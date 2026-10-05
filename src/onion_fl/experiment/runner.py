@@ -59,7 +59,7 @@ from onion_fl.roles import (
     restore_federation,
     snapshot_federation,
 )
-from onion_fl.roles.policies import create
+from onion_fl.roles.policies import create, stalenesses
 from onion_fl.runtime.devices import availability_models, compute_models
 from onion_fl.runtime.network import resolve_profile
 
@@ -572,13 +572,21 @@ def link_warnings(topology: Topology) -> list[str]:
     leaves = {leaf.id for leaf in topology.leaves()}
     for node in topology.nodes:
         links = [c.link_up for c in topology.children(node.id)]
-        if node.id in leaves:
+        if node.id in leaves or node.id == topology.root.id:  # edges or evaluators
             links.append(topology.edge.link_up)
         loss = max((resolve_profile(link.profile).loss for link in links), default=0.0)
         if loss > 0 and node.settings.get("deadline") is None:
             warnings.append(
                 f"{node.id}: its children's links lose messages (up to {loss:.1%}) and it has "
-                "no deadline, so a lost update stalls the round; set a deadline"
+                "no deadline, so a lost update or evaluation stalls the run; set a deadline"
+            )
+        staleness = create(stalenesses, node.settings.get("staleness"), "drop")
+        forever = getattr(staleness, "max_staleness", 0) is None
+        if loss > 0 and node.settings.get("close_at_quorum") and forever:
+            warnings.append(
+                f"{node.id}: it closes rounds at quorum and keeps late updates of any "
+                "age, so a child whose update is lost gets no model again; set "
+                "staleness max_staleness"
             )
     return warnings
 

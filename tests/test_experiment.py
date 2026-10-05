@@ -747,6 +747,36 @@ def test_plan_warns_about_lossy_links_without_deadline(workspace: Path) -> None:
     assert safe["warnings"] == []
 
 
+def test_plan_warns_when_a_lost_evaluation_would_block_the_end(workspace: Path) -> None:
+    lossy = {"profile": {"preset": "lan", "loss": 0.1}}
+    topology = TOPOLOGY | {"edge": {"link_up": lossy}}  # the evaluators' link too
+
+    (preview,) = plan(parse_experiment(experiment(workspace, topology=topology)))
+
+    assert any(w.startswith("cloud:") for w in preview["warnings"])
+
+
+def test_plan_warns_when_a_lost_update_keeps_a_child_out_for_good(
+    workspace: Path,
+) -> None:
+    lossy = {"profile": {"preset": "lan", "loss": 0.1}}
+    buffering = {"close_at_quorum": True, "quorum": 1, "deadline": 10}
+    fog = {"defaults": buffering, "nodes": TOPOLOGY["fog"]["nodes"]}
+    kept = {"staleness": {"name": "next_round"}}
+    bounded = {"staleness": {"name": "next_round", "max_staleness": 2}}
+
+    def warnings(defaults: dict) -> list[str]:
+        topology = TOPOLOGY | {
+            "fog": fog | {"defaults": buffering | defaults},
+            "edge": {"link_up": lossy},
+        }
+        (preview,) = plan(parse_experiment(experiment(workspace, topology=topology)))
+        return [w for w in preview["warnings"] if "max_staleness" in w]
+
+    assert len(warnings(kept)) == 2  # one per fog
+    assert warnings(bounded) == []
+
+
 def test_every_simulated_run_writes_its_bundle_and_signs_it(workspace: Path) -> None:
     from onion_fl.continuum.bundle import load_bundle
 
