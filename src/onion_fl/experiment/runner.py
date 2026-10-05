@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from itertools import permutations
@@ -28,6 +29,12 @@ from onion_fl.data.contract import natural_key
 from onion_fl.data.ingest import load_spec
 from onion_fl.data.placement import Placement, place
 from onion_fl.data.roles import DataSplit, split_subjects
+from onion_fl.data.stream import (
+    LabelsConfig,
+    Staggered,
+    bootstrap_rows,
+    edge_stream,
+)
 from onion_fl.experiment.config import ConfigError, ExperimentConfig
 from onion_fl.experiment.sweep import Scenario, identity, scenarios
 from onion_fl.learning.aggregators import aggregators, server_optimizers
@@ -403,7 +410,21 @@ def _scenario_data(
     if parent is ...:
         parent = _parent(config, scenario.seed)
     frozen = parent[1].preprocessing if parent and parent[2].preprocessing else None
-    split = split_subjects(subjects, config.data.roles, frozen=frozen)
+    fit_rows = None
+    if config.stream is not None:  # the preprocessing sees the bootstrap only
+        untimed = sorted({s.dataset for s in subjects if s.t is None})
+        if untimed:
+            raise ConfigError(
+                f"stream: {untimed} have no time per row; add a time step to their "
+                "dataset descriptors"
+            )
+
+        def fit_rows(data: Any) -> np.ndarray:
+            return bootstrap_rows(data, config.stream)
+
+    split = split_subjects(
+        subjects, config.data.roles, frozen=frozen, fit_rows=fit_rows
+    )
     if parent:
         _check_roles(parent[1].roles, split.roles)
         if parent[2].model:
@@ -568,6 +589,15 @@ def plan(config: ExperimentConfig) -> list[dict[str, Any]]:
                 "data": digests,
                 "warnings": link_warnings(topology),
             }
+            | (
+                {}
+                if scenario.config.stream is None
+                else {
+                    "stream": _stream_summary(
+                        scenario.config, _streams(scenario, placement)
+                    )
+                }
+            )
         )
     return previews
 
@@ -616,6 +646,56 @@ def malicious_edges(
     return chosen
 
 
+def _streams(scenario: Scenario, placement: Placement) -> dict[str, Any]:
+    """Each training edge's stream, and each validation subject's evaluation
+    stream (``val-<dataset>-<subject>``); none without ``stream``."""
+    config = scenario.config
+    if config.stream is None:
+        return {}
+    stream, labels = config.stream, config.labels or LabelsConfig()
+    gap = stream.start.staggered if isinstance(stream.start, Staggered) else 0.0
+    clients = sorted(
+        (c for group in placement.edges.values() for c in group),
+        key=lambda c: (c.dataset, natural_key(c.id)),
+    )
+    out = {
+        c.id: edge_stream(c.train, stream, labels, scenario.seed, offset=k * gap)
+        for k, c in enumerate(clients)
+    }
+    for group in placement.zone_evaluators.values():
+        for data in group:
+            out[f"val-{data.dataset}-{data.subject}"] = edge_stream(
+                data, stream, labels, scenario.seed
+            )
+    return out
+
+
+def _paced(config: ExperimentConfig, streams: Mapping[str, Any]) -> tuple[int, Any]:
+    """Rounds and their virtual spacing: a stream lasts until its horizon."""
+    if config.stream is None:
+        return config.rounds, None
+    every = config.stream.round_every
+    horizon = max((s.horizon for s in streams.values()), default=0.0)
+    rounds = min(config.rounds, math.ceil(horizon / every) + 1)  # one at or after it
+    return rounds, every / config.stream.speed
+
+
+def _stream_summary(config: ExperimentConfig, streams: Mapping[str, Any]) -> dict:
+    learners = {k: s for k, s in streams.items() if not k.startswith("val-")}
+    return {
+        "horizon": max((s.horizon for s in learners.values()), default=0.0),
+        "rounds": _paced(config, learners)[0],
+        "edges": {
+            k: {
+                "rows": len(s.history),
+                "history": int(s.history.sum()),
+                "labelled": int(np.isfinite(s.label_at).sum()),
+            }
+            for k, s in sorted(learners.items())
+        },
+    }
+
+
 def edge_specs(
     scenario: Scenario, topology: Topology, split: DataSplit, placement: Placement
 ) -> tuple[dict[str, list[EdgeSpec]], dict[str, Any]]:
@@ -624,14 +704,22 @@ def edge_specs(
     family, initial = _initial_state(config, _shapes(split), scenario.seed)
     create(sharing, config.learning.sharing).check_model(family.config)
     device = _edge_runtime(topology)
+    streams = _streams(scenario, placement)
 
     def evaluator(prefix: str, data: Any) -> EdgeSpec:
+        # validation subjects stream for evaluation only; test subjects never do
+        stream = (
+            None
+            if prefix == "test"
+            else streams.get(f"val-{data.dataset}-{data.subject}")
+        )
         return EdgeSpec(
             f"{prefix}-{data.dataset}-{data.subject}",
             family.build([data.shape], seed=scenario.seed),
             data=data,
             train=False,
             tags={"dataset": data.dataset},
+            stream=stream,
         )
 
     bad = malicious_edges(config, split.clients, scenario.seed)
@@ -652,6 +740,7 @@ def edge_specs(
                     if config.privacy is None
                     else create(privacies, config.privacy)
                 ),
+                stream=streams.get(client.id),
                 **device,
             )
             for client in clients
@@ -683,11 +772,14 @@ def build_scenario(
     if parent is ...:
         parent = _parent(config, scenario.seed)
     start = parent[1].snapshot.round if parent else 0
+    learners = {s.id: s.stream for g in edges.values() for s in g if s.train}
+    rounds, round_every = _paced(config, {k: v for k, v in learners.items() if v})
     federation = build_federation(
         topology,
         edges,
         initial_state=initial,
-        rounds=start + config.rounds,  # a continuation's numbering goes on
+        rounds=start + rounds,  # a continuation's numbering goes on
+        round_every=round_every,
         sharing=config.learning.sharing,
         seed=scenario.seed,
         metrics=config.evaluation.metrics,
@@ -736,6 +828,15 @@ def run_scenario(
             scenario, topology, split, placement, evaluate=evaluate, parent=parent
         )
         run.attach(federation)
+        if config.stream is not None:
+            streams = {k: e.stream for k, e in federation.edges.items() if e.train}
+            summary = _stream_summary(config, streams)
+            run.record(
+                "data.stream",
+                summary["horizon"],
+                rounds=summary["rounds"],
+                edges=summary["edges"],
+            )
         federation.run()
         save_model(run.path, federation.coordinator.state)
         # What the lineage knows of a dataset or node outlives a run without it.

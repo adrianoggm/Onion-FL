@@ -47,6 +47,7 @@ from onion_fl.core.registry import PluginError, Registry
 from onion_fl.data.ingest import readers, steps
 from onion_fl.data.placement import placements
 from onion_fl.data.roles import RolesConfig
+from onion_fl.data.stream import LabelsConfig, Samples, Staggered, StreamConfig
 from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.attacks import attacks
 from onion_fl.learning.metrics import metrics
@@ -264,6 +265,17 @@ class ExperimentConfig(Strict):
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
 
+    stream: StreamConfig | None = Field(
+        None,
+        description="Cada edge recibe sus filas en flujo, en su orden temporal",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+    labels: LabelsConfig | None = Field(
+        None,
+        description="Fracción etiquetada de un stream y retraso de sus etiquetas",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+
     _privacy = field_validator("privacy")(
         lambda v: v if v is None else _plugin(privacies, v)
     )
@@ -290,6 +302,44 @@ class ExperimentConfig(Strict):
             policy.check_model(family.config)
         except ValueError as exc:
             raise ValueError(f"learning.sharing: {exc}") from None
+        return self
+
+    @model_validator(mode="after")
+    def _stream_fits(self) -> ExperimentConfig:
+        """What a stream cannot do yet (continuum C3) is refused before any run."""
+        if self.labels is not None and self.stream is None:
+            raise ValueError("labels: they belong to a stream; set stream too")
+        if self.stream is None:
+            return self
+        roles, init = self.data.roles, self.learning.init
+        one_each = isinstance(self.stream.start, Staggered) or isinstance(
+            self.stream.bootstrap, Samples
+        )
+        refusals = [
+            (self.runtime.mode == "real", "real runs do not stream yet (C9)"),
+            (
+                (init if isinstance(init, str) else init["name"]) == "run",
+                "learning.init: run cannot continue a stream yet; the bundle holds "
+                "no stream state",
+            ),
+            (
+                roles.local_val > 0,
+                "data.roles.local_val: a tail of rows conflicts with time order; "
+                "a stream scores test-then-train instead",
+            ),
+            (
+                roles.scaler == "local",
+                "data.roles.scaler: local would refit on rows after the bootstrap",
+            ),
+            (
+                one_each and roles.subjects_per_client > 1,
+                "data.roles.subjects_per_client: a staggered start or a bootstrap "
+                "in samples needs one subject per edge",
+            ),
+        ]
+        for refused, message in refusals:
+            if refused:
+                raise ValueError(f"stream: {message}")
         return self
 
     def dump(self) -> dict[str, Any]:

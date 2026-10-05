@@ -135,6 +135,21 @@ def _within(times: np.ndarray, lo: float, hi: float) -> np.ndarray:
     return np.isfinite(times) & (times > lo) & (times <= hi)
 
 
+def bootstrap_rows(data: SubjectData, stream: StreamConfig) -> np.ndarray:
+    """The rows of ``data`` before its t₀: its history, and what the preprocessing
+    may be fitted on."""
+    if data.t is None:
+        raise ValueError(
+            f"{data.dataset}/{data.subject} has no time per row: a stream needs a "
+            "time step in its dataset descriptor"
+        )
+    if isinstance(stream.bootstrap, Samples):
+        rows = np.zeros(len(data.t), bool)
+        rows[np.argsort(data.t, kind="stable")[: stream.bootstrap.samples]] = True
+        return rows
+    return data.t < stream.bootstrap
+
+
 def edge_stream(
     data: SubjectData,
     stream: StreamConfig,
@@ -143,20 +158,14 @@ def edge_stream(
     offset: float = 0.0,
 ) -> EdgeStream:
     """The schedule of ``data`` as one edge's stream starting at ``offset``."""
-    if data.t is None:
-        raise ValueError(
-            f"{data.dataset}/{data.subject} has no time per row: a stream needs a "
-            "time step in its dataset descriptor"
-        )
+    history = bootstrap_rows(data, stream)  # checks that the rows are timed
     order = np.argsort(data.t, kind="stable")
     data = replace(data, X=data.X[order], y=data.y[order], t=data.t[order])
-    t, n = data.t, len(data.t)
+    t, n, history = data.t, len(data.t), history[order]
     if isinstance(stream.bootstrap, Samples):
-        history = np.arange(n) < stream.bootstrap.samples
         t0 = t[min(stream.bootstrap.samples, n - 1)]
     else:
         t0 = stream.bootstrap
-        history = t < t0
     observed = t - t0 + offset
     arrival = observed.copy()
     live = np.flatnonzero(~history)
