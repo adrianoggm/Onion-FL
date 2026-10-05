@@ -411,6 +411,20 @@ def _scenario_data(
         parent = _parent(config, scenario.seed)
     frozen = parent[1].preprocessing if parent and parent[2].preprocessing else None
     fit_rows = None
+    if config.stream is not None:
+        # An edge handles its stream when a round reaches it, so every edge must
+        # be in every round, or the rows of one left out until the end are lost.
+        partial = sorted(
+            node.id
+            for node in topology.nodes
+            if _name(node.settings.get("participation") or "all") != "all"
+        )
+        if partial:
+            raise ConfigError(
+                f"stream: participation other than all at {partial} would leave "
+                "the arrivals of the edges not selected unhandled; streams need "
+                "every edge in every round until the triggers of C6"
+            )
     if config.stream is not None:  # the preprocessing sees the bootstrap only
         untimed = sorted({s.dataset for s in subjects if s.t is None})
         if untimed:

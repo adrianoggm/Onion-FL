@@ -249,3 +249,10 @@ def test_a_stream_runs_until_its_last_label_arrives(workspace: Path) -> None:
     last = [e for e in events(path, "edge.trained") if e["round"] == 6]
     assert last  # and the drained labels trained
 
+
+def test_a_stream_needs_every_edge_in_every_round(workspace: Path) -> None:
+    fog = {"defaults": {"participation": {"name": "fraction", "p": 0.5}}}
+    topology = TOPOLOGY | {"fog": fog | {"nodes": TOPOLOGY["fog"]["nodes"]}}
+
+    with pytest.raises(ConfigError, match="participation"):
+        plan(parse_experiment(experiment(workspace, topology=topology)))
