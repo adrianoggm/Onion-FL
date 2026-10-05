@@ -817,7 +817,10 @@ def ingest(
         raise DataError("no label step")
     if "features" not in ran:
         raise DataError("add a features step: meta columns are excluded explicitly")
-    features = [c for c in df.columns if c not in ("subject", "label")]
+    # A column a subject or label step read is meta, even when that step came
+    # after features: it never becomes one.
+    reserved = {"subject", "label"} | ctx.meta_columns
+    features = [c for c in df.columns if c not in reserved]
     df = df.dropna(subset=["label"]).assign(subject=lambda d: d["subject"].astype(str))
     return [
         SubjectData(

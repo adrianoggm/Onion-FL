@@ -707,3 +707,28 @@ def test_wesad_reader_truncates_to_the_shortest_signal(tmp_path: Path) -> None:
 def test_wesad_reader_rejects_unknown_signals() -> None:
     with pytest.raises(ValueError, match="BVP"):
         readers.create("wesad_pickle", {"location": "chest", "signals": ["BVP"]})
+
+
+# --- step order cannot turn a meta column into a feature (QA2, #174) ---------------
+
+
+@pytest.mark.parametrize(
+    "late",
+    [
+        {"label": {"task": "t", "column": "score", "map": {0: 0, 1: 1}}},
+        {"subject": {"column": "pp"}},
+    ],
+    ids=["label", "subject"],
+)
+def test_a_step_after_features_keeps_its_column_out_of_them(
+    tmp_path: Path, late: dict
+) -> None:
+    write(tmp_path / "t.csv", "pp,score,x\n1,1,5\n1,0,6\n2,1,7\n2,0,8\n")
+    label = {"label": {"task": "t", "column": "score", "map": {0: 0, 1: 1}}}
+    first = [s for s in ({"subject": {"column": "pp"}}, label) if s != late]
+    steps = [*first, {"features": {}}, late]
+
+    data = ingest(spec(tmp_path, {"reader": "csv", "path": "t.csv"}, steps))[0]
+
+    column = next(iter(late.values()))["column"]
+    assert column not in data.feature_names and "x" in data.feature_names
