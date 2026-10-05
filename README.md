@@ -6,7 +6,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
-> **About this README.** It describes the redesigned framework as of v0.3.0 (October 2026), which adds Onion-FL Studio to v0.2.0. Every number in it comes from a file in the repository, cited next to it. The datasets are not in git. SWELL-KW and WESAD were downloaded and checked against their descriptors in October 2026, and the first results of the new framework on real data are in [§7](#7-results). SWEET is still unchecked. [§1](#1-status) says exactly what is verified and how.
+> **About this README.** It describes the redesigned framework as of v0.4.0 (October 2026), which adds federated learning techniques (personalisation, drift correction, robust aggregation and privacy, server optimizers and buffering) to the Onion-FL Studio of v0.3.0 and the framework of v0.2.0. Every number in it comes from a file in the repository, cited next to it. The datasets are not in git. SWELL-KW and WESAD were downloaded and checked against their descriptors in October 2026, and the first results of the new framework on real data are in [§7](#7-results). SWEET is still unchecked. [§1](#1-status) says exactly what is verified and how.
 
 ## Contents
 
@@ -462,7 +462,8 @@ The workflows run only on release PRs into `main`, to save CI minutes; task PRs 
 | Milestone | Content |
 |---|---|
 | v0.3.0 | ✅ Onion-FL Studio: topology library and editor, run monitor, comparisons between topologies and scenarios, tutorial with dry-run previews, `onion_fl serve` ([#103](https://github.com/adrianoggm/Onion-FL/issues/103)) |
-| Later | gRPC and Flower transports and richer network emulation (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104)); real distributed deployment (E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)); secure aggregation, TLS and differential privacy |
+| v0.4.0 | ✅ Federated learning techniques as plugins, with comparisons on real data: personalisation ([#147](https://github.com/adrianoggm/Onion-FL/issues/147)), non-IID drift ([#148](https://github.com/adrianoggm/Onion-FL/issues/148)), robustness, attacks and privacy ([#149](https://github.com/adrianoggm/Onion-FL/issues/149)), server optimizers and buffering ([#150](https://github.com/adrianoggm/Onion-FL/issues/150)) |
+| Later | gRPC and Flower transports and richer network emulation (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104)); real distributed deployment (E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)); secure aggregation and TLS |
 
 ---
 
@@ -476,7 +477,7 @@ The workflows run only on release PRs into `main`, to save CI minutes; task PRs 
 | 2025-11 | First working federated SWELL run; `clients/`, `brokers/`, `servers/` structure |
 | 2025-12 | OpenTelemetry, Jaeger, Prometheus and Grafana; SWEET baselines |
 | 2026-03 / 04 | `justfile`; `accept`/`strict` stale-update policy; pure-function refactor |
-| 2026-10 | v0.2.0: redesign into a framework (spec in `docs/superpowers/specs/`), old runtime removed; v0.3.0: Onion-FL Studio |
+| 2026-10 | v0.2.0: redesign into a framework (spec in `docs/superpowers/specs/`), old runtime removed; v0.3.0: Onion-FL Studio; v0.4.0: federated learning techniques |
 
 ---
 
