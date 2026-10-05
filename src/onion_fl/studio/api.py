@@ -360,7 +360,10 @@ def create_app(root: str | Path = ".") -> FastAPI:
 
         try:
             return _json(plan(rooted(experiment(name), root)))
-        except (ConfigError, DataError, TopologyError, ValueError, OSError) as exc:
+        except OSError as exc:  # the file it misses, not where it lives
+            missing = Path(exc.filename).name if exc.filename else ""
+            return _errors(f"{exc.strerror or type(exc).__name__}: {missing}")
+        except (ConfigError, DataError, TopologyError, ValueError) as exc:
             return _errors(str(exc))
 
     @app.post("/api/experiments/{name}/run")

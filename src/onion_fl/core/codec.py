@@ -85,10 +85,12 @@ class Codec(ABC):
     name: str
 
     @abstractmethod
-    def encode(self, msg: Message) -> bytes: ...
+    def encode(self, msg: Message) -> bytes:
+        """The message as bytes."""
 
     @abstractmethod
-    def decode(self, data: bytes) -> Message: ...
+    def decode(self, data: bytes) -> Message:
+        """The message these bytes encode."""
 
     def size(self, msg: Message) -> int:
         return len(self.encode(msg))
