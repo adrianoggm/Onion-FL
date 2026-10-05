@@ -51,6 +51,25 @@ def test_every_label_in_a_query_exists_on_the_series() -> None:
         assert set(matchers) | set(grouping) <= allowed, expr
 
 
+def test_every_label_in_a_legend_exists_on_the_series() -> None:
+    allowed = set(LABELS) | set(EXTRA_LABELS) | {"le"}
+    for panel in dashboard()["panels"]:
+        for target in panel.get("targets", []):
+            legend = re.findall(r"\{\{\s*(\w+)\s*\}\}", target.get("legendFormat", ""))
+            assert set(legend) <= allowed, target["legendFormat"]
+
+
+def test_the_diagnostic_legends_name_what_tells_their_series_apart() -> None:
+    legends = {
+        target["expr"]: target.get("legendFormat", "")
+        for panel in dashboard()["panels"]
+        for target in panel.get("targets", [])
+    }
+    for name, label in (("fairness", "metric"), ("dataset_conflict", "datasets")):
+        (legend,) = [v for k, v in legends.items() if f'name="{name}"' in k]
+        assert "{{" + label + "}}" in legend
+
+
 def test_queries_follow_the_run_and_topology_variables() -> None:
     names = {v["name"] for v in dashboard()["templating"]["list"]}
 

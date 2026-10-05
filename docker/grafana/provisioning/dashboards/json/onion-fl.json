@@ -693,7 +693,7 @@
       "targets": [
         {
           "expr": "onionfl_diagnostic{name=\"dataset_conflict\", run_id=~\"$run_id\", topology_id=~\"$topology_id\"}",
-          "legendFormat": "{{node}} {{group}}",
+          "legendFormat": "{{node}} {{group}} {{datasets}}",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -807,7 +807,7 @@
       "targets": [
         {
           "expr": "onionfl_diagnostic{name=\"fairness\", run_id=~\"$run_id\", topology_id=~\"$topology_id\"}",
-          "legendFormat": "{{node}} {{dataset}}",
+          "legendFormat": "{{node}} {{dataset}} {{metric}}",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
