@@ -461,3 +461,21 @@ def test_preview_errors_name_the_problem(client: TestClient) -> None:
 
     assert placement.status_code == 422 and "nope" in placement.json()["errors"][0]
     assert link.status_code == 422 and "carrier_pigeon" in link.json()["errors"][0]
+
+
+def test_a_file_error_is_reported_without_the_local_path(
+    client: TestClient, monkeypatch
+) -> None:
+    import onion_fl.experiment.runner as runner
+
+    def missing(config):
+        raise FileNotFoundError(
+            2, "No such file or directory", "C:/private/place/x.csv"
+        )
+
+    monkeypatch.setattr(runner, "plan", missing)
+    response = client.post("/api/experiments/demo_exp/plan")
+
+    text = json.dumps(response.json())
+    assert response.status_code == 422
+    assert "x.csv" in text and "private" not in text
