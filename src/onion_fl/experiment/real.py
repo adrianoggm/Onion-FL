@@ -94,7 +94,7 @@ def _check_links(topology: Topology) -> None:
 
 
 def run_real(scenario: Scenario, python: str = sys.executable) -> Path:
-    from onion_fl.experiment.runner import _scenario_data
+    from onion_fl.experiment.runner import _scenario_data, _sinks
 
     config = scenario.config
     topology, split, placement, digests = _scenario_data(scenario)
@@ -107,6 +107,7 @@ def run_real(scenario: Scenario, python: str = sys.executable) -> Path:
         seed=scenario.seed,
         data_ids=digests,
         scenario=scenario.name,
+        sinks=_sinks(config),  # fed as the events are merged, once the run ends
     )
     try:
         return _launch(run, scenario, topology, split, placement, python)
@@ -171,6 +172,9 @@ def _launch(
     for part in sorted(run.path.glob(PART.format(group="*"))):
         events += read_events(part)
         part.unlink()
+    # The node processes knew each node's level and role; the traffic summary
+    # the run adds when it finishes needs them too.
+    run.nodes |= {e["node"]: (e["level"], e["role"]) for e in events if e["role"]}
     for event in sorted(events, key=lambda e: (e["t_wall"], e["t_virtual"])):
         run.adopt(event)
     finished = any(e["name"] == "run.finished" for e in events)

@@ -236,6 +236,7 @@ Every runtime event is enriched into one schema and written to `events.jsonl`, t
 - **Live.**
   - The `prometheus` sink serves `onionfl_*` series on port 9464 for the Grafana dashboard. One server per process holds the runs of a sweep, told apart by `run_id`, so it needs `--workers 1`.
   - The `otel` sink creates one span per send and per receive, linked by the message id. It exports them to the collector of the Docker stack.
+  - A real run feeds both when the launcher merges the node processes' events, once the run has ended.
 
 ---
 

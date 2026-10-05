@@ -138,3 +138,33 @@ def test_mqtt_with_one_process_per_group_matches_the_simulation(tmp_path: Path) 
 
     with np.load(path / "model.npz", allow_pickle=False) as saved:
         assert_same_model(expected, {k: saved[k] for k in saved.files})
+
+
+@pytest.mark.skipif(not _broker_up(), reason=f"no MQTT broker at {BROKER}")
+def test_a_real_run_feeds_its_sinks_and_labels_its_traffic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from onion_fl.experiment import runner
+    from onion_fl.observability.events import read_events
+
+    seen = []
+
+    class Recorder:
+        def write(self, event) -> None:
+            seen.append(event["name"])
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(runner, "_sinks", lambda config: [Recorder()])
+    mqtt = {"name": "mqtt", "broker": BROKER}
+
+    (path,) = run_experiment(experiment(tmp_path, mqtt, mode="real"))
+
+    traffic = [
+        e
+        for e in read_events(path / "events.jsonl")
+        if e["name"] == "diagnostic.communication"
+    ]
+    assert traffic and all(e["level"] and e["role"] for e in traffic)
+    assert {"run.finished", "diagnostic.communication"} <= set(seen)
