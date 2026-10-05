@@ -777,6 +777,52 @@ def test_a_buffering_round_counts_late_updates_and_skips_busy_children() -> None
     np.testing.assert_allclose(ctx.sent[-1].payload.state[KEY], 5.0)
 
 
+def test_a_child_whose_answer_was_lost_is_drawn_again_once_it_would_be_dropped() -> (
+    None
+):
+    staleness = {"name": "next_round", "max_staleness": 1}
+    fog, ctx = fog_by_hand(
+        **STALE | {"quorum": 1, "close_at_quorum": True, "staleness": staleness}
+    )
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)  # e2's answer is lost
+    for r in (2, 3):
+        fog.on_message(model_msg(r), ctx)
+        fog.on_message(update_msg("e1", r, 1.0, 1), ctx)
+
+    sent_to = [m.dst for m in ctx.sent if m.kind == "global_model" and m.round == 3]
+    assert sent_to == ["e1", "e2"]  # a round-1 update would be two rounds late now
+
+
+def test_a_buffering_round_with_every_child_busy_waits_for_a_late_update() -> None:
+    fog, ctx = fog_by_hand(**STALE | {"quorum": 1, "close_at_quorum": True})
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)  # closes round 1; e2 still busy
+    fog.on_message(model_msg(2), ctx)  # only e1 gets it
+    fog.on_message(model_msg(3), ctx)  # the parent moved on: both are busy
+
+    assert fog.open and not [m for m in ctx.sent if m.kind == "update" and m.round == 3]
+    fog.on_message(update_msg("e2", 1, 5.0, 2), ctx)  # late, and it is K = 1
+
+    assert ctx.sent[-1].kind == "update" and ctx.sent[-1].round == 3
+    np.testing.assert_allclose(ctx.sent[-1].payload.state[KEY], 5.0)
+
+
+def test_a_fraction_is_drawn_among_the_children_that_are_not_busy() -> None:
+    fraction = {"name": "fraction", "p": 0.5}
+    fog, ctx = fog_by_hand(
+        **STALE | {"quorum": 1, "close_at_quorum": True, "participation": fraction}
+    )
+    fog.on_message(model_msg(1), ctx)
+    (busy,) = fog.participants  # it never answers
+    (free,) = {"e1", "e2"} - {busy}
+
+    for r in range(2, 10):
+        fog.on_message(model_msg(r), ctx)
+        assert fog.participants == [free]
+        fog.on_message(update_msg(free, r, 1.0, 1), ctx)
+
+
 def test_an_open_round_overtaken_by_its_parent_keeps_its_updates() -> None:
     fog, ctx = fog_by_hand(**STALE)
     fog.on_message(model_msg(1), ctx)

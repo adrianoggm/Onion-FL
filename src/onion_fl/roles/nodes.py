@@ -225,10 +225,21 @@ class _Collector(Node):
             self._abandon(round, ctx)
         self.round, self.open, self.opened_at = round, True, ctx.now()
         self.responses, self.late, self.quorum_at = {}, 0, None
-        selected = self.participation.select(self.trainers(), round, ctx.rng)
+        # A round a child owes stops counting once its update would be dropped: a
+        # lost message must not keep the child waiting for good.
+        self.owed = {
+            child: kept
+            for child, rounds in self.owed.items()
+            if (
+                kept := [
+                    r for r in rounds if self.staleness.weight(round - r) is not None
+                ]
+            )
+        }
+        trainers = self.trainers()
         if self.close_at_quorum:  # FedBuff-style: a busy child gets no newer model
-            selected = [c for c in selected if c not in self.owed]
-        self.participants = selected
+            trainers = [c for c in trainers if c not in self.owed]
+        self.participants = self.participation.select(trainers, round, ctx.rng)
         ctx.emit(
             "round.participants",
             len(self.participants),
@@ -267,7 +278,9 @@ class _Collector(Node):
             if limit is not None:
                 alive = {r for r in alive if round - r <= limit}
         self.sent_history = {r: s for r, s in self.sent_history.items() if r in alive}
-        if not self.participants:
+        # Every child busy: the round waits for their late updates, not closing empty.
+        busy = self.close_at_quorum and bool(self.owed)
+        if not self.participants and not busy:
             self._close(ctx)
         elif self.deadline is not None:
             ctx.set_timer(self.deadline, "deadline")
