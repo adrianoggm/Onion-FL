@@ -77,8 +77,8 @@ class StreamConfig(BaseModel):
     round_every: Positive = Field(description="Tiempo de datos entre rondas")
     window: Positive | None = Field(
         None,
-        description="Búfer de entrenamiento: lo que pasó a ser entrenable en este "
-        "tiempo; por defecto, round_every",
+        description="Edad máxima del búfer: de lo que pasó a ser entrenable desde la "
+        "ronda anterior, solo lo de este último tiempo; sin él, todo",
     )
 
 
@@ -102,7 +102,7 @@ class EdgeStream:
     label_at: np.ndarray  # inf for a row that is never labelled
     history: np.ndarray  # before t₀: never predicted
     speed: float
-    window: float  # the buffer: what became trainable this long ago at most
+    window: float | None  # the buffer's age limit; None: since the last round
 
     @property
     def trainable_at(self) -> np.ndarray:
@@ -182,5 +182,5 @@ def edge_stream(
         label_at=label_at,
         history=history,
         speed=stream.speed,
-        window=stream.window or stream.round_every,
+        window=stream.window,
     )

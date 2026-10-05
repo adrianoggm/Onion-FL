@@ -961,7 +961,10 @@ class Edge(_Greeter, Node):
             )
             metrics |= {f"eval.{model}.{k}": float(v) for k, v in scores.items()}
             metrics[f"eval.{model}.samples"] = float(samples)
-        buffer = s.trainable(now - s.window, now)
+        # What became trainable since this edge's last round: a late or skipped
+        # round loses and repeats nothing. A window caps how old it may be.
+        since = lo if s.window is None else max(lo, now - s.window)
+        buffer = s.trainable(since, now)
         return (s.take(buffer) if buffer.any() else None), metrics
 
     def _train(self, msg: Message, ctx: Context) -> None:

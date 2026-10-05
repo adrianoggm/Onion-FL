@@ -229,3 +229,36 @@ def test_a_stream_evaluator_scores_what_arrived_since_it_was_last_asked() -> Non
     ]
     # disjoint windows: every row after t0 is scored once, history never
     assert sum(e["tags"]["samples"] for e in zone) == 18
+
+
+def test_a_round_that_runs_late_skips_and_repeats_no_row() -> None:
+    from onion_fl.runtime.devices import compute_models
+
+    # 10 declared samples at 1 a second: each round trains for 10 virtual
+    # seconds, twice round_every, so rounds open late and unevenly.
+    slow = compute_models.create("samples_per_second", {"samples_per_second": 1.0})
+    stream = stream_of("a-1", delay=60)
+    recording = Recording()
+    spec = EdgeSpec(
+        "a1",
+        ModularMLP(CONFIG, [A], seed=0),
+        trainer=recording,
+        stream=stream,
+        compute=slow,
+    )
+    federation = build_federation(
+        tree(1),
+        {"fog_0": [spec]},
+        initial_state=INITIAL,
+        rounds=8,
+        round_every=EVERY / SPEED,
+    )
+    federation.run()
+
+    trained = np.concatenate([t for _, t in recording.calls])
+    last = recording.calls[-1][0]
+    due = stream.data.t[
+        np.isfinite(stream.trainable_at) & (stream.trainable_at <= last)
+    ]
+    assert sorted(trained.tolist()) == sorted(due.tolist())  # each once, none skipped
+
