@@ -76,9 +76,15 @@ def resolve_topology(config: ExperimentConfig) -> Topology:
 
 def load_data(config: ExperimentConfig) -> tuple[list[Any], dict[str, str]]:
     """Every dataset through the cache: its subjects and the digest of each cache."""
-    subjects, digests = [], {}
+    subjects, digests, loaded = [], {}, {}
     for name, use in sorted(config.data.datasets.items()):
         spec = load_spec(use.descriptor or Path(config.paths.datasets) / f"{name}.yaml")
+        if spec.name in loaded:  # their subjects would overwrite each other
+            raise ConfigError(
+                f"data.datasets: {loaded[spec.name]} and {name} both load dataset "
+                f"{spec.name!r}; give one descriptor another name"
+            )
+        loaded[spec.name] = name
         path = prepare(spec, use.options, cache_dir=config.paths.cache)
         digests[name] = hashlib.sha256((path / "meta.json").read_bytes()).hexdigest()
         subjects += load_prepared(path)

@@ -745,3 +745,15 @@ def test_plan_warns_about_lossy_links_without_deadline(workspace: Path) -> None:
     )  # cloud (from the fogs) and each fog (from its edges)
     assert all("deadline" in w for w in preview["warnings"])
     assert safe["warnings"] == []
+
+
+# --- silently wrong configurations (QA2, #174) --------------------------------------
+
+
+def test_two_entries_cannot_load_the_same_dataset(workspace: Path) -> None:
+    raw = experiment(workspace)
+    twin = {"descriptor": str(workspace / "datasets" / "demo.yaml")}
+    raw["data"] = raw["data"] | {"datasets": {"demo": {}, "demo_again": twin}}
+
+    with pytest.raises(ConfigError, match="demo"):
+        plan(parse_experiment(raw))
