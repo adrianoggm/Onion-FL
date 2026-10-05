@@ -1141,6 +1141,110 @@ def test_a_continuation_keeps_the_dp_mechanism_of_its_parent(
         plan(parse_experiment(_child(workspace, parent.name, **child_change)))
 
 
+ONE_FOG = {
+    "name": "one_fog",
+    "levels": ["global", "fog", "edge"],
+    "root": {"id": "cloud"},
+    "fog": {"nodes": [{"id": "fog_a", "home": "demo"}]},
+}
+
+
+def _private(topology: dict) -> dict:
+    fog = {"defaults": {"aggregator": "dp_fedavg"}, "nodes": topology["fog"]["nodes"]}
+    return topology | {"fog": fog}
+
+
+def test_a_dp_budget_outlives_a_generation_without_its_aggregator(
+    workspace: Path,
+) -> None:
+    import numpy as np
+
+    from onion_fl.continuum.bundle import load_bundle
+
+    a = _parent_run(workspace, topology=_private(TOPOLOGY))
+    b_raw = _child(workspace, a.name, topology=_private(ONE_FOG))
+    (b_scenario,) = scenarios(parse_experiment(b_raw))
+    b = run_scenario(b_scenario, evaluate=stub_score)
+
+    a_fog = load_bundle(a / "bundle").snapshot.nodes["fog_b"]
+    b_bundle = load_bundle(b / "bundle")
+    np.testing.assert_array_equal(
+        b_bundle.snapshot.nodes["fog_b"].arrays["aggregator/rdp"],
+        a_fog.arrays["aggregator/rdp"],
+    )
+    assert b_bundle.lineage["algorithms"]["privacy"]["aggregators"] == {
+        "fog_a": "dp_fedavg",
+        "fog_b": "dp_fedavg",
+    }
+    assert plan(
+        parse_experiment(_child(workspace, b.name, topology=_private(TOPOLOGY)))
+    )
+    with pytest.raises(ConfigError, match="privacy"):
+        plan(parse_experiment(_child(workspace, b.name)))  # fog_b without its DP
+
+
+@pytest.mark.parametrize("restore", [None, {"model": False}], ids=["all", "no_model"])
+def test_a_dp_budget_outlives_a_generation_without_its_edge(
+    workspace: Path, restore: dict | None
+) -> None:
+    import numpy as np
+
+    from onion_fl.continuum.bundle import load_bundle
+
+    descriptor = (workspace / "datasets" / "demo.yaml").read_text(encoding="utf-8")
+    (workspace / "datasets" / "other.yaml").write_text(
+        descriptor.replace("name: demo", "name: other"), encoding="utf-8"
+    )
+    dp = {"name": "local_dp", "clip": 10.0}
+    raw = _datasets(experiment(workspace, privacy=dp), {"demo": {}, "other": {}})
+    (a_scenario,) = scenarios(parse_experiment(raw))
+    a = run_scenario(a_scenario, evaluate=stub_score)
+    b_raw = _datasets(_child(workspace, a.name, restore, privacy=dp), {"demo": {}})
+    (b_scenario,) = scenarios(parse_experiment(b_raw))
+    b = run_scenario(b_scenario, evaluate=stub_score)
+
+    a_nodes = load_bundle(a / "bundle").snapshot.nodes
+    b_nodes = load_bundle(b / "bundle").snapshot.nodes
+    others = [n for n in a_nodes if n.startswith("other-")]
+    assert others
+    for node_id in others:
+        np.testing.assert_array_equal(
+            b_nodes[node_id].arrays["privacy/rdp"],
+            a_nodes[node_id].arrays["privacy/rdp"],
+        )
+        assert b_nodes[node_id].meta["rng"] == a_nodes[node_id].meta["rng"]
+        # what B did not keep of A, it does not pass on either
+        held = any(k.startswith("model/") for k in b_nodes[node_id].arrays)
+        assert held == (restore is None)
+
+
+@pytest.mark.parametrize("per_client, refused", [(2, True), (1, False)])
+def test_a_new_dp_edge_may_not_hold_subjects_that_already_released(
+    workspace: Path, per_client: int, refused: bool
+) -> None:
+    dp = {"name": "local_dp", "clip": 10.0}
+    held = {"test": ["1", "2", "3"], "val": ["4", "5"]}
+
+    def roles(raw: dict, exclude: list[str]) -> dict:
+        raw["data"]["roles"] = raw["data"]["roles"] | {
+            "subjects_per_client": per_client,
+            "overrides": {"demo": held | {"exclude": exclude}},
+        }
+        return raw
+
+    a = run_scenario(
+        *scenarios(parse_experiment(roles(experiment(workspace, privacy=dp), ["12"]))),
+        evaluate=stub_score,
+    )
+    child = roles(_child(workspace, a.name, privacy=dp), [])  # 12 joins: regrouped
+
+    if refused:
+        with pytest.raises(ConfigError, match="released"):
+            plan(parse_experiment(child))
+    else:
+        assert plan(parse_experiment(child))
+
+
 def test_a_continuation_may_change_the_dp_noise(workspace: Path) -> None:
     parent = _parent_run(workspace, privacy={"name": "local_dp", "sigma": 0.5})
 

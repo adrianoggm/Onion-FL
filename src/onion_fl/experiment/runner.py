@@ -155,6 +155,10 @@ def _algorithms(config: ExperimentConfig) -> dict[str, Any]:
     }
 
 
+def _nodes_of(topology: Topology) -> set[str]:
+    return {node.id for node in topology.nodes}
+
+
 def _check_privacy(
     saved: Mapping[str, Any], here: Mapping[str, Any], shared: set[str]
 ) -> None:
@@ -242,8 +246,7 @@ def _parent(config: ExperimentConfig, seed: int) -> tuple[Path, Bundle, Any] | N
                 f"learning.init: the parent's {part} is {saved.get(part)!r}, here "
                 f"{here[part]!r}; its state does not fit: set restore.{flag}: false"
             )
-    nodes = {node.id for node in resolve_topology(config).nodes}
-    shared = nodes & set(bundle.snapshot.nodes)
+    shared = _nodes_of(resolve_topology(config)) & set(bundle.snapshot.nodes)
     _check_privacy(saved.get("privacy", {}), here["privacy"], shared)
     return path, bundle, init.restore
 
@@ -315,6 +318,20 @@ def _check_structure(
             )
 
 
+def _check_budgets(bundle: Bundle, split: DataSplit) -> None:
+    """Under local DP, a new edge may not hold a subject that already released:
+    its budget is the edge's, so it would start again at zero."""
+    for client in split.clients:
+        trained = (bundle.roles.get(client.dataset) or {}).get("train", [])
+        released = sorted(set(trained) & set(client.subjects), key=natural_key)
+        if released and client.id not in bundle.snapshot.nodes:
+            raise ConfigError(
+                f"learning.init: edge {client.id} is new, but {released} already "
+                "released updates under local DP and their budget would restart; "
+                "keep subjects_per_client and the training subjects"
+            )
+
+
 def _restore_parts(
     snapshot: FederationSnapshot, restore: Any, edges: set[str]
 ) -> FederationSnapshot:
@@ -381,6 +398,8 @@ def _scenario_data(
         _check_roles(parent[1].roles, split.roles)
         if parent[2].model:
             _check_structure(parent[1], config, split, scenario.seed)
+        if config.privacy is not None:
+            _check_budgets(parent[1], split)
     placement_ref = config.data.placement
     name = placement_ref if isinstance(placement_ref, str) else placement_ref["name"]
     params = (
@@ -709,11 +728,21 @@ def run_scenario(
         run.attach(federation)
         federation.run()
         save_model(run.path, federation.coordinator.state)
-        # What the lineage knows of a dataset outlives a run that does not load it.
+        # What the lineage knows of a dataset or node outlives a run without it.
         earlier = parent[1] if parent else None
+        snapshot, algorithms = snapshot_federation(federation), _algorithms(config)
+        if earlier:  # nodes gone here keep what this run kept of them
+            kept = _restore_parts(earlier.snapshot, parent[2], set(federation.edges))
+            snapshot.nodes = {**kept.nodes, **snapshot.nodes}
+            saved = earlier.lineage.get("algorithms", {}).get("privacy", {})
+            central = saved.get("aggregators", {})
+            algorithms["privacy"]["aggregators"] = {
+                **{n: m for n, m in central.items() if n not in _nodes_of(topology)},
+                **algorithms["privacy"]["aggregators"],
+            }
         save_bundle(
             run.path / "bundle",
-            snapshot_federation(federation),
+            snapshot,
             preprocessing={
                 **(earlier.preprocessing if earlier else {}),
                 **split.preprocessing,
@@ -723,7 +752,7 @@ def run_scenario(
                 "version": federation.coordinator.round,
                 "run_id": run.run_id,
                 "parent": lineage_parent,
-                "algorithms": _algorithms(config),
+                "algorithms": algorithms,
             },
             config=identity(config),
             roles=_lineage_roles(earlier.roles if earlier else {}, split.roles),
