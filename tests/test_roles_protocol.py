@@ -1115,6 +1115,31 @@ class Anchors:
         return self.stub.train(model, data, received, ctx)
 
 
+def test_a_child_first_drawn_late_still_starts_from_the_initial_state() -> None:
+    # A checkpoint-like start: heads that a fresh build would not have.
+    start = {k: v + (5.0 if k.startswith("head.") else 0.0) for k, v in INITIAL.items()}
+    fog = {"participation": {"name": "fraction", "p": 0.5}}
+    specs = {f"e{i}": EdgeSpec(f"e{i}", model(A), trainer=Anchors()) for i in range(4)}
+    federation = build_federation(
+        tree(1, fog=fog),
+        {"fog_0": list(specs.values())},
+        initial_state=start,
+        rounds=4,
+        sharing="fedper",  # heads stay on the edge: only the first model has them
+    )
+    federation.run()
+
+    first = {
+        e["node"] for e in names(federation, "edge.trained") if e["tags"]["round"] == 1
+    }
+    late = {e["node"] for e in names(federation, "edge.trained")} - first
+    assert late  # some edge first trained after round 1
+    for edge_id in late:
+        trained = len(names(federation, "edge.trained", edge_id))
+        head = state_arrays(federation.edges[edge_id].model)["head.t.weight"]
+        np.testing.assert_allclose(head, start["head.t.weight"] + trained, rtol=1e-6)
+
+
 def test_a_trainer_is_anchored_only_to_what_crosses_to_its_parent() -> None:
     recording = Anchors()
     spec = EdgeSpec("e1", model(A), trainer=recording)

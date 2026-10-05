@@ -134,6 +134,8 @@ class _Collector(Node):
         self.stale_round: dict[str, int] = {}  # the round each buffered update is from
         self.sent_history: dict[int, State] = {}  # what was sent down, per round
         self.owed: dict[str, list[int]] = {}  # rounds each child has not answered
+        # Children that already got a whole model; the first one each gets is.
+        self.bootstrapped: set[str] = set()
         self.pending_eval: dict[int, dict[str, Any]] = {}
         self.diagnostics = (
             [diagnostic_plugins.create(n) for n in diagnostic_plugins.names()]
@@ -210,7 +212,14 @@ class _Collector(Node):
     def _other(self, msg: Message, ctx: Context) -> None:
         _reject(ctx, msg, "unexpected sender or kind")
 
-    def _open(self, round: int, state: State, ctx: Context, bootstrap: bool) -> None:
+    def _open(
+        self,
+        round: int,
+        state: State,
+        ctx: Context,
+        bootstrap: bool,
+        whole: State | None = None,
+    ) -> None:
         if self.open:  # the parent moved on before this round closed
             self._abandon(round, ctx)
         self.round, self.open, self.opened_at = round, True, ctx.now()
@@ -234,17 +243,20 @@ class _Collector(Node):
         )
         self.sent = down
         payload = Payload(state=down)
+        first = Payload(state=state if whole is None else whole)
         for child in self.participants:
+            new = child not in self.bootstrapped  # a child drawn late, or lost
             ctx.send(
                 Message(
                     kind="global_model",
                     src=self.id,
                     dst=child,
                     round=round,
-                    payload=payload,
-                    meta={"bootstrap": bootstrap},
+                    payload=first if new else payload,
+                    meta={"bootstrap": new},
                 )
             )
+            self.bootstrapped.add(child)
             self.owed.setdefault(child, []).append(round)
         # Kept while an update trained on it may still be kept, to rebase it; a
         # policy that drops late updates needs none, and max_staleness bounds it.
@@ -687,6 +699,7 @@ class Aggregator(_Greeter, _Collector):
         self.parent, self.hello_retry = parent, hello_retry
         self.zone: State = {}
         self.received: State = {}
+        self.whole: State = {}  # every key received so far, for a child's first model
         self.parent_level = self.levels[self.levels.index(self.level) - 1]
 
     def _registered(self, ctx: Context) -> None:
@@ -712,11 +725,13 @@ class Aggregator(_Greeter, _Collector):
             _reject(ctx, msg, "unexpected sender or kind")
             return
         self.received = dict(msg.payload.state)
+        self.whole.update(self.received)
         bootstrap = bool(msg.meta.get("bootstrap"))
         if bootstrap:
             held = keys_held_at(self.received, self.sharing, self.levels, self.level)
             self.zone = _subset(self.received, held)
-        self._open(msg.round, {**self.received, **self.zone}, ctx, bootstrap)
+        state = {**self.received, **self.zone}
+        self._open(msg.round, state, ctx, bootstrap, {**self.whole, **self.zone})
 
     def _closed(self, aggregated: Contribution, metrics: dict, ctx: Context) -> None:
         held = keys_held_at(aggregated.state, self.sharing, self.levels, self.level)
