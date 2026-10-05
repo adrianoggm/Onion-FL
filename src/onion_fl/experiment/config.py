@@ -311,10 +311,17 @@ class ExperimentConfig(Strict):
             raise ValueError("labels: they belong to a stream; set stream too")
         if self.stream is None:
             return self
-        roles, init = self.data.roles, self.learning.init
+        roles, init, ref = self.data.roles, self.learning.init, self.data.placement
         one_each = isinstance(self.stream.start, Staggered) or isinstance(
             self.stream.bootstrap, Samples
         )
+        params = (
+            {}
+            if isinstance(ref, str)
+            else {k: v for k, v in ref.items() if k != "name"}
+        )
+        name = ref if isinstance(ref, str) else ref["name"]
+        merging = getattr(placements.create(name, params), "merge", False)
         refusals = [
             (self.runtime.mode == "real", "real runs do not stream yet (C9)"),
             (
@@ -335,6 +342,11 @@ class ExperimentConfig(Strict):
                 one_each and roles.subjects_per_client > 1,
                 "data.roles.subjects_per_client: a staggered start or a bootstrap "
                 "in samples needs one subject per edge",
+            ),
+            (
+                one_each and merging,
+                f"data.placement: {name} merges edges, so a staggered start or a "
+                "bootstrap in samples cannot be kept per subject",
             ),
         ]
         for refused, message in refusals:

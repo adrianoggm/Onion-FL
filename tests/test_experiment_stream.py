@@ -1,8 +1,9 @@
 """Stream experiments end to end (continuum C3, issue #158).
 
 The dataset is a small CSV format fixture with a time column; edges use the
-stub trainer and scores come from a stub scorer, so nothing is trained or
-evaluated for real (docs/RULES.md).
+stub trainer, so nothing is trained for real, and the evaluators use a stub
+scorer. The edges' prequential scores come from the stub-trained models'
+stored predictions; no test reads them as results (docs/RULES.md).
 """
 
 from __future__ import annotations
@@ -217,3 +218,17 @@ def test_the_plan_previews_the_stream(workspace: Path) -> None:
     stream = preview["stream"]
     assert stream["horizon"] == 1020 and stream["rounds"] == 5
     assert all(e["rows"] == 20 for e in stream["edges"].values())
+
+
+@pytest.mark.parametrize(
+    "stream",
+    [STREAM | {"bootstrap": {"samples": 2}}, STREAM | {"start": {"staggered": 60}}],
+)
+def test_a_merging_placement_cannot_count_history_per_subject(
+    workspace: Path, stream: dict
+) -> None:
+    raw = experiment(workspace, stream=stream)
+    raw["data"] = raw["data"] | {"placement": {"name": "pooled"}}
+
+    with pytest.raises(ConfigError, match="placement"):
+        plan(parse_experiment(raw))
