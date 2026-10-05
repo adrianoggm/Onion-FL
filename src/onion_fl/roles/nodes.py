@@ -998,12 +998,18 @@ class Edge(_Greeter, Node):
         if scoring and "received" in self.eval_models:
             metrics |= self._score("received", msg.round, ctx)
         model_before = state_arrays(self.model)
+        saved = None
         try:
             # What a diverged round rolls back to: the model, and the trainer's
             # memory if it can snapshot it (built-ins can; a plugin may opt in).
             saved = getattr(self.trainer, "snapshot", lambda: None)()
             result = self.trainer.train(self.model, data, received=received, ctx=ctx)
         except Exception as exc:  # the edge counts as absent; the run goes on
+            # A trainer may have changed the model or its memory before failing:
+            # roll both back, as for non-finite weights, so a retry starts clean.
+            if saved is not None:
+                self.trainer.restore(saved)
+            load_arrays(self.model, model_before)
             ctx.emit(
                 "edge.train_failed",
                 round=msg.round,

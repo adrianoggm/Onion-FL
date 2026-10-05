@@ -338,3 +338,47 @@ def test_the_rows_of_a_failed_training_are_trained_next_time(how: str) -> None:
     trained = np.concatenate([t for _, t in flaky.calls])  # the calls that worked
     assert set(flaky.failed) <= set(flaky.calls[0][1])  # retried at once
     assert len(trained) == len(set(trained))  # and still once each
+
+
+class ChangesThenRaises(Recording):
+    """Moves its local head, then fails, on its first call; records the head
+    it starts each call from."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.heads: list[dict] = []
+
+    def train(self, model, data=None, received=None, ctx=None):
+        heads = {
+            k: v.copy() for k, v in state_arrays(model).items() if k.startswith("head.")
+        }
+        self.heads.append(heads)
+        if len(self.heads) == 1:
+            import torch
+
+            with torch.no_grad():
+                for name, parameter in model.named_parameters():
+                    if name.startswith("head."):
+                        parameter.add_(100.0)
+            raise RuntimeError("out of memory")
+        return super().train(model, data, received, ctx)
+
+
+def test_a_training_that_raises_leaves_no_trace_in_the_local_model() -> None:
+    trainer = ChangesThenRaises()
+    spec = EdgeSpec(
+        "a1", ModularMLP(CONFIG, [A], seed=0), trainer=trainer, stream=stream_of("a-1")
+    )
+    federation = build_federation(
+        tree(1, fog={"deadline": 1}),
+        {"fog_0": [spec]},
+        initial_state=INITIAL,
+        rounds=3,
+        sharing="fedper",  # the head stays local: no broadcast overwrites it
+        round_every=EVERY / SPEED,
+    )
+    federation.run()
+
+    first, retry = trainer.heads[0], trainer.heads[1]
+    for key, value in first.items():
+        np.testing.assert_array_equal(retry[key], value, err_msg=key)
