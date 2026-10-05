@@ -341,10 +341,10 @@ def _check_structure(
             )
 
 
-def _check_budgets(bundle: Bundle, split: DataSplit) -> None:
+def _check_budgets(bundle: Bundle, clients: Sequence[Any]) -> None:
     """Under local DP, a new edge may not hold a subject that already released:
     its budget is the edge's, so it would start again at zero."""
-    for client in split.clients:
+    for client in clients:
         trained = (bundle.roles.get(client.dataset) or {}).get("train", [])
         released = sorted(set(trained) & set(client.subjects), key=natural_key)
         if released and client.id not in bundle.snapshot.nodes:
@@ -445,12 +445,6 @@ def _scenario_data(
     split = split_subjects(
         subjects, config.data.roles, frozen=frozen, fit_rows=fit_rows
     )
-    if parent:
-        _check_roles(parent[1].roles, split.roles)
-        if parent[2].model:
-            _check_structure(parent[1], config, split, scenario.seed)
-        if config.privacy is not None:
-            _check_budgets(parent[1], split)
     placement_ref = config.data.placement
     name = placement_ref if isinstance(placement_ref, str) else placement_ref["name"]
     params = (
@@ -458,12 +452,14 @@ def _scenario_data(
         if isinstance(placement_ref, str)
         else {k: v for k, v in placement_ref.items() if k != "name"}
     )
-    return (
-        topology,
-        split,
-        place(split, topology, name, params, seed=scenario.seed),
-        digests,
-    )
+    if parent:
+        _check_roles(parent[1].roles, split.roles)
+        if parent[2].model:
+            _check_structure(parent[1], config, split, scenario.seed)
+    placement = place(split, topology, name, params, seed=scenario.seed)
+    if parent and config.privacy is not None:  # the edges as placed, pooled too
+        _check_budgets(parent[1], _placed(placement))
+    return topology, split, placement, digests
 
 
 def _shapes(split: DataSplit) -> list[Any]:
@@ -717,6 +713,13 @@ def _stream_summary(config: ExperimentConfig, streams: Mapping[str, Any]) -> dic
     }
 
 
+def _placed(placement: Placement) -> list[Any]:
+    """The training edges as placed, in the split's order: a merging placement
+    (pooled) replaces its clients, so attackers and budgets follow these."""
+    clients = [c for group in placement.edges.values() for c in group]
+    return sorted(clients, key=lambda c: (c.dataset, natural_key(c.id)))
+
+
 def edge_specs(
     scenario: Scenario, topology: Topology, split: DataSplit, placement: Placement
 ) -> tuple[dict[str, list[EdgeSpec]], dict[str, Any]]:
@@ -743,7 +746,7 @@ def edge_specs(
             stream=stream,
         )
 
-    bad = malicious_edges(config, split.clients, scenario.seed)
+    bad = malicious_edges(config, _placed(placement), scenario.seed)
     edges: dict[str, list[EdgeSpec]] = {}
     for leaf, clients in placement.edges.items():
         edges[leaf] = [
@@ -912,7 +915,7 @@ def record_data(
     run.record("data.roles", None, roles=split.roles)
     for leaf, composition in placement.composition().items():
         run.record("data.composition", composition["samples"], leaf=leaf, **composition)
-    bad = malicious_edges(scenario.config, split.clients, scenario.seed)
+    bad = malicious_edges(scenario.config, _placed(placement), scenario.seed)
     if bad:
         run.record("data.attack", float(len(bad)), edges=sorted(bad))
 
