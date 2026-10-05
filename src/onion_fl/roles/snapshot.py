@@ -4,8 +4,9 @@ from __future__ import annotations
 
 A snapshot holds, per node, arrays (no pickles) and JSON-ready metadata:
 the coordinator's global model, round and server optimizer; each aggregator's
-zone groups; each edge's model, trainer memory and released DP updates; and
-every node's random stream. Messages in flight when a run ended are not kept.
+zone groups and own state (the central DP budget); each edge's model, trainer
+memory and local DP budget; and every node's random stream. Messages in flight
+when a run ended are not kept.
 """
 
 from collections.abc import Mapping
@@ -62,8 +63,9 @@ def snapshot_federation(federation: Federation) -> FederationSnapshot:
     for node_id, edge in federation.edges.items():
         state = NodeState(
             _prefixed("model", state_arrays(edge.model)) if edge.model else {},
-            {"rng": rng_state(runtime._rng(node_id)), "released": edge._released},
+            {"rng": rng_state(runtime._rng(node_id))},
         )
+        state.arrays |= _prefixed("privacy", getattr(edge.privacy, "state", dict)())
         export = getattr(edge.trainer, "export_memory", None)
         if export is not None:
             memory, meta = export()
@@ -115,6 +117,8 @@ def restore_federation(federation: Federation, snapshot: FederationSnapshot) -> 
             edge.trainer.import_memory(
                 _part(saved.arrays, "memory"), saved.meta["memory"], edge.model
             )
-        edge._released = int(saved.meta.get("released", 0))
+        load = getattr(edge.privacy, "load_state", None)
+        if load is not None:
+            load(_part(saved.arrays, "privacy"))
         if "rng" in saved.meta:
             restore_rng(runtime._rng(node_id), saved.meta["rng"])

@@ -26,6 +26,35 @@ def gaussian_epsilon(noise_multiplier: float, rounds: int, delta: float) -> floa
     return float(eps.min())
 
 
+class Accountant:
+    """The Rényi DP spent so far at each order α of ``ORDERS``.
+
+    Each Gaussian release adds α/(2σ²) whatever σ it used, so ε stays right
+    when a continuation changes σ; ``state`` goes into the run's bundle.
+    """
+
+    rdp: np.ndarray
+
+    def spend(self, noise_multiplier: float) -> None:
+        self.rdp = self.rdp + ORDERS / (2 * noise_multiplier**2)
+
+    def spent(self, delta: float) -> float:
+        """ε at ``delta``: min_α RDP_α + ln(1/δ)/(α − 1)."""
+        if not self.rdp.any():
+            return 0.0
+        return float((self.rdp + np.log(1 / delta) / (ORDERS - 1)).min())
+
+    def state(self) -> dict[str, np.ndarray]:
+        return {"orders": ORDERS, "rdp": self.rdp}
+
+    def load_state(self, arrays: Mapping[str, np.ndarray]) -> None:
+        if "rdp" not in arrays:
+            return
+        if not np.array_equal(arrays["orders"], ORDERS):
+            raise ValueError("the saved privacy budget uses other RDP orders")
+        self.rdp = np.array(arrays["rdp"], np.float64)
+
+
 privacies = Registry("privacy")
 
 
@@ -48,16 +77,16 @@ class LocalDPParams(BaseModel):
         "sustituirse por otra. Los grupos locales no se tocan."
     ),
 )
-class LocalDP:
+class LocalDP(Accountant):
     def __init__(
         self, clip: float = 1.0, sigma: float = 1.0, delta: float = 1e-5
     ) -> None:
         self.clip, self.sigma, self.delta = clip, sigma, delta
+        self.rdp = np.zeros_like(ORDERS)
 
-    def epsilon(self, rounds: int) -> float:
-        # Replace-one adjacency: any update in the C-ball may become any other,
-        # so the sensitivity is 2C and the noise counts as σ/2.
-        return gaussian_epsilon(self.sigma / 2, rounds, self.delta)
+    def epsilon(self) -> float:
+        """ε of every update this edge has released, across continuations."""
+        return self.spent(self.delta)
 
     def on_update(
         self,
@@ -77,4 +106,7 @@ class LocalDP:
             noise = rng.normal(0.0, self.sigma * self.clip, size=delta[k].shape)
             noisy = np.asarray(received[k], np.float64) + scale * delta[k] + noise
             out[k] = noisy.astype(np.asarray(arrays[k]).dtype)
+        # Replace-one adjacency: any update in the C-ball may become any other,
+        # so the sensitivity is 2C and the noise counts as σ/2.
+        self.spend(self.sigma / 2)
         return out

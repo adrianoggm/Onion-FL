@@ -493,6 +493,23 @@ def test_dp_fedavg_adds_seeded_noise_and_reports_epsilon() -> None:
     assert value == pytest.approx(5.298, abs=0.01)  # one round at σ=1
 
 
+def test_dp_fedavg_composes_its_budget_across_a_change_of_sigma() -> None:
+    from onion_fl.learning.privacy import ORDERS
+
+    reference = {"w": np.zeros(3)}
+    children = [vec("a", [1.0, 1.0, 1.0]), vec("b", [1.0, 1.0, 1.0])]
+    before = aggregators.create("dp_fedavg", {"clip": 10.0, "sigma": 0.5})
+    before.aggregate(children, "fog", reference=reference, rng=np.random.default_rng(0))
+    after = aggregators.create("dp_fedavg", {"clip": 10.0, "sigma": 1.0})
+    after.load_state(before.state())
+    after.aggregate(children, "fog", reference=reference, rng=np.random.default_rng(0))
+
+    rdp = ORDERS / (2 * 0.5**2) + ORDERS / (2 * 1.0**2)
+    expected = float((rdp + np.log(1e5) / (ORDERS - 1)).min())
+    ((_, value, _),) = after.report()
+    assert value == pytest.approx(expected)
+
+
 def test_dp_fedavg_leaves_auxiliary_arrays_unclipped_and_unnoised() -> None:
     reference = {"w": np.zeros(1), "scaffold/w": np.zeros(1)}
     children = [vec("a", [1.0]), vec("b", [1.0])]

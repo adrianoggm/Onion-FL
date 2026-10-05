@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, PositiveInt
 
 from onion_fl.core.registry import Registry
 from onion_fl.learning.model import group_of, is_aux
-from onion_fl.learning.privacy import gaussian_epsilon
+from onion_fl.learning.privacy import ORDERS, Accountant
 
 
 class AggregationError(ValueError):
@@ -533,24 +533,17 @@ class DPFedAvgParams(BaseModel):
         "No admite entrenadores con claves auxiliares (SCAFFOLD, FedNova)."
     ),
 )
-class DPFedAvg:
+class DPFedAvg(Accountant):
     bounds_updates = True
 
     def __init__(
         self, clip: float = 1.0, sigma: float = 1.0, delta: float = 1e-5
     ) -> None:
         self.clip, self.sigma, self.delta = clip, sigma, delta
-        self.rounds = 0
-
-    def state(self) -> dict[str, np.ndarray]:
-        """The accountant: ε composes over every round, across continuations."""
-        return {"rounds": np.asarray(self.rounds)}
-
-    def load_state(self, arrays: Mapping[str, np.ndarray]) -> None:
-        self.rounds = int(arrays.get("rounds", 0))
+        self.rdp = np.zeros_like(ORDERS)
 
     def report(self) -> list[tuple[str, float, dict[str, Any]]]:
-        epsilon = gaussian_epsilon(self.sigma, self.rounds, self.delta)
+        epsilon = self.spent(self.delta)
         return [("diagnostic.privacy_epsilon", epsilon, {"mechanism": "central"})]
 
     def aggregate(
@@ -580,7 +573,7 @@ class DPFedAvg:
                 0.0, scale, size=np.shape(value)
             )
             state[key] = noisy.astype(np.asarray(value).dtype)
-        self.rounds += 1
+        self.spend(self.sigma)
         return Contribution(source, state, totals.weights)
 
 

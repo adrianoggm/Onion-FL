@@ -1169,3 +1169,27 @@ def test_the_central_dp_accountant_continues_across_a_snapshot() -> None:
     second.run()
 
     assert epsilons(second) == epsilons(straight) and len(epsilons(straight)) == 2
+
+
+def test_an_edges_dp_budget_continues_across_a_snapshot_with_another_sigma() -> None:
+    from onion_fl.learning.privacy import ORDERS, privacies
+    from onion_fl.roles import restore_federation, snapshot_federation
+
+    def build(rounds: int, sigma: float):
+        dp = privacies.create("local_dp", {"clip": 10.0, "sigma": sigma})
+        spec = EdgeSpec("e1", model(A), trainer=trainers.create("stub"), privacy=dp)
+        return build_federation(
+            tree(1), {"fog_0": [spec]}, initial_state=INITIAL, rounds=rounds
+        )
+
+    first = build(2, 0.5)
+    first.run()
+    second = build(4, 1.0)
+    restore_federation(second, snapshot_federation(first))
+    second.run()
+
+    # replace-one: σ counts as σ/2; two releases at 0.5, then two at 1.0
+    rdp = 2 * ORDERS / (2 * 0.25**2) + 2 * ORDERS / (2 * 0.5**2)
+    expected = float((rdp + np.log(1e5) / (ORDERS - 1)).min())
+    last = names(second, "diagnostic.privacy_epsilon", "e1")[-1]["value"]
+    assert last == pytest.approx(expected)

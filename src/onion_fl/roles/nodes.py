@@ -776,7 +776,7 @@ class Edge(_Greeter, Node):
         self.trainer, self.train = trainer, train
         self.finetuner = finetuner
         self.attack = attack
-        self.privacy, self._released = privacy, 0
+        self.privacy = privacy
         self.sharing, self.levels = sharing, list(levels)
         self.parent_level = self.levels[-2]
         self.val_data, self.evaluate = val_data, evaluate
@@ -923,10 +923,9 @@ class Edge(_Greeter, Node):
             arrays = self.attack.on_update(arrays, received, child_rng(ctx.rng))
         if self.privacy is not None:
             arrays = self.privacy.on_update(arrays, received, child_rng(ctx.rng))
-            self._released += 1
             ctx.emit(
                 "diagnostic.privacy_epsilon",
-                self.privacy.epsilon(self._released),
+                self.privacy.epsilon(),
                 round=msg.round,
                 mechanism="local",
             )
