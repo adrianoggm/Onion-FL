@@ -231,7 +231,7 @@ Every runtime event is enriched into one schema and written to `events.jsonl`, t
   - Conflict between datasets: the cosine of their mean updates in the shared groups.
   - Drift across rounds, participation (with late updates and time to quorum) and fairness of the edge scores per dataset.
   - Traffic per link and round, which the run recorder adds.
-- **Analysis.** `load_runs("runs/").compare(level="fog", metric="accuracy", by=["topology_id"])` gives the mean ± 95% CI over seeds per round, plus the spread across the nodes of the level. `onion_fl report` builds an HTML page from it.
+- **Analysis.** `load_runs("runs/").compare(level="fog", metric="accuracy", by=["topology_id"])` gives the mean ± 95% CI over seeds per round, plus the spread across the nodes of the level. The runs of a group are pooled, so for a sweep over one topology add `scenario` or `config_id` to `by`. `onion_fl report` builds an HTML page from it.
 - **Studio.** `onion_fl serve` gives the same views in the browser, and follows running runs live.
 - **Live.**
   - The `prometheus` sink serves `onionfl_*` series on port 9464 for the Grafana dashboard. One server per process holds the runs of a sweep, told apart by `run_id`, so it needs `--workers 1`.
