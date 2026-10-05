@@ -8,6 +8,7 @@ count, so every expected number is arithmetic (docs/RULES.md).
 from __future__ import annotations
 
 import copy
+import math
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -293,7 +294,7 @@ def test_a_diverged_edge_recovers_and_reports_no_non_finite_score() -> None:
             result = self.stub.train(model, data, received, ctx)
             if type(self).calls == 1:
                 self.memory = float("nan")
-            if self.memory != self.memory:
+            if math.isnan(self.memory):
                 with torch.no_grad():
                     dict(model.named_parameters())[KEY].fill_(float("nan"))
             return result
