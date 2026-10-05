@@ -281,21 +281,6 @@ class WesadPickleReader:
         return pd.DataFrame(columns)
 
 
-def _glob_regex(pattern: str) -> re.Pattern[str]:
-    parts, seen = [], False
-    for token in re.split(r"(\{subject\}|\*|\?)", pattern):
-        if token == "{subject}":
-            parts.append("(?P=subject)" if seen else "(?P<subject>[^/]+)")
-            seen = True
-        elif token == "*":
-            parts.append("[^/]*")
-        elif token == "?":
-            parts.append("[^/]")
-        else:
-            parts.append(re.escape(token))
-    return re.compile("".join(parts))
-
-
 def source_files(source: SourceSpec, root: Path) -> list[tuple[Path, str | None]]:
     """Files the path matches, with the subject that ``{subject}`` captured."""
     regex = _glob_regex(source.path)
