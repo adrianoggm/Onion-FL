@@ -41,6 +41,9 @@ class RunRecord:
         return config.get("experiment", config.get("name"))
 
 
+SERIES = ("model", "source", "dataset")  # what tells series of a level apart
+
+
 class Runs:
     def __init__(self, records: Sequence[RunRecord]) -> None:
         self.records = list(records)
@@ -119,6 +122,15 @@ class Runs:
         for key in by:
             if key not in df.columns:
                 df[key] = None
+        # Rows of a level are nodes of one series only when they share model,
+        # source and dataset: different ones are kept apart, never averaged.
+        extra = [
+            k
+            for k in SERIES
+            if k in df.columns and k not in by and df[k].nunique(dropna=False) > 1
+        ]
+        by += extra
+        columns = [*by, *columns[len(by) - len(extra) :]]
         per_run = (
             df.groupby([*by, "run_id", over, "round"], dropna=False)["value"]
             .agg(
@@ -150,7 +162,9 @@ class Runs:
                     "node_spread": float(group["node_spread"].mean()),
                 }
             )
-        return pd.DataFrame(rows, columns=columns)
+        out = pd.DataFrame(rows, columns=columns)
+        out.attrs["by"] = by  # the keys the series were split by
+        return out
 
     def report(
         self,
@@ -230,6 +244,7 @@ def write_report(
     for level in levels:
         for metric in metrics:
             table = runs.compare(level=level, metric=metric, by=by)
+            by = table.attrs.get("by", list(by))
             if table.empty:
                 continue
             last = table.sort_values("round").groupby(list(by), dropna=False).tail(1)

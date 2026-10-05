@@ -324,9 +324,7 @@ def _split_subjects(
         if train_count + val_count >= n_subjects:
             train_count = max(1, n_subjects - val_count - 1)
 
-    test_count = n_subjects - train_count - val_count
-    if test_count <= 0:
-        test_count = 1
+    if n_subjects - train_count - val_count <= 0:  # keep a test subject
         if train_count > val_count:
             train_count -= 1
         else:

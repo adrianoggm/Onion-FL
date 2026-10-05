@@ -362,7 +362,10 @@ def create_app(root: str | Path = ".") -> FastAPI:
         try:
             config = experiment(name)
             previews = plan(rooted(config, root))
-        except (ConfigError, DataError, TopologyError, ValueError, OSError) as exc:
+        except OSError as exc:  # the file it misses, not where it lives
+            missing = Path(exc.filename).name if exc.filename else ""
+            return _errors(f"{exc.strerror or type(exc).__name__}: {missing}")
+        except (ConfigError, DataError, TopologyError, ValueError) as exc:
             return _errors(str(exc))
         # Runs start from the root with the paths as written: their config_id.
         for preview, scenario in zip(previews, scenarios(config), strict=True):
@@ -514,7 +517,8 @@ def create_app(root: str | Path = ".") -> FastAPI:
         table = load_runs(folders["runs"], experiment=experiment).compare(
             level=level, metric=metric, by=keys
         )
-        return _json(table.to_dict(orient="records"))
+        split = table.attrs.get("by", keys)  # what the series were split by
+        return _json([row | {"_by": split} for row in table.to_dict(orient="records")])
 
     # --- previews ---------------------------------------------------------------------
 

@@ -1510,3 +1510,42 @@ def test_a_real_run_that_fails_to_launch_is_marked_failed(
     assert (
         json.loads((run / "run.json").read_text(encoding="utf-8"))["status"] == "failed"
     )
+
+
+# --- silently wrong configurations (QA2, #174) --------------------------------------
+
+
+def test_two_entries_cannot_load_the_same_dataset(workspace: Path) -> None:
+    raw = experiment(workspace)
+    twin = {"descriptor": str(workspace / "datasets" / "demo.yaml")}
+    raw["data"] = raw["data"] | {"datasets": {"demo": {}, "demo_again": twin}}
+
+    with pytest.raises(ConfigError, match="demo"):
+        plan(parse_experiment(raw))
+
+
+def _attacked(workspace: Path, placement: dict) -> tuple[list[str], list[str]]:
+    from onion_fl.experiment.runner import _scenario_data, edge_specs, malicious_edges
+
+    raw = experiment(workspace, attack={"name": "sign_flip", "fraction": 0.5})
+    raw["data"] = raw["data"] | {"placement": placement}
+    (scenario,) = scenarios(parse_experiment(raw))
+    topology, split, placement_, _ = _scenario_data(scenario)
+    edges, _ = edge_specs(scenario, topology, split, placement_)
+    attacked = sorted(s.id for group in edges.values() for s in group if s.attack)
+    old = sorted(malicious_edges(scenario.config, split.clients, scenario.seed))
+    return attacked, old
+
+
+def test_an_attack_reaches_the_edges_of_a_merging_placement(workspace: Path) -> None:
+    attacked, _ = _attacked(workspace, {"name": "pooled"})
+
+    assert attacked and all(edge.endswith("-pooled") for edge in attacked)
+
+
+def test_an_attack_picks_the_same_edges_as_before_without_merging(
+    workspace: Path,
+) -> None:
+    attacked, old = _attacked(workspace, {"name": "mixing", "alpha": 0.0})
+
+    assert attacked == old and attacked
