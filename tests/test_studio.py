@@ -237,7 +237,7 @@ def test_a_plan_without_data_says_what_is_missing(
 def test_launching_a_run_starts_the_command_line(
     client: TestClient, root: Path, monkeypatch
 ) -> None:
-    import onion_fl.studio.api as api
+    from onion_fl.studio import api
 
     started = {}
 
