@@ -31,6 +31,7 @@ from onion_fl.learning.aggregators import Contribution
 from onion_fl.learning.metrics import compute, predict, reduce_reports
 from onion_fl.learning.model import group_of, is_aux, load_arrays, state_arrays
 from onion_fl.learning.sharing import SharingPolicy, keys_crossing, keys_held_at
+from onion_fl.learning.trainers import frozen_keys
 from onion_fl.observability.diagnostics import RoundView
 from onion_fl.observability.diagnostics import diagnostics as diagnostic_plugins
 from onion_fl.roles.policies import AllChildren, Drop, quorum_needed
@@ -1083,7 +1084,12 @@ class Edge(_Greeter, Node):
         if attacking:
             arrays = self.attack.on_update(arrays, received, child_rng(ctx.rng))
         if self.privacy is not None:
-            arrays = self.privacy.on_update(arrays, received, child_rng(ctx.rng))
+            # A frozen group crosses as it arrived: nothing to hide, and noise
+            # on it would only make it drift.
+            fixed = {k: arrays[k] for k in frozen_keys(self.trainer, arrays)}
+            released = {k: v for k, v in arrays.items() if k not in fixed}
+            arrays = self.privacy.on_update(released, received, child_rng(ctx.rng))
+            arrays |= fixed
             ctx.emit(
                 "diagnostic.privacy_epsilon",
                 self.privacy.epsilon(),

@@ -339,6 +339,19 @@ def test_auxiliary_arrays_cannot_bypass_a_clip_noise_or_attack(
         plan(parse_experiment(experiment(workspace, learning=learning, **extra)))
 
 
+@pytest.mark.parametrize(
+    "trainer", ["fedbabu", {"name": "standard", "frozen": ["trunk"]}]
+)
+def test_central_noise_cannot_reach_a_frozen_group(workspace: Path, trainer) -> None:
+    learning = experiment(workspace)["learning"] | {
+        "trainer": trainer,
+        "aggregator": "dp_fedavg",
+    }
+
+    with pytest.raises(ConfigError, match="frozen"):
+        plan(parse_experiment(experiment(workspace, learning=learning)))
+
+
 def test_the_experiment_can_set_the_leaf_aggregators(workspace: Path) -> None:
     from onion_fl.experiment.runner import resolve_topology
 

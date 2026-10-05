@@ -48,7 +48,7 @@ from onion_fl.learning.model import (
 )
 from onion_fl.learning.privacy import Accountant, privacies
 from onion_fl.learning.sharing import not_local, sharing, traffic
-from onion_fl.learning.trainers import inits, trainers
+from onion_fl.learning.trainers import frozen_keys, inits, trainers
 from onion_fl.observability.run import Run, save_model, verify_run
 from onion_fl.observability.sinks import OtelSink, PrometheusSink, otlp_provider
 from onion_fl.roles import (
@@ -521,6 +521,19 @@ def _check_learning(config: ExperimentConfig, state: Mapping[str, Any]) -> None:
                 f"{', '.join(bounding + axes)} would not clip, noise or poison; "
                 "use a trainer without them"
             )
+    frozen = sorted({group_of(k) for k in frozen_keys(trainer, state)})
+    noising = sorted(
+        node.id
+        for node in topology.nodes
+        if (ref := node.settings.get("aggregator")) is not None
+        and isinstance(create(aggregators, ref), Accountant)
+    )
+    if frozen and noising:
+        raise ConfigError(
+            f"learning.trainer: {name} keeps {frozen} frozen, but {noising} add "
+            "noise to every key they aggregate, so those groups would drift; "
+            "unfreeze them or use privacy local_dp"
+        )
     ref = topology.root.settings.get("server_optimizer") or "replace"
     optimizer_name = _name(ref)
     needed = getattr(trainer, "server_optimizer", None)

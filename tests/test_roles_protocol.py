@@ -24,6 +24,7 @@ from onion_fl.learning.model import (
     DataShape,
     ModularMLP,
     ModularMLPConfig,
+    load_arrays,
     state_arrays,
 )
 from onion_fl.learning.trainers import trainers
@@ -1108,6 +1109,35 @@ def test_local_dp_clips_only_what_crosses_to_the_parent() -> None:
     federation = run(tree(1), {"fog_0": [spec]}, sharing="fedper")
 
     assert_global(federation, "trunk.0.weight", 1.0)
+
+
+class FrozenHead:
+    """The stub trainer with the head frozen, as FedBABU freezes it."""
+
+    params = dataclasses.make_dataclass("P", [("frozen", list)])(["head.*"])
+
+    def __init__(self) -> None:
+        self.stub = trainers.create("stub", {"shift": 1.0})
+
+    def train(self, model, data=None, received=None, ctx=None):
+        head = {k: v for k, v in state_arrays(model).items() if k.startswith("head.")}
+        result = self.stub.train(model, data, received, ctx)
+        load_arrays(model, head)  # frozen: it never moves
+        return result
+
+
+def test_local_dp_leaves_the_frozen_groups_as_they_arrived() -> None:
+    from onion_fl.learning.privacy import privacies
+
+    dp = privacies.create("local_dp", {"clip": 1.0, "sigma": 1.0})
+    spec = EdgeSpec("e1", model(A), trainer=FrozenHead(), privacy=dp)
+
+    federation = run(tree(1), {"fog_0": [spec]}, rounds=3)
+
+    for key in (k for k in INITIAL if k.startswith("head.")):
+        np.testing.assert_array_equal(federation.coordinator.state[key], INITIAL[key])
+    trunk = federation.coordinator.state["trunk.0.weight"]
+    assert not np.allclose(trunk, shifted("trunk.0.weight", 3.0))  # noised
 
 
 def test_the_statistics_count_the_holders_of_each_group() -> None:
