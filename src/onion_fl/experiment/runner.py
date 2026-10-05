@@ -181,6 +181,12 @@ def _parent(config: ExperimentConfig, seed: int) -> tuple[Path, Bundle, Any] | N
             "write no bundle until the distributed continuum (C9)"
         )
     init = create(inits, config.learning.init)
+    if init.restore.preprocessing and config.data.roles.scaler == "local":
+        raise ConfigError(
+            "learning.init: frozen local preprocessing is not supported yet (each "
+            "holder would refit its own scaler); use scaler: global, or set "
+            "restore.preprocessing: false"
+        )
     runs = Path(config.paths.runs)
     if init.run.startswith("experiment:"):
         path = _newest_run(runs, init.run.split(":", 1)[1], seed)

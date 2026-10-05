@@ -1131,3 +1131,15 @@ def test_the_lineage_remembers_a_dataset_a_generation_did_not_load(
     back = {"other": {"test": ["1", "2"], "val": []}}  # trained in A, not in B
     with pytest.raises(ConfigError, match="trained the parent"):
         plan(parse_experiment(_datasets(_child(workspace, b.name), back)))
+
+
+def test_frozen_local_preprocessing_is_refused(workspace: Path) -> None:
+    parent = _parent_run(workspace)
+    raw = _child(workspace, parent.name)
+    raw["data"]["roles"] = raw["data"]["roles"] | {"scaler": "local"}
+
+    with pytest.raises(ConfigError, match="local preprocessing"):
+        plan(parse_experiment(raw))
+    raw = _child(workspace, parent.name, {"preprocessing": False})
+    raw["data"]["roles"] = raw["data"]["roles"] | {"scaler": "local"}
+    assert plan(parse_experiment(raw))
