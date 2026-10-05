@@ -6,15 +6,17 @@ from __future__ import annotations
     ├── bundle.json          # round, root id and node ids
     ├── model.npz            # the global model
     ├── server.npz           # the server optimizer's state
-    ├── nodes/<id>.npz       # each node's arrays (edge model, trainer memory, zone, ...)
+    ├── nodes/<id>.npz       # each node's arrays (edge model, memory, DP budget, ...)
     ├── nodes/<id>.json      # each node's metadata (random stream, memory layout, ...)
     ├── preprocessing.json   # per dataset: kept features, fill, mean, std
     ├── schema.json          # per dataset: task and classes
-    ├── roles.json           # per dataset: train, val and test subjects
-    ├── lineage.json         # version, run_id, parent
+    ├── roles.json           # per dataset: every train, val and test subject
+    ├── lineage.json         # version, run_id, parent, algorithms
     └── config.yaml          # the config that produced it
 
-Only ``.npz`` and text files: a bundle never holds a pickle.
+Only ``.npz`` and text files: a bundle never holds a pickle. The runner makes
+preprocessing, schema and roles cumulative over the lineage: a dataset a run
+does not load keeps what its ancestors knew of it.
 """
 
 import json

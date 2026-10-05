@@ -1097,3 +1097,37 @@ def test_a_continuation_may_change_the_dp_noise(workspace: Path) -> None:
 
     raw = _child(workspace, parent.name, privacy={"name": "local_dp", "sigma": 1.0})
     assert plan(parse_experiment(raw))
+
+
+def _datasets(raw: dict, datasets: dict) -> dict:
+    raw["data"] = raw["data"] | {"datasets": dict.fromkeys(datasets, {})}
+    raw["data"]["roles"] = raw["data"]["roles"] | {"overrides": datasets}
+    return raw
+
+
+def test_the_lineage_remembers_a_dataset_a_generation_did_not_load(
+    workspace: Path,
+) -> None:
+    from onion_fl.continuum.bundle import load_bundle
+
+    descriptor = (workspace / "datasets" / "demo.yaml").read_text(encoding="utf-8")
+    (workspace / "datasets" / "other.yaml").write_text(
+        descriptor.replace("name: demo", "name: other"), encoding="utf-8"
+    )
+    first = {"demo": {}, "other": {"test": ["11", "12"], "val": []}}
+    raw = _datasets(experiment(workspace), first)
+    (a_scenario,) = scenarios(parse_experiment(raw))
+    a = run_scenario(a_scenario, evaluate=stub_score)
+    (b_scenario,) = scenarios(
+        parse_experiment(_datasets(_child(workspace, a.name), {"demo": {}}))
+    )
+    b = run_scenario(b_scenario, evaluate=stub_score)
+
+    a_bundle, b_bundle = load_bundle(a / "bundle"), load_bundle(b / "bundle")
+    assert b_bundle.preprocessing["other"] == a_bundle.preprocessing["other"]
+    assert b_bundle.schema["other"] == a_bundle.schema["other"]
+    assert b_bundle.roles["other"]["train"] == a_bundle.roles["other"]["train"]
+    assert "1" in a_bundle.roles["other"]["train"]
+    back = {"other": {"test": ["1", "2"], "val": []}}  # trained in A, not in B
+    with pytest.raises(ConfigError, match="trained the parent"):
+        plan(parse_experiment(_datasets(_child(workspace, b.name), back)))

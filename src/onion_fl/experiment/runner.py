@@ -21,6 +21,7 @@ from onion_fl.continuum.bundle import Bundle, load_bundle, save_bundle
 from onion_fl.core.context import node_rng
 from onion_fl.core.topology import Topology, load_topology, parse_topology
 from onion_fl.data.cache import load_prepared, prepare
+from onion_fl.data.contract import natural_key
 from onion_fl.data.ingest import load_spec
 from onion_fl.data.placement import Placement, place
 from onion_fl.data.roles import DataSplit, split_subjects
@@ -226,7 +227,8 @@ def _parent(config: ExperimentConfig, seed: int) -> tuple[Path, Bundle, Any] | N
 
 
 def _check_roles(parent: Mapping[str, Any], child: Mapping[str, Any]) -> None:
-    """No test or validation subject of the child may have trained the parent."""
+    """No test or validation subject of the child may have trained the parent or
+    any run before it: a bundle's roles are its whole lineage's."""
     if not parent:
         raise ConfigError("learning.init: the parent's bundle records no data roles")
     for dataset, roles in sorted(child.items()):
@@ -235,9 +237,28 @@ def _check_roles(parent: Mapping[str, Any], child: Mapping[str, Any]) -> None:
         leaked = sorted(trained & held)
         if leaked:
             raise ConfigError(
-                f"learning.init: {dataset} subjects {leaked} trained the parent but "
-                "are test or validation subjects here; keep the parent's data.roles"
+                f"learning.init: {dataset} subjects {leaked} trained the parent (or "
+                "a run before it) but are test or validation subjects here; keep "
+                "the parent's data.roles"
             )
+
+
+def _lineage_roles(
+    parent: Mapping[str, Any], child: Mapping[str, Any]
+) -> dict[str, dict[str, list[str]]]:
+    """Every subject that ever trained, validated or tested, per dataset, along
+    the lineage, kept even for a dataset this run does not load."""
+    return {
+        dataset: {
+            role: sorted(
+                set((parent.get(dataset) or {}).get(role, []))
+                | set((child.get(dataset) or {}).get(role, [])),
+                key=natural_key,
+            )
+            for role in ("train", "val", "test")
+        }
+        for dataset in sorted(set(parent) | set(child))
+    }
 
 
 def _restore_parts(
@@ -619,11 +640,16 @@ def run_scenario(
         run.attach(federation)
         federation.run()
         save_model(run.path, federation.coordinator.state)
+        # What the lineage knows of a dataset outlives a run that does not load it.
+        earlier = parent[1] if parent else None
         save_bundle(
             run.path / "bundle",
             snapshot_federation(federation),
-            preprocessing=split.preprocessing,
-            schema=schema_of(split),
+            preprocessing={
+                **(earlier.preprocessing if earlier else {}),
+                **split.preprocessing,
+            },
+            schema={**(earlier.schema if earlier else {}), **schema_of(split)},
             lineage={
                 "version": federation.coordinator.round,
                 "run_id": run.run_id,
@@ -631,7 +657,7 @@ def run_scenario(
                 "algorithms": _algorithms(config),
             },
             config=identity(config),
-            roles=split.roles,
+            roles=_lineage_roles(earlier.roles if earlier else {}, split.roles),
         )
     except BaseException:
         run.finish(status="failed")
