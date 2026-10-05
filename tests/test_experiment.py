@@ -1370,3 +1370,53 @@ def test_a_restored_model_must_keep_each_datasets_task(workspace: Path) -> None:
 
     with pytest.raises(ConfigError, match="task"):
         plan(parse_experiment(_child(workspace, parent.name)))
+
+
+# --- real runs that could not start or end (QA3, #175) ------------------------------
+
+
+def test_the_root_process_hosts_the_global_validation_evaluators(
+    workspace: Path,
+) -> None:
+    from onion_fl.experiment.real import _group_members
+    from onion_fl.experiment.runner import _scenario_data, edge_specs
+
+    raw = experiment(workspace)
+    raw["evaluation"] = raw["evaluation"] | {"global": {"every": 1, "subjects": "val"}}
+    (scenario,) = scenarios(parse_experiment(raw))
+    topology, split, placement, _ = _scenario_data(scenario)
+    edges, _ = edge_specs(scenario, topology, split, placement)
+
+    hosted = _group_members(scenario.config, topology, placement, "cloud")
+    expected = {spec.id for spec in edges["cloud"]}
+    assert expected and expected <= hosted
+
+
+def test_a_real_run_refuses_links_that_cannot_cross_processes(workspace: Path) -> None:
+    from onion_fl.experiment.real import run_real
+
+    topology = TOPOLOGY | {"edge": {"link_up": {"transport": "memory"}}}
+    (scenario,) = scenarios(parse_experiment(experiment(workspace, topology=topology)))
+
+    with pytest.raises(ConfigError, match="memory"):
+        run_real(scenario)
+
+
+def test_a_real_run_that_fails_to_launch_is_marked_failed(
+    workspace: Path, monkeypatch
+) -> None:
+    import onion_fl.experiment.real as real
+
+    def broken(*args, **kwargs):
+        raise OSError("cannot start a process")
+
+    monkeypatch.setattr(real, "check_brokers", lambda topology: None)
+    monkeypatch.setattr(real.subprocess, "Popen", broken)
+    (scenario,) = scenarios(parse_experiment(experiment(workspace)))
+
+    with pytest.raises(OSError):
+        real.run_real(scenario)
+    (run,) = (workspace / "runs").iterdir()
+    assert (
+        json.loads((run / "run.json").read_text(encoding="utf-8"))["status"] == "failed"
+    )
