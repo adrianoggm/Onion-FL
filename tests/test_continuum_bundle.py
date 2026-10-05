@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from onion_fl.continuum.bundle import load_bundle, save_bundle
 from onion_fl.core.topology import parse_topology
@@ -118,3 +119,72 @@ def test_continuing_from_a_bundle_on_disk_equals_never_stopping(tmp_path: Path) 
 
     for key, value in straight.coordinator.state.items():
         np.testing.assert_array_equal(second.coordinator.state[key], value, err_msg=key)
+
+
+# --- real data: SCAFFOLD trains, so it needs the real extract (docs/RULES.md) ----------
+
+SWELL_SAMPLE = Path("data/samples/swell_real_sample.pkl")
+SWELL = DataShape(dataset="swell", task="stress_binary", n_features=16, n_classes=2)
+
+
+@pytest.mark.skipif(not SWELL_SAMPLE.exists(), reason="swell sample not available")
+def test_scaffold_continues_from_a_bundle_as_if_it_never_stopped(
+    tmp_path: Path,
+) -> None:
+    from types import SimpleNamespace
+
+    from onion_fl.core.context import rng_state
+    from onion_fl.datasets.samples import load_swell_sample_features
+
+    X, y = load_swell_sample_features(SWELL_SAMPLE)
+    X = ((X - X.mean(axis=0)) / (X.std(axis=0) + 1e-6)).astype(np.float32)
+    parts = np.array_split(np.arange(len(y)), 3)
+    config = ModularMLPConfig(adapter_width=8, trunk_hidden=[4], dropout=0.0)
+    initial = state_arrays(ModularMLP(config, [SWELL], seed=0))
+
+    def scaffold(rounds: int):
+        def edge(i: int) -> EdgeSpec:
+            data = SimpleNamespace(X=X[parts[i]], y=y[parts[i]])
+            trainer = trainers.create("scaffold", {"lr": 0.05, "local_epochs": 1})
+            model = ModularMLP(config, [SWELL], seed=0)
+            return EdgeSpec(f"e{i}", model, data=data, trainer=trainer)
+
+        return build_federation(
+            TREE,
+            {"fog_0": [edge(0), edge(1)], "fog_1": [edge(2)]},
+            initial_state=initial,
+            rounds=rounds,
+            server_optimizer=server_optimizers.create("scaffold"),
+        )
+
+    straight = scaffold(4)
+    straight.run()
+    first = scaffold(2)
+    first.run()
+    save_bundle(
+        tmp_path / "bundle",
+        snapshot_federation(first),
+        preprocessing={},
+        schema={},
+        lineage=LINEAGE,
+        config={},
+    )
+    second = scaffold(4)
+    restore_federation(second, load_bundle(tmp_path / "bundle").snapshot)
+    second.run()
+
+    assert any(k.startswith("scaffold/") for k in straight.coordinator.state)  # c
+    for key, value in straight.coordinator.state.items():
+        np.testing.assert_array_equal(second.coordinator.state[key], value, err_msg=key)
+    for edge_id, edge in straight.edges.items():
+        other = second.edges[edge_id]
+        assert edge.trainer._c_i.keys() == other.trainer._c_i.keys() != set()
+        for key, value in edge.trainer._c_i.items():
+            np.testing.assert_array_equal(other.trainer._c_i[key], value, err_msg=key)
+        theirs = state_arrays(other.model)
+        for key, value in state_arrays(edge.model).items():
+            np.testing.assert_array_equal(theirs[key], value, err_msg=edge_id + key)
+    for node_id in [straight.coordinator.id, *straight.aggregators, *straight.edges]:
+        assert rng_state(second.runtime._rng(node_id)) == rng_state(
+            straight.runtime._rng(node_id)
+        ), node_id
