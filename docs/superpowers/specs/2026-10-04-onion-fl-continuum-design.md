@@ -216,6 +216,23 @@ labels:
   - `data.arrived`: por edge, con cuántas filas llegaron sin etiqueta y cuántas con ella;
   - `data.labelled`: etiquetas que llegan tarde.
 - **Determinismo.** La misma semilla da el mismo flujo, la misma fracción etiquetada y los mismos retrasos.
+- **Decisiones de C3** (#158; el plan, `docs/superpowers/plans/2026-10-05-continuum-c3-streams.md`, da el detalle):
+  - **Ritmo.** Hasta C6, las rondas llegan cada `stream.round_every` de tiempo de datos. La ejecución dura hasta una ronda después de la última llegada, con `rounds` como tope.
+  - **Etiquetas.** `labels.fraction` y `labels.delay` valen para todas las filas, histórico incluido, así que con `fraction: 0` no entrena nada.
+    - Cada edge etiqueta exactamente round(f·n) filas con una semilla propia.
+    - La etiqueta de una fila del histórico cuenta su retraso desde que se observó.
+  - **Bootstrap.** `{samples: N}` cuenta por edge, y se rechaza con varios sujetos por edge, igual que `staggered`.
+  - **Dos puntuaciones prequential**, ambas sobre la predicción guardada al llegar:
+    - `prequential`: toda llegada contra su verdad, solo en simulación;
+    - `prequential_labelled`: solo las etiquetas que llegaron.
+  - **Búfer.** Lo que pasó a ser entrenable en la última `stream.window` (por defecto `round_every`).
+  - **Edges ociosos.** Un edge sin nada que entrenar responde ocioso, con sus puntuaciones. No cuenta para el quórum, y una ronda toda ociosa se cierra como `round.idle`.
+  - **Tiempo de una ventana.** Una ventana de WESAD toma el tiempo de su final, porque solo es observable completa. `t` cuenta desde la primera observación de cada sujeto.
+  - **Se rechaza con un stream, por ahora:**
+    - el modo real;
+    - `init: run`, porque el bundle no guarda aún el estado del stream;
+    - `local_val`;
+    - `scaler: local`.
 
 ## 8. Memoria e incremental (C4)
 
