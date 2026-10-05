@@ -224,6 +224,20 @@ def test_the_plan_of_an_experiment(client: TestClient) -> None:
     assert set(previews[0]["composition"]) == {"fog_a", "fog_b"}
 
 
+def test_the_plan_shows_the_config_id_a_run_from_the_root_signs(
+    client: TestClient, root: Path
+) -> None:
+    from onion_fl.experiment.config import load_experiment
+    from onion_fl.experiment.sweep import scenarios
+
+    previews = client.post("/api/experiments/demo_exp/plan").json()
+
+    config = load_experiment(root / "experiments" / "demo_exp.yaml")
+    assert [p["config_id"] for p in previews] == [
+        s.config_id for s in scenarios(config)
+    ]
+
+
 def test_a_plan_without_data_says_what_is_missing(
     client: TestClient, root: Path
 ) -> None:

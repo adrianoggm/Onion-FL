@@ -360,9 +360,14 @@ def create_app(root: str | Path = ".") -> FastAPI:
         from onion_fl.experiment.runner import plan
 
         try:
-            return _json(plan(rooted(experiment(name), root)))
+            config = experiment(name)
+            previews = plan(rooted(config, root))
         except (ConfigError, DataError, TopologyError, ValueError, OSError) as exc:
             return _errors(str(exc))
+        # Runs start from the root with the paths as written: their config_id.
+        for preview, scenario in zip(previews, scenarios(config), strict=True):
+            preview["config_id"] = scenario.config_id
+        return _json(previews)
 
     @app.post("/api/experiments/{name}/run")
     def run_experiment(name: str, body: dict = Body(default={})) -> JSONResponse:
