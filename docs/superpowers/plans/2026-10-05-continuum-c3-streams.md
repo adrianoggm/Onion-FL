@@ -31,7 +31,7 @@
 - **R6 Two prequential scores, both on the predictions stored at arrival:**
   - `prequential`: every row that arrived in the window, against its true label. Simulation only, since unlabelled truth is hidden from the learner.
   - `prequential_labelled`: the predictions whose label arrived in the window. This is what a deployment could measure.
-- **R7 Buffer.** Rows that became trainable in the last `stream.window` of data time (default `round_every`). Older ones are C4's memory.
+- **R7 Buffer.** Rows that became trainable since the edge's previous round; `stream.window`, when set, caps how old they may be. Older ones are C4's memory. (The first version anchored the buffer to the last window before now, which lost or repeated rows when rounds ran late; the review's fix pass changed it.)
 - **R8 Idle edges.**
   - An edge with an empty buffer sends an idle update, with no state but with its scores.
   - Collectors leave idle children out of the quorum.

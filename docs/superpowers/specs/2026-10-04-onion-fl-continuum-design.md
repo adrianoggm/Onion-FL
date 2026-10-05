@@ -225,7 +225,7 @@ labels:
   - **Dos puntuaciones prequential**, ambas sobre la predicción guardada al llegar:
     - `prequential`: toda llegada contra su verdad, solo en simulación;
     - `prequential_labelled`: solo las etiquetas que llegaron.
-  - **Búfer.** Lo que pasó a ser entrenable en la última `stream.window` (por defecto `round_every`).
+  - **Búfer.** Lo que pasó a ser entrenable desde la ronda anterior del edge, así que una ronda tardía no pierde ni repite filas. `stream.window`, si se da, limita su antigüedad.
   - **Edges ociosos.** Un edge sin nada que entrenar responde ocioso, con sus puntuaciones. No cuenta para el quórum, y una ronda toda ociosa se cierra como `round.idle`.
   - **Tiempo de una ventana.** Una ventana de WESAD toma el tiempo de su final, porque solo es observable completa. `t` cuenta desde la primera observación de cada sujeto.
   - **Se rechaza con un stream, por ahora:**

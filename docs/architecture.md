@@ -188,7 +188,7 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
   1. it predicts the new rows with the model it was serving, and stores the predictions;
   2. it scores `prequential` (every arrival against its truth, which only the simulation knows) and `prequential_labelled` (the stored predictions whose label arrived) into its update metrics, which the collectors reduce per fog and globally;
   3. it emits `data.arrived` and `data.labelled`;
-  4. it serves the new model, and trains on what became trainable in the last `window`.
+  4. it serves the new model, and trains on what became trainable since its previous round (`window`, when set, caps how old a row may be).
 
   The served model only changes when a global model arrives, so the lazy handling is exact and needs no timers.
 - **Idle rounds.**

@@ -182,7 +182,7 @@ sweep: {data.placement.alpha: [0.0, 0.5, 1.0]}
 - **Streams.** `stream: {bootstrap, round_every, batch_size, speed, start}` and `labels: {fraction, delay}` replay each training subject's rows to its edge in time order.
   - The bootstrap (the first minutes, or rows) is history: it fits the preprocessing and trains v0.
   - A seeded fraction of the rows is labelled, each label arriving after the delay.
-  - Every arrival is scored by the model the edge was serving before it can train (`prequential` and `prequential_labelled`), and each round trains on what became trainable in the last window.
+  - Every arrival is scored by the model the edge was serving before it can train (`prequential` and `prequential_labelled`), and each round trains on what became trainable since the edge's previous round.
   - Validation subjects stream for evaluation only; test subjects never reach an edge.
   - Rounds come every `round_every` of data time until the streams end, and `data.arrived` and `data.labelled` record the volume.
   - Real mode, `init: run`, `local_val` and a local scaler are refused with a stream for now.
