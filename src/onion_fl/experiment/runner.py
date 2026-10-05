@@ -207,23 +207,41 @@ def _check_roles(parent: Mapping[str, Any], child: Mapping[str, Any]) -> None:
             )
 
 
-def _restore(federation: Any, bundle: Bundle, restore: Any) -> None:
-    """Continue the parent's bundle, leaving out what ``restore`` does not ask for."""
-    snapshot = bundle.snapshot
+def _restore_parts(
+    snapshot: FederationSnapshot, restore: Any, edges: set[str]
+) -> FederationSnapshot:
+    """The part of a parent's snapshot that ``restore`` asks for.
+
+    ``model`` governs every model weight: the global model, zones, previous
+    aggregates, edge models and the trainer memory that holds weights.
+    ``server_state`` governs the server optimizer; ``edge_state`` the rest of an
+    edge, its trainer memory and random stream. DP budgets always carry over:
+    what was released stays released.
+    """
+    dropped = [] if restore.model else ["state/", "zone/", "previous/", "model/"]
+    dropped += [] if restore.server_state else ["server/"]
     nodes = {}
     for node_id, node in snapshot.nodes.items():
-        arrays = dict(node.arrays)
-        meta = dict(node.meta)
-        dropped = [] if restore.model else ["state/", "zone/", "previous/"]
-        dropped += [] if restore.server_state else ["server/"]
-        if node_id in federation.edges and not restore.edge_state:
-            # the edge starts fresh, but what it already released stays released
-            arrays, meta = {}, {"released": node.meta.get("released", 0)}
-        arrays = {k: v for k, v in arrays.items() if not k.startswith(tuple(dropped))}
+        meta, gone = dict(node.meta), list(dropped)
+        if node_id in edges and not restore.edge_state:
+            meta.pop("rng", None)
+            meta.pop("memory", None)
+            gone.append("memory/")
+        if not restore.model and "memory" in meta:
+            weights = {n for n, info in meta["memory"].items() if info.get("weights")}
+            meta["memory"] = {
+                n: info for n, info in meta["memory"].items() if n not in weights
+            }
+            gone += [f"memory/{n}/" for n in weights]
+        arrays = {k: v for k, v in node.arrays.items() if not k.startswith(tuple(gone))}
         nodes[node_id] = NodeState(arrays, meta)
-    restore_federation(
-        federation, FederationSnapshot(snapshot.round, nodes, snapshot.root)
-    )
+    return FederationSnapshot(snapshot.round, nodes, snapshot.root)
+
+
+def _restore(federation: Any, bundle: Bundle, restore: Any) -> None:
+    """Continue the parent's bundle, leaving out what ``restore`` does not ask for."""
+    parts = _restore_parts(bundle.snapshot, restore, set(federation.edges))
+    restore_federation(federation, parts)
 
 
 def _scenario_data(

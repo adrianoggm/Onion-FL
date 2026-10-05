@@ -998,3 +998,65 @@ def test_a_fresh_model_also_leaves_the_zones_fresh(workspace: Path) -> None:
 def test_a_typo_in_restore_is_an_error(workspace: Path) -> None:
     with pytest.raises(ConfigError, match="edge_states"):
         parse_experiment(_child(workspace, "x", {"edge_states": False}))
+
+
+def test_a_fresh_model_also_leaves_the_edge_models_fresh(workspace: Path) -> None:
+    import numpy as np
+
+    from onion_fl.experiment.runner import _scenario_data, build_scenario
+    from onion_fl.learning.model import state_arrays
+
+    fedper = experiment(workspace)["learning"] | {"sharing": "fedper"}  # local heads
+    parent = _parent_run(workspace, learning=fedper)
+
+    def heads(restore: dict) -> dict:
+        raw = _child(workspace, parent.name, restore, learning=fedper)
+        (tail,) = scenarios(parse_experiment(raw))
+        topology, split, placement, _ = _scenario_data(tail)
+        federation = build_scenario(
+            tail, topology, split, placement, evaluate=stub_score
+        )
+        return {
+            (edge_id, key): value
+            for edge_id, edge in federation.edges.items()
+            for key, value in state_arrays(edge.model).items()
+            if key.startswith("head.")
+        }
+
+    kept = heads({})
+    fresh = heads({"model": False})  # edge_state stays on
+    nothing = heads({"model": False, "edge_state": False, "server_state": False})
+
+    assert any(not np.array_equal(kept[k], v) for k, v in nothing.items())  # trained
+    for key, value in nothing.items():
+        np.testing.assert_array_equal(fresh[key], value, err_msg=str(key))
+
+
+def test_restore_keeps_an_edges_algorithm_memory_but_never_old_weights() -> None:
+    import numpy as np
+
+    from onion_fl.experiment.runner import _restore_parts
+    from onion_fl.learning.trainers import RestoreParams
+    from onion_fl.roles import FederationSnapshot, NodeState
+
+    one = np.ones(1)
+    arrays = ["model/w", "memory/_personal/w", "memory/_c_i/w", "privacy/rdp"]
+    memory = {
+        "_personal": {"kind": "module", "training": True, "weights": True},
+        "_c_i": {"kind": "arrays"},
+    }
+    edge = NodeState(dict.fromkeys(arrays, one), {"rng": {}, "memory": memory})
+    snapshot = FederationSnapshot(2, {"e1": edge}, "cloud")
+
+    def kept(**restore) -> tuple:
+        parts = _restore_parts(snapshot, RestoreParams(**restore), {"e1"})
+        node = parts.nodes["e1"]
+        return sorted(node.arrays), sorted(node.meta.get("memory", {})), node.meta
+
+    assert kept(model=False) == (
+        ["memory/_c_i/w", "privacy/rdp"],
+        ["_c_i"],
+        {"rng": {}, "memory": {"_c_i": {"kind": "arrays"}}},
+    )
+    assert kept(edge_state=False) == (["model/w", "privacy/rdp"], [], {})
+    assert kept(model=False, edge_state=False) == (["privacy/rdp"], [], {})

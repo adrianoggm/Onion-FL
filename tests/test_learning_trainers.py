@@ -912,3 +912,32 @@ def test_apfl_honours_the_group_lr(swell) -> None:
         rtol=1e-4,
         atol=1e-7,
     )
+
+
+def test_memory_that_holds_model_weights_is_marked_as_such() -> None:
+    names = ("ditto", "apfl", "moon", "scaffold", "feddyn")
+    marked = {
+        name: {
+            entry
+            for entry, info in trainers.create(name).export_memory()[1].items()
+            if info.get("weights")
+        }
+        for name in names
+    }
+
+    assert marked == {
+        "ditto": {"_personal"},
+        "apfl": {"_v", "_w"},
+        "moon": {"_previous"},
+        "scaffold": set(),
+        "feddyn": set(),
+    }
+
+
+def test_importing_a_memory_without_some_entry_keeps_the_trainers_own() -> None:
+    trainer = trainers.create("apfl")
+    own = trainer._w
+
+    trainer.import_memory({}, {"alpha": {"kind": "scalar", "value": 0.3}}, build())
+
+    assert trainer.alpha == 0.3 and trainer._w is own

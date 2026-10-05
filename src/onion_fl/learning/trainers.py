@@ -163,6 +163,7 @@ def _param_groups(
 class Standard:
     Params: type[StandardParams] = StandardParams
     _memory: tuple[str, ...] = ()  # attributes a diverged round rolls back
+    _weights: tuple[str, ...] = ()  # the memory that holds model weights
 
     def __init__(self, **params: Any) -> None:
         self.params = self.Params(**params)
@@ -202,6 +203,8 @@ class Standard:
                 }
             else:
                 meta[name] = {"kind": "scalar", "value": float(value)}
+            if name in self._weights:  # restore.model governs it, not edge_state
+                meta[name]["weights"] = True
         return arrays, meta
 
     def import_memory(
@@ -210,9 +213,14 @@ class Standard:
         meta: Mapping[str, Any],
         model: nn.Module,
     ) -> None:
-        """Rebuild the memory from ``export_memory``; ``model`` gives the architecture."""
+        """Rebuild the memory from ``export_memory``; ``model`` gives the architecture.
+
+        An entry ``meta`` leaves out keeps the trainer's own value.
+        """
         for name in self._memory:
-            info = meta.get(name, {"kind": "none"})
+            if name not in meta:
+                continue
+            info = meta[name]
             part = {
                 key.split("/", 1)[1]: np.asarray(value)
                 for key, value in arrays.items()
@@ -325,7 +333,7 @@ class DittoParams(StandardParams):
     ),
 )
 class Ditto(Standard):
-    _memory = ("_personal",)
+    _memory = _weights = ("_personal",)
     Params = DittoParams
 
     def __init__(self, **params: Any) -> None:
@@ -386,6 +394,7 @@ class APFLParams(StandardParams):
 )
 class APFL(Standard):
     _memory = ("alpha", "_v", "_w")
+    _weights = ("_v", "_w")
     Params = APFLParams
 
     def __init__(self, **params: Any) -> None:
@@ -732,6 +741,7 @@ class Moon(Standard):
     Params = MoonParams
     shared_features = True  # the global model's features must reach the edge
     _memory = ("_previous",)  # _global is the model as received, rebuilt each round
+    _weights = ("_previous",)
 
     def __init__(self, **params: Any) -> None:
         super().__init__(**params)
@@ -842,13 +852,19 @@ class RandomInit:
 class RestoreParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    model: bool = Field(True, description="El modelo global del padre")
+    model: bool = Field(
+        True,
+        description="Todos los pesos del padre: modelo global, zonas, modelos de "
+        "los edges y la memoria del entrenador que guarda pesos",
+    )
     preprocessing: bool = Field(True, description="El preprocesado congelado del padre")
     server_state: bool = Field(
         True, description="El estado del optimizador de servidor"
     )
     edge_state: bool = Field(
-        True, description="El modelo, la memoria y el stream de cada edge"
+        True,
+        description="El resto del estado de cada edge: memoria del entrenador "
+        "(c_i, α…) y su stream aleatorio",
     )
 
 
