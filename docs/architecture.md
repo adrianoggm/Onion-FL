@@ -135,7 +135,7 @@ sequenceDiagram
 - One queue ordered by (virtual time, sequence), with `start`, `deliver`, `timer` and `compute_done` events.
 - Links schedule each direction FIFO, with latency (fixed, normal or lognormal), jitter, bandwidth and loss; the presets are `lan`, `wifi`, `4g` and `lora`.
 - `ctx.compute(samples)` keeps a node busy for the time its compute model gives. What it sends leaves when the work ends, and what arrives meanwhile waits.
-- Availability is `always`, `bernoulli`, `schedule` or `crash_at`.
+- Availability is `always`, `bernoulli`, `schedule` or `crash_at`. An offline node drops what it receives; its start and its timers wait until it is up again, and are dropped only after a crash.
 - Each node keeps one RNG stream for the whole run, so a seed gives the same events.
 
 **RealRuntime.**
