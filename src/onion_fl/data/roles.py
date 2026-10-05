@@ -19,7 +19,7 @@ its own statistics, which use no labels.
 """
 
 import warnings
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Annotated, Any, Literal
 
@@ -187,7 +187,9 @@ def _assign(
     return {"test": test, "val": val, "train": train, "excluded": excluded}
 
 
-def _like(data: SubjectData, X, y, subject: str, names: list[str]) -> SubjectData:
+def _like(
+    data: SubjectData, X, y, subject: str, names: list[str], t=None
+) -> SubjectData:
     return SubjectData(
         X=X,
         y=y,
@@ -196,7 +198,15 @@ def _like(data: SubjectData, X, y, subject: str, names: list[str]) -> SubjectDat
         task=data.task,
         n_classes=data.n_classes,
         feature_names=names,
+        t=t,
     )
+
+
+def _times(rows: Sequence[SubjectData], masks: Sequence[np.ndarray]):
+    """The time of the rows each mask keeps, or None when the data is untimed."""
+    if any(d.t is None for d in rows):
+        return None
+    return np.concatenate([d.t[m] for d, m in zip(rows, masks, strict=True)])
 
 
 def _held_out(y: np.ndarray, share: float, split: str) -> np.ndarray:
@@ -224,11 +234,14 @@ def split_subjects(
     subjects: Sequence[SubjectData],
     config: RolesConfig | None = None,
     frozen: Mapping[str, Mapping[str, Any]] | None = None,
+    fit_rows: Callable[[SubjectData], np.ndarray] | None = None,
 ) -> DataSplit:
     """Assign roles per dataset, group the training subjects into clients and preprocess.
 
     A dataset in ``frozen`` (a parent run's ``preprocessing``) keeps those features
     and statistics instead of fitting new ones; the other datasets are fitted.
+    ``fit_rows`` gives the rows of each training subject the fit may use (a
+    stream's bootstrap); by default, all but its local validation.
     """
     config = config or RolesConfig()
     by_dataset: dict[str, dict[str, SubjectData]] = {}
@@ -251,7 +264,16 @@ def split_subjects(
             name: _held_out(pool[name].y, config.local_val, config.local_val_split)
             for name in roles[dataset]["train"]
         }
-        bag = np.concatenate([pool[s].X[~held[s]] for s in held])
+        usable = {
+            s: ~held[s] & (True if fit_rows is None else fit_rows(pool[s]))
+            for s in held
+        }
+        bag = np.concatenate([pool[s].X[usable[s]] for s in held])
+        if not len(bag):
+            raise DataError(
+                f"{dataset}: no training row before the bootstrap ends to fit the "
+                "preprocessing"
+            )
 
         own = pool[names[0]].feature_names
         if frozen is not None and dataset in frozen:
@@ -306,6 +328,7 @@ def split_subjects(
                         pool[name].y,
                         name,
                         feature_names,
+                        pool[name].t,
                     )
                 )
 
@@ -335,6 +358,7 @@ def split_subjects(
                         train_y,
                         client_id,
                         feature_names,
+                        _times(rows, [~held[d.subject] for d in rows]),
                     ),
                     local_val=(
                         _like(
@@ -343,6 +367,7 @@ def split_subjects(
                             tail_y,
                             client_id,
                             feature_names,
+                            _times(rows, [held[d.subject] for d in rows]),
                         )
                         if len(tail_y)
                         else None
