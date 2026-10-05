@@ -1,0 +1,46 @@
+# SWELL + WESAD replayed as streams (issue #158, continuum C3).
+#
+# Each training subject replays its real rows to its edge in time order: one
+# SWELL minute or one WESAD 60 s window at a time, at the moment it ends.
+# - Bootstrap: the first 20 minutes are history. They fit the preprocessing
+#   and train v0. SWELL's hold both classes; WESAD's are all baseline, since
+#   its protocol starts with about 20 minutes of baseline.
+# - Rounds: every 10 minutes of data. Each edge trains on what became
+#   trainable since the last round (no replay memory yet: C4).
+# - Scoring: every arrival is first scored by the model the edge was serving
+#   (prequential). Validation subjects stream for evaluation only; test
+#   subjects never reach an edge.
+# - Labels: every row, or a seeded fifth of them, each arriving 10 minutes late.
+#
+# The training settings are the drift comparison's FedAvg, not tuned for
+# streams; this run shows the stream on the real recordings, the benchmark is
+# C8.
+#
+#   onion_fl run experiments/stream_swell_wesad.yaml --workers 3
+name: stream_swell_wesad
+description: SWELL y WESAD en flujo, con etiquetas completas o parciales y diferidas.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+rounds: 60                 # an upper bound: the run ends when the streams do
+stream:
+  bootstrap: 20m
+  round_every: 10m
+  batch_size: 1
+  speed: 60
+labels: {fraction: 1.0, delay: 10m}
+evaluation:
+  metrics: [loss, accuracy, macro_f1, confusion_matrix]
+  aggregators: {every: 1}
+  global: {every: 5}
+seeds: [0, 1, 2]
+sweep:
+  labels.fraction: [1.0, 0.2]
