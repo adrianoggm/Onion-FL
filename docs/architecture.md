@@ -171,8 +171,10 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
 - **What `restore` covers.**
   - `model`: every model weight, meaning the global model, the zones, the previous aggregates, the edge models, and the trainer memory that holds weights (marked `weights` by `export_memory`).
   - `edge_state`: the rest of each edge, meaning its trainer memory (SCAFFOLD's c_i, for example) and its random stream.
-  - `server_state`: the server optimizer.
+  - `server_state`: the server optimizer, and the algorithm state riding in the global model as auxiliary keys (SCAFFOLD's c). SCAFFOLD and FedDyn need it restored together with `edge_state`.
 - **DP budgets.** They always carry over. Each budget (`privacy.Accountant`) is the Rényi DP accumulated at each order, Σ α/(2σ²), so σ may change between generations and ε stays right.
+  - An edge with a budget also keeps its random stream, since a fresh one would replay its parent's noise.
+  - The bundle carries the nodes a run lacks, as the run kept them, so a node that skips a generation keeps its budget.
 - **Changes allowed.** New datasets get a fitted preprocessing and fresh adapters. `group_lr` can scale the steps of the groups a continuation keeps.
 
 ## 8. Observability
