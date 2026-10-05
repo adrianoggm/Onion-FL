@@ -194,10 +194,13 @@ def test_report_reads_run_folders_too(capsys, workspace: Path) -> None:
     assert code == 0 and report.exists()
 
 
-def test_run_can_pick_one_scenario(capsys, workspace: Path) -> None:
-    code, out, _ = run(capsys, "run", str(workspace / "exp.yaml"), "--scenario", "nope")
+def test_run_refuses_a_scenario_that_does_not_exist(capsys, workspace: Path) -> None:
+    code, out, err = run(
+        capsys, "run", str(workspace / "exp.yaml"), "--scenario", "nope"
+    )
 
-    assert code == 0 and out.strip() == ""
+    assert code != 0 and out.strip() == ""
+    assert "nope" in err and "base" in err
 
 
 def test_the_real_mode_needs_a_reachable_broker(capsys, workspace: Path) -> None:
@@ -265,12 +268,30 @@ def test_the_example_topology_and_experiment_are_valid() -> None:
     assert len(scenarios(config)) == 9  # 3 alphas x 3 seeds
 
 
+@pytest.mark.parametrize("path", sorted(Path("experiments").glob("*.yaml")), ids=str)
+def test_every_shipped_experiment_and_its_topology_are_valid(path: Path) -> None:
+    from onion_fl.experiment.config import load_experiment
+    from onion_fl.experiment.runner import resolve_topology
+
+    resolve_topology(load_experiment(path))
+
+
 @pytest.mark.skipif(
     not (Path("data/SWELL").exists() and Path("data/SWEET/sample_subjects").exists()),
     reason="data/SWELL and data/SWEET not available",
 )
 def test_the_example_experiment_plans_on_real_data(capsys) -> None:
     code, out, _ = run(capsys, "plan", "experiments/mix_ab.yaml")
+
+    assert code == 0 and len(json.loads(out)) == 9
+
+
+@pytest.mark.skipif(
+    not (Path("data/SWELL").exists() and Path("data/WESAD").exists()),
+    reason="data/SWELL and data/WESAD not available",
+)
+def test_the_swell_wesad_experiment_plans_on_real_data(capsys) -> None:
+    code, out, _ = run(capsys, "plan", "experiments/mix_swell_wesad.yaml")
 
     assert code == 0 and len(json.loads(out)) == 9
 

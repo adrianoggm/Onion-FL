@@ -149,6 +149,295 @@ def test_the_schema_includes_the_plugin_catalogue() -> None:
     assert {p["name"] for p in plugins["transport"]} == {"memory", "mqtt"}
 
 
+def test_fedrep_needs_sharing_that_keeps_the_heads_local(workspace: Path) -> None:
+    learning = experiment(workspace)["learning"] | {"trainer": "fedrep"}
+
+    with pytest.raises(ConfigError, match="fedrep"):
+        plan(parse_experiment(experiment(workspace, learning=learning)))
+    local = learning | {"sharing": "fedper"}
+    assert plan(parse_experiment(experiment(workspace, learning=local)))
+
+
+def test_a_bad_scenario_fails_before_any_run_starts(workspace: Path) -> None:
+    pairs = [["fedavg", "stub"], ["fedavg", "fedrep"]]
+    config = parse_experiment(
+        experiment(workspace, sweep={"learning.sharing,learning.trainer": pairs})
+    )
+
+    with pytest.raises(ConfigError, match="fedrep"):
+        run_experiment(config)
+    assert not list((workspace / "runs").glob("*"))
+
+
+def test_the_experiment_can_set_the_root_server_optimizer(workspace: Path) -> None:
+    from onion_fl.experiment.runner import resolve_topology
+
+    learning = experiment(workspace)["learning"] | {"server_optimizer": "fedadam"}
+    config = parse_experiment(experiment(workspace, learning=learning))
+
+    assert resolve_topology(config).root.settings["server_optimizer"] == "fedadam"
+
+
+def test_an_unset_server_optimizer_stays_out_of_the_config(workspace: Path) -> None:
+    config = parse_experiment(experiment(workspace))
+
+    assert "server_optimizer" not in config.dump()["learning"]
+
+
+@pytest.mark.parametrize(
+    "trainer, optimizer, message",
+    [
+        ("fednova", "replace", "needs server_optimizer 'fednova'"),
+        ("scaffold", "replace", "needs server_optimizer 'scaffold'"),
+        ("stub", "fednova", "fednova needs the fednova trainer"),
+    ],
+)
+def test_paired_trainers_and_optimizers_are_checked_both_ways(
+    workspace: Path, trainer: str, optimizer: str, message: str
+) -> None:
+    learning = experiment(workspace)["learning"] | {
+        "trainer": trainer,
+        "server_optimizer": optimizer,
+    }
+
+    with pytest.raises(ConfigError, match=message):
+        plan(parse_experiment(experiment(workspace, learning=learning)))
+
+
+def test_a_trainer_that_needs_an_optimizer_is_checked(
+    workspace: Path, monkeypatch
+) -> None:
+    from onion_fl.core.registry import PluginSpec
+    from onion_fl.learning.trainers import Stub, StubParams, trainers
+
+    class Needy(Stub):
+        server_optimizer = "fedadam"
+
+    spec = PluginSpec("needy_test", Needy, "t", "d", StubParams)
+    monkeypatch.setitem(trainers._specs, "needy_test", spec)
+    learning = experiment(workspace)["learning"] | {"trainer": "needy_test"}
+
+    with pytest.raises(ConfigError, match="fedadam"):
+        plan(parse_experiment(experiment(workspace, learning=learning)))
+    ok = learning | {"server_optimizer": "fedadam"}
+    assert plan(parse_experiment(experiment(workspace, learning=ok)))
+
+
+@pytest.mark.parametrize("pair", ["fednova", "feddyn"])
+def test_server_side_pairs_refuse_groups_held_below_the_root(
+    workspace: Path, pair: str
+) -> None:
+    learning = experiment(workspace)["learning"] | {
+        "trainer": pair,
+        "server_optimizer": pair,
+        "sharing": "zone",
+    }
+
+    with pytest.raises(ConfigError, match="zone|below the root"):
+        plan(parse_experiment(experiment(workspace, learning=learning)))
+
+
+def test_moon_needs_the_feature_layers_shared(workspace: Path) -> None:
+    learning = experiment(workspace)["learning"] | {"trainer": "moon"}
+    local = learning | {"sharing": "lg_fedavg"}
+
+    with pytest.raises(ConfigError, match="moon.*lg_fedavg"):
+        plan(parse_experiment(experiment(workspace, learning=local)))
+    assert plan(parse_experiment(experiment(workspace, learning=learning)))
+
+
+def test_paired_optimizers_refuse_late_updates(workspace: Path) -> None:
+    learning = experiment(workspace)["learning"] | {
+        "trainer": "fednova",
+        "server_optimizer": "fednova",
+    }
+    fog = TOPOLOGY["fog"] | {"defaults": {"staleness": "next_round"}}
+    topology = TOPOLOGY | {"fog": fog}
+
+    with pytest.raises(ConfigError, match="staleness"):
+        plan(
+            parse_experiment(
+                experiment(workspace, learning=learning, topology=topology)
+            )
+        )
+
+
+@pytest.mark.parametrize("pair", ["scaffold", "feddyn"])
+def test_edge_memory_pairs_refuse_rounds_that_close_at_quorum(
+    workspace: Path, pair: str
+) -> None:
+    learning = experiment(workspace)["learning"] | {
+        "trainer": pair,
+        "server_optimizer": pair,
+    }
+    fog = TOPOLOGY["fog"] | {"defaults": {"close_at_quorum": True, "quorum": 1}}
+    topology = TOPOLOGY | {"fog": fog}
+
+    with pytest.raises(ConfigError, match="close_at_quorum"):
+        plan(
+            parse_experiment(
+                experiment(workspace, learning=learning, topology=topology)
+            )
+        )
+
+
+def test_the_global_model_can_be_scored_on_the_validation_subjects(
+    workspace: Path,
+) -> None:
+    from onion_fl.experiment.runner import _scenario_data, edge_specs
+
+    def root_evaluators(evaluation: dict) -> list[str]:
+        raw = experiment(workspace, evaluation=evaluation)
+        (scenario,) = scenarios(parse_experiment(raw))
+        topology, split, placement, _ = _scenario_data(scenario)
+        edges, _ = edge_specs(scenario, topology, split, placement)
+        return [spec.id for spec in edges[topology.root.id]]
+
+    test = root_evaluators({"global": {"every": 1}})
+    val = root_evaluators({"global": {"every": 1, "subjects": "val"}})
+
+    assert test and all(i.startswith("test-") for i in test)
+    assert val and all(i.startswith("gval-") for i in val)
+    assert (
+        "subjects"
+        not in parse_experiment(experiment(workspace)).dump()["evaluation"]["global"]
+    )
+
+
+def test_feddyn_needs_the_same_alpha_on_both_sides(workspace: Path) -> None:
+    learning = experiment(workspace)["learning"] | {
+        "trainer": {"name": "feddyn", "alpha": 0.1},
+        "server_optimizer": {"name": "feddyn", "alpha": 0.2},
+    }
+
+    with pytest.raises(ConfigError, match="alpha"):
+        plan(parse_experiment(experiment(workspace, learning=learning)))
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"privacy": "local_dp"},
+        {"attack": "sign_flip"},
+        {"learning": {"aggregator": "dp_fedavg"}},
+        {"learning": {"aggregator": "norm_clip"}},
+    ],
+)
+@pytest.mark.parametrize("trainer", ["scaffold", "fednova"])
+def test_auxiliary_arrays_cannot_bypass_a_clip_noise_or_attack(
+    workspace: Path, trainer: str, extra: dict
+) -> None:
+    learning = experiment(workspace)["learning"] | {"trainer": trainer}
+    if trainer == "fednova":
+        learning["server_optimizer"] = "fednova"
+    extra = dict(extra)  # the parametrized dict is shared between trainers
+    learning |= extra.pop("learning", {})
+
+    with pytest.raises(ConfigError, match="auxiliary arrays"):
+        plan(parse_experiment(experiment(workspace, learning=learning, **extra)))
+
+
+def test_the_experiment_can_set_the_leaf_aggregators(workspace: Path) -> None:
+    from onion_fl.experiment.runner import resolve_topology
+
+    learning = experiment(workspace)["learning"] | {"aggregator": "median"}
+    config = parse_experiment(experiment(workspace, learning=learning))
+    topology = resolve_topology(config)
+
+    leaves = {leaf.id for leaf in topology.leaves()}
+    for node in topology.nodes:
+        expected = "median" if node.id in leaves else None
+        assert node.settings.get("aggregator") == expected, node.id
+
+
+def test_an_unset_aggregator_stays_out_of_the_config(workspace: Path) -> None:
+    dumped = parse_experiment(experiment(workspace)).dump()["learning"]
+
+    assert "aggregator" not in dumped
+
+
+def test_malicious_edges_are_a_seeded_fraction_of_each_dataset(
+    workspace: Path,
+) -> None:
+    from onion_fl.experiment.runner import _scenario_data, malicious_edges
+
+    attack = {"name": "sign_flip", "fraction": 0.5}
+    config = parse_experiment(experiment(workspace, attack=attack))
+    (scenario,) = scenarios(config)
+    _, split, _, _ = _scenario_data(scenario)
+
+    chosen = malicious_edges(scenario.config, split.clients, scenario.seed)
+
+    assert len(chosen) == round(0.5 * len(split.clients))
+    assert chosen == malicious_edges(scenario.config, split.clients, scenario.seed)
+
+
+def test_a_malicious_fraction_rounds_half_up(workspace: Path) -> None:
+    from types import SimpleNamespace
+
+    from onion_fl.experiment.runner import malicious_edges
+
+    attack = {"name": "sign_flip", "fraction": 0.5}
+    config = parse_experiment(experiment(workspace, attack=attack))
+    clients = [SimpleNamespace(id=f"e{i}", dataset="a") for i in range(5)]
+
+    assert len(malicious_edges(config, clients, 0)) == 3  # 2.5, not banker's 2
+
+
+def test_the_data_record_names_the_malicious_edges(workspace: Path) -> None:
+    from onion_fl.experiment.runner import _scenario_data, record_data
+
+    class Recorder:
+        def __init__(self) -> None:
+            self.names: list[str] = []
+
+        def record(self, name, value=None, **tags) -> None:
+            self.names.append(name)
+
+    attack = {"name": "sign_flip", "fraction": 0.5}
+    (scenario,) = scenarios(parse_experiment(experiment(workspace, attack=attack)))
+    _, split, placement, _ = _scenario_data(scenario)
+    run = Recorder()
+
+    record_data(run, scenario, split, placement)  # real runs record through it too
+
+    assert "data.attack" in run.names
+
+
+def test_an_unset_attack_stays_out_of_the_config(workspace: Path) -> None:
+    assert "attack" not in parse_experiment(experiment(workspace)).dump()
+
+
+def test_an_unknown_scenario_name_is_an_error(workspace: Path) -> None:
+    config = parse_experiment(experiment(workspace))
+
+    with pytest.raises(ConfigError, match="nope.*base"):
+        run_experiment(config, only="nope")
+
+
+def test_finetuned_scores_need_a_finetune_trainer(workspace: Path) -> None:
+    raw = experiment(workspace, evaluation={"edge": {"models": ["finetuned"]}})
+
+    with pytest.raises(ConfigError, match="finetune"):
+        parse_experiment(raw)
+
+
+def test_a_finetune_trainer_needs_finetuned_scores(workspace: Path) -> None:
+    raw = experiment(
+        workspace,
+        evaluation={"edge": {"models": ["local"], "finetune": "standard"}},
+    )
+
+    with pytest.raises(ConfigError, match="finetuned"):
+        parse_experiment(raw)
+
+
+def test_an_unset_finetune_stays_out_of_the_config(workspace: Path) -> None:
+    config = parse_experiment(experiment(workspace))
+
+    assert "finetune" not in config.dump()["evaluation"]["edge"]
+
+
 # --- sweeps ------------------------------------------------------------------------------------
 
 
@@ -189,6 +478,63 @@ def test_sweeping_a_plugin_given_by_name(workspace: Path) -> None:
     trainer = [s.config.learning.trainer for s in scenarios(config)]
 
     assert trainer == [{"name": "stub", "shift": 1.0}, {"name": "stub", "shift": 2.0}]
+
+
+def test_paths_joined_by_commas_are_swept_together(workspace: Path) -> None:
+    config = parse_experiment(
+        experiment(
+            workspace,
+            sweep={"learning.trainer.shift,rounds": [[1.0, 1], [2.0, 3]]},
+        )
+    )
+
+    out = scenarios(config)
+
+    assert [s.name for s in out] == [
+        "learning.trainer.shift,rounds=1.0,1",
+        "learning.trainer.shift,rounds=2.0,3",
+    ]
+    assert [(s.config.learning.trainer["shift"], s.config.rounds) for s in out] == [
+        (1.0, 1),
+        (2.0, 3),
+    ]
+
+
+def test_a_plugin_given_whole_is_labelled_compactly(workspace: Path) -> None:
+    trainers = [{"name": "stub", "shift": 2.0}, {"name": "stub", "shift": 3.0}]
+    config = parse_experiment(
+        experiment(workspace, sweep={"learning.trainer": trainers})
+    )
+
+    names = [s.name for s in scenarios(config)]
+
+    assert names == [
+        "learning.trainer=stub(shift=2.0)",
+        "learning.trainer=stub(shift=3.0)",
+    ]
+
+
+def test_a_joint_sweep_key_may_have_spaces_after_its_commas(workspace: Path) -> None:
+    config = parse_experiment(
+        experiment(workspace, sweep={"learning.trainer.shift, rounds": [[2.0, 3]]})
+    )
+
+    (scenario,) = scenarios(config)
+
+    assert scenario.name == "learning.trainer.shift,rounds=2.0,3"
+    assert scenario.config.rounds == 3
+
+
+@pytest.mark.parametrize("value", [[1.0], "fedavg"])
+def test_a_joint_sweep_value_needs_one_entry_per_path(workspace: Path, value) -> None:
+    config = parse_experiment(
+        experiment(workspace, sweep={"learning.trainer.shift,rounds": [value]})
+    )
+
+    with pytest.raises(
+        ConfigError, match="learning.trainer.shift,rounds: .*one per path"
+    ):
+        scenarios(config)
 
 
 def test_a_bad_sweep_value_names_its_scenario(workspace: Path) -> None:

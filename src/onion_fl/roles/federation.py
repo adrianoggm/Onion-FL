@@ -7,6 +7,7 @@ Each aggregation node reads its round settings from the topology::
     aggregator: fedavg | {name: trimmed_mean, beta: 0.2}
     server_optimizer: replace        # root only
     quorum: 1.0 | 2                  # float = fraction, int = count
+    close_at_quorum: false           # true: close on K updates, late ones included (FedBuff-style)
     deadline: 30s
     participation: all | {name: fraction, p: 0.5}
     staleness: drop | {name: next_round, weighting: {name: polynomial, a: 0.5}}
@@ -16,7 +17,8 @@ Each aggregation node reads its round settings from the topology::
 
 The edge template takes ``eval: {every: 1, models: [received, local]}``.
 Edges hang from the leaf aggregators and use the topology's edge link; the
-root takes evaluators only (the global ``test`` subjects).
+root takes evaluators only: the ``test`` subjects, or the validation ones with
+``evaluation.global.subjects: val`` (hyperparameter selection).
 """
 
 from collections.abc import Mapping, Sequence
@@ -30,6 +32,7 @@ from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.metrics import evaluate as score
 from onion_fl.learning.sharing import SharingPolicy
 from onion_fl.learning.sharing import sharing as sharing_presets
+from onion_fl.learning.trainers import trainers as trainer_plugins
 from onion_fl.observability.diagnostics import diagnostics as diagnostic_plugins
 from onion_fl.roles.nodes import Aggregator, Coordinator, Edge, Evaluate
 from onion_fl.roles.policies import (
@@ -54,6 +57,8 @@ class EdgeSpec:
     availability: Any = None
     val_data: Any = None
     tags: dict[str, Any] = field(default_factory=dict)
+    attack: Any = None
+    privacy: Any = None
 
 
 @dataclass
@@ -86,6 +91,7 @@ def _round_settings(settings: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "aggregator": create(aggregators, settings.get("aggregator"), "fedavg"),
         "quorum": settings.get("quorum", 1.0),
+        "close_at_quorum": bool(settings.get("close_at_quorum", False)),
         "deadline": parse_duration(settings.get("deadline")),
         "participation": create(participations, settings.get("participation"), "all"),
         "staleness": create(stalenesses, settings.get("staleness"), "drop"),
@@ -110,6 +116,7 @@ def build_federation(
     runtime: Any = None,
     metrics: Sequence[str] = ("loss", "accuracy"),
     evaluate: Evaluate | None = None,
+    server_optimizer: Any = None,
 ) -> Federation:
     """Coordinator, aggregators and edges of ``topology`` on ``runtime`` (a new SimRuntime).
 
@@ -135,6 +142,7 @@ def build_federation(
             return score(model, data, names)
 
     edge_eval = topology.edge.settings.get("eval") or {}
+    finetune = edge_eval.get("finetune")
     common = {"levels": topology.levels, "sharing": policy}
     children = {
         node.id: [c.id for c in topology.children(node.id)]
@@ -146,9 +154,8 @@ def build_federation(
         children[root.id],
         state=initial_state,
         rounds=rounds,
-        server_optimizer=create(
-            server_optimizers, root.settings.get("server_optimizer"), "replace"
-        ),
+        server_optimizer=server_optimizer
+        or create(server_optimizers, root.settings.get("server_optimizer"), "replace"),
         level=root.level,
         **common,
         **_round_settings(root.settings),
@@ -182,6 +189,13 @@ def build_federation(
                 evaluate=evaluate,
                 eval_every=edge_eval.get("every"),
                 eval_models=edge_eval.get("models", ("received", "local")),
+                attack=spec.attack,
+                privacy=spec.privacy,
+                finetuner=(
+                    create(trainer_plugins, finetune)
+                    if finetune is not None and spec.train
+                    else None
+                ),
                 tags=spec.tags,
                 hello_retry=parse_duration(
                     topology.edge.settings.get("hello_retry", 5.0)

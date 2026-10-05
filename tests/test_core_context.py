@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from onion_fl.core.context import node_rng
+from onion_fl.core.context import child_rng, node_rng
 from onion_fl.core.message import Message
 from onion_fl.core.node import Node
 
@@ -61,3 +61,27 @@ def test_node_handlers_default_to_doing_nothing() -> None:
     assert node.on_start(ctx=None) is None  # type: ignore[arg-type]
     assert node.on_message(msg, ctx=None) is None  # type: ignore[arg-type]
     assert node.on_timer("deadline", ctx=None) is None  # type: ignore[arg-type]
+
+
+def test_a_child_stream_leaves_its_parent_untouched() -> None:
+    parent, twin = node_rng(3, "e1"), node_rng(3, "e1")
+
+    child = child_rng(parent)
+    child.integers(0, 2**31, size=10)
+
+    assert (
+        parent.integers(0, 2**31, size=5).tolist()
+        == twin.integers(0, 2**31, size=5).tolist()
+    )
+
+
+def test_successive_child_streams_differ_and_repeat_per_seed() -> None:
+    a, b = node_rng(3, "e1"), node_rng(3, "e1")
+
+    first, second = (
+        child_rng(a).integers(0, 2**31, 3),
+        child_rng(a).integers(0, 2**31, 3),
+    )
+
+    assert first.tolist() != second.tolist()
+    assert child_rng(b).integers(0, 2**31, 3).tolist() == first.tolist()

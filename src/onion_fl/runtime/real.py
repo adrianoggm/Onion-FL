@@ -230,6 +230,9 @@ class RealRuntime:
                 getattr(self, f"_on_{kind}")(*payload)
         finally:
             self._running = False
+            if self.heartbeat_s:  # a run shorter than the interval still reports
+                for node_id in self._nodes:
+                    self._on_heartbeat(node_id, final=True)
             for transport in self._transports.values():
                 transport.stop()
 
@@ -263,18 +266,19 @@ class RealRuntime:
         del self._timers[(node_id, name)]
         self._handle(node_id, "on_timer", lambda node, ctx: node.on_timer(name, ctx))
 
-    def _on_heartbeat(self, node_id: str) -> None:
+    def _on_heartbeat(self, node_id: str, final: bool = False) -> None:
         node = self._nodes[node_id]
         tags = {
             "round": getattr(node, "round", None),
             "queue": len(self._queue),
             "cpu_s": time.process_time(),
+            "final": final,
         }
         memory = _memory_rss()
         if memory is not None:
             tags["memory_bytes"] = memory
         self._record(node_id, "node.heartbeat", getattr(node, "round", None), tags)
-        if self.heartbeat_s:
+        if self.heartbeat_s and not final:
             self._post(self.heartbeat_s, "heartbeat", (node_id,))
 
     def _handle(

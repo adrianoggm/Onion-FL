@@ -13,7 +13,7 @@ shares the seed, and adding a dataset does not move another one's roles.
 ==========  ===============================================================
 
 Imputation, scaling and the removal of constant features are fitted on the
-training portions only: never on val, test or the ``local_val`` tails. With
+training portions only: never on val, test or the ``local_val`` rows. With
 ``scaler: local`` every data holder (client or evaluator) standardises with
 its own statistics, which use no labels.
 """
@@ -58,6 +58,11 @@ class RolesConfig(BaseModel):
     seed: int = 0
     local_val: Share = Field(
         0.0, description="Cola de cada sujeto de entrenamiento para validación local"
+    )
+    local_val_split: Literal["tail", "class_tail"] = Field(
+        "tail",
+        description="tail: últimas filas del sujeto; class_tail: últimas filas de cada clase",
+        exclude_if=lambda v: v == "tail",  # unset, it keeps existing config_ids
     )
     subjects_per_client: PositiveInt = 1
     scaler: Literal["global", "local", "none"] = Field(
@@ -192,6 +197,27 @@ def _like(data: SubjectData, X, y, subject: str, names: list[str]) -> SubjectDat
     )
 
 
+def _held_out(y: np.ndarray, share: float, split: str) -> np.ndarray:
+    """Rows of one subject kept for its local validation, in time order.
+
+    ``tail`` takes the last rows, which in a recording usually hold a single
+    condition; ``class_tail`` takes the last rows of each class instead.
+    """
+    n = len(y)
+    held = np.zeros(n, dtype=bool)
+    if split == "tail":
+        held[n - min(round(share * n), n - 1) :] = True
+        return held
+    for label in np.unique(y):
+        rows = np.flatnonzero(y == label)
+        k = round(share * len(rows))
+        if k:
+            held[rows[-k:]] = True
+    if held.all():
+        held[0] = False  # a subject always keeps a training row
+    return held
+
+
 def split_subjects(
     subjects: Sequence[SubjectData], config: RolesConfig | None = None
 ) -> DataSplit:
@@ -211,12 +237,12 @@ def split_subjects(
         names = sorted(pool, key=natural_key)
         roles[dataset] = _assign(names, dataset, config)
 
-        # Rows each training subject contributes; the rest is its local_val tail.
-        cut = {}
-        for name in roles[dataset]["train"]:
-            n = pool[name].n_samples
-            cut[name] = n - min(round(config.local_val * n), n - 1)
-        bag = np.concatenate([pool[s].X[: cut[s]] for s in cut])
+        # Rows each training subject keeps for its local validation.
+        held = {
+            name: _held_out(pool[name].y, config.local_val, config.local_val_split)
+            for name in roles[dataset]["train"]
+        }
+        bag = np.concatenate([pool[s].X[~held[s]] for s in held])
 
         fit = _Fit.on(bag, config.impute)
         keep = np.arange(bag.shape[1])
@@ -248,7 +274,7 @@ def split_subjects(
                 )
 
         rng = node_rng(config.seed, f"clients/{dataset}")
-        order = [roles[dataset]["train"][i] for i in rng.permutation(len(cut))]
+        order = [roles[dataset]["train"][i] for i in rng.permutation(len(held))]
         for start in range(0, len(order), config.subjects_per_client):
             group = tuple(
                 sorted(
@@ -257,10 +283,10 @@ def split_subjects(
             )
             client_id = "-".join([dataset, *group])
             rows = [pool[s] for s in group]
-            train_X = np.concatenate([d.X[: cut[d.subject], keep] for d in rows])
-            train_y = np.concatenate([d.y[: cut[d.subject]] for d in rows])
-            tail_X = np.concatenate([d.X[cut[d.subject] :, keep] for d in rows])
-            tail_y = np.concatenate([d.y[cut[d.subject] :] for d in rows])
+            train_X = np.concatenate([d.X[~held[d.subject]][:, keep] for d in rows])
+            train_y = np.concatenate([d.y[~held[d.subject]] for d in rows])
+            tail_X = np.concatenate([d.X[held[d.subject]][:, keep] for d in rows])
+            tail_y = np.concatenate([d.y[held[d.subject]] for d in rows])
             own = holder_fit(train_X)
             clients.append(
                 Client(

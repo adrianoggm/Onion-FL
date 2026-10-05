@@ -48,8 +48,10 @@ from onion_fl.data.ingest import readers, steps
 from onion_fl.data.placement import placements
 from onion_fl.data.roles import RolesConfig
 from onion_fl.learning.aggregators import aggregators, server_optimizers
+from onion_fl.learning.attacks import attacks
 from onion_fl.learning.metrics import metrics
 from onion_fl.learning.model import models
+from onion_fl.learning.privacy import privacies
 from onion_fl.learning.sharing import sharing
 from onion_fl.learning.trainers import inits, trainers
 from onion_fl.observability.diagnostics import diagnostics
@@ -87,6 +89,8 @@ REGISTRIES: dict[str, Registry] = {
     "reader": readers,
     "step": steps,
     "baseline": baseline_models,
+    "attack": attacks,
+    "privacy": privacies,
 }
 
 
@@ -128,8 +132,24 @@ class LearningConfig(Strict):
     sharing: PluginRef = "fedavg"
     trainer: PluginRef = "standard"
     init: PluginRef = "random"
+    server_optimizer: PluginRef | None = Field(
+        None,
+        description="Optimizador de servidor de la raíz; sin él, el de la topología",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+    aggregator: PluginRef | None = Field(
+        None,
+        description="Agregador de los nodos cuyos hijos son edges; sin él, el de la topología",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
 
     _model = field_validator("model")(lambda v: _plugin(models, v))
+    _aggregator = field_validator("aggregator")(
+        lambda v: v if v is None else _plugin(aggregators, v)
+    )
+    _server_optimizer = field_validator("server_optimizer")(
+        lambda v: v if v is None else _plugin(server_optimizers, v)
+    )
     _sharing = field_validator("sharing")(lambda v: _plugin(sharing, v))
     _trainer = field_validator("trainer")(lambda v: _plugin(trainers, v))
     _init = field_validator("init")(lambda v: _plugin(inits, v))
@@ -137,9 +157,28 @@ class LearningConfig(Strict):
 
 class EdgeEval(Strict):
     every: PositiveInt | None = None
-    models: list[Literal["received", "local"]] = Field(
+    models: list[Literal["received", "local", "personal", "finetuned"]] = Field(
         default_factory=lambda: ["received", "local"]
     )
+    finetune: PluginRef | None = Field(
+        None,
+        description="Entrenador del ajuste fino antes de puntuar 'finetuned'",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+
+    _finetune = field_validator("finetune")(
+        lambda v: v if v is None else _plugin(trainers, v)
+    )
+
+    @model_validator(mode="after")
+    def _finetune_and_finetuned_go_together(self) -> EdgeEval:
+        if "finetuned" in self.models and self.finetune is None:
+            raise ValueError("models: 'finetuned' needs evaluation.edge.finetune")
+        if self.finetune is not None and "finetuned" not in self.models:
+            raise ValueError(
+                "finetune: it only runs for 'finetuned' scores; add it to models"
+            )
+        return self
 
 
 class AggregatorEval(Strict):
@@ -150,6 +189,14 @@ class AggregatorEval(Strict):
 
 class GlobalEval(Strict):
     every: PositiveInt | None = 1
+    subjects: Literal["test", "val"] | None = Field(
+        None,
+        description=(
+            "Sujetos con los que se evalúa el modelo global: los de test (por "
+            "defecto) o los de validación, para elegir hiperparámetros del servidor"
+        ),
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
 
 
 class EvaluationConfig(Strict):
@@ -205,6 +252,24 @@ class ExperimentConfig(Strict):
     sweep: dict[str, list[Any]] = Field(default_factory=dict)
     sinks: list[PluginRef] = Field(default_factory=list)
     paths: PathsConfig = Field(default_factory=PathsConfig)
+    attack: PluginRef | None = Field(
+        None,
+        description="Ataque de una fracción de edges de cada dataset",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+
+    privacy: PluginRef | None = Field(
+        None,
+        description="Privacidad diferencial local en cada edge que entrena",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+
+    _privacy = field_validator("privacy")(
+        lambda v: v if v is None else _plugin(privacies, v)
+    )
+    _attack = field_validator("attack")(
+        lambda v: v if v is None else _plugin(attacks, v)
+    )
 
     @field_validator("sinks")
     @classmethod

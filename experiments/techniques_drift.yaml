@@ -1,0 +1,41 @@
+# Non-IID drift techniques on SWELL and WESAD (issue #148): one scenario per
+# technique, three seeds, segregated placement (each fog sees one dataset),
+# lossless links so that lost rounds do not mix with drift
+# (techniques_drift_lossy.yaml runs the same techniques over lossy links).
+# Every technique uses SGD, which SCAFFOLD and FedNova assume. Each one's
+# learning rate was chosen on the validation subjects with
+# techniques_drift_select.yaml (zone evaluators, round 20, seed 0), never on
+# the test subjects; the other algorithm parameters keep their defaults.
+#
+#   onion_fl plan experiments/techniques_drift.yaml
+#   onion_fl run experiments/techniques_drift.yaml --workers 3
+#   onion_fl report experiments/techniques_drift.yaml --by scenario --by model
+name: techniques_drift
+description: Deriva no IID (FedAvg, FedProx, SCAFFOLD, FedNova, FedDyn, MOON) sobre SWELL y WESAD.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, local_val: 0.2, local_val_split: class_tail, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: &sgd {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.3}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge: {every: 5, models: [received, local]}
+  aggregators: {every: 5}
+  global: {every: 1}
+seeds: [0, 1, 2]
+sweep:
+  learning.trainer,learning.server_optimizer:
+    - [{<<: *sgd, name: standard, lr: 0.1}, replace]   # FedAvg
+    - [{<<: *sgd, name: fedprox, lr: 0.1}, replace]
+    - [{<<: *sgd, name: scaffold, lr: 0.1}, scaffold]
+    - [{<<: *sgd, name: fednova, lr: 0.1}, fednova]
+    - [{<<: *sgd, name: feddyn, lr: 0.1}, feddyn]
+    - [{<<: *sgd, name: moon, lr: 0.1, mu: 0.1}, replace]

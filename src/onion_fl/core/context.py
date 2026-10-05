@@ -51,3 +51,12 @@ def node_rng(seed: int, node_id: str) -> np.random.Generator:
     digest = hashlib.sha256(node_id.encode("utf-8")).digest()
     words = np.frombuffer(digest[:16], dtype="<u4").tolist()
     return np.random.default_rng(np.random.SeedSequence([seed, *words]))
+
+
+def child_rng(rng: np.random.Generator) -> np.random.Generator:
+    """A new independent stream spawned from ``rng``'s seed, without drawing from it.
+
+    Side computations (evaluation, a personal model) use one so they never
+    shift the draws of the main stream; each call gives the next child.
+    """
+    return np.random.default_rng(rng.bit_generator.seed_seq.spawn(1)[0])

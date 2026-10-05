@@ -17,17 +17,19 @@ Evaluation happens at three levels:
   model, and reports per dataset tag.
 """
 
+import copy
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
 
-from onion_fl.core.context import Context
+from onion_fl.core.context import Context, child_rng
 from onion_fl.core.message import Message, Payload
 from onion_fl.core.node import Node
 from onion_fl.learning.aggregators import Contribution
 from onion_fl.learning.metrics import reduce_reports
-from onion_fl.learning.model import load_arrays, state_arrays
+from onion_fl.learning.model import group_of, is_aux, load_arrays, state_arrays
 from onion_fl.learning.sharing import SharingPolicy, keys_crossing, keys_held_at
 from onion_fl.observability.diagnostics import RoundView
 from onion_fl.observability.diagnostics import diagnostics as diagnostic_plugins
@@ -51,15 +53,29 @@ def _due(every: int | None, round: int) -> bool:
     return bool(every) and round % every == 0
 
 
+def _model_part(state: Mapping[str, Any]) -> State:
+    """The model's own arrays, without auxiliary ones (control variates, …)."""
+    return {k: v for k, v in state.items() if not is_aux(k)}
+
+
 def _train_metrics(reports: Iterable[Mapping[str, float]]) -> dict[str, float]:
+    """``train_*`` of the children: examples and edges summed, the rest averaged by examples."""
     reports = [r for r in reports if r.get("train_examples")]
     examples = sum(r["train_examples"] for r in reports)
     if not examples:
         return {}
-    loss = (
-        sum(r.get("train_loss", 0.0) * r["train_examples"] for r in reports) / examples
-    )
-    return {"train_loss": float(loss), "train_examples": float(examples)}
+    out = {
+        "train_examples": float(examples),
+        "train_edges": float(sum(r.get("train_edges", 1.0) for r in reports)),
+    }
+    for name in sorted({k for r in reports for k in r if k.startswith("train_edges/")}):
+        out[name] = float(sum(r.get(name, 0.0) for r in reports))  # per group
+    names = sorted({k for r in reports for k in r if k.startswith("train_")} - set(out))
+    for name in names:
+        holders = [r for r in reports if name in r]
+        weight = sum(r["train_examples"] for r in holders)
+        out[name] = float(sum(r[name] * r["train_examples"] for r in holders) / weight)
+    return out
 
 
 def _eval_part(metrics: Mapping[str, float], model: str) -> tuple[dict, float]:
@@ -87,6 +103,7 @@ class _Collector(Node):
         sharing: SharingPolicy,
         aggregator: Any,
         quorum: float = 1.0,
+        close_at_quorum: bool = False,
         deadline: float | None = None,
         participation: Any = None,
         staleness: Any = None,
@@ -101,6 +118,7 @@ class _Collector(Node):
         self.level, self.levels, self.sharing = level, list(levels), sharing
         self.aggregator = aggregator
         self.quorum, self.deadline = quorum, deadline
+        self.close_at_quorum = close_at_quorum  # FedBuff-style: close at K, not at all
         self.participation = participation or AllChildren()
         self.staleness = staleness or Drop()
         self.register_timeout = register_timeout
@@ -112,6 +130,10 @@ class _Collector(Node):
         self.participants: list[str] = []
         self.responses: dict[str, tuple[Contribution, Mapping[str, float]]] = {}
         self.stale: dict[str, Contribution] = {}
+        self.stale_age: dict[str, float] = {}  # rounds behind, plus what it carried
+        self.stale_round: dict[str, int] = {}  # the round each buffered update is from
+        self.sent_history: dict[int, State] = {}  # what was sent down, per round
+        self.owed: dict[str, list[int]] = {}  # rounds each child has not answered
         self.pending_eval: dict[int, dict[str, Any]] = {}
         self.diagnostics = (
             [diagnostic_plugins.create(n) for n in diagnostic_plugins.names()]
@@ -165,6 +187,14 @@ class _Collector(Node):
             if meta.get("role") != "evaluator"
         )
 
+    def holders_below(self) -> dict[str, int]:
+        """Training edges below that send each parameter group up."""
+        holders: dict[str, int] = {}
+        for meta in self.registered.values():
+            for group, n in (meta.get("holders") or {}).items():
+                holders[group] = holders.get(group, 0) + int(n)
+        return dict(sorted(holders.items()))
+
     # --- rounds ---------------------------------------------------------------------
 
     def on_message(self, msg: Message, ctx: Context) -> None:
@@ -181,9 +211,14 @@ class _Collector(Node):
         _reject(ctx, msg, "unexpected sender or kind")
 
     def _open(self, round: int, state: State, ctx: Context, bootstrap: bool) -> None:
+        if self.open:  # the parent moved on before this round closed
+            self._abandon(round, ctx)
         self.round, self.open, self.opened_at = round, True, ctx.now()
         self.responses, self.late, self.quorum_at = {}, 0, None
-        self.participants = self.participation.select(self.trainers(), round, ctx.rng)
+        selected = self.participation.select(self.trainers(), round, ctx.rng)
+        if self.close_at_quorum:  # FedBuff-style: a busy child gets no newer model
+            selected = [c for c in selected if c not in self.owed]
+        self.participants = selected
         ctx.emit(
             "round.participants",
             len(self.participants),
@@ -210,13 +245,88 @@ class _Collector(Node):
                     meta={"bootstrap": bootstrap},
                 )
             )
+            self.owed.setdefault(child, []).append(round)
+        # Kept while an update trained on it may still be kept, to rebase it; a
+        # policy that drops late updates needs none, and max_staleness bounds it.
+        self.sent_history[round] = down
+        alive = {round}
+        if self.staleness.weight(1) is not None:
+            alive |= {*self.stale_round.values()}
+            alive |= {r for rounds in self.owed.values() for r in rounds}
+            limit = getattr(self.staleness, "max_staleness", None)
+            if limit is not None:
+                alive = {r for r in alive if round - r <= limit}
+        self.sent_history = {r: s for r, s in self.sent_history.items() if r in alive}
         if not self.participants:
             self._close(ctx)
         elif self.deadline is not None:
             ctx.set_timer(self.deadline, "deadline")
 
+    def _abandon(self, new_round: int, ctx: Context) -> None:
+        """Keep the updates of a round the parent overtook, as late ones."""
+        ctx.cancel_timer("deadline")
+        kept = 0
+        for src, (contribution, metrics) in sorted(self.responses.items()):
+            if contribution.state:
+                kept += self._buffer(src, contribution, self.round, new_round, metrics)
+        ctx.emit(
+            "round.abandoned",
+            float(kept),
+            round=self.round,
+            kept=kept,
+            responded=len(self.responses),
+        )
+        self.open = False
+
+    def _buffer(
+        self,
+        src: str,
+        contribution: Contribution,
+        round: int,
+        target: int,
+        metrics: Mapping[str, float],
+    ) -> bool:
+        """Hold a late update for round ``target``, weighted by its staleness."""
+        factor = self.staleness.weight(target - round)
+        if factor is None or not contribution.state:
+            return False
+        weights = {k: w * factor for k, w in contribution.weights.items()}
+        self.stale[src] = Contribution(src, contribution.state, weights)
+        carried = float((metrics or {}).get("staleness", 0.0))
+        self.stale_age[src] = target - round + carried
+        self.stale_round[src] = round
+        return True
+
+    def _reached(self) -> bool:
+        """A buffering round (FedBuff-style) closes on K updates, late ones included."""
+        if not self.close_at_quorum:
+            return False
+        fresh = {s for s, (c, _) in self.responses.items() if c.state}
+        count = len(fresh) + sum(1 for s in self.stale if s not in fresh)
+        return count >= max(quorum_needed(self.quorum, len(self.participants)), 1)
+
+    def _rebased(self, source: str) -> Contribution | None:
+        """A late update as its change from the model it trained on, applied to the
+        model sent this round: an old model would pull the aggregate back. None
+        when that model is gone; the update is then dropped, never used as is."""
+        item = self.stale[source]
+        base = self.sent_history.get(self.stale_round.get(source, -1))
+        if base is None:
+            return None
+        state = dict(item.state)
+        for key, value in item.state.items():
+            if is_aux(key) or key not in base or key not in self.sent:
+                continue
+            delta = np.asarray(value, np.float64) - np.asarray(base[key], np.float64)
+            moved = np.asarray(self.sent[key], np.float64) + delta
+            state[key] = moved.astype(np.asarray(value).dtype)
+        return Contribution(item.source, state, item.weights)
+
     def _update(self, msg: Message, ctx: Context) -> None:
         r = msg.round
+        owed = [x for x in self.owed.pop(msg.src, []) if r is None or x > r]
+        if owed:  # links are FIFO: an answer for r settles every round up to r
+            self.owed[msg.src] = owed
         contribution = Contribution(
             msg.src, dict(msg.payload.state), dict(msg.payload.weights)
         )
@@ -227,18 +337,24 @@ class _Collector(Node):
             needed = quorum_needed(self.quorum, len(self.participants))
             if self.quorum_at is None and answered >= max(needed, 1):
                 self.quorum_at = ctx.now() - self.opened_at
-            if len(self.responses) == len(self.participants):
+            if self._reached() or len(self.responses) == len(self.participants):
                 self._close(ctx)
             return
         if r is not None and (r < self.round or (r == self.round and not self.open)):
             target = self.round if self.open else self.round + 1
-            factor = self.staleness.weight(target - r)
-            action = "drop" if factor is None or not contribution.state else "buffered"
+            buffered = self._buffer(
+                msg.src, contribution, r, target, msg.payload.metrics
+            )
             self.late += 1
-            ctx.emit("update.late", target - r, src=msg.src, round=r, action=action)
-            if action == "buffered":
-                weights = {k: w * factor for k, w in contribution.weights.items()}
-                self.stale[msg.src] = Contribution(msg.src, contribution.state, weights)
+            ctx.emit(
+                "update.late",
+                target - r,
+                src=msg.src,
+                round=r,
+                action="buffered" if buffered else "drop",
+            )
+            if self.open and self._reached():
+                self._close(ctx)
             return
         _reject(ctx, msg, "update for a round that is not open")
 
@@ -256,31 +372,66 @@ class _Collector(Node):
         ctx.cancel_timer("deadline")
         self.open = False
         fresh = {s: c for s, (c, _) in self.responses.items() if c.state}
-        stale = [c for s, c in sorted(self.stale.items()) if s not in fresh]
-        self.stale = {}
+        rebased = {s: self._rebased(s) for s in sorted(self.stale) if s not in fresh}
+        late = [s for s, c in rebased.items() if c is not None]
+        stale = [rebased[s] for s in late]
+        lost = [s for s, c in rebased.items() if c is None]
+        if lost:
+            ctx.emit(
+                "update.unrebased", float(len(lost)), sources=lost, round=self.round
+            )
+        # Staleness of what is combined: rounds behind here plus what each carried.
+        age = {s: float(self.responses[s][1].get("staleness", 0.0)) for s in fresh}
+        age |= {s: self.stale_age[s] for s in late}
+        ages = [age[s] for s in sorted(age)]
+        self.stale, self.stale_age, self.stale_round = {}, {}, {}
         needed = quorum_needed(self.quorum, len(self.participants))
+        count = len(fresh) + (len(stale) if self.close_at_quorum else 0)
         tags = {
             "responded": len(fresh),
             "participants": len(self.participants),
             "round": self.round,
         }
         reports = {s: m for s, (_, m) in sorted(self.responses.items()) if s in fresh}
-        if not fresh or len(fresh) < needed:
+        if not count or count < needed:
             ctx.emit("round.quorum_failed", self.round, needed=needed, **tags)
             self._diagnose(fresh, {}, reports, ctx, failed=True)
+            if self.aggregate_children:
+                # Scores that arrived are evaluation, not aggregation: keep them.
+                self._children_scores(list(reports.values()), ctx)
             self._failed(ctx)
             return
+        given = [*fresh.values(), *stale]
         aggregated = self.aggregator.aggregate(
-            [*fresh.values(), *stale], source=self.id
+            given, source=self.id, reference=self.sent, rng=child_rng(ctx.rng)
         )
+        self._report_aggregation({c.source for c in given}, ctx)
         self._diagnose(fresh, aggregated.state, reports, ctx, failed=False)
         self.previous = dict(aggregated.state)
         reports = list(reports.values())
         metrics = _train_metrics(reports)
+        if any(ages):  # absent means 0, so synchronous runs send nothing new
+            metrics["staleness"] = float(np.mean(ages))
         if self.aggregate_children:
             metrics |= self._children_scores(reports, ctx)
         ctx.emit("round.closed", ctx.now() - self.opened_at, stale=len(stale), **tags)
         self._closed(aggregated, metrics, ctx)
+
+    def _report_aggregation(self, sources: set[str], ctx: Context) -> None:
+        """Emit what the aggregator reports; a selection gets its malicious counts."""
+        malicious = {
+            child
+            for child, meta in self.registered.items()
+            if (meta.get("tags") or {}).get("malicious")
+        }
+        for name, value, tags in getattr(self.aggregator, "report", list)():
+            tags = dict(tags)
+            if "dropped" in tags:
+                tags["malicious_dropped"] = len(set(tags["dropped"]) & malicious)
+                tags["malicious"] = len(malicious & sources)
+            if "excluded" in tags:
+                tags["malicious_excluded"] = len(set(tags["excluded"]) & malicious)
+            ctx.emit(name, value, round=self.round, **tags)
 
     def _diagnose(
         self, fresh, aggregated: State, reports, ctx: Context, failed: bool
@@ -289,11 +440,14 @@ class _Collector(Node):
             return
         view = RoundView(
             round=self.round,
-            sent=self.sent,
-            contributions=fresh,
-            aggregated=aggregated,
-            previous=self.previous,
-            received=getattr(self, "received", {}),
+            sent=_model_part(self.sent),
+            contributions={
+                child: Contribution(c.source, _model_part(c.state), c.weights)
+                for child, c in fresh.items()
+            },
+            aggregated=_model_part(aggregated),
+            previous=None if self.previous is None else _model_part(self.previous),
+            received=_model_part(getattr(self, "received", {})),
             datasets={
                 c: meta["tags"]["dataset"]
                 for c, meta in self.registered.items()
@@ -491,8 +645,10 @@ class Coordinator(_Collector):
 
     def _closed(self, aggregated: Contribution, metrics: dict, ctx: Context) -> None:
         held = keys_held_at(aggregated.state, self.sharing, self.levels, self.level)
+        stats = dict(metrics) | {"edges_total": float(self.edges_below())}
+        stats |= {f"edges_total/{g}": float(n) for g, n in self.holders_below().items()}
         self.state = self.server_optimizer.apply(
-            self.state, _subset(aggregated.state, held)
+            self.state, _subset(aggregated.state, held), stats
         )
         if "train_loss" in metrics:
             ctx.emit(
@@ -534,7 +690,8 @@ class Aggregator(_Greeter, _Collector):
         self.parent_level = self.levels[self.levels.index(self.level) - 1]
 
     def _registered(self, ctx: Context) -> None:
-        self._say_hello({"role": "aggregator", "edges": self.edges_below()}, ctx)
+        meta = {"role": "aggregator", "edges": self.edges_below()}
+        self._say_hello(meta | {"holders": self.holders_below()}, ctx)
 
     def on_timer(self, name: str, ctx: Context) -> None:
         if name == "hello":
@@ -609,11 +766,17 @@ class Edge(_Greeter, Node):
         eval_models: Sequence[str] = ("received", "local"),
         tags: Mapping[str, Any] | None = None,
         hello_retry: float | None = 5.0,
+        finetuner: Any = None,
+        attack: Any = None,
+        privacy: Any = None,
     ) -> None:
         super().__init__(node_id)
         self.hello_retry = hello_retry
         self.parent, self.model, self.data = parent, model, data
         self.trainer, self.train = trainer, train
+        self.finetuner = finetuner
+        self.attack = attack
+        self.privacy, self._released = privacy, 0
         self.sharing, self.levels = sharing, list(levels)
         self.parent_level = self.levels[-2]
         self.val_data, self.evaluate = val_data, evaluate
@@ -626,7 +789,14 @@ class Edge(_Greeter, Node):
             "edges": int(self.train),
             "tags": self.tags,
         }
+        if self.train:
+            meta["holders"] = dict.fromkeys(self._groups_up(self.model.state_dict()), 1)
         self._say_hello(meta, ctx)
+
+    def _groups_up(self, keys: Iterable[str]) -> list[str]:
+        """Parameter groups of ``keys`` that travel to the parent."""
+        up = keys_crossing(keys, self.sharing, self.levels, self.parent_level)
+        return sorted({group_of(k) for k in up if not is_aux(k)})
 
     def on_timer(self, name: str, ctx: Context) -> None:
         if name == "hello" and not self.acknowledged:
@@ -652,8 +822,12 @@ class Edge(_Greeter, Node):
                 f"a {'trainer' if self.train else 'evaluator'} does not take {msg.kind}",
             )
 
-    def _score(self, model: str, round: int, ctx: Context) -> dict[str, float]:
-        scores, samples = self.evaluate(self.model, self.val_data)
+    def _score(
+        self, model: str, round: int, ctx: Context, module: Any = None
+    ) -> dict[str, float]:
+        scores, samples = self.evaluate(
+            self.model if module is None else module, self.val_data
+        )
         _emit_scores(
             ctx,
             scores,
@@ -667,6 +841,20 @@ class Edge(_Greeter, Node):
             f"eval.{model}.samples": float(samples)
         }
 
+    def _finetuned(self, start: Any, received: State, ctx: Context) -> Any:
+        """``start`` (the model as received) trained by the finetune trainer.
+
+        It draws from a child stream of the node's generator, so scoring
+        never shifts the draws of the edge's own training.
+        """
+        self.finetuner.train(
+            start,
+            self.data,
+            received=received,
+            ctx=SimpleNamespace(rng=child_rng(ctx.rng)),
+        )
+        return start
+
     def _train(self, msg: Message, ctx: Context) -> None:
         received = dict(msg.payload.state)
         load_arrays(self.model, received)
@@ -675,13 +863,21 @@ class Edge(_Greeter, Node):
             and self.val_data is not None
             and _due(self.eval_every, msg.round)
         )
+        finetuning = (
+            scoring and "finetuned" in self.eval_models and self.finetuner is not None
+        )
+        start = copy.deepcopy(self.model) if finetuning else None
+        attacking = self.attack is not None and msg.round >= self.attack.start_round
+        data = self.attack.on_data(self.data) if attacking else self.data
         metrics: dict[str, float] = {}
         if scoring and "received" in self.eval_models:
             metrics |= self._score("received", msg.round, ctx)
+        model_before = state_arrays(self.model)
         try:
-            result = self.trainer.train(
-                self.model, self.data, received=received, ctx=ctx
-            )
+            # What a diverged round rolls back to: the model, and the trainer's
+            # memory if it can snapshot it (built-ins can; a plugin may opt in).
+            saved = getattr(self.trainer, "snapshot", lambda: None)()
+            result = self.trainer.train(self.model, data, received=received, ctx=ctx)
         except Exception as exc:  # the edge counts as absent; the run goes on
             ctx.emit(
                 "edge.train_failed",
@@ -690,17 +886,62 @@ class Edge(_Greeter, Node):
             )
             return
         ctx.compute(result.samples)
+        arrays = state_arrays(self.model) | dict(result.aux)
+        broken = sorted(k for k, v in arrays.items() if not np.isfinite(v).all())
+        if broken:  # a diverged edge rolls back and tells its parent at once
+            if saved is not None:
+                self.trainer.restore(saved)
+            load_arrays(self.model, model_before)
+            ctx.emit(
+                "edge.train_failed",
+                round=msg.round,
+                error=f"non-finite weights after training: {broken[:3]}",
+            )
+            ctx.send(
+                Message(kind="update", src=self.id, dst=self.parent, round=msg.round)
+            )
+            return
         if scoring and "local" in self.eval_models:
             metrics |= self._score("local", msg.round, ctx)
-        arrays = state_arrays(self.model)
+        try:
+            if scoring and "personal" in self.eval_models:
+                personal = getattr(self.trainer, "personal", lambda: None)()
+                if personal is not None:
+                    metrics |= self._score("personal", msg.round, ctx, personal)
+            if finetuning:
+                finetuned = self._finetuned(start, received, ctx)
+                metrics |= self._score("finetuned", msg.round, ctx, finetuned)
+        except Exception as exc:  # scoring never costs the edge its update
+            ctx.emit(
+                "edge.eval_failed",
+                round=msg.round,
+                error=f"{type(exc).__name__}: {exc}",
+            )
         up = keys_crossing(arrays, self.sharing, self.levels, self.parent_level)
+        arrays = _subset(arrays, up)  # the hooks see only what is released
+        if attacking:
+            arrays = self.attack.on_update(arrays, received, child_rng(ctx.rng))
+        if self.privacy is not None:
+            arrays = self.privacy.on_update(arrays, received, child_rng(ctx.rng))
+            self._released += 1
+            ctx.emit(
+                "diagnostic.privacy_epsilon",
+                self.privacy.epsilon(self._released),
+                round=msg.round,
+                mechanism="local",
+            )
         ctx.emit("edge.trained", result.loss, round=msg.round, examples=result.examples)
+        # One vote per edge for trainers whose papers average clients (SCAFFOLD).
+        uniform = getattr(self.trainer, "uniform_weights", False)
         payload = Payload(
-            state=_subset(arrays, up),
-            weights=dict.fromkeys(up, float(result.examples)),
+            state=arrays,
+            weights=dict.fromkeys(up, 1.0 if uniform else float(result.examples)),
             metrics={
                 "train_loss": float(result.loss),
                 "train_examples": float(result.examples),
+                "train_steps": float(result.batches),
+                "train_edges": 1.0,
+                **{f"train_edges/{g}": 1.0 for g in self._groups_up(up)},
                 **metrics,
             },
         )

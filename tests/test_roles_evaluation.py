@@ -7,10 +7,13 @@ count, so every expected number is arithmetic (docs/RULES.md).
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
+import torch
 
 from onion_fl.core.topology import parse_topology
 from onion_fl.learning.model import (
@@ -128,6 +131,189 @@ def test_edge_scores_follow_every() -> None:
     federation = run(tree(edge=edge), {"fog_0": [trainer_edge("e1", val=1)]}, rounds=4)
 
     assert [e["tags"]["round"] for e in scores(federation, "e1")] == [2, 4]
+
+
+class PersonalStub:
+    """The stub trainer plus a personal model: the trained one shifted by 10."""
+
+    def __init__(self) -> None:
+        self.stub = trainers.create("stub", {"shift": 1.0})
+        self.model = None
+
+    def train(self, model, data=None, received=None, ctx=None):
+        result = self.stub.train(model, data, received, ctx)
+        self.model = copy.deepcopy(model)
+        with torch.no_grad():
+            for tensor in self.model.parameters():
+                tensor.add_(10.0)
+        return result
+
+    def personal(self):
+        return self.model
+
+
+PERSONAL = {"eval": {"every": 1, "models": ["personal"]}}
+
+
+def test_an_edge_scores_its_personal_model_when_the_trainer_has_one() -> None:
+    spec = EdgeSpec("e1", model(A), trainer=PersonalStub(), val_data=samples(4))
+
+    federation = run(tree(edge=PERSONAL), {"fog_0": [spec]})
+
+    personal = [e["value"] for e in scores(federation, "e1", model="personal")]
+    assert personal == pytest.approx([M0 + 11])
+
+
+def test_trainers_without_a_personal_model_score_nothing_personal() -> None:
+    federation = run(tree(edge=PERSONAL), {"fog_0": [trainer_edge("e1", val=4)]})
+
+    assert scores(federation, "e1") == []
+
+
+def test_the_fog_combines_personal_scores_like_the_others() -> None:
+    edges = {
+        "fog_0": [
+            EdgeSpec(f"e{i}", model(A), trainer=PersonalStub(), val_data=samples(n))
+            for i, n in ((1, 1), (2, 3))
+        ]
+    }
+
+    federation = run(tree(edge=PERSONAL), edges)
+
+    (fog,) = scores(federation, "fog_0", model="personal", source="children")
+    assert fog["value"] == pytest.approx(M0 + 11)
+
+
+FINETUNE = {
+    "eval": {
+        "every": 1,
+        "models": ["finetuned"],
+        "finetune": {"name": "stub", "shift": 5.0},
+    }
+}
+
+
+def test_finetuned_scores_the_received_model_after_the_finetune_trainer() -> None:
+    federation = run(
+        tree(edge=FINETUNE),
+        {"fog_0": [trainer_edge("e1", shift=1, val=4)]},
+        rounds=2,
+    )
+
+    finetuned = [e["value"] for e in scores(federation, "e1", model="finetuned")]
+    assert finetuned == pytest.approx([M0 + 5, M0 + 1 + 5])
+
+
+def test_finetune_scoring_does_not_change_training() -> None:
+    def final(edge: dict) -> dict:
+        spec = EdgeSpec(
+            "e1",
+            model(A),
+            trainer=trainers.create("stub", {"noise": 0.1}),
+            val_data=samples(4),
+        )
+        federation = run(tree(edge=edge), {"fog_0": [spec]}, rounds=3)
+        return federation.coordinator.state
+
+    plain = final({"eval": {"every": 1, "models": ["local"]}})
+    noisy_finetune = {"name": "stub", "noise": 0.1}
+    scored = final(
+        {
+            "eval": {
+                "every": 1,
+                "models": ["local", "finetuned"],
+                "finetune": noisy_finetune,
+            }
+        }
+    )
+
+    for key, value in plain.items():
+        np.testing.assert_array_equal(value, scored[key])
+
+
+class BrokenPersonal(PersonalStub):
+    def personal(self):
+        raise RuntimeError("personal model lost")
+
+
+def test_a_failing_score_does_not_drop_the_edge_update() -> None:
+    spec = EdgeSpec("e1", model(A), trainer=BrokenPersonal(), val_data=samples(4))
+
+    federation = run(tree(edge=PERSONAL), {"fog_0": [spec]})
+
+    assert federation.coordinator.state[KEY].mean() == pytest.approx(M0 + 1)
+    (failed,) = [
+        e for e in federation.runtime.events if e["name"] == "edge.eval_failed"
+    ]
+    assert "personal model lost" in failed["tags"]["error"]
+
+
+class Failing:
+    def train(self, model, data=None, received=None, ctx=None):
+        raise RuntimeError("out of memory")
+
+
+def test_a_failed_round_still_reports_the_scores_that_arrived() -> None:
+    edges = {
+        "fog_0": [trainer_edge("e1", shift=1, val=4)],
+        "fog_1": [EdgeSpec("e2", model(A), trainer=Failing())],
+    }
+
+    federation = run(tree(fog={"deadline": 5}, edge=EDGE_EVAL, n_fogs=2), edges)
+
+    failed = [
+        e
+        for e in federation.runtime.events
+        if e["name"] == "round.quorum_failed" and e["node"] == "cloud"
+    ]
+    assert failed
+    (cloud,) = scores(federation, "cloud", model="local", source="children")
+    assert cloud["value"] == pytest.approx(M0 + 1)
+
+
+def test_a_diverged_edge_recovers_and_reports_no_non_finite_score() -> None:
+    class DivergesOnce:
+        """Blows up on its first call and poisons its memory; a poisoned memory
+        poisons every later round, so only a restored trainer recovers."""
+
+        calls = 0  # on the class: the edge's snapshot cannot roll it back
+
+        def __init__(self) -> None:
+            self.memory = 0.0
+            self.stub = trainers.create("stub", {"shift": 1.0})
+
+        def snapshot(self) -> float:
+            return self.memory
+
+        def restore(self, saved: float) -> None:
+            self.memory = saved
+
+        def train(self, model, data=None, received=None, ctx=None):
+            type(self).calls += 1
+            result = self.stub.train(model, data, received, ctx)
+            if type(self).calls == 1:
+                self.memory = float("nan")
+            if self.memory != self.memory:
+                with torch.no_grad():
+                    dict(model.named_parameters())[KEY].fill_(float("nan"))
+            return result
+
+    edges = {
+        "fog_0": [
+            trainer_edge("e1", shift=2, val=4),
+            EdgeSpec("e2", model(A), trainer=DivergesOnce(), val_data=samples(4)),
+        ]
+    }
+
+    federation = run(tree(fog={"deadline": 5}, edge=EDGE_EVAL), edges, rounds=3)
+
+    events = federation.runtime.events
+    failed = [e for e in events if e["name"] == "edge.train_failed"]
+    assert [e["node"] for e in failed] == ["e2"]
+    scores = [e["value"] for e in events if e["name"].startswith("eval.")]
+    assert scores and np.isfinite(scores).all()
+    # round 1 is lost; rounds 2 and 3 move the trunk by (2 + 1) / 2 each
+    assert federation.coordinator.state[KEY].mean() == pytest.approx(M0 + 3.0)
 
 
 # --- fog --------------------------------------------------------------------------------------

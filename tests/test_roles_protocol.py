@@ -7,15 +7,19 @@ arithmetic. No data is involved (docs/RULES.md).
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from pathlib import Path
 
 import numpy as np
 import pytest
+import torch
 
 from onion_fl.core.message import Message, Payload
 from onion_fl.core.registry import PluginError
 from onion_fl.core.topology import parse_topology
+from onion_fl.learning.aggregators import aggregators
+from onion_fl.learning.attacks import attacks
 from onion_fl.learning.model import (
     DataShape,
     ModularMLP,
@@ -69,6 +73,21 @@ def edge(
 class Broken:
     def train(self, *args, **kwargs):
         raise RuntimeError("out of memory")
+
+
+class AuxStub:
+    """The stub trainer plus one auxiliary array: what it last received, plus 1."""
+
+    def __init__(self) -> None:
+        self.stub = trainers.create("stub", {"shift": 1.0})
+        self.seen: list[np.ndarray | None] = []
+
+    def train(self, model, data=None, received=None, ctx=None):
+        result = self.stub.train(model, data, received, ctx)
+        last = (received or {}).get("algo/trunk.0.weight")
+        self.seen.append(None if last is None else np.asarray(last).copy())
+        base = np.zeros_like(received["trunk.0.weight"]) if last is None else last
+        return dataclasses.replace(result, aux={"algo/trunk.0.weight": base + 1})
 
 
 def run(topology, edges, rounds: int = 1, sharing: str = "fedavg", **kw):
@@ -619,25 +638,27 @@ def fog_by_hand(**settings):
     return fog, ctx
 
 
-def model_msg(round: int) -> Message:
+def model_msg(round: int, shift: float = 0.0) -> Message:
     return Message(
         kind="global_model",
         src="cloud",
         dst="fog_0",
         round=round,
-        payload=Payload(state={KEY: INITIAL[KEY]}),
+        payload=Payload(state={KEY: INITIAL[KEY] + np.float32(shift)}),
         meta={"bootstrap": round == 1},
     )
 
 
-def update_msg(src: str, round: int, value: float, weight: float) -> Message:
+def update_msg(
+    src: str, round: int, value: float, weight: float, **metrics: float
+) -> Message:
     state = {KEY: np.full_like(INITIAL[KEY], value)}
     return Message(
         kind="update",
         src=src,
         dst="fog_0",
         round=round,
-        payload=Payload(state=state, weights={KEY: weight}),
+        payload=Payload(state=state, weights={KEY: weight}, metrics=metrics),
     )
 
 
@@ -683,6 +704,126 @@ def test_a_fresh_update_replaces_a_stale_one_from_the_same_edge() -> None:
     assert sent.payload.weights[KEY] == 3.0
 
 
+def test_a_round_reports_the_mean_staleness_of_what_it_combines() -> None:
+    fog, ctx = fog_by_hand(**STALE)
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+    assert "staleness" not in ctx.sent[-1].payload.metrics  # all fresh: 0, not sent
+    fog.on_message(model_msg(2), ctx)
+
+    fog.on_message(update_msg("e2", 1, 5.0, 2), ctx)  # one round late
+    fog.on_message(update_msg("e1", 2, 3.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+
+    assert ctx.sent[-1].payload.metrics["staleness"] == 0.5  # (0 + 1) / 2
+
+
+def test_a_childs_staleness_adds_to_its_age() -> None:
+    fog, ctx = fog_by_hand(**STALE)
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1, staleness=2.0), ctx)
+    fog.on_message(update_msg("e2", 1, 1.0, 1), ctx)
+
+    assert ctx.sent[-1].payload.metrics["staleness"] == 1.0  # (2 + 0) / 2
+
+
+def test_the_server_optimizer_sees_the_staleness_below() -> None:
+    recorder = StatsRecorder()
+    edges = {"fog_0": [edge("fast", shift=1), slow("slow", seconds=15, shift=7)]}
+    fog = STALE | {"deadline": 10}
+
+    run(tree(1, fog=fog), edges, rounds=3, server_optimizer=recorder)
+
+    assert any(s.get("staleness", 0.0) > 0 for s in recorder.stats)
+
+
+def test_a_round_can_close_as_soon_as_its_quorum_arrives() -> None:
+    fog, ctx = fog_by_hand(**STALE | {"quorum": 1, "close_at_quorum": True})
+    fog.on_message(model_msg(1), ctx)
+
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)  # 1 of 2 is enough
+
+    assert ctx.sent[-1].kind == "update" and not fog.open
+
+
+def test_a_stale_update_joins_as_a_change_from_the_model_it_trained_on() -> None:
+    # Trained from the round-1 model (INITIAL) to 5; round 2 sends INITIAL + 10,
+    # so it joins as INITIAL + 10 + (5 - INITIAL) = 15, not as the old model 5.
+    fog, ctx = fog_by_hand(**STALE)
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+    fog.on_message(model_msg(2, shift=10.0), ctx)
+
+    fog.on_message(update_msg("e2", 1, 5.0, 2), ctx)  # weight 2 * 0.5 = 1
+    fog.on_message(update_msg("e1", 2, 3.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+
+    np.testing.assert_allclose(ctx.sent[-1].payload.state[KEY], (3 + 15) / 2, rtol=1e-6)
+
+
+def test_a_buffering_round_counts_late_updates_and_skips_busy_children() -> None:
+    fog, ctx = fog_by_hand(**STALE | {"quorum": 1, "close_at_quorum": True})
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)  # closes round 1; e2 still busy
+
+    fog.on_message(model_msg(2), ctx)
+    sent_to = [m.dst for m in ctx.sent if m.kind == "global_model" and m.round == 2]
+    assert sent_to == ["e1"]  # e2 has not answered round 1: no second model
+    fog.on_message(update_msg("e2", 1, 5.0, 2), ctx)  # late, and it is K = 1
+
+    assert ctx.sent[-1].kind == "update" and ctx.sent[-1].round == 2
+    np.testing.assert_allclose(ctx.sent[-1].payload.state[KEY], 5.0)
+
+
+def test_an_open_round_overtaken_by_its_parent_keeps_its_updates() -> None:
+    fog, ctx = fog_by_hand(**STALE)
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 2), ctx)  # e2 never answers round 1
+
+    fog.on_message(model_msg(2), ctx)  # the parent moved on: round 1 never closed
+    fog.on_message(update_msg("e2", 2, 3.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+
+    assert ("round.abandoned", {"round": 1, "kept": 1}) in [
+        (name, {k: tags[k] for k in ("round", "kept") if k in tags})
+        for name, tags in ctx.events
+    ]
+    np.testing.assert_allclose(ctx.sent[-1].payload.state[KEY], (3 + 1) / 2, rtol=1e-6)
+
+
+def test_an_update_twenty_rounds_late_is_still_rebased() -> None:
+    fog, ctx = fog_by_hand(**STALE)
+    for r in range(1, 22):  # e2 trains on round 1 and answers only in round 22
+        fog.on_message(model_msg(r, shift=float(r - 1)), ctx)
+        fog.on_message(update_msg("e1", r, float(r - 1), 1), ctx)
+        fog.on_timer("deadline", ctx)
+    fog.on_message(model_msg(22, shift=21.0), ctx)
+
+    fog.on_message(update_msg("e2", 1, 5.0, 2), ctx)  # trained 0 -> 5 on round 1
+    fog.on_message(update_msg("e1", 22, 3.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+
+    # INITIAL + 21 + (5 - INITIAL) = 26, never the old model 5
+    np.testing.assert_allclose(ctx.sent[-1].payload.state[KEY], (3 + 26) / 2, rtol=1e-6)
+
+
+def test_updates_older_than_max_staleness_are_dropped() -> None:
+    late = {"name": "next_round", "weighting": "constant", "max_staleness": 2}
+    fog, ctx = fog_by_hand(**STALE | {"staleness": late})
+    for r in range(1, 5):
+        fog.on_message(model_msg(r), ctx)
+        fog.on_message(update_msg("e1", r, 1.0, 1), ctx)
+        fog.on_timer("deadline", ctx)
+    fog.on_message(model_msg(5), ctx)
+
+    fog.on_message(update_msg("e2", 1, 5.0, 1), ctx)  # 4 rounds late > 2
+
+    (tags,) = [t for name, t in ctx.events if name == "update.late"]
+    assert tags["action"] == "drop"
+
+
 # --- registration over lossy links ------------------------------------------------------------
 
 
@@ -726,3 +867,228 @@ def test_without_retries_a_lost_hello_stalls_the_registration() -> None:
     federation = run(lossy_tree(hello_retry=None), edges, seed=1)
 
     assert names(federation, "federation.registered") == []
+
+
+def test_auxiliary_arrays_go_up_and_come_back_down() -> None:
+    trainer = AuxStub()
+    edges = {"fog_0": [EdgeSpec("e1", model(A), trainer=trainer)]}
+
+    federation = run(tree(1), edges, rounds=3)
+
+    assert trainer.seen[0] is None
+    assert float(trainer.seen[1].mean()) == pytest.approx(1.0)
+    assert float(trainer.seen[2].mean()) == pytest.approx(2.0)
+    final = federation.coordinator.state["algo/trunk.0.weight"]
+    assert float(final.mean()) == pytest.approx(3.0)
+
+
+def test_auxiliary_arrays_do_not_reach_the_diagnostics() -> None:
+    def diagnostics(trainer) -> list:
+        other = trainers.create("stub", {"shift": 2.0})
+        edges = {
+            "fog_0": [
+                EdgeSpec("e1", model(A), trainer=trainer),
+                EdgeSpec("e2", model(A), trainer=other),
+            ]
+        }
+        federation = run(tree(1), edges, rounds=2)
+        return sorted(
+            (e["node"], e["name"], e["tags"].get("round"), round(float(e["value"]), 9))
+            for e in federation.runtime.events
+            if e["name"].startswith(("diagnostic.divergence", "diagnostic.drift"))
+        )
+
+    with_aux = diagnostics(AuxStub())
+
+    assert with_aux and with_aux == diagnostics(trainers.create("stub", {"shift": 1.0}))
+
+
+class StatsRecorder:
+    """A server optimizer that keeps the statistics of every round and replaces."""
+
+    def __init__(self) -> None:
+        self.stats: list[dict] = []
+
+    def apply(self, global_state, aggregated, stats=None):
+        self.stats.append(dict(stats or {}))
+        return {**global_state, **aggregated}
+
+
+def test_the_server_optimizer_gets_the_round_statistics() -> None:
+    recorder = StatsRecorder()
+    edges = {
+        "fog_0": [edge("e1", shift=1, examples=1), edge("e2", shift=1, examples=3)],
+        "fog_1": [edge("e3", shift=1, examples=4)],
+    }
+
+    run(tree(2), edges, server_optimizer=recorder)
+
+    (stats,) = recorder.stats
+    assert stats["train_edges"] == 3
+    assert stats["edges_total"] == 3
+    assert stats["train_examples"] == 8
+    assert stats["train_steps"] == pytest.approx(1.0)  # the stub reports one step
+
+
+class Exploding:
+    """A trainer whose weights overflow: a diverged local optimisation."""
+
+    def train(self, model, data=None, received=None, ctx=None):
+        result = trainers.create("stub").train(model, data, received, ctx)
+        with torch.no_grad():
+            next(model.parameters()).fill_(float("nan"))
+        return result
+
+
+def test_an_edge_with_non_finite_weights_does_not_poison_the_model() -> None:
+    edges = {
+        "fog_0": [
+            edge("e1", shift=2, examples=1),
+            EdgeSpec("e2", model(A), trainer=Exploding()),
+        ]
+    }
+
+    federation = run(tree(1, fog={"quorum": 0.5, "deadline": 10}), edges)
+
+    state = federation.coordinator.state
+    assert all(np.isfinite(v).all() for v in state.values())
+    assert_global(federation, "trunk.0.weight", 2.0)
+    (failed,) = names(federation, "edge.train_failed", "e2")
+    assert "non-finite" in failed["tags"]["error"]
+
+
+class Spy:
+    """FedAvg that records what it is given and reports one dropped child."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[dict, object]] = []
+
+    def aggregate(self, contributions, source, reference=None, rng=None):
+        self.calls.append((dict(reference or {}), rng))
+        return aggregators.create("fedavg").aggregate(contributions, source)
+
+    def report(self):
+        return [("diagnostic.selection", 1.0, {"dropped": ["e2"], "excluded": ["e2"]})]
+
+
+def test_aggregators_get_the_reference_and_a_stream_and_are_heard(
+    monkeypatch,
+) -> None:
+    from onion_fl.roles import federation as module
+
+    spy, original = Spy(), module._round_settings
+    monkeypatch.setattr(
+        module, "_round_settings", lambda raw: original(raw) | {"aggregator": spy}
+    )
+    malicious = EdgeSpec(
+        "e2", model(A), trainer=trainers.create("stub"), tags={"malicious": True}
+    )
+    # A malicious edge whose update is discarded was not aggregated: not counted.
+    diverged = EdgeSpec("e3", model(A), trainer=Exploding(), tags={"malicious": True})
+    edges = {"fog_0": [edge("e1", shift=1), malicious, diverged]}
+
+    federation = run(tree(1, fog={"quorum": 0.5, "deadline": 10}), edges)
+
+    reference, rng = spy.calls[0]
+    assert set(reference) >= set(INITIAL) and rng is not None
+    (dropped,) = names(federation, "diagnostic.selection", "fog_0")
+    assert dropped["tags"]["malicious_dropped"] == 1
+    assert dropped["tags"]["malicious_excluded"] == 1
+    assert dropped["tags"]["malicious"] == 1
+
+
+def test_a_malicious_edge_attacks_from_its_start_round() -> None:
+    attack = attacks.create("scale", {"factor": 3.0, "start_round": 2})
+    stub = trainers.create("stub", {"shift": 1.0})
+    edges = {"fog_0": [EdgeSpec("e1", model(A), trainer=stub, attack=attack)]}
+
+    federation = run(tree(1), edges, rounds=2)
+
+    assert_global(federation, "trunk.0.weight", 1.0 + 3.0)  # honest, then ×3
+
+
+def test_an_edge_with_local_dp_reports_its_epsilon_each_round() -> None:
+    from onion_fl.learning.privacy import privacies
+
+    dp = privacies.create("local_dp", {"clip": 10.0, "sigma": 1.0})
+    spec = EdgeSpec("e1", model(A), trainer=trainers.create("stub"), privacy=dp)
+
+    federation = run(tree(1), {"fog_0": [spec]}, rounds=2)
+
+    values = [e["value"] for e in names(federation, "diagnostic.privacy_epsilon", "e1")]
+    assert len(values) == 2 and values[0] < values[1]
+
+
+def test_local_dp_clips_only_what_crosses_to_the_parent() -> None:
+    from onion_fl.learning.privacy import privacies
+
+    # The stub moves every weight by 1; a clip at the norm of the crossing keys
+    # leaves them whole, unless the local head (sent down in round 1) counts too.
+    crossing = [k for k in state_arrays(model(A)) if not k.startswith("head.")]
+    clip = float(np.sqrt(sum(INITIAL[k].size for k in crossing)))
+    dp = privacies.create("local_dp", {"clip": clip, "sigma": 1e-9})
+    spec = edge("e1", shift=1, privacy=dp)
+
+    federation = run(tree(1), {"fog_0": [spec]}, sharing="fedper")
+
+    assert_global(federation, "trunk.0.weight", 1.0)
+
+
+def test_the_statistics_count_the_holders_of_each_group() -> None:
+    recorder = StatsRecorder()
+    edges = {
+        "fog_0": [edge("e1"), edge("e2")],
+        "fog_1": [edge("e3", shape=B), EdgeSpec("e4", model(B), trainer=Broken())],
+    }
+
+    run(tree(2, fog={"quorum": 0.5, "deadline": 10}), edges, server_optimizer=recorder)
+
+    (stats,) = recorder.stats
+    assert stats["edges_total/adapter.a"] == 2 and stats["train_edges/adapter.a"] == 2
+    assert stats["edges_total/adapter.b"] == 2 and stats["train_edges/adapter.b"] == 1
+    assert stats["edges_total/trunk"] == 4 and stats["train_edges/trunk"] == 3
+
+
+class OneVote(trainers.create("stub").__class__):
+    """The stub trainer, asking for one vote per edge instead of one per example."""
+
+    uniform_weights = True
+
+
+def test_a_trainer_can_ask_for_one_vote_per_edge() -> None:
+    def voter(node_id: str, shift: float, examples: int) -> EdgeSpec:
+        trainer = OneVote(shift=shift, examples=examples)
+        return EdgeSpec(node_id, model(A), trainer=trainer)
+
+    edges = {
+        "fog_0": [voter("e1", 1, 1), voter("e2", 4, 3)],
+        "fog_1": [voter("e3", 4, 10)],
+    }
+
+    federation = run(tree(2), edges)
+
+    assert_global(federation, "trunk.0.weight", 3.0)  # by examples: 53/14
+
+
+class Locked(Exploding):
+    """A valid plugin trainer that cannot be deep-copied (it holds a lock)."""
+
+    def __init__(self) -> None:
+        import threading
+
+        self.lock = threading.Lock()
+
+
+def test_a_trainer_that_cannot_be_copied_still_rolls_back_its_model() -> None:
+    edges = {
+        "fog_0": [
+            edge("e1", shift=2, examples=1),
+            EdgeSpec("e2", model(A), trainer=Locked()),
+        ]
+    }
+
+    federation = run(tree(1, fog={"quorum": 0.5, "deadline": 10}), edges)
+
+    assert_global(federation, "trunk.0.weight", 2.0)
+    (failed,) = names(federation, "edge.train_failed", "e2")
+    assert "non-finite" in failed["tags"]["error"]

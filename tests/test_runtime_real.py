@@ -218,6 +218,19 @@ def test_heartbeats_report_round_queue_and_cpu() -> None:
     assert beats and {"queue", "cpu_s"} <= set(beats[0]["tags"])
 
 
+def test_every_node_sends_a_last_heartbeat_when_the_run_ends() -> None:
+    rt = RealRuntime("run-4", heartbeat_s=10.0)  # longer than the run
+    rt.add_node(Ping("ping"))
+    rt.add_node(Echo("echo"))
+    rt.add_link("ping", "echo", transport={"name": "memory", "bus": "last"})
+
+    rt.run(timeout=5)
+
+    beats = [e for e in rt.events if e["name"] == "node.heartbeat"]
+    assert {e["node"] for e in beats} == {"ping", "echo"}
+    assert all(e["tags"]["final"] for e in beats)
+
+
 def test_a_whole_federation_runs_on_the_real_runtime() -> None:
     topology = parse_topology(
         {

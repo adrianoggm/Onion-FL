@@ -18,6 +18,7 @@ import urllib.request
 from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8")
+sys.stderr.reconfigure(encoding="utf-8")
 
 
 def _git(*args: str) -> str:
@@ -243,7 +244,10 @@ def cmd_pr(a) -> None:
         body += f"\n\n**Verificación local:** {a.note}"
     pr = _open_pr(a.number)
     if pr:
-        pr, _ = api("PATCH", f"{R}/pulls/{pr['number']}", {"body": body})
+        # A refresh also moves the base, e.g. a stacked PR once its base merged.
+        pr, _ = api(
+            "PATCH", f"{R}/pulls/{pr['number']}", {"body": body, "base": a.base}
+        )
     else:
         payload = {
             "title": branch,
@@ -300,13 +304,30 @@ def cmd_merge(a) -> None:
     print(res["message"])
 
 
+CLOSING_SECTIONS = ("Qué se ha hecho", "Verificación", "Pendiente")
+
+
+def missing_sections(text: str) -> list[str]:
+    """Closing sections that are absent or empty in the notes."""
+    parts = re.split(r"^## +(.+?) *$", text, flags=re.M)
+    found = {parts[i].strip(): parts[i + 1].strip() for i in range(1, len(parts), 2)}
+    return [s for s in CLOSING_SECTIONS if not found.get(s)]
+
+
 def cmd_close(a) -> None:
+    notes = Path(a.notes).read_text(encoding="utf-8").strip()
+    missing = missing_sections(notes)
+    if missing:
+        raise SystemExit(
+            f"{a.notes}: missing or empty sections {missing}; "
+            f"a closing comment needs ## {' / ## '.join(CLOSING_SECTIONS)}"
+        )
     if a.pr:
         pr, _ = api("GET", f"{R}/pulls/{a.pr}")
         if not pr["merged"]:
             raise SystemExit(f"PR #{a.pr} is not merged; not closing #{a.number}")
-    note = f"Integrado en `develop` vía #{a.pr}." if a.pr else "Cerrado."
-    api("POST", f"{R}/issues/{a.number}/comments", {"body": note})
+    head = f"Integrado en `develop` vía #{a.pr}." if a.pr else "Cerrado."
+    api("POST", f"{R}/issues/{a.number}/comments", {"body": f"{head}\n\n{notes}"})
     api(
         "PATCH",
         f"{R}/issues/{a.number}",
@@ -417,6 +438,11 @@ def main() -> None:
     )
     s.add_argument("number", type=int)
     s.add_argument("--pr", type=int)
+    s.add_argument(
+        "--notes",
+        required=True,
+        help="Markdown closing comment with ## Qué se ha hecho, ## Verificación and ## Pendiente",
+    )
     s = sub.add_parser(
         "release-pr", help="open the develop -> main PR for a milestone version"
     )

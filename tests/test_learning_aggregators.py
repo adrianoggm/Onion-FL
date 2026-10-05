@@ -269,10 +269,401 @@ def test_fedadam_follows_its_update_rule() -> None:
 
 def test_optimizers_keep_the_dtype() -> None:
     for name in server_optimizers.names():
-        out = server_optimizers.create(name).apply(g(w=[0.0, 1.0]), g(w=[1.0, 2.0]))
+        stats = {"train_steps": 1.0, "train_edges": 1.0, "edges_total": 1.0}
+        optimizer = server_optimizers.create(name)
+        out = optimizer.apply(g(w=[0.0, 1.0]), g(w=[1.0, 2.0]), stats)
         assert out["w"].dtype == np.float32, name
 
 
 def test_registries_list_the_built_ins() -> None:
-    assert aggregators.names() == ["fedavg", "mean", "median", "trimmed_mean"]
-    assert server_optimizers.names() == ["fedadam", "fedavgm", "replace"]
+    assert aggregators.names() == [
+        "bulyan",
+        "dp_fedavg",
+        "fedavg",
+        "geometric_median",
+        "krum",
+        "mean",
+        "median",
+        "multi_krum",
+        "norm_clip",
+        "trimmed_mean",
+    ]
+    assert server_optimizers.names() == [
+        "fedadagrad",
+        "fedadam",
+        "fedasync_mix",
+        "fedavgm",
+        "feddyn",
+        "fednova",
+        "fedyogi",
+        "replace",
+        "scaffold",
+    ]
+
+
+@pytest.mark.parametrize(
+    "name", ["fedavgm", "fedadam", "fedyogi", "fedadagrad", "fedasync_mix"]
+)
+def test_server_optimizers_replace_auxiliary_arrays(name: str) -> None:
+    optimizer = server_optimizers.create(name)
+    global_state = {"w": np.zeros(2), "scaffold/w": np.zeros(2)}
+    aggregated = {"w": np.ones(2), "scaffold/w": np.full(2, 7.0)}
+
+    out = optimizer.apply(global_state, aggregated)
+    out = optimizer.apply(out, aggregated)  # a second step: momentum would show
+
+    np.testing.assert_array_equal(out["scaffold/w"], [7.0, 7.0])
+
+
+def test_fednova_with_equal_steps_is_fedavg() -> None:
+    x = np.zeros(2)
+    ys = [np.array([1.0, 2.0]), np.array([3.0, 6.0])]
+    d = np.mean([(y - x) / 4 for y in ys], axis=0)
+
+    out = server_optimizers.create("fednova").apply(
+        {"w": x}, {"w": np.mean(ys, axis=0), "fednova/w": d}, {"train_steps": 4.0}
+    )
+
+    np.testing.assert_allclose(out["w"], np.mean(ys, axis=0))
+    assert "fednova/w" not in out
+
+
+def test_fednova_scales_the_normalised_update_by_the_mean_steps() -> None:
+    out = server_optimizers.create("fednova").apply(
+        {"w": np.ones(1)},
+        {"w": np.full(1, 9.0), "fednova/w": np.full(1, 0.5)},
+        {"train_steps": 3.0},
+    )
+
+    np.testing.assert_allclose(out["w"], [2.5])  # 1 + 3·0.5
+
+
+def test_fednova_names_the_missing_steps() -> None:
+    with pytest.raises(ValueError, match="train_steps"):
+        server_optimizers.create("fednova").apply(
+            {"w": np.zeros(1)}, {"w": np.zeros(1), "fednova/w": np.zeros(1)}, {}
+        )
+
+
+def test_feddyn_moves_the_global_model_against_its_drift_term() -> None:
+    optimizer = server_optimizers.create("feddyn", {"alpha": 0.5})
+    stats = {"train_edges": 2.0, "edges_total": 4.0}
+
+    first = optimizer.apply({"w": np.zeros(1)}, {"w": np.full(1, 2.0)}, stats)
+    # h = 0 − 0.5·(2/4)·(2 − 0) = −0.5 ; w = 2 − h/0.5 = 3
+    np.testing.assert_allclose(first["w"], [3.0])
+
+    second = optimizer.apply(first, {"w": np.full(1, 3.0)}, stats)
+    # h = −0.5 − 0.5·0.5·(3 − 3) = −0.5 ; w = 3 + 1 = 4
+    np.testing.assert_allclose(second["w"], [4.0])
+
+
+def test_fednova_scales_each_key_by_the_steps_of_its_holders() -> None:
+    out = server_optimizers.create("fednova").apply(
+        {"a": np.zeros(1), "b": np.zeros(1)},
+        {
+            "a": np.zeros(1),
+            "fednova/a": np.full(1, 0.5),
+            "fednova_steps/a": np.full(1, 20.0),
+            "b": np.zeros(1),
+            "fednova/b": np.full(1, 0.5),
+            "fednova_steps/b": np.full(1, 40.0),
+        },
+        {"train_steps": 35.0},  # the round mean: right for neither key
+    )
+
+    np.testing.assert_allclose(out["a"], [10.0])
+    np.testing.assert_allclose(out["b"], [20.0])
+    assert not [k for k in out if k.startswith("fednova")]
+
+
+def vec(source: str, w, n: float = 1.0, **extra) -> Contribution:
+    state = {"w": np.asarray(w, dtype=np.float64)}
+    state |= {k: np.asarray(v, dtype=np.float64) for k, v in extra.items()}
+    return Contribution(source, state, dict.fromkeys(state, n))
+
+
+HONEST = [vec(f"h{i}", [1.0 + 0.1 * i, 1.0]) for i in range(5)]
+BYZANTINE = [vec("b0", [50.0, -50.0]), vec("b1", [60.0, -40.0])]
+
+
+def test_krum_picks_an_honest_update() -> None:
+    krum = aggregators.create("krum", {"f": 2})
+
+    out = krum.aggregate(HONEST + BYZANTINE, "fog")
+
+    assert out.state["w"][0] < 2.0
+    ((_, _, tags),) = krum.report()
+    assert {"b0", "b1"} <= set(tags["dropped"]) and tags["f_used"] == 2
+
+
+def test_multi_krum_averages_the_m_best() -> None:
+    multi = aggregators.create("multi_krum", {"f": 2, "m": 5})
+
+    out = multi.aggregate(HONEST + BYZANTINE, "fog")
+
+    expected = np.mean([h.state["w"] for h in HONEST], axis=0)
+    np.testing.assert_allclose(out.state["w"], expected)
+
+
+def test_too_few_children_lower_f_instead_of_failing() -> None:
+    krum = aggregators.create("krum", {"f": 2})
+
+    krum.aggregate(HONEST[:3], "fog")  # n=3 fits f=0 only (n >= 2f + 3)
+
+    assert krum.report()[0][2]["f_used"] == 0
+
+
+def test_the_geometric_median_resists_an_outlier() -> None:
+    points = [
+        vec("a", [0.0, 0.0]),
+        vec("b", [1.0, 0.0]),
+        vec("c", [0.0, 1.0]),
+        vec("d", [100.0, 100.0]),
+    ]
+
+    out = aggregators.create("geometric_median").aggregate(points, "fog")
+
+    assert np.linalg.norm(out.state["w"]) < 1.0
+
+
+def test_bulyan_bounds_an_extreme_coordinate() -> None:
+    children = [*HONEST, vec("h5", [1.2, 1.0]), vec("b0", [1000.0, 1.0])]  # n=7: f=1
+
+    bulyan = aggregators.create("bulyan", {"f": 1})
+    out = bulyan.aggregate(children, "fog")
+
+    assert out.state["w"][0] < 2.0
+    assert bulyan.report()[0][2]["f_used"] == 1
+
+
+def test_selection_scores_common_keys_and_combines_every_key() -> None:
+    children = [
+        vec("s0", [1.0], adapter_s=[1.0]),
+        vec("s1", [1.1], adapter_s=[3.0]),
+        vec("t0", [0.9], adapter_t=[5.0]),
+        vec("t1", [90.0], adapter_t=[7.0]),
+    ]
+
+    out = aggregators.create("multi_krum", {"f": 1, "m": 3}).aggregate(children, "fog")
+
+    np.testing.assert_allclose(out.state["adapter_s"], [2.0])  # both holders kept
+    np.testing.assert_allclose(out.state["adapter_t"], [5.0])  # only the honest one
+
+
+def test_auxiliary_arrays_follow_the_selected_children_unscored() -> None:
+    children = [*HONEST, vec("b0", [50.0, -50.0])]
+    for child in children:
+        child.state["scaffold/w"] = np.full(2, 500.0 if child.source == "b0" else 1.0)
+        child.weights["scaffold/w"] = 1.0
+
+    out = aggregators.create("multi_krum", {"f": 1, "m": 5}).aggregate(children, "fog")
+
+    np.testing.assert_allclose(out.state["scaffold/w"], [1.0, 1.0])
+
+
+def test_norm_clip_bounds_each_update_against_the_reference() -> None:
+    reference = {"w": np.zeros(2)}
+    children = [vec("a", [3.0, 4.0]), vec("b", [0.3, 0.4])]  # norms 5 and 0.5
+    clip = aggregators.create("norm_clip", {"bound": 1.0})
+
+    out = clip.aggregate(children, "fog", reference=reference)
+
+    np.testing.assert_allclose(out.state["w"], [(0.6 + 0.3) / 2, (0.8 + 0.4) / 2])
+    assert clip.report() == [("diagnostic.clipped", 1.0, {})]
+
+
+def test_dp_fedavg_adds_seeded_noise_and_reports_epsilon() -> None:
+    reference = {"w": np.zeros(3)}
+    children = [vec("a", [1.0, 1.0, 1.0]), vec("b", [1.0, 1.0, 1.0])]
+    params = {"clip": 10.0, "sigma": 1.0, "delta": 1e-5}
+
+    dp = aggregators.create("dp_fedavg", params)
+    first = dp.aggregate(
+        children, "fog", reference=reference, rng=np.random.default_rng(0)
+    )
+    second = aggregators.create("dp_fedavg", params).aggregate(
+        children, "fog", reference=reference, rng=np.random.default_rng(0)
+    )
+
+    np.testing.assert_array_equal(first.state["w"], second.state["w"])
+    assert not np.allclose(first.state["w"], [1.0, 1.0, 1.0])  # noise σ·C/m = 5
+    ((name, value, tags),) = dp.report()
+    assert name == "diagnostic.privacy_epsilon" and tags == {"mechanism": "central"}
+    assert value == pytest.approx(5.298, abs=0.01)  # one round at σ=1
+
+
+def test_dp_fedavg_leaves_auxiliary_arrays_unclipped_and_unnoised() -> None:
+    reference = {"w": np.zeros(1), "scaffold/w": np.zeros(1)}
+    children = [vec("a", [1.0]), vec("b", [1.0])]
+    for child in children:
+        child.state["scaffold/w"] = np.full(1, 9.0)
+        child.weights["scaffold/w"] = 1.0
+
+    out = aggregators.create("dp_fedavg", {"clip": 0.1, "sigma": 1.0}).aggregate(
+        children, "fog", reference=reference, rng=np.random.default_rng(0)
+    )
+
+    np.testing.assert_allclose(out.state["scaffold/w"], [9.0])
+
+
+SWELL_ONLY = [
+    vec(f"s{i}", [1.0 + 0.02 * i]) for i in range(6)
+]  # 7 children: Bulyan keeps f = 1
+OUTLIER_WITH_ITS_OWN_KEY = vec("t0", [9.0], adapter_t=[7.0])
+
+
+@pytest.mark.parametrize("name", ["krum", "multi_krum", "bulyan"])
+def test_a_key_whose_holders_were_all_dropped_comes_from_its_best_holder(
+    name: str,
+) -> None:
+    selector = aggregators.create(name, {"f": 1})
+
+    out = selector.aggregate([*SWELL_ONLY, OUTLIER_WITH_ITS_OWN_KEY], "fog")
+
+    report = selector.report()[0][2]
+    assert "t0" in report["dropped"]
+    np.testing.assert_allclose(out.state["adapter_t"], [7.0])
+    # t0 lost the selection, but its own key still shaped the result.
+    assert report["rescued"] == {"adapter_t": ["t0"]}
+    assert "t0" not in report["excluded"]
+
+
+def test_bulyan_averages_auxiliary_arrays_of_the_selected_children() -> None:
+    children = [vec(f"h{i}", [1.0 + 0.01 * i]) for i in range(7)]
+    for i, child in enumerate(children):
+        child.state["scaffold/w"] = np.full(1, float(i**2))  # skewed: mean != median
+        child.weights["scaffold/w"] = 1.0
+    bulyan = aggregators.create("bulyan", {"f": 1})
+
+    out = bulyan.aggregate(children, "fog")
+
+    kept = [c for c in children if c.source not in bulyan.report()[0][2]["dropped"]]
+    expected = np.mean([c.state["scaffold/w"] for c in kept])
+    np.testing.assert_allclose(out.state["scaffold/w"], [expected])
+
+
+def test_a_selection_reports_before_any_round() -> None:
+    assert aggregators.create("krum").report()[0][1] == 0.0
+
+
+def test_dp_fedavg_refuses_to_noise_without_a_stream() -> None:
+    dp = aggregators.create("dp_fedavg")
+
+    # A fixed fallback stream would repeat the same noise every round.
+    with pytest.raises(ValueError, match="random stream"):
+        dp.aggregate(HONEST, "fog", reference={"w": np.zeros(2)})
+
+
+def test_scaffold_moves_c_by_the_share_of_its_holders_that_trained() -> None:
+    # Two holders, one trained with Δc = 2: c = 0 + (1/2)·2 (Karimireddy et al.).
+    out = server_optimizers.create("scaffold").apply(
+        {"trunk.0.weight": np.zeros(1), "scaffold/trunk.0.weight": np.zeros(1)},
+        {"trunk.0.weight": np.full(1, 5.0), "scaffold/trunk.0.weight": np.full(1, 2.0)},
+        {"train_edges/trunk": 1.0, "edges_total/trunk": 2.0},
+    )
+
+    np.testing.assert_allclose(out["scaffold/trunk.0.weight"], [1.0])
+    np.testing.assert_allclose(out["trunk.0.weight"], [5.0])  # the model: replaced
+
+
+def test_scaffold_accumulates_c_across_rounds() -> None:
+    optimizer = server_optimizers.create("scaffold")
+    stats = {"train_edges/trunk": 2.0, "edges_total/trunk": 2.0}
+    state = {"trunk.0.weight": np.zeros(1)}
+
+    for delta in (1.0, 3.0):
+        aggregated = {
+            "trunk.0.weight": np.zeros(1),
+            "scaffold/trunk.0.weight": np.full(1, delta),
+        }
+        state = optimizer.apply(state, aggregated, stats)
+
+    np.testing.assert_allclose(state["scaffold/trunk.0.weight"], [4.0])
+
+
+def test_feddyn_uses_the_share_of_each_keys_holders() -> None:
+    optimizer = server_optimizers.create("feddyn", {"alpha": 0.5})
+    stats = {
+        "train_edges": 3.0,
+        "edges_total": 4.0,
+        "train_edges/adapter.a": 1.0,
+        "edges_total/adapter.a": 2.0,
+    }
+
+    out = optimizer.apply(
+        {"adapter.a.0.weight": np.zeros(1)},
+        {"adapter.a.0.weight": np.full(1, 2.0)},
+        stats,
+    )
+
+    # h = −0.5·(1/2)·2 = −0.5 ; w = 2 + 1 = 3 (the round's 3/4 would give 3.5)
+    np.testing.assert_allclose(out["adapter.a.0.weight"], [3.0])
+
+
+@pytest.mark.parametrize("name", ["krum", "multi_krum", "bulyan"])
+def test_a_selection_names_the_children_it_excluded_entirely(name: str) -> None:
+    selector = aggregators.create(name, {"f": 1})
+
+    selector.aggregate([*SWELL_ONLY, vec("t0", [9.0])], "fog")
+
+    report = selector.report()[0][2]
+    assert "t0" in report["dropped"] and "t0" in report["excluded"]
+    assert report["rescued"] == {}
+
+
+def test_bulyan_selects_recursively_with_krum() -> None:
+    # Krum (4 nearest of 7, then 3 of 6, 2 of 5, 1...) picks 3, 2, 8, 0, 7 one at a
+    # time; a single Krum ranking would keep 1 and drop 8 instead.
+    values = [0.0, 1.0, 2.0, 3.0, 7.0, 8.0, 10.0]
+    children = [vec(f"c{i}", [v]) for i, v in enumerate(values)]
+    bulyan = aggregators.create("bulyan", {"f": 1})
+
+    bulyan.aggregate(children, "fog")
+
+    assert bulyan.report()[0][2]["dropped"] == ["c1", "c6"]
+
+
+ADAPTIVE = {"server_lr": 0.1, "beta1": 0.9, "tau": 0.001}
+
+
+def test_fedadagrad_accumulates_squared_pseudo_gradients() -> None:
+    # Reddi et al. (2021), Algorithm 2: v starts at tau², then v += Δ².
+    opt = server_optimizers.create("fedadagrad", ADAPTIVE)
+
+    first = opt.apply(g(w=[0.0]), g(w=[2.0]))
+    second = opt.apply(first, first | g(w=[float(first["w"][0]) + 1.0]))
+
+    m1, v1 = 0.1 * 2.0, 1e-6 + 2.0**2
+    x1 = 0.1 * m1 / (np.sqrt(v1) + 0.001)
+    np.testing.assert_allclose(first["w"], [x1], rtol=1e-6)
+    m2, v2 = 0.9 * m1 + 0.1 * 1.0, v1 + 1.0**2
+    np.testing.assert_allclose(
+        second["w"], [x1 + 0.1 * m2 / (np.sqrt(v2) + 0.001)], rtol=1e-5
+    )
+
+
+def test_fedyogi_moves_v_additively_by_the_sign_of_its_gap() -> None:
+    # v ← v − (1 − β2)·Δ²·sign(v − Δ²): up by 0.01·Δ² while v < Δ², then down.
+    opt = server_optimizers.create("fedyogi", ADAPTIVE | {"beta2": 0.99})
+
+    first = opt.apply(g(w=[0.0]), g(w=[2.0]))
+    second = opt.apply(first, first | g(w=[float(first["w"][0]) + 0.1]))
+
+    m1, v1 = 0.1 * 2.0, 1e-6 + 0.01 * 4.0  # v < Δ²: grows
+    x1 = 0.1 * m1 / (np.sqrt(v1) + 0.001)
+    np.testing.assert_allclose(first["w"], [x1], rtol=1e-6)
+    m2, v2 = 0.9 * m1 + 0.1 * 0.1, v1 - 0.01 * 0.01  # v > Δ²: shrinks by 0.01·Δ²
+    np.testing.assert_allclose(
+        second["w"], [x1 + 0.1 * m2 / (np.sqrt(v2) + 0.001)], rtol=1e-5
+    )
+
+
+def test_fedasync_mixes_by_a_staleness_discounted_weight() -> None:
+    opt = server_optimizers.create("fedasync_mix", {"alpha": 0.5, "a": 0.5})
+
+    fresh = opt.apply(g(w=[0.0]), g(w=[4.0]))
+    stale = opt.apply(g(w=[0.0]), g(w=[4.0]), {"staleness": 3.0})
+
+    np.testing.assert_allclose(fresh["w"], [2.0])  # α_s = 0.5
+    np.testing.assert_allclose(stale["w"], [1.0])  # α_s = 0.5·(1 + 3)^-0.5 = 0.25

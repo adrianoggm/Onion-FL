@@ -50,23 +50,47 @@ def identity(config: ExperimentConfig) -> dict[str, Any]:
 
 
 def _label(value: Any) -> str:
-    return value if isinstance(value, str) else repr(value)
+    """How a swept value appears in a scenario name; a whole plugin is name(k=v,...)."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict) and isinstance(value.get("name"), str):
+        params = ",".join(
+            f"{k}={_label(v)}" for k, v in sorted(value.items()) if k != "name"
+        )
+        return f"{value['name']}({params})"
+    return repr(value)
+
+
+def _apply(resolved: dict[str, Any], key: str, value: Any) -> str:
+    """Set one sweep entry and return its label; ``a,b`` sets several paths at once."""
+    paths = [path.strip() for path in key.split(",")]
+    key = ",".join(paths)
+    if len(paths) == 1:
+        _set(resolved, key, value)
+        return f"{key}={_label(value)}"
+    if not isinstance(value, list) or len(value) != len(paths):
+        raise ConfigError(
+            f"sweep {key}: each value needs {len(paths)} entries, one per path; "
+            f"got {value!r}"
+        )
+    for path, item in zip(paths, value, strict=True):
+        _set(resolved, path, item)
+    return f"{key}={','.join(_label(item) for item in value)}"
 
 
 def scenarios(config: ExperimentConfig) -> list[Scenario]:
     base = config.dump()
     base.pop("sweep")
     seeds = base.pop("seeds")
-    paths = sorted(config.sweep)
+    keys = sorted(config.sweep)
     out = []
-    for values in product(*(config.sweep[p] for p in paths)):
+    for values in product(*(config.sweep[k] for k in keys)):
         resolved = copy.deepcopy(base)
-        for path, value in zip(paths, values, strict=True):
-            _set(resolved, path, value)
-        name = (
-            ",".join(f"{p}={_label(v)}" for p, v in zip(paths, values, strict=True))
-            or "base"
-        )
+        labels = [
+            _apply(resolved, key, value)
+            for key, value in zip(keys, values, strict=True)
+        ]
+        name = ",".join(labels) or "base"
         try:
             scenario_config = parse_experiment(resolved | {"seeds": seeds})
         except ConfigError as exc:

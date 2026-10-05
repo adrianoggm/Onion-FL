@@ -85,6 +85,19 @@ AXES: list[tuple[str, str, str, str | None]] = [
         None,
     ),
     ("trainer", "Entrenador", "Cómo entrena cada edge con sus datos.", None),
+    (
+        "attack",
+        "Ataque",
+        "Qué fracción de edges de cada dataset es maliciosa y cómo envenena "
+        "sus datos o su actualización.",
+        None,
+    ),
+    (
+        "privacy",
+        "Privacidad",
+        "Ruido de privacidad diferencial que cada edge añade antes de enviar.",
+        None,
+    ),
     ("init", "Inicialización", "De dónde sale el modelo inicial.", None),
     ("participation", "Participación", "Qué hijos participan en cada ronda.", None),
     (

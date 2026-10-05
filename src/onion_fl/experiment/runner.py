@@ -11,20 +11,24 @@ from __future__ import annotations
 """
 
 import hashlib
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from onion_fl.core.context import node_rng
 from onion_fl.core.topology import Topology, load_topology, parse_topology
 from onion_fl.data.cache import load_prepared, prepare
 from onion_fl.data.ingest import load_spec
 from onion_fl.data.placement import Placement, place
 from onion_fl.data.roles import DataSplit, split_subjects
-from onion_fl.experiment.config import ExperimentConfig
+from onion_fl.experiment.config import ConfigError, ExperimentConfig
 from onion_fl.experiment.sweep import Scenario, identity, scenarios
+from onion_fl.learning.aggregators import aggregators, server_optimizers
+from onion_fl.learning.attacks import attacks
 from onion_fl.learning.model import models, param_groups, state_arrays
-from onion_fl.learning.sharing import sharing, traffic
+from onion_fl.learning.privacy import privacies
+from onion_fl.learning.sharing import not_local, sharing, traffic
 from onion_fl.learning.trainers import inits, trainers
 from onion_fl.observability.run import Run, save_model
 from onion_fl.observability.sinks import OtelSink, PrometheusSink, otlp_provider
@@ -54,6 +58,14 @@ def resolve_topology(config: ExperimentConfig) -> Topology:
         ]
         if config.runtime.codec and node["link_up"] is not None:
             node["link_up"]["codec"] = config.runtime.codec
+    if config.learning.aggregator is not None:
+        parents = {n["parent"] for n in general["nodes"]}
+        for node in general["nodes"]:
+            if node["id"] not in parents:  # a leaf aggregator: its children are edges
+                node["settings"]["aggregator"] = config.learning.aggregator
+    if config.learning.server_optimizer is not None:
+        root = next(n for n in general["nodes"] if n["parent"] is None)
+        root["settings"]["server_optimizer"] = config.learning.server_optimizer
     general["edge"]["settings"] = {
         "eval": evaluation.edge.model_dump(exclude_none=True)
     } | general["edge"]["settings"]
@@ -106,7 +118,99 @@ def _initial_state(config: ExperimentConfig, shapes: Sequence[Any], seed: int):
     family = create(models, config.learning.model)
     model = family.build(shapes, seed=seed)
     create(inits, config.learning.init).init(model)
-    return family, state_arrays(model)
+    state = state_arrays(model)
+    _check_learning(config, state)
+    return family, state
+
+
+def _name(ref: Any) -> str:
+    return ref if isinstance(ref, str) else ref["name"]
+
+
+def _check_learning(config: ExperimentConfig, state: Mapping[str, Any]) -> None:
+    """The trainer fits the sharing (FedRep) and pairs with the root optimizer (FedNova)."""
+    trainer = create(trainers, config.learning.trainer)
+    name = _name(config.learning.trainer)
+    patterns = list(getattr(trainer, "local_groups", ()))
+    policy = create(sharing, config.learning.sharing)
+    leaving = not_local(policy, param_groups(state), patterns)
+    if leaving:
+        raise ConfigError(
+            f"learning.trainer: {name} keeps {patterns} on the edge, but sharing "
+            f"{policy.name!r} sends {leaving} up; use fedper or a custom rule "
+            "that keeps them local"
+        )
+    features = sorted(
+        g
+        for g in param_groups(state)
+        if not g.startswith("head.") and policy.scope_of(g) == "local"
+    )
+    if getattr(trainer, "shared_features", False) and features:
+        raise ConfigError(
+            f"learning.trainer: {name} contrasts with the global model's features, "
+            f"but sharing {policy.name!r} keeps {features} on the edge, so the "
+            "global ones never arrive; use fedavg, fedper or zone"
+        )
+    topology = resolve_topology(config)
+    if getattr(trainer, "sends_aux", False):
+        bounding = sorted(
+            {
+                _name(ref)
+                for node in topology.nodes
+                if (ref := node.settings.get("aggregator")) is not None
+                and getattr(create(aggregators, ref), "bounds_updates", False)
+            }
+        )
+        axes = [axis for axis in ("attack", "privacy") if getattr(config, axis)]
+        if bounding or axes:
+            raise ConfigError(
+                f"learning.trainer: {name} sends auxiliary arrays that "
+                f"{', '.join(bounding + axes)} would not clip, noise or poison; "
+                "use a trainer without them"
+            )
+    ref = topology.root.settings.get("server_optimizer") or "replace"
+    optimizer_name = _name(ref)
+    needed = getattr(trainer, "server_optimizer", None)
+    late = sorted(
+        node.id
+        for node in topology.nodes
+        if _name(node.settings.get("staleness") or "drop") != "drop"
+    )
+    if needed is not None and late:
+        raise ConfigError(
+            f"learning.trainer: {name} pairs with a server optimizer whose round "
+            f"statistics count only fresh updates, but {late} also aggregate late "
+            "ones; use staleness drop"
+        )
+    buffering = sorted(
+        n.id for n in topology.nodes if n.settings.get("close_at_quorum")
+    )
+    if needed is not None and getattr(trainer, "_memory", ()) and buffering:
+        raise ConfigError(
+            f"learning.trainer: {name} keeps edge state that its server optimizer "
+            f"tracks, but {buffering} close rounds at quorum (close_at_quorum), so "
+            "the slower edges' updates are dropped while their state moves on"
+        )
+    zoned = sorted(
+        g for g in param_groups(state) if policy.scope_of(g).startswith("level:")
+    )
+    if needed is not None and zoned:
+        raise ConfigError(
+            f"learning.trainer: {name} pairs with a server optimizer that only "
+            f"runs at the root, but sharing {policy.name!r} keeps {zoned} below "
+            "the root, where fogs only average"
+        )
+    if needed is not None and optimizer_name != needed:
+        raise ConfigError(
+            f"learning.trainer: {name} needs server_optimizer {needed!r}, "
+            f"not {optimizer_name!r}; set learning.server_optimizer"
+        )
+    check = getattr(create(server_optimizers, ref), "check_trainer", None)
+    if check is not None:
+        try:
+            check(name, trainer)
+        except ValueError as exc:
+            raise ConfigError(f"learning.server_optimizer: {exc}") from None
 
 
 def link_warnings(topology: Topology) -> list[str]:
@@ -177,6 +281,23 @@ def _sinks(config: ExperimentConfig) -> list[Any]:
     return out
 
 
+def malicious_edges(
+    config: ExperimentConfig, clients: Sequence[Any], seed: int
+) -> set[str]:
+    """The seeded ``fraction`` of each dataset's training edges that attack."""
+    if config.attack is None:
+        return set()
+    fraction = create(attacks, config.attack).fraction
+    chosen: set[str] = set()
+    for dataset in sorted({c.dataset for c in clients}):
+        ids = sorted(c.id for c in clients if c.dataset == dataset)
+        n = int(fraction * len(ids) + 0.5)  # half up: round() is banker's
+        if n:
+            rng = node_rng(seed, f"attack/{dataset}")
+            chosen |= set(rng.choice(ids, size=n, replace=False).tolist())
+    return chosen
+
+
 def edge_specs(
     scenario: Scenario, topology: Topology, split: DataSplit, placement: Placement
 ) -> tuple[dict[str, list[EdgeSpec]], dict[str, Any]]:
@@ -195,6 +316,7 @@ def edge_specs(
             tags={"dataset": data.dataset},
         )
 
+    bad = malicious_edges(config, split.clients, scenario.seed)
     edges: dict[str, list[EdgeSpec]] = {}
     for leaf, clients in placement.edges.items():
         edges[leaf] = [
@@ -204,12 +326,26 @@ def edge_specs(
                 data=client.train,
                 trainer=create(trainers, config.learning.trainer),
                 val_data=client.local_val,
-                tags={"dataset": client.dataset},
+                tags={"dataset": client.dataset}
+                | ({"malicious": True} if client.id in bad else {}),
+                attack=(create(attacks, config.attack) if client.id in bad else None),
+                privacy=(
+                    None
+                    if config.privacy is None
+                    else create(privacies, config.privacy)
+                ),
                 **device,
             )
             for client in clients
         ] + [evaluator("val", data) for data in placement.zone_evaluators.get(leaf, [])]
-    edges[topology.root.id] = [evaluator("test", data) for data in placement.test]
+    if config.evaluation.global_.subjects == "val":  # selection runs: no test
+        edges[topology.root.id] = [
+            evaluator("gval", data)
+            for leaf in sorted(placement.zone_evaluators)
+            for data in placement.zone_evaluators[leaf]
+        ]
+    else:
+        edges[topology.root.id] = [evaluator("test", data) for data in placement.test]
     return edges, initial
 
 
@@ -260,7 +396,7 @@ def run_scenario(
         sinks=_sinks(config),
     )
     try:
-        record_data(run, split, placement)
+        record_data(run, scenario, split, placement)
         federation = build_scenario(
             scenario, topology, split, placement, evaluate=evaluate
         )
@@ -275,10 +411,27 @@ def run_scenario(
     return run.path
 
 
-def record_data(run: Run, split: DataSplit, placement: Placement) -> None:
+def record_data(
+    run: Run, scenario: Scenario, split: DataSplit, placement: Placement
+) -> None:
     run.record("data.roles", None, roles=split.roles)
     for leaf, composition in placement.composition().items():
         run.record("data.composition", composition["samples"], leaf=leaf, **composition)
+    bad = malicious_edges(scenario.config, split.clients, scenario.seed)
+    if bad:
+        run.record("data.attack", float(len(bad)), edges=sorted(bad))
+
+
+def check_scenarios(todo: Sequence[Scenario]) -> None:
+    """Refuse a sweep before its first run if any scenario cannot be built.
+
+    Builds each scenario's initial model, which checks that its trainer fits
+    its sharing (FedRep); a bad scenario then fails before any run folder.
+    """
+    for scenario in todo:
+        config = scenario.config
+        split = split_subjects(load_data(config)[0], config.data.roles)
+        _initial_state(config, _shapes(split), scenario.seed)
 
 
 def run_experiment(
@@ -288,14 +441,17 @@ def run_experiment(
     evaluate: Callable[..., Any] | None = None,
 ) -> list[Path]:
     """Run every scenario (or the one named ``only``); in parallel processes when ``workers > 1``."""
-    todo = [s for s in scenarios(config) if only is None or s.name == only]
-    if workers <= 1:
-        return [run_scenario(s, evaluate) for s in todo]
-    if evaluate is not None:
+    every = scenarios(config)
+    todo = [s for s in every if only is None or s.name == only]
+    if not todo:
+        names = sorted({s.name for s in every})
+        raise ConfigError(f"no scenario named {only!r}; the scenarios are {names}")
+    if workers > 1 and evaluate is not None:
         raise ValueError(
             "a custom evaluate cannot be sent to worker processes; use workers=1"
         )
-    for scenario in todo:  # fill the caches once, before the workers read them
-        load_data(scenario.config)
+    check_scenarios(todo)  # also fills the caches before any worker reads them
+    if workers <= 1:
+        return [run_scenario(s, evaluate) for s in todo]
     with ProcessPoolExecutor(max_workers=workers) as pool:
         return list(pool.map(run_scenario, todo))

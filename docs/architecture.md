@@ -64,7 +64,7 @@ flowchart LR
 - **Roles** are drawn per dataset with their own seed, before and apart from the placement:
   - `test` subjects are the global evaluators, and they are identical in every scenario;
   - `val` subjects become zone evaluators;
-  - `train` subjects are grouped into clients (`subjects_per_client`), each keeping a contiguous `local_val` tail;
+  - `train` subjects are grouped into clients (`subjects_per_client`), each keeping `local_val` rows: its last rows (`tail`) or the last rows of each class (`class_tail`);
   - imputation, scaling (`global`, `local` or `none`) and constant-feature removal are fitted on the training portions only.
 - **Placement** gives each leaf aggregator its clients and its zone evaluators:
   - `mixing(α)` weights each dataset by home fog (declared, inherited or assigned in turns), from segregated at α = 0 to uniform at α = 1;
@@ -83,12 +83,18 @@ flowchart LR
 | `level:<name>` | Aggregated up to that level; its aggregator keeps it and injects it into what it sends down |
 | `local` | Never leaves the edge |
 
-A group crosses a link, in both directions, when its scope is `global`, or `level:X` with X at the parent's level or above it. The presets are `fedavg`, `fedper` (local heads), `zone(level)`, `independent` and `harmonized`; `custom` takes rules by glob.
+A group crosses a link, in both directions, when its scope is `global`, or `level:X` with X at the parent's level or above it. The presets are `fedavg`, `fedper` (local heads), `lg_fedavg` (local adapters and trunk, global heads), `zone(level)`, `independent` and `harmonized`; `custom` takes rules by glob.
 
-**Aggregation.** Aggregators work per key, only among the contributions that hold it, and send up the summed samples, so a tree of `fedavg` equals a flat FedAvg. Contributions are sorted by sender before combining. The aggregators are `fedavg`, `mean`, `median` and `trimmed_mean(β)`. The coordinator then applies a server optimizer: `replace`, `fedavgm` or `fedadam`.
+**Aggregation.** Aggregators work per key, only among the contributions that hold it, and send up the summed samples, so a tree of `fedavg` equals a flat FedAvg. Contributions are sorted by sender before combining. The aggregators are `fedavg`, `mean`, `median`, `trimmed_mean(β)` and the robust and private ones below. The coordinator then applies a server optimizer, `replace`, `fedavgm`, `fedadam`, `fednova` or `feddyn`, with the round's statistics. These are `train_*` metrics reduced up the tree (steps and loss averaged by examples, examples and edges summed) plus `edges_total`. `learning.server_optimizer` overrides the topology's root setting. Aggregators are called as `aggregate(contributions, source, reference, rng)`, where `reference` is the state the node sent down that round and `rng` is a child random stream. An optional `report()` lists diagnostic events the collector emits: `diagnostic.selection` (children dropped from the selection, the dropped ones not used at all, `f_used`, and the sources of each rescued key), `diagnostic.clipped` and `diagnostic.privacy_epsilon`. The collector counts the dropped, the excluded and the aggregated children against edges tagged `malicious`. Bulyan picks its θ = n − 2f candidates with Krum one at a time, removing each pick before the next. The robust aggregators (Krum, Multi-Krum, Bulyan, geometric median) score whole updates over the model keys every child holds, lower `f` when too few children answer, and combine each key over the selected holders; a key only dropped children hold comes from its best-ranked holders. `norm_clip` and `dp_fedavg` clip each child's update against `reference`; `dp_fedavg` and the edge-side `local_dp` report ε per round. Central DP uses add/remove-one-child adjacency with the arrived count m treated as public; local DP uses replace-one adjacency (sensitivity 2C). Both assume C was fixed in advance. The edge's attack and privacy hooks see only the keys it sends up. An `attack` plugin on a seeded fraction of edges poisons their data or the model keys they send. A server optimizer is called as `apply(global_state, aggregated, stats)`; one written for the old two-argument form needs the third.
+
+**Auxiliary arrays.** A trainer can return arrays named `<algorithm>/<parameter key>`, for example SCAFFOLD's control variates or FedNova's normalised update. They travel where their parameter travels and are combined per key. Server optimizers replace them instead of stepping them, and diagnostics ignore them. Clipping, noise and attacks do not touch them either, so a trainer that sends them is refused together with `privacy`, `attack`, `dp_fedavg` or `norm_clip`.
 
 **Training and initialisation.**
 - Trainers: `standard` (epochs, batch, learning rate, optimizer, frozen groups) and `fedprox(μ)`.
+- Drift trainers: `moon` (contrast on `ModularMLP.features`, refused when sharing keeps the adapters or trunk local) and the pairs `scaffold`, `fednova` and `feddyn` (trainer + server optimizer, checked before the first scenario, and refused with any staleness but `drop`, because the round statistics count only fresh updates). SCAFFOLD edges send the change in their control variate and the `scaffold` optimizer keeps `c`. SCAFFOLD and FedNova accept only SGD.
+- **Participation per group.** Every edge announces in its `hello` the parameter groups it sends up, and aggregators add them up, so the root's statistics carry `edges_total/<group>`. Updates carry `train_edges/<group>`, summed up the tree. `scaffold` and `feddyn` scale their server step by the share of each key's holders that trained, and their trainers ask for one vote per edge (`uniform_weights`), as in their papers.
+- **Divergence.** An edge whose training leaves non-finite weights reports `edge.train_failed`, rolls its model back and sends nothing. The trainer's memory rolls back too when it offers `snapshot()` and `restore()`; the built-in trainers save only what a diverged round must undo, and a plugin without them is not copied.
+- Personalisation trainers: `ditto(λ)` and `apfl(α)` keep a personal model per edge across rounds and expose it through `personal()`. `fedrep` trains the local head, then the shared body, and declares the head as `local_groups`: `plan` refuses a sharing policy that sends it up. `fedbabu` freezes the head.
 - `stub` learns nothing and is for protocol tests; with `noise` each node sends a different, seeded update.
 - Inits: `random(seed)`, and `checkpoint(path, groups)`, which loads a saved `model.npz` such as a pooled run's.
 
@@ -114,12 +120,12 @@ sequenceDiagram
 ```
 
 - **Registration.** A child repeats its `hello` until the parent acknowledges it, so a lost message does not stall the tree.
-- **Closing a round.** A round closes when every participant has answered, or when the deadline passes with quorum (an int is a count, a float a fraction). Without quorum, the aggregator sends an empty update and emits `round.quorum_failed`.
-- **Late updates.** They go to a staleness plugin: `drop`, or `next_round` with a `constant` or `polynomial` weighting.
+- **Closing a round.** A round closes when every participant has answered, or when the deadline passes with quorum (an int is a count, a float a fraction). With `close_at_quorum: true` it closes as soon as the quorum is in, late updates included, and a child still training gets no newer model: hierarchical buffering inspired by FedBuff, with the cloud still synchronous. A round its parent overtakes before it closes keeps its updates as late ones and emits `round.abandoned`. Without quorum, the aggregator sends an empty update and emits `round.quorum_failed`.
+- **Late updates.** They go to a staleness plugin: `drop`, or `next_round` with a `constant` or `polynomial` weighting. A kept update joins as its change from the model it trained on, applied to the model sent in the round it joins. Each collector reports `staleness`, the mean age of what it combined plus what each contribution carried (absent when 0), and the root passes it to the server optimizer. On MQTT, which updates arrive first depends on wall-clock timing, so runs that close at quorum are not reproducible there.
 - **Participation.** It is `all`, or `fraction(p)` drawn with the node's own RNG stream.
 - **Failures.** A failed training is `edge.train_failed`, and the edge counts as absent. A malformed message, or one from an unknown sender, is `message.rejected`. No node error stops a run.
 - **Evaluation.**
-  - Edges score their `local_val` every `edge.every` rounds.
+  - Edges score their `local_val` every `edge.every` rounds: the model received and the one trained, plus `personal` (if the trainer has a personal model) and `finetuned` (the received model after the `edge.finetune` trainer, which draws from a child random stream so it never changes training).
   - Aggregators combine the scores of their children, and ask their `val` evaluators to score the zone model every `aggregators.every` rounds.
   - The coordinator asks the `test` evaluators to score the global model every `global.every` rounds, and always after the last one. It reports per dataset.
 
@@ -230,10 +236,12 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | availability_model | `always`, `bernoulli`, `schedule`, `crash_at` |
 | transport | `memory`, `mqtt` |
 | model | `modular_mlp` |
-| sharing | `fedavg`, `fedper`, `zone`, `independent`, `harmonized`, `custom` |
-| aggregator | `fedavg`, `mean`, `median`, `trimmed_mean` |
-| server_optimizer | `replace`, `fedavgm`, `fedadam` |
-| trainer | `standard`, `fedprox`, `stub` |
+| sharing | `fedavg`, `fedper`, `lg_fedavg`, `zone`, `independent`, `harmonized`, `custom` |
+| aggregator | `fedavg`, `mean`, `median`, `trimmed_mean`, `krum`, `multi_krum`, `geometric_median`, `bulyan`, `norm_clip`, `dp_fedavg` |
+| attack | `label_flip`, `sign_flip`, `gaussian`, `scale` |
+| privacy | `local_dp` |
+| server_optimizer | `replace`, `fedavgm`, `fedadam`, `fedyogi`, `fedadagrad`, `fedasync_mix`, `scaffold`, `fednova`, `feddyn` |
+| trainer | `standard`, `fedprox`, `ditto`, `apfl`, `fedrep`, `fedbabu`, `scaffold`, `fednova`, `feddyn`, `moon`, `stub` |
 | init | `random`, `checkpoint` |
 | metric | `loss`, `accuracy`, `macro_f1`, `recall_per_class`, `confusion_matrix` |
 | diagnostic | `divergence`, `dataset_conflict`, `drift`, `participation`, `fairness` |

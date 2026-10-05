@@ -641,7 +641,10 @@ def wesad_file(path: Path, seconds: int = 2) -> Path:
     data = {
         "label": np.repeat([1, 2], n // 2),
         "signal": {
-            "chest": {"ECG": np.arange(n, dtype=float).reshape(-1, 1)},
+            "chest": {  # the published files spell these two "Resp" and "Temp"
+                "ECG": np.arange(n, dtype=float).reshape(-1, 1),
+                "Resp": np.arange(n, dtype=float).reshape(-1, 1),
+            },
             "wrist": {
                 "ACC": np.arange(32 * seconds * 3, dtype=float).reshape(-1, 3),
                 "EDA": np.arange(4 * seconds, dtype=float).reshape(-1, 1),
@@ -673,6 +676,21 @@ def test_wesad_reader_chest_is_sample_aligned(tmp_path: Path) -> None:
     reader = readers.create("wesad_pickle", {"location": "chest", "signals": ["ECG"]})
 
     assert reader.read(path)["ecg_0"].tolist() == list(range(1400))
+
+
+def test_wesad_reader_finds_signals_whatever_their_case(tmp_path: Path) -> None:
+    path = wesad_file(tmp_path / "S2" / "S2.pkl")
+    reader = readers.create("wesad_pickle", {"location": "chest", "signals": ["RESP"]})
+
+    assert reader.read(path)["resp_0"].tolist() == list(range(1400))
+
+
+def test_wesad_reader_names_a_signal_the_file_lacks(tmp_path: Path) -> None:
+    path = wesad_file(tmp_path / "S2" / "S2.pkl")
+    reader = readers.create("wesad_pickle", {"location": "chest", "signals": ["EMG"]})
+
+    with pytest.raises(DataError, match="EMG"):
+        reader.read(path)
 
 
 def test_wesad_reader_truncates_to_the_shortest_signal(tmp_path: Path) -> None:
