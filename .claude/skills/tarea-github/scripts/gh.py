@@ -31,7 +31,8 @@ def _repo() -> str:
     url = _git("remote", "get-url", "origin")
     m = re.search(r"github\.com[:/](?P<repo>[^/]+/[^/]+?)(?:\.git)?$", url)
     if not m:
-        raise SystemExit(f"origin is not a GitHub remote: {url}")
+        shown = re.sub(r"//[^/@]*@", "//", url)  # never print a credential in it
+        raise SystemExit(f"origin is not a GitHub remote: {shown}")
     return m["repo"]
 
 

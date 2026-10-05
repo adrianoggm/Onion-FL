@@ -239,6 +239,7 @@ def load_wesad_dataset(
         train_subject_ids = subject_ids[train_mask]
         test_subject_ids = subject_ids[test_mask]
 
+        scaler = None
         if normalize:
             scaler = StandardScaler()
             X_train = scaler.fit_transform(X_train_raw).astype(np.float32)
