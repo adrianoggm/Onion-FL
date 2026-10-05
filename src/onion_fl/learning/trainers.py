@@ -859,7 +859,9 @@ class RestoreParams(BaseModel):
     )
     preprocessing: bool = Field(True, description="El preprocesado congelado del padre")
     server_state: bool = Field(
-        True, description="El estado del optimizador de servidor"
+        True,
+        description="El estado del optimizador de servidor y el del algoritmo en "
+        "el modelo global (la c de SCAFFOLD)",
     )
     edge_state: bool = Field(
         True,

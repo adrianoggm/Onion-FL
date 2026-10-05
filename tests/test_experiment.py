@@ -1041,26 +1041,64 @@ def test_restore_keeps_an_edges_algorithm_memory_but_never_old_weights() -> None
     from onion_fl.roles import FederationSnapshot, NodeState
 
     one = np.ones(1)
-    arrays = ["model/w", "memory/_personal/w", "memory/_c_i/w", "privacy/rdp"]
-    memory = {
-        "_personal": {"kind": "module", "training": True, "weights": True},
-        "_c_i": {"kind": "arrays"},
-    }
+    arrays = ["model/w", "memory/_personal/w", "memory/_c_i/w"]
+    weights = {"kind": "module", "training": True, "weights": True}
+    memory = {"_personal": weights, "_c_i": {"kind": "arrays"}}
     edge = NodeState(dict.fromkeys(arrays, one), {"rng": {}, "memory": memory})
     snapshot = FederationSnapshot(2, {"e1": edge}, "cloud")
 
     def kept(**restore) -> tuple:
         parts = _restore_parts(snapshot, RestoreParams(**restore), {"e1"})
         node = parts.nodes["e1"]
-        return sorted(node.arrays), sorted(node.meta.get("memory", {})), node.meta
+        return sorted(node.arrays), node.meta
 
     assert kept(model=False) == (
-        ["memory/_c_i/w", "privacy/rdp"],
-        ["_c_i"],
+        ["memory/_c_i/w"],
         {"rng": {}, "memory": {"_c_i": {"kind": "arrays"}}},
     )
-    assert kept(edge_state=False) == (["model/w", "privacy/rdp"], [], {})
-    assert kept(model=False, edge_state=False) == (["privacy/rdp"], [], {})
+    assert kept(edge_state=False) == (
+        ["memory/_personal/w", "model/w"],
+        {"memory": {"_personal": weights}},
+    )
+    assert kept(model=False, edge_state=False) == ([], {"memory": {}})
+
+
+def test_restore_keeps_the_stream_of_an_edge_with_a_dp_budget() -> None:
+    import numpy as np
+
+    from onion_fl.experiment.runner import _restore_parts
+    from onion_fl.learning.trainers import RestoreParams
+    from onion_fl.roles import FederationSnapshot, NodeState
+
+    private = NodeState({"privacy/rdp": np.ones(1)}, {"rng": {"s": 1}})
+    plain = NodeState({}, {"rng": {"s": 2}})
+    snapshot = FederationSnapshot(2, {"e1": private, "e2": plain}, "cloud")
+
+    parts = _restore_parts(snapshot, RestoreParams(edge_state=False), {"e1", "e2"})
+
+    # a fresh stream would replay the parent's noise, release for release
+    assert parts.nodes["e1"].meta == {"rng": {"s": 1}}
+    assert parts.nodes["e2"].meta == {}
+
+
+def test_restore_puts_scaffolds_global_control_variate_under_server_state() -> None:
+    import numpy as np
+
+    from onion_fl.experiment.runner import _restore_parts
+    from onion_fl.learning.trainers import RestoreParams
+    from onion_fl.roles import FederationSnapshot, NodeState
+
+    one = np.ones(1)
+    arrays = ["state/trunk.0.weight", "state/scaffold/trunk.0.weight", "server/m"]
+    root = NodeState(dict.fromkeys(arrays, one), {"rng": {}})
+    snapshot = FederationSnapshot(2, {"cloud": root}, "cloud")
+
+    def kept(**restore) -> list[str]:
+        parts = _restore_parts(snapshot, RestoreParams(**restore), set())
+        return sorted(parts.nodes["cloud"].arrays)
+
+    assert kept(model=False) == ["server/m", "state/scaffold/trunk.0.weight"]
+    assert kept(server_state=False) == ["state/trunk.0.weight"]
 
 
 @pytest.mark.parametrize(

@@ -315,25 +315,38 @@ def _restore_parts(
     ``model`` governs every model weight: the global model, zones, previous
     aggregates, edge models and the trainer memory that holds weights.
     ``server_state`` governs the server optimizer; ``edge_state`` the rest of an
-    edge, its trainer memory and random stream. DP budgets always carry over:
-    what was released stays released.
+    edge, its trainer memory and random stream. SCAFFOLD's c, auxiliary keys of
+    the global state, is server state. DP budgets always carry over, and so does
+    the stream of an edge that has one: what was released stays released.
     """
-    dropped = [] if restore.model else ["state/", "zone/", "previous/", "model/"]
-    dropped += [] if restore.server_state else ["server/"]
+
+    def kept(key: str) -> bool:
+        part, _, rest = key.partition("/")
+        if part == "state":  # SCAFFOLD's c rides in the global state, auxiliary
+            return restore.server_state if is_aux(rest) else restore.model
+        if part in ("zone", "previous", "model"):
+            return restore.model
+        return restore.server_state if part == "server" else True
+
     nodes = {}
     for node_id, node in snapshot.nodes.items():
-        meta, gone = dict(node.meta), list(dropped)
-        if node_id in edges and not restore.edge_state:
-            meta.pop("rng", None)
-            meta.pop("memory", None)
-            gone.append("memory/")
-        if not restore.model and "memory" in meta:
-            weights = {n for n, info in meta["memory"].items() if info.get("weights")}
+        meta = dict(node.meta)
+        arrays = {k: v for k, v in node.arrays.items() if kept(k)}
+        if "memory" in meta:  # weights follow model, the rest edge_state
             meta["memory"] = {
-                n: info for n, info in meta["memory"].items() if n not in weights
+                name: info
+                for name, info in meta["memory"].items()
+                if (restore.model if info.get("weights") else restore.edge_state)
             }
-            gone += [f"memory/{n}/" for n in weights]
-        arrays = {k: v for k, v in node.arrays.items() if not k.startswith(tuple(gone))}
+            arrays = {
+                k: v
+                for k, v in arrays.items()
+                if not k.startswith("memory/") or k.split("/")[1] in meta["memory"]
+            }
+        # A DP edge keeps its stream: a fresh one would replay the parent's noise.
+        private = any(k.startswith("privacy/") for k in node.arrays)
+        if node_id in edges and not restore.edge_state and not private:
+            meta.pop("rng", None)
         nodes[node_id] = NodeState(arrays, meta)
     return FederationSnapshot(snapshot.round, nodes, snapshot.root)
 
