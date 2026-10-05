@@ -162,7 +162,7 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
   - each edge's model, trainer memory (`export_memory`) and local DP budget;
   - every node's random stream (`rng_state`, with its spawned children).
 
-  Next to that state it keeps the lineage and, per dataset, what the whole lineage knows of it, even when this run does not load that dataset: the frozen preprocessing (`DataSplit.preprocessing`), the task and classes, and every subject that ever trained, validated or tested.
+  Next to that state it keeps the lineage and, per dataset, what the whole lineage knows of it, even when this run does not load that dataset: the frozen preprocessing (`DataSplit.preprocessing`), the task and classes, and every subject that ever trained, validated or tested. A subject keeps its role along a lineage, so these roles stay a partition.
 - **Continuation.** `learning.init: {name: run, run, restore}` verifies the parent and refuses a continuation that cannot be exact or would leak (spec §6). Then it:
   - re-applies the frozen preprocessing, bit for bit;
   - continues the round numbering;

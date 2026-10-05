@@ -20,7 +20,7 @@ onion_fl run experiments/continuum_exactness.yaml --workers 3
 - **Variant.** The same with the SWELL adapter frozen (`frozen: [adapter.swell]`). This is a design choice, not tuned.
 - **Baselines.** SWELL + WESAD from scratch for 20 rounds (the rounds the continuation adds) and for 40 rounds (parent and continuation together).
 - **Training.** FedAvg with SGD at lr 0.1, 10 local epochs, seeds 0–2. lr 0.1 is FedAvg's rate on validation in the lossless drift comparison, and the same configuration as its FedAvg.
-- **Same test subjects everywhere.** The parent and every child share `data.roles`: the continuation is refused if a child's test or validation subject trained the parent.
+- **Same test subjects everywhere.** The parent and every child share `data.roles`: a continuation is refused if it moves a subject to another role than the one it had in the lineage.
 - **Exactness check.** `continuum_exactness.yaml` continues each "from scratch, 20 rounds" run for 20 more rounds, to compare it with the "from scratch, 40 rounds" run of the same seed.
 
 | Identity | Value |

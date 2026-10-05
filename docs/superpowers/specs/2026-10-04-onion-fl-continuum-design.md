@@ -174,7 +174,7 @@ bundle/
     - con DP local y un edge nuevo que reúne sujetos que ya liberaron, porque su presupuesto volvería a cero (pasa al cambiar `subjects_per_client` o los sujetos de entrenamiento);
     - con SCAFFOLD o FedDyn, si `server_state` y `edge_state` no van juntos: c sin c_i, o h sin las correcciones de los edges, sesgaría la corrección para siempre;
     - con `restore.preprocessing` y `scaler: local`, porque el preprocesado local congelado aún no existe;
-    - cuyos sujetos de test o validación entrenaron al padre o a una ejecución anterior del linaje;
+    - que cambia de rol a un sujeto que ya entrenó, validó o fue de test en el linaje (test → train, val → test…); los sujetos nuevos pueden entrar en cualquier rol;
     - en modo real, hasta C9.
   - **Qué restaura cada opción.**
     - `model` gobierna todos los pesos: el modelo global, las zonas, el agregado anterior, los modelos de los edges y la memoria del entrenador que guarda pesos (el modelo personal de Ditto, los de APFL, el modelo anterior de MOON).
@@ -186,7 +186,7 @@ bundle/
     - Un edge con presupuesto conserva también su stream aleatorio, aun sin `edge_state`: uno nuevo repetiría el ruido del padre.
   - **El linaje tiene memoria.**
     - Por dataset, el bundle conserva el preprocesado, la tarea y las clases, y los sujetos que alguna vez entrenaron, validaron o fueron de test, aunque una generación no cargue ese dataset.
-    - La comprobación de fugas mira todo el linaje: A → B → C no olvida que un sujeto entrenó en A.
+    - La comprobación de roles mira todo el linaje: A → B → C no olvida que un sujeto entrenó en A. Como un sujeto nunca cambia de rol, los roles del bundle siguen siendo una partición.
 - **Edges que cambian.**
   - Un edge nuevo empieza sin estado de edge.
   - El estado de un nodo que ya no está (edge o agregador) pasa al bundle tal como esta ejecución lo conservó, con su presupuesto de DP, y se retoma si el nodo vuelve.
