@@ -763,6 +763,7 @@ def test_every_simulated_run_writes_its_bundle_and_signs_it(workspace: Path) -> 
             "trainer": "stub",
             "server_optimizer": "replace",
             "root": "cloud",
+            "privacy": {"edges": None, "aggregators": {}},
         },
     }
     assert bundle.preprocessing["demo"]["features"] == ["f1", "f2"]
@@ -1060,3 +1061,39 @@ def test_restore_keeps_an_edges_algorithm_memory_but_never_old_weights() -> None
     )
     assert kept(edge_state=False) == (["model/w", "privacy/rdp"], [], {})
     assert kept(model=False, edge_state=False) == (["privacy/rdp"], [], {})
+
+
+@pytest.mark.parametrize(
+    "parent_change, child_change",
+    [
+        ({"privacy": {"name": "local_dp"}}, {}),
+        ({}, {"privacy": {"name": "local_dp"}}),
+        (
+            {
+                "topology": TOPOLOGY
+                | {
+                    "fog": {
+                        "defaults": {"aggregator": "dp_fedavg"},
+                        "nodes": TOPOLOGY["fog"]["nodes"],
+                    }
+                }
+            },
+            {},
+        ),
+    ],
+    ids=["local_dropped", "local_added", "central_dropped"],
+)
+def test_a_continuation_keeps_the_dp_mechanism_of_its_parent(
+    workspace: Path, parent_change: dict, child_change: dict
+) -> None:
+    parent = _parent_run(workspace, **parent_change)
+
+    with pytest.raises(ConfigError, match="privacy"):
+        plan(parse_experiment(_child(workspace, parent.name, **child_change)))
+
+
+def test_a_continuation_may_change_the_dp_noise(workspace: Path) -> None:
+    parent = _parent_run(workspace, privacy={"name": "local_dp", "sigma": 0.5})
+
+    raw = _child(workspace, parent.name, privacy={"name": "local_dp", "sigma": 1.0})
+    assert plan(parse_experiment(raw))

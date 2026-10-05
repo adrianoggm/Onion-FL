@@ -29,7 +29,7 @@ from onion_fl.experiment.sweep import Scenario, identity, scenarios
 from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.attacks import attacks
 from onion_fl.learning.model import models, param_groups, state_arrays
-from onion_fl.learning.privacy import privacies
+from onion_fl.learning.privacy import Accountant, privacies
 from onion_fl.learning.sharing import not_local, sharing, traffic
 from onion_fl.learning.trainers import inits, trainers
 from onion_fl.observability.run import Run, save_model, verify_run
@@ -124,14 +124,44 @@ def _newest_run(runs: Path, reference: str, seed: int) -> Path:
     return paths[-1]  # run ids start with their UTC time
 
 
-def _algorithms(config: ExperimentConfig) -> dict[str, str]:
-    """The trainer and server optimizer whose state a bundle holds."""
-    root = resolve_topology(config).root
+def _algorithms(config: ExperimentConfig) -> dict[str, Any]:
+    """The trainer, server optimizer and DP mechanisms whose state a bundle holds."""
+    topology = resolve_topology(config)
+    root = topology.root
+    central = {
+        node.id: _name(node.settings["aggregator"])
+        for node in topology.nodes
+        if isinstance(
+            create(aggregators, node.settings.get("aggregator"), "fedavg"), Accountant
+        )
+    }
     return {
         "trainer": _name(config.learning.trainer),
         "server_optimizer": _name(root.settings.get("server_optimizer") or "replace"),
         "root": root.id,
+        "privacy": {
+            "edges": _name(config.privacy) if config.privacy else None,
+            "aggregators": central,
+        },
     }
+
+
+def _check_privacy(
+    saved: Mapping[str, Any], here: Mapping[str, Any], shared: set[str]
+) -> None:
+    """The edges and every aggregator ``shared`` with the parent keep their DP
+    mechanism, so each budget composes; σ, C and δ may change."""
+    central = saved.get("aggregators", {})
+    for where, before, now in [
+        ("the edges", saved.get("edges"), here["edges"]),
+        *[(n, central.get(n), here["aggregators"].get(n)) for n in sorted(shared)],
+    ]:
+        if before != now:
+            raise ConfigError(
+                f"learning.init: {where} used privacy {before!r} in the parent, here "
+                f"{now!r}; a continuation keeps each DP mechanism so its budget "
+                "composes (σ, C and δ may change)"
+            )
 
 
 def _parent(config: ExperimentConfig, seed: int) -> tuple[Path, Bundle, Any] | None:
@@ -189,6 +219,9 @@ def _parent(config: ExperimentConfig, seed: int) -> tuple[Path, Bundle, Any] | N
                 f"learning.init: the parent's {part} is {saved.get(part)!r}, here "
                 f"{here[part]!r}; its state does not fit: set restore.{flag}: false"
             )
+    nodes = {node.id for node in resolve_topology(config).nodes}
+    shared = nodes & set(bundle.snapshot.nodes)
+    _check_privacy(saved.get("privacy", {}), here["privacy"], shared)
     return path, bundle, init.restore
 
 
