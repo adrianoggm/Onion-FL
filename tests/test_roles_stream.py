@@ -27,14 +27,14 @@ CONFIG = ModularMLPConfig(adapter_width=2, trunk_hidden=[2], dropout=0.0)
 INITIAL = state_arrays(ModularMLP(CONFIG, [A], seed=0))
 
 
-def tree(n_fogs: int):
+def tree(n_fogs: int, fog: dict | None = None):
     fogs = [{"id": f"fog_{i}"} for i in range(n_fogs)]
     return parse_topology(
         {
             "name": "t",
             "levels": ["global", "fog", "edge"],
             "root": {"id": "cloud"},
-            "fog": {"nodes": fogs},
+            "fog": {"defaults": fog or {}, "nodes": fogs},
         }
     )
 
@@ -201,3 +201,31 @@ def test_a_stream_run_is_deterministic() -> None:
     assert first == second
     for key, value in state.items():
         np.testing.assert_array_equal(again[key], value)
+
+
+def test_a_stream_evaluator_scores_what_arrived_since_it_was_last_asked() -> None:
+    learner = EdgeSpec(
+        "a1",
+        ModularMLP(CONFIG, [A], seed=0),
+        trainer=Recording(),
+        stream=stream_of("a-1"),
+    )
+    validator = EdgeSpec(
+        "val-a-9", ModularMLP(CONFIG, [A], seed=0), train=False, stream=stream_of("a-9")
+    )
+    federation = build_federation(
+        tree(1, fog={"eval": {"every": 1}}),
+        {"fog_0": [learner, validator]},
+        initial_state=INITIAL,
+        rounds=6,
+        round_every=EVERY / SPEED,
+    )
+    federation.run()
+
+    zone = [
+        e
+        for e in events(federation, "eval.accuracy", "fog_0")
+        if e["tags"]["model"] == "zone"
+    ]
+    # disjoint windows: every row after t0 is scored once, history never
+    assert sum(e["tags"]["samples"] for e in zone) == 18

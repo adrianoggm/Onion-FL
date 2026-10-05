@@ -1072,9 +1072,15 @@ class Edge(_Greeter, Node):
 
     def _answer_eval(self, msg: Message, ctx: Context) -> None:
         metrics: dict[str, float] = {"samples": 0.0}
-        if self.evaluate is not None and self.data is not None:
+        data = self.data
+        if self.stream is not None:  # an evaluation stream: what came since last asked
+            lo, self._clock = self._clock, self.stream.clock(ctx.now())
+            data = self.stream.take(
+                self.stream.arrived(lo, self._clock) & ~self.stream.history
+            )
+        if self.evaluate is not None and data is not None:
             load_arrays(self.model, dict(msg.payload.state))
-            scores, samples = self.evaluate(self.model, self.data)
+            scores, samples = self.evaluate(self.model, data)
             metrics = {k: float(v) for k, v in scores.items()} | {
                 "samples": float(samples)
             }
