@@ -119,3 +119,10 @@ def test_untimed_data_cannot_stream() -> None:
 
     with pytest.raises(ValueError, match="time"):
         edge_stream(replace(rows(T), t=None), stream(), LabelsConfig(), seed=0)
+
+
+def test_the_run_drains_the_labels_still_due_after_the_last_row() -> None:
+    s = edge_stream(rows(T), stream(batch_size=1), LabelsConfig(delay=30), seed=0)
+
+    assert s.horizon == 35  # the last row arrives at 60 - 25
+    assert s.drain == 65  # and its label 30 later

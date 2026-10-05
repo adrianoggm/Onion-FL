@@ -671,11 +671,11 @@ def _streams(scenario: Scenario, placement: Placement) -> dict[str, Any]:
 
 
 def _paced(config: ExperimentConfig, streams: Mapping[str, Any]) -> tuple[int, Any]:
-    """Rounds and their virtual spacing: a stream lasts until its horizon."""
+    """Rounds and their virtual spacing: a stream lasts until its last label."""
     if config.stream is None:
         return config.rounds, None
     every = config.stream.round_every
-    horizon = max((s.horizon for s in streams.values()), default=0.0)
+    horizon = max((s.drain for s in streams.values()), default=0.0)
     rounds = min(config.rounds, math.ceil(horizon / every) + 1)  # one at or after it
     return rounds, every / config.stream.speed
 
@@ -684,6 +684,7 @@ def _stream_summary(config: ExperimentConfig, streams: Mapping[str, Any]) -> dic
     learners = {k: s for k, s in streams.items() if not k.startswith("val-")}
     return {
         "horizon": max((s.horizon for s in learners.values()), default=0.0),
+        "drain": max((s.drain for s in learners.values()), default=0.0),
         "rounds": _paced(config, learners)[0],
         "edges": {
             k: {
@@ -834,6 +835,7 @@ def run_scenario(
             run.record(
                 "data.stream",
                 summary["horizon"],
+                drain=summary["drain"],
                 rounds=summary["rounds"],
                 edges=summary["edges"],
             )

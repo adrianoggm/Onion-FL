@@ -232,3 +232,20 @@ def test_a_merging_placement_cannot_count_history_per_subject(
 
     with pytest.raises(ConfigError, match="placement"):
         plan(parse_experiment(raw))
+
+
+def test_a_stream_runs_until_its_last_label_arrives(workspace: Path) -> None:
+    # Labels 5 minutes late: the last rows arrive at 1020 s, their labels at
+    # 1320 s, so a sixth round (at 1500 s) is needed to drain them.
+    path = run(workspace, labels={"fraction": 1.0, "delay": 300})
+
+    summary = json.loads((path / "summary.json").read_text(encoding="utf-8"))
+    assert summary["rounds"] == 6
+    (stream,) = events(path, "data.stream")
+    labelled = sum(e["labelled"] for e in stream["tags"]["edges"].values())
+    on_arrival = sum(e["tags"]["labelled"] for e in events(path, "data.arrived"))
+    late = sum(e["value"] for e in events(path, "data.labelled"))
+    assert on_arrival + late == labelled  # every label chosen arrived
+    last = [e for e in events(path, "edge.trained") if e["round"] == 6]
+    assert last  # and the drained labels trained
+

@@ -110,8 +110,14 @@ class EdgeStream:
 
     @property
     def horizon(self) -> float:
-        """When the last row arrives."""
+        """When the last row arrives: the end of the observations."""
         return float(self.available_at.max())
+
+    @property
+    def drain(self) -> float:
+        """When the last label arrives, which may be after the last row."""
+        labels = self.label_at[np.isfinite(self.label_at)]
+        return max(self.horizon, float(labels.max()) if len(labels) else -np.inf)
 
     def clock(self, now: float) -> float:
         """Continuum time at virtual time ``now``."""
