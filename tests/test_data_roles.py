@@ -116,6 +116,16 @@ def test_proportions_count_every_subject_of_the_dataset() -> None:
     assert len(roles["val"]) == 5 and not {"1", "2"} & set(roles["val"])
 
 
+@pytest.mark.parametrize("seed", range(10))
+def test_a_test_share_is_drawn_around_the_listed_val_subjects(seed: int) -> None:
+    config = RolesConfig(test=0.5, seed=seed, overrides={"swell": {"val": ["3"]}})
+
+    roles = roles_of(split_subjects(cohort(6), config))
+
+    assert roles["val"] == ["3"] and len(roles["test"]) == 3
+    assert "3" not in roles["test"]
+
+
 @pytest.mark.parametrize(
     "override, message",
     [

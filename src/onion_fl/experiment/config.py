@@ -283,6 +283,18 @@ class ExperimentConfig(Strict):
         lambda v: v if v is None else _plugin(attacks, v)
     )
 
+    @field_validator("sweep")
+    @classmethod
+    def _sweepable(cls, value: dict[str, list[Any]]) -> dict[str, list[Any]]:
+        for key in value:
+            for path in key.split(","):
+                if path.strip().split(".")[0] in ("seeds", "sweep"):
+                    raise ValueError(
+                        f"{key}: {path.strip()} cannot be swept, every scenario runs "
+                        "all the seeds; list them in seeds"
+                    )
+        return value
+
     @field_validator("sinks")
     @classmethod
     def _known_sinks(cls, value: list[PluginRef]) -> list[PluginRef]:
@@ -375,9 +387,14 @@ def parse_experiment(raw: Mapping[str, Any]) -> ExperimentConfig:
 
 
 def load_experiment(path: str | Path) -> ExperimentConfig:
-    return parse_experiment(
-        yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-    )
+    path = Path(path)
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"{path.name} is not valid YAML: {exc}") from None
+    if not isinstance(raw, Mapping):
+        raise ConfigError(f"{path.name}: an experiment must be a mapping")
+    return parse_experiment(raw)
 
 
 def experiment_schema() -> dict[str, Any]:

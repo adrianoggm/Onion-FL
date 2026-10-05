@@ -125,6 +125,8 @@ def test_a_valid_experiment_loads_from_yaml(workspace: Path) -> None:
         ({"evaluation": {"metrics": ["accuracy", "vibes"]}}, "evaluation.metrics"),
         ({"sinks": ["carrier_pigeon"]}, "sinks"),
         ({"surprise": True}, "surprise"),
+        ({"sweep": {"seeds": [[0], [1]]}}, "sweep"),  # it would do nothing
+        ({"sweep": {"rounds, sweep.rounds": [[1, [2]]]}}, "sweep"),
     ],
 )
 def test_errors_name_the_exact_path(workspace: Path, change: dict, where: str) -> None:
@@ -335,6 +337,19 @@ def test_auxiliary_arrays_cannot_bypass_a_clip_noise_or_attack(
 
     with pytest.raises(ConfigError, match="auxiliary arrays"):
         plan(parse_experiment(experiment(workspace, learning=learning, **extra)))
+
+
+@pytest.mark.parametrize(
+    "trainer", ["fedbabu", {"name": "standard", "frozen": ["trunk"]}]
+)
+def test_central_noise_cannot_reach_a_frozen_group(workspace: Path, trainer) -> None:
+    learning = experiment(workspace)["learning"] | {
+        "trainer": trainer,
+        "aggregator": "dp_fedavg",
+    }
+
+    with pytest.raises(ConfigError, match="frozen"):
+        plan(parse_experiment(experiment(workspace, learning=learning)))
 
 
 def test_the_experiment_can_set_the_leaf_aggregators(workspace: Path) -> None:
@@ -679,6 +694,51 @@ def test_live_sinks_can_be_switched_on(workspace: Path) -> None:
     )
 
 
+def test_the_scenarios_of_a_process_share_one_metrics_server(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from onion_fl.observability import sinks as live
+
+    bound = []
+    monkeypatch.setattr(live, "start_http_server", lambda port, **_: bound.append(port))
+    monkeypatch.setattr(live, "_SERVED", {})
+    sinks = [{"name": "prometheus", "port": 9999}]
+    config = parse_experiment(experiment(workspace, sinks=sinks, seeds=[0, 1]))
+
+    run_experiment(config, evaluate=stub_score)
+
+    assert bound == [9999]  # a second bind of the port would fail on Linux
+
+
+def test_worker_processes_cannot_share_a_metrics_port(workspace: Path) -> None:
+    config = parse_experiment(experiment(workspace, sinks=["prometheus"], seeds=[0, 1]))
+
+    with pytest.raises(ConfigError, match="workers"):
+        run_experiment(config, workers=2)
+
+
+def _mark(item: tuple[Path, int]) -> int:
+    import time
+
+    folder, i = item
+    if i == 1:
+        raise RuntimeError("scenario 1 broke")
+    time.sleep(3.0 if i == 0 else 0.2)
+    (folder / f"{i}.done").touch()
+    return i
+
+
+def test_a_parallel_sweep_stops_at_its_first_failure(tmp_path: Path) -> None:
+    from onion_fl.experiment.runner import _in_parallel
+
+    with pytest.raises(RuntimeError, match="scenario 1"):  # while scenario 0 runs
+        _in_parallel(_mark, [(tmp_path, i) for i in range(20)], workers=2)
+
+    later = [p for p in tmp_path.glob("*.done") if p.stem != "0"]
+    assert len(later) < 8  # the ones handed to a worker; not the other 18
+    assert _in_parallel(_mark, [(tmp_path, 3), (tmp_path, 2)], workers=2) == [3, 2]
+
+
 def test_a_custom_scorer_cannot_go_to_worker_processes(workspace: Path) -> None:
     with pytest.raises(ValueError, match="workers=1"):
         run_experiment(
@@ -745,6 +805,36 @@ def test_plan_warns_about_lossy_links_without_deadline(workspace: Path) -> None:
     )  # cloud (from the fogs) and each fog (from its edges)
     assert all("deadline" in w for w in preview["warnings"])
     assert safe["warnings"] == []
+
+
+def test_plan_warns_when_a_lost_evaluation_would_block_the_end(workspace: Path) -> None:
+    lossy = {"profile": {"preset": "lan", "loss": 0.1}}
+    topology = TOPOLOGY | {"edge": {"link_up": lossy}}  # the evaluators' link too
+
+    (preview,) = plan(parse_experiment(experiment(workspace, topology=topology)))
+
+    assert any(w.startswith("cloud:") for w in preview["warnings"])
+
+
+def test_plan_warns_when_a_lost_update_keeps_a_child_out_for_good(
+    workspace: Path,
+) -> None:
+    lossy = {"profile": {"preset": "lan", "loss": 0.1}}
+    buffering = {"close_at_quorum": True, "quorum": 1, "deadline": 10}
+    fog = {"defaults": buffering, "nodes": TOPOLOGY["fog"]["nodes"]}
+    kept = {"staleness": {"name": "next_round"}}
+    bounded = {"staleness": {"name": "next_round", "max_staleness": 2}}
+
+    def warnings(defaults: dict) -> list[str]:
+        topology = TOPOLOGY | {
+            "fog": fog | {"defaults": buffering | defaults},
+            "edge": {"link_up": lossy},
+        }
+        (preview,) = plan(parse_experiment(experiment(workspace, topology=topology)))
+        return [w for w in preview["warnings"] if "max_staleness" in w]
+
+    assert len(warnings(kept)) == 2  # one per fog
+    assert warnings(bounded) == []
 
 
 def test_every_simulated_run_writes_its_bundle_and_signs_it(workspace: Path) -> None:
@@ -1370,6 +1460,56 @@ def test_a_restored_model_must_keep_each_datasets_task(workspace: Path) -> None:
 
     with pytest.raises(ConfigError, match="task"):
         plan(parse_experiment(_child(workspace, parent.name)))
+
+
+# --- real runs that could not start or end (QA3, #175) ------------------------------
+
+
+def test_the_root_process_hosts_the_global_validation_evaluators(
+    workspace: Path,
+) -> None:
+    from onion_fl.experiment.real import _group_members
+    from onion_fl.experiment.runner import _scenario_data, edge_specs
+
+    raw = experiment(workspace)
+    raw["evaluation"] = raw["evaluation"] | {"global": {"every": 1, "subjects": "val"}}
+    (scenario,) = scenarios(parse_experiment(raw))
+    topology, split, placement, _ = _scenario_data(scenario)
+    edges, _ = edge_specs(scenario, topology, split, placement)
+
+    hosted = _group_members(scenario.config, topology, placement, "cloud")
+    expected = {spec.id for spec in edges["cloud"]}
+    assert expected and expected <= hosted
+
+
+def test_a_real_run_refuses_links_that_cannot_cross_processes(workspace: Path) -> None:
+    from onion_fl.experiment.real import run_real
+
+    topology = TOPOLOGY | {"edge": {"link_up": {"transport": "memory"}}}
+    (scenario,) = scenarios(parse_experiment(experiment(workspace, topology=topology)))
+
+    with pytest.raises(ConfigError, match="memory"):
+        run_real(scenario)
+
+
+def test_a_real_run_that_fails_to_launch_is_marked_failed(
+    workspace: Path, monkeypatch
+) -> None:
+    import onion_fl.experiment.real as real
+
+    def broken(*args, **kwargs):
+        raise OSError("cannot start a process")
+
+    monkeypatch.setattr(real, "check_brokers", lambda topology: None)
+    monkeypatch.setattr(real.subprocess, "Popen", broken)
+    (scenario,) = scenarios(parse_experiment(experiment(workspace)))
+
+    with pytest.raises(OSError):
+        real.run_real(scenario)
+    (run,) = (workspace / "runs").iterdir()
+    assert (
+        json.loads((run / "run.json").read_text(encoding="utf-8"))["status"] == "failed"
+    )
 
 
 # --- silently wrong configurations (QA2, #174) --------------------------------------

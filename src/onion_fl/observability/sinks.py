@@ -9,7 +9,8 @@ Prometheus series, all labelled ``run_id, topology_id, level, node, dataset``:
 
 =================================  ==============================================
 ``onionfl_metric``                 last value of a metric (+ ``name, model, source``)
-``onionfl_diagnostic``             last value of a diagnostic (+ ``name, group``)
+``onionfl_diagnostic``             last value of a diagnostic (+ ``name, group,
+                                   metric, datasets, dst``)
 ``onionfl_round``                  current round of a node
 ``onionfl_messages_total``         messages sent (+ ``kind``)
 ``onionfl_message_bytes_total``    encoded bytes sent (+ ``kind``)
@@ -42,7 +43,11 @@ METRICS = (
     "onionfl_quorum_failed_total",
     "onionfl_run_finished",
 )
-EXTRA_LABELS = ("name", "model", "source", "group", "kind")
+# What tells apart the series of one diagnostic: its group, the metric
+# (fairness), the dataset pair (dataset_conflict) and the link (communication).
+DIAGNOSTIC_TAGS = ("group", "metric", "datasets", "dst")
+EXTRA_LABELS = ("name", "model", "source", "kind", *DIAGNOSTIC_TAGS)
+_SERVED: dict[tuple[str, int], PrometheusSink] = {}  # one server per port
 
 
 def _text(value: Any) -> str:
@@ -70,7 +75,9 @@ class PrometheusSink:
             ("name", "model", "source"),
         )
         self.diagnostic = gauge(
-            "onionfl_diagnostic", "Last value of a diagnostic", ("name", "group")
+            "onionfl_diagnostic",
+            "Last value of a diagnostic",
+            ("name", *DIAGNOSTIC_TAGS),
         )
         self.round = gauge("onionfl_round", "Current round of a node")
         self.messages = counter("onionfl_messages", "Messages sent", ("kind",))
@@ -102,8 +109,9 @@ class PrometheusSink:
             }
             self.metric.labels(**base, **extra).set(value)
         elif event["kind"] == "diagnostic" and _number(value):
+            extra = {k: _text(tags.get(k)) for k in DIAGNOSTIC_TAGS}
             self.diagnostic.labels(
-                **base, name=name[len("diagnostic.") :], group=_text(tags.get("group"))
+                **base, name=name[len("diagnostic.") :], **extra
             ).set(value)
         if (
             name in ("round.started", "round.participants")
@@ -126,8 +134,18 @@ class PrometheusSink:
         """Expose ``/metrics`` for Prometheus to scrape; returns the server and its thread."""
         return start_http_server(port, addr=addr, registry=self.registry)
 
+    @classmethod
+    def serving(cls, port: int = 9464, addr: str = "0.0.0.0") -> PrometheusSink:
+        """The sink this process serves on ``port``, bound once: every run of a
+        sweep reports to it, its series told apart by ``run_id``."""
+        if (addr, port) not in _SERVED:
+            sink = cls()
+            sink.serve(port, addr)
+            _SERVED[(addr, port)] = sink
+        return _SERVED[(addr, port)]
+
     def close(self) -> None:
-        pass
+        pass  # the server stays up for the process's next runs and a last scrape
 
 
 def otlp_provider(

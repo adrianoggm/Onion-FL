@@ -281,21 +281,6 @@ class WesadPickleReader:
         return pd.DataFrame(columns)
 
 
-def _glob_regex(pattern: str) -> re.Pattern[str]:
-    parts, seen = [], False
-    for token in re.split(r"(\{subject\}|\*|\?)", pattern):
-        if token == "{subject}":
-            parts.append("(?P=subject)" if seen else "(?P<subject>[^/]+)")
-            seen = True
-        elif token == "*":
-            parts.append("[^/]*")
-        elif token == "?":
-            parts.append("[^/]")
-        else:
-            parts.append(re.escape(token))
-    return re.compile("".join(parts))
-
-
 def source_files(source: SourceSpec, root: Path) -> list[tuple[Path, str | None]]:
     """Files the path matches, with the subject that ``{subject}`` captured."""
     regex = _glob_regex(source.path)
@@ -435,6 +420,11 @@ class JoinParams(BaseModel):
     deduplicate: bool = Field(
         False, description="Una fila por clave en el otro fichero"
     )
+    pad: dict[str, PositiveInt] = Field(
+        default_factory=dict,
+        description="Claves que se rellenan con ceros por la derecha hasta esa "
+        "longitud en ambos lados antes de unir (hojas que perdieron los ceros finales)",
+    )
 
 
 @steps.register(
@@ -444,9 +434,10 @@ class JoinParams(BaseModel):
     params=JoinParams,
 )
 class JoinStep:
-    def __init__(self, source, by, time, how, deduplicate) -> None:
+    def __init__(self, source, by, time, how, deduplicate, pad) -> None:
         self.source = SourceSpec.model_validate(source)
         self.by, self.how, self.deduplicate = list(by), how, deduplicate
+        self.pad = dict(pad)
         self.time = None if time is None else TimeJoin.model_validate(time)
         self._right: pd.DataFrame | None = None
 
@@ -459,6 +450,10 @@ class JoinStep:
         _require(right, keys, "join")
         for key in keys:
             left[key], right[key] = left[key].astype(str), right[key].astype(str)
+            if key in self.pad:
+                width = self.pad[key]
+                left[key] = left[key].str.ljust(width, "0")
+                right[key] = right[key].str.ljust(width, "0")
         if self.time is not None:
             t = self.time
             left["_time"] = pd.to_datetime(left[t.left], errors="coerce").dt.floor(

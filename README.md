@@ -43,7 +43,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
 | Continuum | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring. Replay memory, triggers and versions are next (C4–C7, [#159](https://github.com/adrianoggm/Onion-FL/issues/159)–[#163](https://github.com/adrianoggm/Onion-FL/issues/163)) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
-| Tests | ✅ | 1027 tests. With SWELL, WESAD and a local broker, 1023 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
+| Tests | ✅ | 1089 tests. With SWELL, WESAD and a local broker, 1085 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
 
@@ -231,11 +231,12 @@ Every runtime event is enriched into one schema and written to `events.jsonl`, t
   - Conflict between datasets: the cosine of their mean updates in the shared groups.
   - Drift across rounds, participation (with late updates and time to quorum) and fairness of the edge scores per dataset.
   - Traffic per link and round, which the run recorder adds.
-- **Analysis.** `load_runs("runs/").compare(level="fog", metric="accuracy", by=["topology_id"])` gives the mean ± 95% CI over seeds per round, plus the spread across the nodes of the level. `onion_fl report` builds an HTML page from it.
+- **Analysis.** `load_runs("runs/").compare(level="fog", metric="accuracy", by=["topology_id"])` gives the mean ± 95% CI over seeds per round, plus the spread across the nodes of the level. The runs of a group are pooled, so for a sweep over one topology add `scenario` or `config_id` to `by`. `onion_fl report` builds an HTML page from it.
 - **Studio.** `onion_fl serve` gives the same views in the browser, and follows running runs live.
 - **Live.**
-  - The `prometheus` sink serves `onionfl_*` series on port 9464 for the Grafana dashboard.
+  - The `prometheus` sink serves `onionfl_*` series on port 9464 for the Grafana dashboard. One server per process holds the runs of a sweep, told apart by `run_id`, so it needs `--workers 1`.
   - The `otel` sink creates one span per send and per receive, linked by the message id. It exports them to the collector of the Docker stack.
+  - A real run feeds both when the launcher merges the node processes' events, once the run has ended.
 
 ---
 

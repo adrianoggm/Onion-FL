@@ -224,6 +224,20 @@ def test_the_plan_of_an_experiment(client: TestClient) -> None:
     assert set(previews[0]["composition"]) == {"fog_a", "fog_b"}
 
 
+def test_the_plan_shows_the_config_id_a_run_from_the_root_signs(
+    client: TestClient, root: Path
+) -> None:
+    from onion_fl.experiment.config import load_experiment
+    from onion_fl.experiment.sweep import scenarios
+
+    previews = client.post("/api/experiments/demo_exp/plan").json()
+
+    config = load_experiment(root / "experiments" / "demo_exp.yaml")
+    assert [p["config_id"] for p in previews] == [
+        s.config_id for s in scenarios(config)
+    ]
+
+
 def test_a_plan_without_data_says_what_is_missing(
     client: TestClient, root: Path
 ) -> None:
@@ -450,6 +464,35 @@ def test_broken_files_are_left_out_of_the_lists(client: TestClient, root: Path) 
     assert [t["name"] for t in client.get("/api/topologies").json()] == ["two_fogs"]
     assert [e["name"] for e in client.get("/api/experiments").json()] == ["demo_exp"]
     assert client.get("/api/experiments/broken").status_code == 422
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["name: [unclosed\n", "- a list\n- not a mapping\n"],
+    ids=["syntax", "list"],
+)
+def test_files_that_are_not_yaml_mappings_are_reported(
+    client: TestClient, root: Path, text: str
+) -> None:
+    for kind in ("topologies", "experiments"):
+        (root / kind / "odd.yaml").write_text(text, encoding="utf-8")
+
+    assert [t["name"] for t in client.get("/api/topologies").json()] == ["two_fogs"]
+    assert [e["name"] for e in client.get("/api/experiments").json()] == ["demo_exp"]
+    assert client.get("/api/experiments/odd").status_code == 422
+    assert client.get("/api/topologies/odd").status_code == 422
+
+
+def test_an_experiment_whose_sweep_breaks_is_reported(
+    client: TestClient, root: Path
+) -> None:
+    raw = yaml.safe_load((root / "experiments" / "demo_exp.yaml").read_text("utf-8"))
+    raw["sweep"] = {"rounds": [0]}  # valid as a sweep, not as a scenario
+    (root / "experiments" / "swept.yaml").write_text(yaml.safe_dump(raw), "utf-8")
+
+    response = client.get("/api/experiments/swept")
+
+    assert response.status_code == 422 and "rounds" in response.json()["errors"][0]
 
 
 def test_preview_errors_name_the_problem(client: TestClient) -> None:

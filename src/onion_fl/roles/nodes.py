@@ -31,6 +31,7 @@ from onion_fl.learning.aggregators import Contribution
 from onion_fl.learning.metrics import compute, predict, reduce_reports
 from onion_fl.learning.model import group_of, is_aux, load_arrays, state_arrays
 from onion_fl.learning.sharing import SharingPolicy, keys_crossing, keys_held_at
+from onion_fl.learning.trainers import frozen_keys
 from onion_fl.observability.diagnostics import RoundView
 from onion_fl.observability.diagnostics import diagnostics as diagnostic_plugins
 from onion_fl.roles.policies import AllChildren, Drop, quorum_needed
@@ -170,6 +171,11 @@ class _Collector(Node):
         ctx.send(ack)  # every hello, so a lost ack is answered by the next retry
         if not self.ready and self.children <= set(self.registered):
             self._finish_registration(ctx)
+        elif self.ready:
+            self._late_child(ctx)
+
+    def _late_child(self, ctx: Context) -> None:
+        """A child said hello after registration ended (``register_timeout``)."""
 
     def _finish_registration(self, ctx: Context) -> None:
         self.ready = True
@@ -234,10 +240,21 @@ class _Collector(Node):
             self._abandon(round, ctx)
         self.round, self.open, self.opened_at = round, True, ctx.now()
         self.responses, self.late, self.quorum_at = {}, 0, None
-        selected = self.participation.select(self.trainers(), round, ctx.rng)
+        # A round a child owes stops counting once its update would be dropped: a
+        # lost message must not keep the child waiting for good.
+        self.owed = {
+            child: kept
+            for child, rounds in self.owed.items()
+            if (
+                kept := [
+                    r for r in rounds if self.staleness.weight(round - r) is not None
+                ]
+            )
+        }
+        trainers = self.trainers()
         if self.close_at_quorum:  # FedBuff-style: a busy child gets no newer model
-            selected = [c for c in selected if c not in self.owed]
-        self.participants = selected
+            trainers = [c for c in trainers if c not in self.owed]
+        self.participants = self.participation.select(trainers, round, ctx.rng)
         ctx.emit(
             "round.participants",
             len(self.participants),
@@ -279,7 +296,9 @@ class _Collector(Node):
             if limit is not None:
                 alive = {r for r in alive if round - r <= limit}
         self.sent_history = {r: s for r, s in self.sent_history.items() if r in alive}
-        if not self.participants:
+        # Every child busy: the round waits for their late updates, not closing empty.
+        busy = self.close_at_quorum and bool(self.owed)
+        if not self.participants and not busy:
             self._close(ctx)
         elif self.deadline is not None:
             ctx.set_timer(self.deadline, "deadline")
@@ -748,8 +767,18 @@ class Aggregator(_Greeter, _Collector):
         self.parent_level = self.levels[self.levels.index(self.level) - 1]
 
     def _registered(self, ctx: Context) -> None:
-        meta = {"role": "aggregator", "edges": self.edges_below()}
-        self._say_hello(meta | {"holders": self.holders_below()}, ctx)
+        self._say_hello(self._meta(), ctx)
+
+    def _late_child(self, ctx: Context) -> None:
+        if self._meta() != self._hello_meta:  # the parent counts what is below now
+            self._say_hello(self._meta(), ctx)
+
+    def _meta(self) -> dict[str, Any]:
+        return {
+            "role": "aggregator",
+            "edges": self.edges_below(),
+            "holders": self.holders_below(),
+        }
 
     def on_timer(self, name: str, ctx: Context) -> None:
         if name == "hello":
@@ -1076,7 +1105,12 @@ class Edge(_Greeter, Node):
         if attacking:
             arrays = self.attack.on_update(arrays, received, child_rng(ctx.rng))
         if self.privacy is not None:
-            arrays = self.privacy.on_update(arrays, received, child_rng(ctx.rng))
+            # A frozen group crosses as it arrived: nothing to hide, and noise
+            # on it would only make it drift.
+            fixed = {k: arrays[k] for k in frozen_keys(self.trainer, arrays)}
+            released = {k: v for k, v in arrays.items() if k not in fixed}
+            arrays = self.privacy.on_update(released, received, child_rng(ctx.rng))
+            arrays |= fixed
             ctx.emit(
                 "diagnostic.privacy_epsilon",
                 self.privacy.epsilon(),

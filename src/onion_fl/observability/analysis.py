@@ -98,7 +98,12 @@ class Runs:
         over: str = "seed",
         **tags: Any,
     ) -> pd.DataFrame:
-        """Mean ± 95 % CI over ``over`` per group and round, plus the spread across nodes."""
+        """Mean ± 95 % CI over ``over`` per group and round, plus the spread across nodes.
+
+        The runs of a group are pooled as repetitions: grouped only by
+        ``topology_id``, the scenarios of a sweep over one topology are averaged
+        together. Add ``scenario`` or ``config_id`` to ``by`` to keep them apart.
+        """
         df = self.metrics(level=level, name=metric, **tags)
         columns = [
             *by,

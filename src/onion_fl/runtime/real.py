@@ -98,6 +98,9 @@ class RealRuntime:
         # The codecs this runtime's links use, by the name a message carries: a
         # received message names one of these, never a plugin to import.
         self._codecs: dict[str, Codec] = {}
+        # Message ids each hosted node already handled: a message delivered twice
+        # (an inbox subscribed by two transports, a QoS-1 redelivery) runs once.
+        self._seen: dict[str, set[str]] = {}
         self._transports: dict[str, Any] = {}
         self._subscribed: set[tuple[int, str]] = set()
         self._timers: dict[tuple[str, str], int] = {}
@@ -255,6 +258,18 @@ class RealRuntime:
                 node_id, "message.rejected", None, {"reason": f"undecodable: {exc}"}
             )
             return
+        msg_id = msg.meta.get("msg_id")
+        if msg_id is not None:
+            seen = self._seen.setdefault(node_id, set())
+            if msg_id in seen:
+                self._record(
+                    node_id,
+                    "message.duplicate",
+                    None,
+                    {"src": msg.src, "kind": msg.kind, "msg_id": msg_id},
+                )
+                return
+            seen.add(msg_id)
         sent_at = msg.meta.get("sent_at")
         tags = {
             "src": msg.src,

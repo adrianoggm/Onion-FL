@@ -179,7 +179,9 @@ def _assign(
     order = [names[i] for i in rng.permutation(len(names)) if names[i] not in excluded]
     test_share = config.test if override.test is None else override.test
     val_share = config.val if override.val is None else override.val
-    test = _pick(test_share, order, set(), "test", dataset)
+    # A listed val is taken before a test share is drawn, never drawn into it.
+    listed_val = set(val_share) if isinstance(val_share, list) else set()
+    test = _pick(test_share, order, listed_val, "test", dataset)
     val = _pick(val_share, order, set(test), "val", dataset)
     train = [s for s in names if s not in set(test) | set(val) | set(excluded)]
     if not train:

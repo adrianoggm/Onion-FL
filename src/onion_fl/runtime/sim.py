@@ -161,6 +161,8 @@ class SimRuntime:
     def _on_start(self, node_id: str) -> None:
         if self._is_up(node_id, None):
             self._handle(node_id, "on_start", lambda node, ctx: node.on_start(ctx))
+        elif (back := self._back_at(node_id)) is not None:
+            self._push(back, "start", (node_id,))  # it starts when it is back
 
     def _on_deliver(self, src: str, dst: str, data: bytes, msg_id: str) -> None:
         if self._defer_if_busy(dst, "deliver", (src, dst, data, msg_id)):
@@ -187,10 +189,15 @@ class SimRuntime:
             return  # re-armed or cancelled
         if self._defer_if_busy(node_id, "timer", (node_id, name, token)):
             return
-        del self._timers[(node_id, name)]
         if not self._is_up(node_id, None):
+            back = self._back_at(node_id)
+            if back is not None:  # a local timer waits for the node, as when busy
+                self._push(back, "timer", (node_id, name, token))
+                return
+            del self._timers[(node_id, name)]
             self._record(node_id, "timer.dropped_offline", None, {"timer": name})
             return
+        del self._timers[(node_id, name)]
         self._handle(node_id, "on_timer", lambda node, ctx: node.on_timer(name, ctx))
 
     def _on_compute_done(self, node_id: str, outbox: list[Message]) -> None:
@@ -232,6 +239,11 @@ class SimRuntime:
         return model is None or model.is_up(
             self.now, round=round, node_id=node_id, seed=self.seed
         )
+
+    def _back_at(self, node_id: str) -> float | None:
+        """When an offline node is up again; None if it never is (a crash)."""
+        up_again = getattr(self._availability[node_id], "up_again", None)
+        return None if up_again is None else up_again(self.now)
 
     def _handle(self, node_id: str, handler: str, call: Any) -> None:
         ctx = _SimContext(self, node_id)

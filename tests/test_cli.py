@@ -242,6 +242,14 @@ def test_config_errors_name_their_path(capsys, workspace: Path) -> None:
     assert code == 2 and "rounds" in err
 
 
+def test_a_file_that_is_not_yaml_is_reported(capsys, tmp_path: Path) -> None:
+    (tmp_path / "bad.yaml").write_text("name: [unclosed\n", encoding="utf-8")
+
+    code, _, err = run(capsys, "plan", str(tmp_path / "bad.yaml"))
+
+    assert code == 2 and "bad.yaml" in err and "line 1" in err
+
+
 def test_baseline_reports_a_missing_experiment(capsys, tmp_path: Path) -> None:
     code, _, err = run(capsys, "baseline", str(tmp_path / "missing.yaml"))
 

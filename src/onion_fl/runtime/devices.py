@@ -123,6 +123,12 @@ class Schedule:
     def is_up(self, t: float, round: int | None, node_id: str, seed: int) -> bool:
         return not any(start <= t < end for start, end in self.offline)
 
+    def up_again(self, t: float) -> float:
+        """When a node offline at ``t`` is up again; windows may touch."""
+        while not self.is_up(t, None, "", 0):
+            t = max(end for start, end in self.offline if start <= t < end)
+        return t
+
 
 class CrashAtParams(BaseModel):
     t: float = Field(ge=0, description="Instante virtual de la caída")

@@ -121,15 +121,36 @@ def test_traffic_is_counted_per_node_and_kind(prometheus) -> None:
     assert updates == 2 and size > 0
 
 
+NO_TAGS = {"metric": "", "datasets": "", "dst": ""}
+
+
 def test_diagnostics_are_exported_per_group(prometheus) -> None:
     sink, run = prometheus
 
     value = sink.registry.get_sample_value(
         "onionfl_diagnostic",
-        labels(run, "fog", "fog_0", name="divergence_l2", group="trunk"),
+        labels(run, "fog", "fog_0", name="divergence_l2", group="trunk", **NO_TAGS),
     )
 
     assert value == pytest.approx(0.0)  # both edges add the same constant
+
+
+def test_diagnostics_keep_apart_what_their_tags_tell_apart() -> None:
+    sink = PrometheusSink(registry=CollectorRegistry())
+    node = {"run_id": "r", "topology_id": "t", "level": "fog", "node": "fog_0"}
+    for name, tags in [
+        ("fairness", {"metric": "global.accuracy", "dataset": "a"}),
+        ("fairness", {"metric": "global.macro_f1", "dataset": "a"}),
+        ("dataset_conflict", {"group": "trunk", "datasets": "a|b"}),
+        ("dataset_conflict", {"group": "trunk", "datasets": "a|c"}),
+        ("communication", {"src": "fog_0", "dst": "cloud"}),
+        ("communication", {"src": "fog_0", "dst": "e1"}),
+    ]:
+        event = {"kind": "diagnostic", "name": f"diagnostic.{name}", "tags": tags}
+        sink.write(node | event | {"value": 1.0})
+
+    (family,) = [f for f in sink.registry.collect() if f.name == "onionfl_diagnostic"]
+    assert len(family.samples) == 6
 
 
 def test_drops_and_failed_quorums_are_counted(tmp_path: Path) -> None:

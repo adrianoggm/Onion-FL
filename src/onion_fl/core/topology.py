@@ -279,7 +279,11 @@ def load_topology(path: str | Path) -> Topology:
     path = Path(path)
     if not path.exists():
         raise TopologyError(f"topology file not found: {path}")
-    return parse_topology(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise TopologyError(f"{path.name} is not valid YAML: {exc}") from None
+    return parse_topology(raw)
 
 
 def _compile_compact(data: dict[str, Any]) -> dict[str, Any]:

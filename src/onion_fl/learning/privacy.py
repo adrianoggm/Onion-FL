@@ -74,7 +74,7 @@ class LocalDPParams(BaseModel):
     explain=(
         "No confía en el agregador; informa ε por ronda con un contable RDP sin "
         "amplificación, con sensibilidad 2C porque cualquier actualización puede "
-        "sustituirse por otra. Los grupos locales no se tocan."
+        "sustituirse por otra. Los grupos locales y los congelados no se tocan."
     ),
 )
 class LocalDP(Accountant):

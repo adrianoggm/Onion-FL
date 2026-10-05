@@ -24,6 +24,7 @@ from onion_fl.learning.model import (
     DataShape,
     ModularMLP,
     ModularMLPConfig,
+    load_arrays,
     state_arrays,
 )
 from onion_fl.learning.trainers import trainers
@@ -277,6 +278,36 @@ def slow(node_id: str, seconds: float = 100.0, **kw) -> EdgeSpec:
     return edge(
         node_id, compute=compute_models.create("samples_per_second", speed), **kw
     )
+
+
+def test_an_edge_offline_at_the_start_joins_when_it_is_back() -> None:
+    away = availability_models.create("schedule", {"offline": [[0.0, 30.0]]})
+    edges = {"fog_0": [edge("e1"), edge("e2", availability=away)]}
+
+    federation = run(tree(1), edges, rounds=2)
+
+    assert names(federation, "run.finished")
+    assert {e["tags"]["child"] for e in names(federation, "node.registered")} >= {
+        "e1",
+        "e2",
+    }
+
+
+def test_an_aggregator_tells_its_parent_about_children_that_register_late() -> None:
+    federation = build_federation(
+        tree(1, fog={"register_timeout": 1}),
+        {"fog_0": [edge("e1")]},
+        initial_state=INITIAL,
+        rounds=1,
+    )
+    fog, ctx = federation.aggregators["fog_0"], FakeContext("fog_0")
+    fog.on_timer("register", ctx)  # nobody has said hello yet
+    hello = {"role": "edge", "edges": 1, "holders": {"trunk": 1}}
+    for _ in range(2):  # a retry changes nothing
+        fog.on_message(Message(kind="hello", src="e1", dst="fog_0", meta=hello), ctx)
+
+    sent = [m.meta for m in ctx.sent if m.kind == "hello"]
+    assert [(m["edges"], m["holders"]) for m in sent] == [(0, {}), (1, {"trunk": 1})]
 
 
 def test_late_updates_are_dropped_by_default() -> None:
@@ -783,6 +814,52 @@ def test_a_buffering_round_counts_late_updates_and_skips_busy_children() -> None
     np.testing.assert_allclose(ctx.sent[-1].payload.state[KEY], 5.0)
 
 
+def test_a_child_whose_answer_was_lost_is_drawn_again_once_it_would_be_dropped() -> (
+    None
+):
+    staleness = {"name": "next_round", "max_staleness": 1}
+    fog, ctx = fog_by_hand(
+        **STALE | {"quorum": 1, "close_at_quorum": True, "staleness": staleness}
+    )
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)  # e2's answer is lost
+    for r in (2, 3):
+        fog.on_message(model_msg(r), ctx)
+        fog.on_message(update_msg("e1", r, 1.0, 1), ctx)
+
+    sent_to = [m.dst for m in ctx.sent if m.kind == "global_model" and m.round == 3]
+    assert sent_to == ["e1", "e2"]  # a round-1 update would be two rounds late now
+
+
+def test_a_buffering_round_with_every_child_busy_waits_for_a_late_update() -> None:
+    fog, ctx = fog_by_hand(**STALE | {"quorum": 1, "close_at_quorum": True})
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)  # closes round 1; e2 still busy
+    fog.on_message(model_msg(2), ctx)  # only e1 gets it
+    fog.on_message(model_msg(3), ctx)  # the parent moved on: both are busy
+
+    assert fog.open and not [m for m in ctx.sent if m.kind == "update" and m.round == 3]
+    fog.on_message(update_msg("e2", 1, 5.0, 2), ctx)  # late, and it is K = 1
+
+    assert ctx.sent[-1].kind == "update" and ctx.sent[-1].round == 3
+    np.testing.assert_allclose(ctx.sent[-1].payload.state[KEY], 5.0)
+
+
+def test_a_fraction_is_drawn_among_the_children_that_are_not_busy() -> None:
+    fraction = {"name": "fraction", "p": 0.5}
+    fog, ctx = fog_by_hand(
+        **STALE | {"quorum": 1, "close_at_quorum": True, "participation": fraction}
+    )
+    fog.on_message(model_msg(1), ctx)
+    (busy,) = fog.participants  # it never answers
+    (free,) = {"e1", "e2"} - {busy}
+
+    for r in range(2, 10):
+        fog.on_message(model_msg(r), ctx)
+        assert fog.participants == [free]
+        fog.on_message(update_msg(free, r, 1.0, 1), ctx)
+
+
 def test_an_open_round_overtaken_by_its_parent_keeps_its_updates() -> None:
     fog, ctx = fog_by_hand(**STALE)
     fog.on_message(model_msg(1), ctx)
@@ -1038,6 +1115,35 @@ def test_local_dp_clips_only_what_crosses_to_the_parent() -> None:
     federation = run(tree(1), {"fog_0": [spec]}, sharing="fedper")
 
     assert_global(federation, "trunk.0.weight", 1.0)
+
+
+class FrozenHead:
+    """The stub trainer with the head frozen, as FedBABU freezes it."""
+
+    params = dataclasses.make_dataclass("P", [("frozen", list)])(["head.*"])
+
+    def __init__(self) -> None:
+        self.stub = trainers.create("stub", {"shift": 1.0})
+
+    def train(self, model, data=None, received=None, ctx=None):
+        head = {k: v for k, v in state_arrays(model).items() if k.startswith("head.")}
+        result = self.stub.train(model, data, received, ctx)
+        load_arrays(model, head)  # frozen: it never moves
+        return result
+
+
+def test_local_dp_leaves_the_frozen_groups_as_they_arrived() -> None:
+    from onion_fl.learning.privacy import privacies
+
+    dp = privacies.create("local_dp", {"clip": 1.0, "sigma": 1.0})
+    spec = EdgeSpec("e1", model(A), trainer=FrozenHead(), privacy=dp)
+
+    federation = run(tree(1), {"fog_0": [spec]}, rounds=3)
+
+    for key in (k for k in INITIAL if k.startswith("head.")):
+        np.testing.assert_array_equal(federation.coordinator.state[key], INITIAL[key])
+    trunk = federation.coordinator.state["trunk.0.weight"]
+    assert not np.allclose(trunk, shifted("trunk.0.weight", 3.0))  # noised
 
 
 def test_the_statistics_count_the_holders_of_each_group() -> None:

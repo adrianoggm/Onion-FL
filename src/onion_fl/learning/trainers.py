@@ -9,7 +9,7 @@ FedAvg weight. Initialisations run once on the coordinator's global model.
 
 import copy
 import fnmatch
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -58,6 +58,14 @@ def trainable(model: nn.Module, frozen: Sequence[str]) -> list[str]:
         name
         for name, _ in model.named_parameters()
         if not any(fnmatch.fnmatchcase(group_of(name), p) for p in frozen)
+    ]
+
+
+def frozen_keys(trainer: Any, keys: Iterable[str]) -> list[str]:
+    """The ``keys`` of groups the trainer never trains (its ``frozen``)."""
+    patterns = getattr(getattr(trainer, "params", None), "frozen", None) or ()
+    return [
+        k for k in keys if any(fnmatch.fnmatchcase(group_of(k), p) for p in patterns)
     ]
 
 
