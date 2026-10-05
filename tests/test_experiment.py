@@ -704,6 +704,28 @@ def test_worker_processes_cannot_share_a_metrics_port(workspace: Path) -> None:
         run_experiment(config, workers=2)
 
 
+def _mark(item: tuple[Path, int]) -> int:
+    import time
+
+    folder, i = item
+    if i == 1:
+        raise RuntimeError("scenario 1 broke")
+    time.sleep(3.0 if i == 0 else 0.2)
+    (folder / f"{i}.done").touch()
+    return i
+
+
+def test_a_parallel_sweep_stops_at_its_first_failure(tmp_path: Path) -> None:
+    from onion_fl.experiment.runner import _in_parallel
+
+    with pytest.raises(RuntimeError, match="scenario 1"):  # while scenario 0 runs
+        _in_parallel(_mark, [(tmp_path, i) for i in range(20)], workers=2)
+
+    later = [p for p in tmp_path.glob("*.done") if p.stem != "0"]
+    assert len(later) < 8  # the ones handed to a worker; not the other 18
+    assert _in_parallel(_mark, [(tmp_path, 3), (tmp_path, 2)], workers=2) == [3, 2]
+
+
 def test_a_custom_scorer_cannot_go_to_worker_processes(workspace: Path) -> None:
     with pytest.raises(ValueError, match="workers=1"):
         run_experiment(

@@ -14,7 +14,7 @@ import hashlib
 import json
 import math
 from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from itertools import permutations
 from pathlib import Path
 from typing import Any
@@ -959,5 +959,17 @@ def run_experiment(
     check_scenarios(todo)  # also fills the caches before any worker reads them
     if workers <= 1:
         return [run_scenario(s, evaluate) for s in todo]
+    return _in_parallel(run_scenario, todo, workers)
+
+
+def _in_parallel(fn: Callable[[Any], Any], items: Sequence[Any], workers: int) -> list:
+    """``fn`` over ``items`` in worker processes, in order; the first failure, in
+    whatever order they finish, cancels what has not started and is raised."""
     with ProcessPoolExecutor(max_workers=workers) as pool:
-        return list(pool.map(run_scenario, todo))
+        futures = [pool.submit(fn, item) for item in items]
+        for done in as_completed(futures):
+            if done.exception() is not None:
+                for future in futures:
+                    future.cancel()
+                raise done.exception()
+        return [future.result() for future in futures]
