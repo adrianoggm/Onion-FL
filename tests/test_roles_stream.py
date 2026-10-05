@@ -382,3 +382,106 @@ def test_a_training_that_raises_leaves_no_trace_in_the_local_model() -> None:
     first, retry = trainer.heads[0], trainer.heads[1]
     for key, value in first.items():
         np.testing.assert_array_equal(retry[key], value, err_msg=key)
+
+
+# --- replay memory (continuum C4) ---------------------------------------------------
+
+
+def replaying(trainer, name: str = "fifo", ratio: float = 0.5, rounds: int = 8, **kw):
+    from onion_fl.continuum.memory import memories
+
+    replay = memories.create(name, {} if name == "none" else {"capacity": 1000})
+    replay.rng = np.random.default_rng(7)
+    spec = EdgeSpec(
+        "a1",
+        ModularMLP(CONFIG, [A], seed=0),
+        trainer=trainer,
+        stream=kw.pop("stream", stream_of("a-1")),
+        replay=replay,
+        replay_ratio=ratio,
+    )
+    federation = build_federation(
+        tree(1, fog={"deadline": 1}),
+        {"fog_0": [spec]},
+        initial_state=INITIAL,
+        rounds=rounds,
+        round_every=EVERY / SPEED,
+    )
+    federation.run()
+    return federation, federation.edges["a1"]
+
+
+@pytest.mark.parametrize("how", ["raise", "nan"])
+def test_a_row_enters_the_memory_only_once_its_training_succeeded(how: str) -> None:
+    flaky = Flaky(how)
+    federation, edge = replaying(flaky)
+
+    consumed = np.flatnonzero(edge._consumed_by >= 0)
+    assert sorted(edge.replay.rows().tolist()) == consumed.tolist()
+    assert set(flaky.failed) <= set(edge.stream.data.t[edge.replay.rows()])
+
+
+def test_each_training_replays_its_share_of_the_memory() -> None:
+    recording = Recording()
+    replaying(recording, ratio=0.5)
+
+    seen: set[float] = set()
+    assert len(recording.calls) > 2
+    for _, t in recording.calls:
+        recent = [x for x in t if x not in seen]
+        replayed = len(t) - len(recent)
+        # replay_ratio 0.5: as many replayed rows as recent ones, if kept
+        assert recent and replayed == min(len(recent), len(seen))
+        seen |= set(t.tolist())
+
+
+def test_the_memory_is_reported_each_round() -> None:
+    federation, edge = replaying(Recording())
+
+    reports = events(federation, "diagnostic.memory", "a1")
+    assert [e["tags"]["round"] for e in reports] == list(range(1, 9))
+    assert reports[-1]["value"] == len(edge.replay.rows())
+    assert sum(reports[-1]["tags"]["classes"]) == reports[-1]["value"]
+    assert reports[-1]["tags"]["capacity"] == 1000 and reports[-1]["tags"]["age"] > 0
+
+
+def test_a_replay_run_is_deterministic() -> None:
+    def trace():
+        federation, _ = replaying(Recording(), name="reservoir")
+        return [
+            (e["name"], e["node"], e["tags"].get("round"), e["value"])
+            for e in federation.runtime.events
+        ], federation.coordinator.state
+
+    (first, state), (second, again) = trace(), trace()
+    assert first == second
+    for key, value in state.items():
+        np.testing.assert_array_equal(again[key], value)
+
+
+def test_without_replay_the_edge_trains_as_before() -> None:
+    plain = Recording()
+    federation = build_federation(
+        tree(1),
+        {
+            "fog_0": [
+                EdgeSpec(
+                    "a1",
+                    ModularMLP(CONFIG, [A], seed=0),
+                    trainer=plain,
+                    stream=stream_of("a-1"),
+                )
+            ]
+        },
+        initial_state=INITIAL,
+        rounds=8,
+        round_every=EVERY / SPEED,
+    )
+    federation.run()
+    nothing = Recording()
+    _, edge = replaying(nothing, name="none")
+
+    assert [t.tolist() for _, t in nothing.calls] == [
+        t.tolist() for _, t in plain.calls
+    ]
+    assert edge.replay.rows().tolist() == []

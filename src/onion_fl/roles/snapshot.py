@@ -66,6 +66,12 @@ def snapshot_federation(federation: Federation) -> FederationSnapshot:
             {"rng": rng_state(runtime._rng(node_id))},
         )
         state.arrays |= _prefixed("privacy", getattr(edge.privacy, "state", dict)())
+        if (
+            getattr(edge, "replay", None) is not None
+        ):  # saved; restored with C9-era streams
+            replay, meta = edge.replay.state()
+            state.arrays |= _prefixed("replay", replay)
+            state.meta["replay"] = meta
         export = getattr(edge.trainer, "export_memory", None)
         if export is not None:
             memory, meta = export()

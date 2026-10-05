@@ -60,6 +60,8 @@ class EdgeSpec:
     attack: Any = None
     privacy: Any = None
     stream: Any = None  # an EdgeStream: rows arrive over time (continuum C3)
+    replay: Any = None  # a replay memory of the stream's rows (continuum C4)
+    replay_ratio: float = 0.0  # the share of each training that comes from it
 
 
 @dataclass
@@ -195,6 +197,8 @@ def build_federation(
                 attack=spec.attack,
                 privacy=spec.privacy,
                 stream=spec.stream,
+                replay=spec.replay,
+                replay_ratio=spec.replay_ratio,
                 metrics=list(metrics),
                 finetuner=(
                     create(trainer_plugins, finetune)
