@@ -1,15 +1,15 @@
 {
-  "run_id": "20261005T101016Z-786d09d6609a",
+  "run_id": "20261005T103500Z-71923eb2c596",
   "topology_id": "ff55fe4d2ce1a807f764bcc5205a8d2d4d43ab3d533163a1d13e173a9a6725fa",
   "config_id": "64dffbbe3fe898ad7920c27ae54c67b31e05f3630d743b77117f3cf8d8a045a7",
   "data_id": "f79c1afad836591c82f72c11c6409118eeeb9e60c814b60214f166762d92b2c0",
   "code_version": {
-    "commit": "2da15427cb76ebee131f0ac10b7258178479d097",
+    "commit": "64e3587090996349ddd745ff1a5b51af42ae5c11",
     "dirty": false
   },
   "seed": 2,
   "scenario": "labels.fraction=0.2",
-  "started_at": "2026-10-05T10:10:16.256382+00:00",
+  "started_at": "2026-10-05T10:35:00.972264+00:00",
   "status": "finished",
   "config": {
     "name": "stream_swell_wesad",
@@ -114,6 +114,6 @@
       "delay": 600.0
     }
   },
-  "finished_at": "2026-10-05T10:10:34.632777+00:00",
-  "run_hash": "ce018493769c32a9786ffe4ff6dcc2b502ac09446abb3594f8e41fc71b4e0cc3"
+  "finished_at": "2026-10-05T10:35:21.679114+00:00",
+  "run_hash": "88b210cb84a035795f046484b35e2e2fde197dec54ea4387ea5d85fb02d19958"
 }

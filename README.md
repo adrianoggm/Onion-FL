@@ -374,18 +374,18 @@ Source: [results/continuum_warm_start/](results/continuum_warm_start/INDEX.md), 
 
 ### New framework: SWELL and WESAD as streams
 
-Source: [results/continuum_stream/](results/continuum_stream/INDEX.md), commit `2da1542`. It is `experiments/stream_swell_wesad.yaml`:
+Source: [results/continuum_stream/](results/continuum_stream/INDEX.md), commit `64e3587`. It is `experiments/stream_swell_wesad.yaml`:
 - each training subject replays its rows in time order, after a 20-minute bootstrap;
-- a round comes every 10 minutes of data, 17 in all;
+- a round comes every 10 minutes of data, 18 in all, until the last label arrives;
 - every label, or a seeded fifth of them, arrives 10 minutes late;
-- each round trains only on what became trainable since the last one.
+- each round trains only on the rows it has not used yet.
 
 Macro-F1, mean ± 95% CI over 3 seeds:
 
 | Labels | Prequential SWELL | Prequential WESAD | Test SWELL | Test WESAD |
 |---|---|---|---|---|
-| Every row | 0.783 ± 0.045 | 0.000 ± 0.000 | 0.403 ± 0.000 | 0.262 ± 0.000 |
-| A fifth | 0.800 ± 0.037 | 0.000 ± 0.000 | 0.403 ± 0.000 | 0.262 ± 0.000 |
+| Every row | 0.783 ± 0.045 | 0.000 ± 0.000 | 0.404 ± 0.000 | 0.262 ± 0.000 |
+| A fifth | 0.800 ± 0.037 | 0.000 ± 0.000 | 0.404 ± 0.000 | 0.262 ± 0.000 |
 
 - **The stream mechanics hold on the real recordings:** every row arrives in order, no label trains before it arrives, and two runs of the same seed are identical.
 - **This is not yet continual learning.**

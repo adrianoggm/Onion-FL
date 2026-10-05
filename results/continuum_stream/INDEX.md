@@ -14,7 +14,8 @@ This run checks that the stream works on the real recordings. It is not a benchm
 - **The stream.**
   - Each training subject replays its rows in time order, one row at a time (`batch_size: 1`), each when it ends: a SWELL minute, or a WESAD 60 s window (two per minute, half overlapping).
   - Data time runs 60 times faster than the simulation's clock (`speed: 60`).
-  - A round opens every 10 minutes of data. The run lasts until the last row has arrived: 17 rounds, set by SWELL's longest session (159 minutes after the bootstrap).
+  - A round opens every 10 minutes of data.
+  - The observations end with SWELL's longest session, 159 minutes after the bootstrap. The run then drains the last labels, which arrive 10 minutes later: 18 rounds in all.
 - **Bootstrap.**
   - The first 20 minutes of each subject are history: they fit the preprocessing.
   - In round 1, v0 trains on the history whose labels are already due: half of it, given the 10-minute delay. The rest joins in round 2.
@@ -28,14 +29,14 @@ This run checks that the stream works on the real recordings. It is not a benchm
 - **Evaluation.**
   - **Prequential.** Every row that arrives after round 1 is scored by the model the edge was serving when the row came, before the row can train. The few rows that arrive with round 1, before any model is served, are not scored. `prequential` scores every arrival against its true label, which only a simulation can know; `prequential_labelled` scores only the predictions whose label has arrived, which is what a deployment could measure.
   - **Validation subjects** stream for evaluation only.
-  - **Test subjects** never reach an edge. The global model is scored on them every 5 rounds and at the end.
+  - **Test subjects** never reach an edge. The global model is scored on them every 5 rounds and at the end; the test macro-F1 is pooled over the test subjects, from their summed confusion matrices.
 - **Seeds** 0–2.
 
 | Identity | Value |
 |---|---|
 | `topology_id` | `ff55fe4d2ce1a807f764bcc5205a8d2d4d43ab3d533163a1d13e173a9a6725fa` |
 | `data_id` | `f79c1afad836591c82f72c11c6409118eeeb9e60c814b60214f166762d92b2c0` |
-| code | commit `2da1542`, clean tree |
+| code | commit `64e3587`, clean tree |
 | `config_id`, every row labelled | `82b775953ad9bd6093420ea89e6de76b781264d4034aa2bbd189bab42c6b553f` |
 | `config_id`, a fifth labelled | `64dffbbe3fe898ad7920c27ae54c67b31e05f3630d743b77117f3cf8d8a045a7` |
 
@@ -47,26 +48,29 @@ The prequential scores pool every edge's predictions per dataset over the whole 
 
 | Labels | Prequential SWELL | Prequential WESAD | Labelled-only SWELL | Labelled-only WESAD | Test SWELL | Test WESAD |
 |---|---|---|---|---|---|---|
-| Every row | 0.783 ± 0.045 | 0.000 ± 0.000 | 0.781 ± 0.045 | 0.000 ± 0.000 | 0.403 ± 0.000 | 0.262 ± 0.000 |
-| A fifth | 0.800 ± 0.037 | 0.000 ± 0.000 | 0.779 ± 0.029 | 0.000 ± 0.000 | 0.403 ± 0.000 | 0.262 ± 0.000 |
+| Every row | 0.783 ± 0.045 | 0.000 ± 0.000 | 0.783 ± 0.045 | 0.000 ± 0.000 | 0.404 ± 0.000 | 0.262 ± 0.000 |
+| A fifth | 0.800 ± 0.037 | 0.000 ± 0.000 | 0.780 ± 0.029 | 0.000 ± 0.000 | 0.404 ± 0.000 | 0.262 ± 0.000 |
 
 **Volume** (`volume.csv`, seed 0):
 
 | Labels | Dataset | Rows | History | Labelled on arrival | Late labels | Last round with arrivals |
 |---|---|---|---|---|---|---|
-| Every row | SWELL | 2255 | 278 | 122 | 2110 | 17 |
+| Every row | SWELL | 2255 | 278 | 122 | 2133 | 17 |
 | Every row | WESAD | 572 | 371 | 210 | 362 | 6 |
-| A fifth | SWELL | 2255 | 278 | 28 | 419 | 17 |
+| A fifth | SWELL | 2255 | 278 | 28 | 422 | 17 |
 | A fifth | WESAD | 572 | 371 | 33 | 82 | 6 |
 
 - "Labelled on arrival" counts history rows whose label was already due. Every other label is late.
-- A few labels are still due when the run ends.
+- Every label chosen arrives: labelled on arrival plus late labels equals the labelled rows, in every run (2255 of 2255 SWELL rows when every row is labelled).
 
 **Determinism** (`determinism.csv`): running each scenario and seed twice gives the same final model, bit for bit, and the same events, in all 6 pairs.
 
-**The review's buffer fix.**
-- These runs are from after the fix. The first version of the buffer took the last 10 minutes before each round, which can lose or repeat rows when rounds run late; the fix takes what became trainable since the previous round.
-- In these evenly spaced runs, the final models are bit-identical to the first runs, made at commit `c3e7868`.
+**What the reviews changed.** These runs are from after both reviews of PR #171.
+- **The first review** changed the buffer. It had taken the last 10 minutes before each round, which can lose or repeat rows when rounds run late. In these evenly spaced runs the rerun was bit-identical (commits `c3e7868` and `2da1542`).
+- **The second review** made three changes:
+  - the run drains the labels still due after the last row, so it lasts 18 rounds instead of 17, and the last 23 SWELL labels now arrive;
+  - a row counts as used only once a training that used it succeeds;
+  - the test macro-F1 is pooled from the summed confusion matrices instead of averaged over the test subjects. On SWELL that moves it from 0.403 to 0.404.
 
 ## Reading
 
@@ -79,7 +83,7 @@ The prequential scores pool every edge's predictions per dataset over the whole 
   - WESAD edges do train on the stress windows as their labels arrive (rounds 3–7). But each round brings only a few windows, and the head is shared by task with 18 SWELL edges, so the served model never flips before WESAD's sessions end, by round 6.
 - **SWELL's high prequential score mostly measures persistence.**
   - A SWELL condition lasts many minutes, and the model trained on the latest rows predicts the condition the next minute is in. Per round, most windows hold a single class, so the per-round score is 0.5 (all right) or 0 (all wrong), and the misses come at the block changes.
-  - On held-out subjects, the same models score 0.403: the always-stress score.
+  - On held-out subjects, the same models score 0.404: the always-stress score.
 - **Training on the latest rows alone forgets.**
   - At the end, in every run, the global model predicts stress for every test row of both datasets (the confusion matrices are in `summary.json`). A constant predictor scores the same whatever the seed, which is why the test scores have no spread.
   - This is the failure that replay memory (C4) is meant to address.
