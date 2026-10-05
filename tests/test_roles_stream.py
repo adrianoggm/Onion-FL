@@ -485,3 +485,13 @@ def test_without_replay_the_edge_trains_as_before() -> None:
         t.tolist() for _, t in plain.calls
     ]
     assert edge.replay.rows().tolist() == []
+
+
+def test_the_snapshot_saves_the_replay_memory() -> None:
+    from onion_fl.roles import snapshot_federation
+
+    federation, edge = replaying(Recording(), name="reservoir")
+    saved = snapshot_federation(federation).nodes["a1"]
+
+    np.testing.assert_array_equal(saved.arrays["replay/rows"], edge.replay.rows())
+    assert saved.meta["replay"]["seen"] == edge.replay.seen
