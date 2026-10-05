@@ -1370,3 +1370,15 @@ def test_a_restored_model_must_keep_each_datasets_task(workspace: Path) -> None:
 
     with pytest.raises(ConfigError, match="task"):
         plan(parse_experiment(_child(workspace, parent.name)))
+
+
+# --- silently wrong configurations (QA2, #174) --------------------------------------
+
+
+def test_two_entries_cannot_load_the_same_dataset(workspace: Path) -> None:
+    raw = experiment(workspace)
+    twin = {"descriptor": str(workspace / "datasets" / "demo.yaml")}
+    raw["data"] = raw["data"] | {"datasets": {"demo": {}, "demo_again": twin}}
+
+    with pytest.raises(ConfigError, match="demo"):
+        plan(parse_experiment(raw))
