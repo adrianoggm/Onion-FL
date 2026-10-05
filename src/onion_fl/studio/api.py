@@ -265,12 +265,12 @@ def create_app(root: str | Path = ".") -> FastAPI:
     @app.get("/api/topologies/{name}")
     def topology(name: str) -> JSONResponse:
         path = existing("topologies", name)
+        try:
+            graph = load_topology(path).to_graph()
+        except TopologyError as exc:
+            return _errors(str(exc))
         return _json(
-            {
-                "name": name,
-                "yaml": path.read_text(encoding="utf-8"),
-                "graph": load_topology(path).to_graph(),
-            }
+            {"name": name, "yaml": path.read_text(encoding="utf-8"), "graph": graph}
         )
 
     @app.post("/api/topologies/validate")
@@ -336,6 +336,7 @@ def create_app(root: str | Path = ".") -> FastAPI:
         path = existing("experiments", name)
         try:
             config = load_experiment(path)
+            rows = scenario_rows(config)  # a sweep can break what loads
         except ConfigError as exc:
             return _errors(str(exc))
         return _json(
@@ -343,7 +344,7 @@ def create_app(root: str | Path = ".") -> FastAPI:
                 "name": name,
                 "yaml": path.read_text(encoding="utf-8"),
                 "config": config.dump(),
-                "scenarios": scenario_rows(config),
+                "scenarios": rows,
             }
         )
 

@@ -375,9 +375,14 @@ def parse_experiment(raw: Mapping[str, Any]) -> ExperimentConfig:
 
 
 def load_experiment(path: str | Path) -> ExperimentConfig:
-    return parse_experiment(
-        yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-    )
+    path = Path(path)
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"{path.name} is not valid YAML: {exc}") from None
+    if not isinstance(raw, Mapping):
+        raise ConfigError(f"{path.name}: an experiment must be a mapping")
+    return parse_experiment(raw)
 
 
 def experiment_schema() -> dict[str, Any]:
