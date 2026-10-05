@@ -1,0 +1,126 @@
+{
+  "run_id": "20261005T111853Z-27b3a283c230",
+  "topology_id": "ff55fe4d2ce1a807f764bcc5205a8d2d4d43ab3d533163a1d13e173a9a6725fa",
+  "config_id": "127bb8bba6c1eaf1a1924bc64e5a3664784b840136a82c4e35d13c871d566ec3",
+  "data_id": "f79c1afad836591c82f72c11c6409118eeeb9e60c814b60214f166762d92b2c0",
+  "code_version": {
+    "commit": "0ca028eb3a83ac4b7670d8d71a9008575f51b9f1",
+    "dirty": false
+  },
+  "seed": 0,
+  "scenario": "continual.memory=reservoir(capacity=512)",
+  "started_at": "2026-10-05T11:18:53.734461+00:00",
+  "status": "finished",
+  "config": {
+    "name": "stream_replay_swell_wesad",
+    "description": "Solo lo reciente frente a lo reciente con replay, en los streams de SWELL y WESAD.",
+    "topology": "four_fogs_swell_wesad_lossless",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        },
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.0,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.1
+      },
+      "init": "random"
+    },
+    "rounds": 60,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1",
+        "confusion_matrix"
+      ],
+      "edge": {
+        "every": null,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": 1,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 5
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    },
+    "stream": {
+      "order": "timestamp",
+      "batch_size": 1,
+      "speed": 60.0,
+      "start": "aligned",
+      "horizon": "session",
+      "bootstrap": 1200.0,
+      "round_every": 600.0,
+      "window": null
+    },
+    "labels": {
+      "fraction": 1.0,
+      "delay": 600.0
+    },
+    "continual": {
+      "memory": {
+        "name": "reservoir",
+        "capacity": 512
+      },
+      "replay_ratio": 0.5
+    }
+  },
+  "finished_at": "2026-10-05T11:19:17.193153+00:00",
+  "run_hash": "09edb0c1aa0248a71276086b3de7327cda59015e3bf712ba6bccfc114252653a"
+}
