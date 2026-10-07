@@ -95,6 +95,12 @@ class RealRuntime:
         self.events: list[dict[str, Any]] = []
         self._nodes: dict[str, Node] = {}
         self._links: dict[tuple[str, str], tuple[Codec, Any]] = {}
+        # The codecs this runtime's links use, by the name a message carries: a
+        # received message names one of these, never a plugin to import.
+        self._codecs: dict[str, Codec] = {}
+        # Message ids each hosted node already handled: a message delivered twice
+        # (an inbox subscribed by two transports, a QoS-1 redelivery) runs once.
+        self._seen: dict[str, set[str]] = {}
         self._transports: dict[str, Any] = {}
         self._subscribed: set[tuple[int, str]] = set()
         self._timers: dict[tuple[str, str], int] = {}
@@ -141,6 +147,7 @@ class RealRuntime:
     ) -> None:
         """Link two nodes both ways. ``profile`` is the simulator's; real links are real."""
         wire, carrier = get_codec(codec), self._transport(transport)
+        self._codecs[wire.name] = wire
         for src, dst in ((child, parent), (parent, child)):
             self._links[(src, dst)] = (wire, carrier)
         for node_id in (child, parent):
@@ -242,12 +249,27 @@ class RealRuntime:
     def _on_deliver(self, node_id: str, data: bytes) -> None:
         name, _, body = data.partition(SEPARATOR)
         try:
-            msg = get_codec(name.decode()).decode(body)
-        except (MessageError, ValueError, UnicodeDecodeError) as exc:
+            codec = self._codecs.get(name.decode())
+            if codec is None:
+                raise MessageError(f"no link here uses the codec {name[:40]!r}")
+            msg = codec.decode(body)
+        except Exception as exc:  # anything can arrive; the node goes on
             self._record(
                 node_id, "message.rejected", None, {"reason": f"undecodable: {exc}"}
             )
             return
+        msg_id = msg.meta.get("msg_id")
+        if msg_id is not None:
+            seen = self._seen.setdefault(node_id, set())
+            if msg_id in seen:
+                self._record(
+                    node_id,
+                    "message.duplicate",
+                    None,
+                    {"src": msg.src, "kind": msg.kind, "msg_id": msg_id},
+                )
+                return
+            seen.add(msg_id)
         sent_at = msg.meta.get("sent_at")
         tags = {
             "src": msg.src,

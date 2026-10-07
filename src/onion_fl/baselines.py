@@ -158,11 +158,12 @@ def cross_validate(
     out: dict[str, dict[str, Any]] = {}
     for dataset in sorted({s.dataset for s in subjects}):
         mine = [s for s in subjects if s.dataset == dataset]
+        given = roles.overrides.get(dataset) or RoleOverride()
+        kept = [s.subject for s in mine if s.subject not in set(given.exclude)]
         folds = []
-        for fold in subject_folds([s.subject for s in mine], k, seed):
-            config = roles.model_copy(
-                update={"overrides": {dataset: RoleOverride(test=fold, val=[])}}
-            )
+        for fold in subject_folds(kept, k, seed):
+            override = given.model_copy(update={"test": fold, "val": []})
+            config = roles.model_copy(update={"overrides": {dataset: override}})
             result = evaluate(
                 split_subjects(mine, config), [model], seed, {model: params or {}}
             )

@@ -14,7 +14,7 @@ import hashlib
 import json
 import math
 from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from itertools import permutations
 from pathlib import Path
 from typing import Any
@@ -49,7 +49,7 @@ from onion_fl.learning.model import (
 )
 from onion_fl.learning.privacy import Accountant, privacies
 from onion_fl.learning.sharing import not_local, sharing, traffic
-from onion_fl.learning.trainers import inits, trainers
+from onion_fl.learning.trainers import frozen_keys, inits, trainers
 from onion_fl.observability.run import Run, save_model, verify_run
 from onion_fl.observability.sinks import OtelSink, PrometheusSink, otlp_provider
 from onion_fl.roles import (
@@ -60,7 +60,7 @@ from onion_fl.roles import (
     restore_federation,
     snapshot_federation,
 )
-from onion_fl.roles.policies import create
+from onion_fl.roles.policies import create, stalenesses
 from onion_fl.runtime.devices import availability_models, compute_models
 from onion_fl.runtime.network import resolve_profile
 
@@ -105,9 +105,15 @@ def resolve_topology(config: ExperimentConfig) -> Topology:
 
 def load_data(config: ExperimentConfig) -> tuple[list[Any], dict[str, str]]:
     """Every dataset through the cache: its subjects and the digest of each cache."""
-    subjects, digests = [], {}
+    subjects, digests, loaded = [], {}, {}
     for name, use in sorted(config.data.datasets.items()):
         spec = load_spec(use.descriptor or Path(config.paths.datasets) / f"{name}.yaml")
+        if spec.name in loaded:  # their subjects would overwrite each other
+            raise ConfigError(
+                f"data.datasets: {loaded[spec.name]} and {name} both load dataset "
+                f"{spec.name!r}; give one descriptor another name"
+            )
+        loaded[spec.name] = name
         path = prepare(spec, use.options, cache_dir=config.paths.cache)
         digests[name] = hashlib.sha256((path / "meta.json").read_bytes()).hexdigest()
         subjects += load_prepared(path)
@@ -336,10 +342,10 @@ def _check_structure(
             )
 
 
-def _check_budgets(bundle: Bundle, split: DataSplit) -> None:
+def _check_budgets(bundle: Bundle, clients: Sequence[Any]) -> None:
     """Under local DP, a new edge may not hold a subject that already released:
     its budget is the edge's, so it would start again at zero."""
-    for client in split.clients:
+    for client in clients:
         trained = (bundle.roles.get(client.dataset) or {}).get("train", [])
         released = sorted(set(trained) & set(client.subjects), key=natural_key)
         if released and client.id not in bundle.snapshot.nodes:
@@ -440,12 +446,6 @@ def _scenario_data(
     split = split_subjects(
         subjects, config.data.roles, frozen=frozen, fit_rows=fit_rows
     )
-    if parent:
-        _check_roles(parent[1].roles, split.roles)
-        if parent[2].model:
-            _check_structure(parent[1], config, split, scenario.seed)
-        if config.privacy is not None:
-            _check_budgets(parent[1], split)
     placement_ref = config.data.placement
     name = placement_ref if isinstance(placement_ref, str) else placement_ref["name"]
     params = (
@@ -453,12 +453,14 @@ def _scenario_data(
         if isinstance(placement_ref, str)
         else {k: v for k, v in placement_ref.items() if k != "name"}
     )
-    return (
-        topology,
-        split,
-        place(split, topology, name, params, seed=scenario.seed),
-        digests,
-    )
+    if parent:
+        _check_roles(parent[1].roles, split.roles)
+        if parent[2].model:
+            _check_structure(parent[1], config, split, scenario.seed)
+    placement = place(split, topology, name, params, seed=scenario.seed)
+    if parent and config.privacy is not None:  # the edges as placed, pooled too
+        _check_budgets(parent[1], _placed(placement))
+    return topology, split, placement, digests
 
 
 def _shapes(split: DataSplit) -> list[Any]:
@@ -522,6 +524,19 @@ def _check_learning(config: ExperimentConfig, state: Mapping[str, Any]) -> None:
                 f"{', '.join(bounding + axes)} would not clip, noise or poison; "
                 "use a trainer without them"
             )
+    frozen = sorted({group_of(k) for k in frozen_keys(trainer, state)})
+    noising = sorted(
+        node.id
+        for node in topology.nodes
+        if (ref := node.settings.get("aggregator")) is not None
+        and isinstance(create(aggregators, ref), Accountant)
+    )
+    if frozen and noising:
+        raise ConfigError(
+            f"learning.trainer: {name} keeps {frozen} frozen, but {noising} add "
+            "noise to every key they aggregate, so those groups would drift; "
+            "unfreeze them or use privacy local_dp"
+        )
     ref = topology.root.settings.get("server_optimizer") or "replace"
     optimizer_name = _name(ref)
     needed = getattr(trainer, "server_optimizer", None)
@@ -573,13 +588,21 @@ def link_warnings(topology: Topology) -> list[str]:
     leaves = {leaf.id for leaf in topology.leaves()}
     for node in topology.nodes:
         links = [c.link_up for c in topology.children(node.id)]
-        if node.id in leaves:
+        if node.id in leaves or node.id == topology.root.id:  # edges or evaluators
             links.append(topology.edge.link_up)
         loss = max((resolve_profile(link.profile).loss for link in links), default=0.0)
         if loss > 0 and node.settings.get("deadline") is None:
             warnings.append(
                 f"{node.id}: its children's links lose messages (up to {loss:.1%}) and it has "
-                "no deadline, so a lost update stalls the round; set a deadline"
+                "no deadline, so a lost update or evaluation stalls the run; set a deadline"
+            )
+        staleness = create(stalenesses, node.settings.get("staleness"), "drop")
+        forever = getattr(staleness, "max_staleness", 0) is None
+        if loss > 0 and node.settings.get("close_at_quorum") and forever:
+            warnings.append(
+                f"{node.id}: it closes rounds at quorum and keeps late updates of any "
+                "age, so a child whose update is lost gets no model again; set "
+                "staleness max_staleness"
             )
     return warnings
 
@@ -635,9 +658,8 @@ def _sinks(config: ExperimentConfig) -> list[Any]:
     for sink in config.sinks:
         name = sink if isinstance(sink, str) else sink["name"]
         if name == "prometheus":
-            prometheus = PrometheusSink()
-            prometheus.serve(sink.get("port", 9464) if isinstance(sink, dict) else 9464)
-            out.append(prometheus)
+            port = sink.get("port", 9464) if isinstance(sink, dict) else 9464
+            out.append(PrometheusSink.serving(port))
         elif name == "otel":
             endpoint = sink.get("endpoint") if isinstance(sink, dict) else None
             out.append(OtelSink(otlp_provider(endpoint) if endpoint else None))
@@ -712,6 +734,13 @@ def _stream_summary(config: ExperimentConfig, streams: Mapping[str, Any]) -> dic
     }
 
 
+def _placed(placement: Placement) -> list[Any]:
+    """The training edges as placed, in the split's order: a merging placement
+    (pooled) replaces its clients, so attackers and budgets follow these."""
+    clients = [c for group in placement.edges.values() for c in group]
+    return sorted(clients, key=lambda c: (c.dataset, natural_key(c.id)))
+
+
 def _replay(scenario: Scenario, edge: str) -> dict[str, Any]:
     """An edge's replay memory, on its own seeded stream, and its share."""
     continual = scenario.config.continual
@@ -748,7 +777,7 @@ def edge_specs(
             stream=stream,
         )
 
-    bad = malicious_edges(config, split.clients, scenario.seed)
+    bad = malicious_edges(config, _placed(placement), scenario.seed)
     edges: dict[str, list[EdgeSpec]] = {}
     for leaf, clients in placement.edges.items():
         edges[leaf] = [
@@ -918,7 +947,7 @@ def record_data(
     run.record("data.roles", None, roles=split.roles)
     for leaf, composition in placement.composition().items():
         run.record("data.composition", composition["samples"], leaf=leaf, **composition)
-    bad = malicious_edges(scenario.config, split.clients, scenario.seed)
+    bad = malicious_edges(scenario.config, _placed(placement), scenario.seed)
     if bad:
         run.record("data.attack", float(len(bad)), edges=sorted(bad))
 
@@ -951,8 +980,30 @@ def run_experiment(
         raise ValueError(
             "a custom evaluate cannot be sent to worker processes; use workers=1"
         )
+    live = [
+        s
+        for s in config.sinks
+        if (s if isinstance(s, str) else s["name"]) == "prometheus"
+    ]
+    if workers > 1 and live:
+        raise ConfigError(
+            "sinks: prometheus serves one port per process, and worker processes "
+            "would all bind it; use workers=1"
+        )
     check_scenarios(todo)  # also fills the caches before any worker reads them
     if workers <= 1:
         return [run_scenario(s, evaluate) for s in todo]
+    return _in_parallel(run_scenario, todo, workers)
+
+
+def _in_parallel(fn: Callable[[Any], Any], items: Sequence[Any], workers: int) -> list:
+    """``fn`` over ``items`` in worker processes, in order; the first failure, in
+    whatever order they finish, cancels what has not started and is raised."""
     with ProcessPoolExecutor(max_workers=workers) as pool:
-        return list(pool.map(run_scenario, todo))
+        futures = [pool.submit(fn, item) for item in items]
+        for done in as_completed(futures):
+            if done.exception() is not None:
+                for future in futures:
+                    future.cancel()
+                raise done.exception()
+        return [future.result() for future in futures]

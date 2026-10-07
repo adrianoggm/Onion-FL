@@ -393,7 +393,7 @@ def test_krum_picks_an_honest_update() -> None:
     out = krum.aggregate(HONEST + BYZANTINE, "fog")
 
     assert out.state["w"][0] < 2.0
-    ((_, _, tags),) = krum.report()
+    (_, _, tags), _ = krum.report()  # the selection, then the scored keys
     assert {"b0", "b1"} <= set(tags["dropped"]) and tags["f_used"] == 2
 
 
@@ -562,6 +562,21 @@ def test_bulyan_averages_auxiliary_arrays_of_the_selected_children() -> None:
 
 def test_a_selection_reports_before_any_round() -> None:
     assert aggregators.create("krum").report()[0][1] == 0.0
+
+
+@pytest.mark.parametrize("name", ["krum", "multi_krum", "bulyan", "geometric_median"])
+def test_a_robust_aggregator_reports_how_many_keys_it_scored(name: str) -> None:
+    # Two datasets' adapters under independent sharing: nothing in common.
+    apart = [c(f"e{i}", **{f"adapter__{d}": [float(i)]}) for i, d in enumerate("abab")]
+    together = [c(f"e{i}", w=[float(i)]) for i in range(4)]
+    robust = aggregators.create(name)
+
+    scored = []
+    for children in (apart, together):
+        robust.aggregate(children, "fog")
+        scored += [v for n, v, _ in robust.report() if n == "diagnostic.scored_keys"]
+
+    assert scored == [0.0, 1.0]  # with 0 the scores cannot tell children apart
 
 
 def test_dp_fedavg_refuses_to_noise_without_a_stream() -> None:

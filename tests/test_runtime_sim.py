@@ -286,17 +286,32 @@ def test_bernoulli_offline_rounds_drop_only_round_messages() -> None:
     assert [msg.round for _, msg in echo.seen] == [None]
 
 
-def test_an_offline_node_skips_its_timers() -> None:
+def timed_with(availability: str, params: dict, delay: float = 1.5) -> Timed:
     rt = SimRuntime()
-    node = Timed("fog_0", lambda ctx: ctx.set_timer(1.5, "deadline"))
-    rt.add_node(
-        node,
-        availability=availability_models.create("schedule", {"offline": [[1.0, 2.0]]}),
-    )
+    node = Timed("fog_0", lambda ctx: ctx.set_timer(delay, "deadline"))
+    rt.add_node(node, availability=availability_models.create(availability, params))
     rt.run()
+    node.events = names(rt)
+    return node
+
+
+def test_a_timer_due_while_offline_fires_when_the_node_is_back() -> None:
+    node = timed_with("schedule", {"offline": [[1.0, 2.0], [2.0, 3.0]]})
+
+    assert node.fired == [("deadline", 3.0)]
+
+
+def test_a_node_offline_at_the_start_starts_when_it_is_back() -> None:
+    node = timed_with("schedule", {"offline": [[0.0, 4.0]]}, delay=1.0)
+
+    assert node.fired == [("deadline", 5.0)]
+
+
+def test_a_crashed_node_drops_its_timers() -> None:
+    node = timed_with("crash_at", {"t": 1.0})
 
     assert node.fired == []
-    assert names(rt) == ["timer.dropped_offline"]
+    assert node.events == ["timer.dropped_offline"]
 
 
 def test_lossy_links_drop_and_record() -> None:

@@ -484,3 +484,57 @@ def test_unknown_groups_and_scenarios_are_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="nope"):
         load_scenario(Path("experiments/mix_ab.yaml"), scenario="nope")
+
+
+# --- robustness of real runs (QA3, #175) ---------------------------------------------
+
+
+def test_a_message_delivered_twice_is_handled_once() -> None:
+    # Two transport specs on one bus subscribe the echo's inbox twice.
+    rt = RealRuntime("run-dup", heartbeat_s=None)
+    rt.add_node(Ping("ping"))
+    rt.add_node(Echo("echo"))
+    rt.add_node(Echo("other"))
+    rt.add_link("ping", "echo", transport="memory")
+    rt.add_link("echo", "other", transport={"name": "memory", "bus": "default"})
+
+    rt.run(timeout=5)
+
+    handled = [
+        e for e in rt.events if e["name"] == "message.delivered" and e["node"] == "echo"
+    ]
+    assert len(handled) == 1
+    assert any(e["name"] == "message.duplicate" for e in rt.events)
+
+
+# --- what a received message may name (QA1, #173) ----------------------------------
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        b"os:abort\x00x",
+        b"os:getcwd\x00x",
+        b"json\x00[1, 2]",
+        b"json\x00{bad",
+        b"\xff\x00x",
+    ],
+    ids=["plugin_abort", "plugin_call", "not_a_message", "bad_json", "bad_name"],
+)
+def test_a_received_message_is_decoded_only_by_a_codec_of_the_links(
+    data: bytes, monkeypatch
+) -> None:
+    import onion_fl.core.registry as registry
+
+    def never(path: str):
+        raise AssertionError(f"a received message made the runtime import {path!r}")
+
+    monkeypatch.setattr(registry, "_import_spec", never)
+    rt = RealRuntime("run-codec", heartbeat_s=None)
+    rt.add_node(Echo("echo"))
+    rt.add_link("ping", "echo", transport={"name": "memory", "bus": "codec"})
+
+    rt._on_deliver("echo", data)  # neither runs code nor raises
+
+    (rejected,) = [e for e in rt.events if e["name"] == "message.rejected"]
+    assert "undecodable" in rejected["tags"]["reason"]

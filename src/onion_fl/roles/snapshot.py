@@ -97,6 +97,9 @@ def restore_federation(federation: Federation, snapshot: FederationSnapshot) -> 
         saved = snapshot.nodes.get(node_id)
         if saved is None:
             continue
+        # Children the parent run had already got their whole model; a new one
+        # gets it with its first round here.
+        node.bootstrapped = {c for c in node.children if c in snapshot.nodes}
         node.previous = _part(saved.arrays, "previous") or None
         load = getattr(node.aggregator, "load_state", None)
         if load is not None:

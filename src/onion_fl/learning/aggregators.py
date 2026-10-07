@@ -213,10 +213,13 @@ class _Selection:
     excluded: list[str] = []
     f_used: int = 0
     rescued: dict[str, list[str]] = {}
+    scored_keys: int = 0
 
     def report(self) -> list[tuple[str, float, dict[str, Any]]]:
         """``dropped`` lost the selection on the common keys; ``excluded`` were not
-        used at all; ``rescued`` names the sources of each key only they held."""
+        used at all; ``rescued`` names the sources of each key only they held.
+        ``scored_keys`` counts the common keys: with none, the scores are all
+        alike and the selection is arbitrary."""
         return [
             (
                 "diagnostic.selection",
@@ -227,7 +230,8 @@ class _Selection:
                     "f_used": self.f_used,
                     "rescued": {k: list(v) for k, v in self.rescued.items()},
                 },
-            )
+            ),
+            ("diagnostic.scored_keys", float(self.scored_keys), {}),
         ]
 
     def _select(
@@ -304,7 +308,9 @@ class Krum(_Selection):
         reference: Mapping[str, np.ndarray] | None,
     ) -> tuple[np.ndarray, int]:
         f = self._feasible(len(ordered))
-        vectors = _vectors(ordered, _common_model_keys(ordered), reference)
+        keys = _common_model_keys(ordered)
+        self.scored_keys = len(keys)
+        vectors = _vectors(ordered, keys, reference)
         return np.argsort(_krum_scores(vectors, f), kind="stable"), f
 
     def aggregate(
@@ -371,8 +377,14 @@ class GeometricMedianParams(BaseModel):
     ),
 )
 class GeometricMedian:
+    scored_keys: int = 0
+
     def __init__(self, iterations: int = 10, eps: float = 1e-6) -> None:
         self.iterations, self.eps = iterations, eps
+
+    def report(self) -> list[tuple[str, float, dict[str, Any]]]:
+        """The common keys the median was found over; with none, it is a mean."""
+        return [("diagnostic.scored_keys", float(self.scored_keys), {})]
 
     def aggregate(
         self,
@@ -383,6 +395,7 @@ class GeometricMedian:
     ) -> Contribution:
         ordered = sorted(contributions, key=lambda item: item.source)
         keys = _common_model_keys(ordered)
+        self.scored_keys = len(keys)
         vectors = _vectors(ordered, keys, reference)
         alpha = np.array(
             [float(c.weights.get(keys[0], 1.0)) if keys else 1.0 for c in ordered]
@@ -427,7 +440,9 @@ class Bulyan(Krum):
         """The θ = n − 2f picks of Krum, one at a time over what is left, in the
         order they were picked; then the rest by their Krum score over everyone."""
         f = self._feasible(len(ordered))
-        vectors = _vectors(ordered, _common_model_keys(ordered), reference)
+        keys = _common_model_keys(ordered)
+        self.scored_keys = len(keys)
+        vectors = _vectors(ordered, keys, reference)
         left = list(range(len(ordered)))
         picked: list[int] = []
         while len(picked) < len(ordered) - 2 * f:
