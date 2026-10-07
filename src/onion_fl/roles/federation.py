@@ -160,6 +160,7 @@ def build_federation(
         state=initial_state,
         rounds=rounds,
         round_every=round_every,
+        continuum=continuum,
         server_optimizer=server_optimizer
         or create(server_optimizers, root.settings.get("server_optimizer"), "replace"),
         level=root.level,
@@ -176,6 +177,7 @@ def build_federation(
             children[node.id],
             parent=node.parent,
             hello_retry=parse_duration(node.settings.get("hello_retry", 5.0)),
+            continuum=continuum,
             level=node.level,
             **common,
             **_round_settings(node.settings),

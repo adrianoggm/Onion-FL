@@ -126,8 +126,15 @@ class _Collector(Node):
         aggregate_children: bool = True,
         holdout: bool = True,
         diagnostics: Sequence[Any] | None = None,
+        continuum: Any = None,
     ) -> None:
         super().__init__(node_id)
+        # A continuous federation (continuum C6): the children's statuses heard
+        # since the last tick, and this level's drift detectors.
+        self.continuum = continuum
+        self._heard: dict[str, float] = {}
+        drift = continuum.drift if continuum is not None else {}
+        self._detectors = {k: create(detectors, d) for k, d in sorted(drift.items())}
         self.children = set(children)
         self.level, self.levels, self.sharing = level, list(levels), sharing
         self.aggregator = aggregator
@@ -162,9 +169,14 @@ class _Collector(Node):
 
     # --- registration ------------------------------------------------------------
 
+    stopped: bool = False
+    _ticks_from_start = True  # the root ticks from its first round instead
+
     def on_start(self, ctx: Context) -> None:
         if self.register_timeout is not None:
             ctx.set_timer(self.register_timeout, "register")
+        if self.continuum is not None and self._ticks_from_start:
+            ctx.set_timer(self.continuum.status_every, "status")
 
     def _hello(self, msg: Message, ctx: Context) -> None:
         if msg.src not in self.registered:
@@ -225,6 +237,10 @@ class _Collector(Node):
             self._update(msg, ctx)
         elif msg.src in self.children and msg.kind == "eval_report":
             self._eval_report(msg, ctx)
+        elif msg.src in self.children and msg.kind == "status":
+            for key, value in msg.payload.metrics.items():
+                if key != "at":
+                    self._heard[key] = self._heard.get(key, 0.0) + float(value)
         else:
             self._other(msg, ctx)
 
@@ -411,6 +427,33 @@ class _Collector(Node):
             round = int(name.split("/", 1)[1])
             if round in self.pending_eval:
                 self._eval_done(round, ctx)
+        elif name == "status":
+            self._tick(ctx)
+
+    def _tick(self, ctx: Context) -> None:
+        """Pool what the children reported since the last tick, run this level's
+        detectors on it (zone drift at a fog, federation drift at the root) and
+        pass it on; until the run is over (spec §10)."""
+        if self.stopped:
+            return
+        now = ctx.now() * self.continuum.speed
+        heard, self._heard = self._heard, {}
+        for kind, detector in self._detectors.items():
+            n = heard.get(f"drift.{kind}.n", 0.0)
+            if n <= 0:
+                continue
+            value = heard[f"drift.{kind}.sum"] / n
+            found = detector.update(value)
+            if found is not None:
+                key = f"drift.{kind}.detected"
+                heard[key] = heard.get(key, 0.0) + 1.0
+                ctx.emit("drift.detected", found, kind=kind, window=value, at=now)
+        self._heard_all(heard, now, ctx)
+        ctx.set_timer(self.continuum.status_every, "status")
+
+    def _heard_all(self, heard: dict[str, float], now: float, ctx: Context) -> None:
+        """What the children said since the last tick, pooled at this level."""
+        raise NotImplementedError
 
     def _close(self, ctx: Context) -> None:
         ctx.cancel_timer("deadline")
@@ -676,6 +719,11 @@ class Coordinator(_Collector):
         self.finished = False
         # Virtual seconds between round starts (a stream's pace); None: at once.
         self.round_every, self.started_at = round_every, None
+        # A continuous federation (continuum C6): what the statuses said since the
+        # last round opened, and when it opened (data time).
+        self._volume, self._drift, self._opened_at = 0.0, {}, 0.0
+
+    _ticks_from_start = False  # from round 1, so a schedule keeps its grid
 
     def on_timer(self, name: str, ctx: Context) -> None:
         if name == "round":
@@ -696,6 +744,13 @@ class Coordinator(_Collector):
             if not self.pending_eval:
                 self._finish(ctx)
             return
+        if self.continuum is not None:  # rounds wait for a trigger (spec §10)
+            if self.round == 0:
+                self._start("start", ctx.now() * self.continuum.speed, ctx)
+                ctx.set_timer(self.continuum.status_every, "status")
+            else:
+                self._maybe_open(ctx)
+            return
         if self.round_every is not None:
             if self.started_at is None:
                 self.started_at = ctx.now()
@@ -704,6 +759,48 @@ class Coordinator(_Collector):
                 ctx.set_timer(wait, "round")
                 return
         ctx.emit("round.started", self.round + 1, round=self.round + 1)
+        self._open(self.round + 1, self.state, ctx, bootstrap=self.round == 0)
+
+    def _heard_all(self, heard: dict[str, float], now: float, ctx: Context) -> None:
+        self._volume += heard.get("fresh", 0.0)
+        for key, value in heard.items():
+            if key.startswith("drift.") and key.endswith(".detected") and value:
+                kind = key.split(".")[1]
+                self._drift[kind] = self._drift.get(kind, 0) + int(value)
+        self._maybe_open(ctx)
+
+    def _maybe_open(self, ctx: Context) -> None:
+        """Open the next round if the trigger asks. At the first tick after the
+        last label, one final round, after which the run finishes."""
+        if self.open or self.finished or self.round == 0 or self.round >= self.rounds:
+            return
+        now = ctx.now() * self.continuum.speed
+        if ctx.now() >= self.continuum.until - 1e-9:
+            name, self.rounds = "horizon", self.round + 1  # the last one
+        else:
+            view = View(
+                now=now,
+                since=self._opened_at,
+                volume=self._volume,
+                drift=dict(self._drift),
+            )
+            name = self.continuum.trigger.fired(view)
+            if name is None:
+                return
+        self._start(name, now, ctx)
+
+    def _start(self, name: str, now: float, ctx: Context) -> None:
+        """Open the next round because ``name`` fired, at data time ``now``."""
+        ctx.emit(
+            "trigger.fired",
+            self._volume,
+            trigger=name,
+            at=now,
+            round=self.round + 1,
+            drift=dict(self._drift),
+        )
+        self._volume, self._drift, self._opened_at = 0.0, {}, now
+        ctx.emit("round.started", self.round + 1, round=self.round + 1, at=now)
         self._open(self.round + 1, self.state, ctx, bootstrap=self.round == 0)
 
     def _finish(self, ctx: Context) -> None:
@@ -771,6 +868,10 @@ class Aggregator(_Greeter, _Collector):
 
     def _registered(self, ctx: Context) -> None:
         self._say_hello(self._meta(), ctx)
+
+    def _heard_all(self, heard: dict[str, float], now: float, ctx: Context) -> None:
+        payload = Payload(metrics={"at": now, **heard})
+        ctx.send(Message(kind="status", src=self.id, dst=self.parent, payload=payload))
 
     def _late_child(self, ctx: Context) -> None:
         if self._meta() != self._hello_meta:  # the parent counts what is below now

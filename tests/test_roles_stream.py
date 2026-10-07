@@ -759,3 +759,199 @@ def test_an_edge_trains_only_when_its_local_trigger_fires() -> None:
     assert all(value >= 5 for value, _ in fired)
     trained = np.concatenate([t for _, t in recording.calls])
     assert len(trained) == len(set(trained))  # nothing repeated
+
+
+# --- rounds opened by triggers (continuum C6) -------------------------------------
+
+
+def continuous(
+    trigger,
+    edge_trigger=None,
+    status_every: float = 60.0,
+    rounds: int = 1000,
+    compute=None,
+    before=lambda federation: None,
+    **streams,
+):
+    """A continuous federation of stub edges, run to its end."""
+    from onion_fl.continuum.pace import Continuum
+    from onion_fl.continuum.triggers import drift_detectors, triggers
+
+    def built(spec):
+        if spec is None:
+            return None
+        name, params = (spec, {}) if isinstance(spec, str) else (spec["name"], spec)
+        return triggers.create(name, {k: v for k, v in params.items() if k != "name"})
+
+    federated, local = built(trigger), built(edge_trigger)
+    pace = Continuum(
+        trigger=federated,
+        edge_trigger=local,
+        status_every=status_every / SPEED,
+        speed=SPEED,
+        until=max(s.drain for s in streams.values()) / SPEED,
+        drift=drift_detectors(federated, local),
+    )
+    trainers_by_edge = {name: Recording() for name in streams}
+    specs = [
+        EdgeSpec(
+            name,
+            ModularMLP(CONFIG, [A], seed=0),
+            trainer=trainers_by_edge[name],
+            stream=s,
+            compute=compute,
+        )
+        for name, s in sorted(streams.items())
+    ]
+    fogs = min(2, len(specs))  # a fog without edges would never register
+    federation = build_federation(
+        tree(fogs),
+        {f"fog_{i}": specs[i::fogs] for i in range(fogs)},
+        initial_state=INITIAL,
+        rounds=rounds,
+        continuum=pace,
+    )
+    before(federation)
+    federation.run()
+    return federation, trainers_by_edge
+
+
+def opened(federation) -> list[tuple[str, float]]:
+    return [
+        (e["tags"]["trigger"], e["tags"]["at"])
+        for e in events(federation, "trigger.fired", "cloud")
+    ]
+
+
+def test_a_schedule_opens_a_round_every_period_of_data_time() -> None:
+    every = {"name": "schedule", "every": 300}
+    federation, _ = continuous(every, status_every=60, a1=stream_of("a-1"))
+
+    names = [name for name, _ in opened(federation)]
+    times = [at for _, at in opened(federation)]
+    assert names[0] == "start" and names[-1] == "horizon"
+    assert set(names[1:-1]) == {"schedule"}
+    gaps = [b - a for a, b in zip(times[:-2], times[1:-1], strict=True)]
+    assert gaps and all(g == pytest.approx(300.0) for g in gaps)
+    started = events(federation, "round.started", "cloud")
+    assert [e["tags"]["at"] for e in started] == times  # the cursor on each round
+
+
+def test_a_schedule_reproduces_the_paced_rounds() -> None:
+    every = {"name": "schedule", "every": EVERY}
+    paced, _ = streaming(rounds=6, a1=stream_of("a-1"), a2=stream_of("a-2"))
+    federation, _ = continuous(
+        every, status_every=EVERY, a1=stream_of("a-1"), a2=stream_of("a-2")
+    )
+
+    for key, value in paced.coordinator.state.items():
+        np.testing.assert_array_equal(federation.coordinator.state[key], value)
+
+
+def test_a_volume_trigger_waits_for_its_rows() -> None:
+    six = {"name": "volume", "samples": 6}
+    federation, _ = continuous(six, a1=stream_of("a-1"), a2=stream_of("a-2"))
+
+    fired = events(federation, "trigger.fired", "cloud")
+    volume = [e for e in fired if e["tags"]["trigger"] == "volume"]
+    assert volume and all(e["value"] >= 6 for e in volume)
+
+
+def test_a_drift_trigger_opens_a_round_when_the_prior_shifts() -> None:
+    prior = {"name": "drift", "kind": "prior"}
+    federation, _ = continuous(prior, a1=labels_switch("a-1"), a2=labels_switch("a-2"))
+
+    assert "drift/prior" in [name for name, _ in opened(federation)]
+    zones = events(federation, "drift.detected", "fog_0")
+    zones += events(federation, "drift.detected", "fog_1")
+    assert zones  # the fogs detect it on their pooled statistic too
+
+
+def test_statuses_carry_counts_and_statistics_only() -> None:
+    received = []
+
+    def spy(federation) -> None:
+        cloud = federation.coordinator
+        handle = cloud.on_message
+
+        def on_message(msg, ctx) -> None:
+            if msg.kind == "status":
+                received.append(msg.payload)
+            handle(msg, ctx)
+
+        cloud.on_message = on_message
+
+    continuous(
+        {"name": "drift", "kind": "prior"},
+        before=spy,
+        a1=labels_switch("a-1"),
+        a2=labels_switch("a-2"),
+    )
+
+    keys = {"at", "fresh", "drift.prior.sum", "drift.prior.n", "drift.prior.detected"}
+    assert received
+    assert all(not p.state and set(p.metrics) <= keys for p in received)
+
+
+def test_a_drift_trigger_without_labels_never_fires() -> None:
+    config = StreamConfig(bootstrap=120, batch_size=1, speed=SPEED)
+    unlabelled = edge_stream(rows("a-1"), config, LabelsConfig(fraction=0.0), seed=0)
+    prior = {"name": "drift", "kind": "prior"}
+    federation, _ = continuous(prior, a1=unlabelled)
+
+    assert not events(federation, "drift.detected")
+    assert [name for name, _ in opened(federation)] == ["start", "horizon"]
+
+
+def test_a_trigger_that_never_fires_still_ends_at_the_last_label() -> None:
+    never = {"name": "volume", "samples": 10_000}
+    federation, _ = continuous(never, a1=stream_of("a-1"))
+
+    assert [name for name, _ in opened(federation)] == ["start", "horizon"]
+    (finished,) = events(federation, "run.finished")
+    later = finished["t"] + 60 / SPEED  # one status period, for the stop to arrive
+    sent = events(federation, "message.sent")
+    assert not [e for e in sent if e["tags"]["kind"] == "status" and e["t"] > later]
+
+
+def test_a_trigger_during_an_open_round_waits_for_it() -> None:
+    from onion_fl.runtime.devices import compute_models
+
+    slow = compute_models.create("samples_per_second", {"samples_per_second": 5})
+    every = {"name": "schedule", "every": 60}
+    federation, _ = continuous(
+        every, status_every=60, compute=slow, a1=stream_of("a-1")
+    )
+
+    ends = ("round.closed", "round.idle", "round.quorum_failed")
+    closed = {
+        e["tags"]["round"]: e["t"]
+        for e in federation.runtime.events
+        if e["node"] == "cloud" and e["name"] in ends
+    }
+    started = events(federation, "round.started", "cloud")
+    rounds = [e["tags"]["round"] for e in started]
+    assert rounds == list(range(1, len(rounds) + 1)) and len(rounds) > 2
+    for e in started[1:]:  # each opens once the previous one has closed
+        assert e["t"] >= closed[e["tags"]["round"] - 1]
+
+
+def test_an_edge_in_a_federation_trains_only_when_its_trigger_fires() -> None:
+    federation, trainers_by_edge = continuous(
+        {"name": "schedule", "every": 120},
+        edge_trigger={"name": "volume", "samples": 5},
+        a1=stream_of("a-1"),
+    )
+
+    calls = trainers_by_edge["a1"].calls
+    fired = events(federation, "trigger.fired", "a1")
+    assert calls and len(fired) == len(calls)
+    assert all(e["value"] >= 5 for e in fired)
+    updates = [
+        e
+        for e in events(federation, "message.sent", "a1")
+        if e["tags"]["kind"] == "update"
+    ]
+    assert len(updates) > len(calls)  # some rounds answered idle, rows kept
+    trained = np.concatenate([t for _, t in calls])
+    assert len(trained) == len(set(trained))  # nothing repeated
