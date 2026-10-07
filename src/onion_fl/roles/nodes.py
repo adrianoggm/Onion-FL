@@ -740,6 +740,7 @@ class Coordinator(_Collector):
         # A continuous federation (continuum C6): what the statuses said since the
         # last round opened, and when it opened (data time).
         self._volume, self._drift, self._opened_at = 0.0, {}, 0.0
+        self._horizon = False  # the final round opened: the streams are over
 
     _ticks_from_start = False  # from round 1, so a schedule keeps its grid
 
@@ -795,6 +796,7 @@ class Coordinator(_Collector):
         now = ctx.now() * self.continuum.speed
         if ctx.now() >= self.continuum.until - 1e-9:
             name, self.rounds = "horizon", self.round + 1  # the last one
+            self._horizon = True
         else:
             view = View(
                 now=now,
@@ -824,7 +826,11 @@ class Coordinator(_Collector):
     def _finish(self, ctx: Context) -> None:
         if not self.finished:
             self.finished = True
-            ctx.emit("run.finished", self.round)
+            # With triggers, whether the streams ended or the rounds cap cut it.
+            why = {} if self.continuum is None else {"reason": "rounds"}
+            if self._horizon:
+                why["reason"] = "horizon"
+            ctx.emit("run.finished", self.round, **why)
             _stop_children(self, ctx)
 
     @property

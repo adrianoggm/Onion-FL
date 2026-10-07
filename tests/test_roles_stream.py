@@ -1071,3 +1071,14 @@ def test_an_edge_whose_stream_has_ended_trains_what_is_left() -> None:
 
     assert len(recording.calls) == 2
     assert (edge._consumed_by >= 0).all()  # every row trained once
+
+
+@pytest.mark.parametrize("rounds, reason", [(3, "rounds"), (1000, "horizon")])
+def test_a_run_says_whether_its_cap_or_its_last_label_ended_it(
+    rounds: int, reason: str
+) -> None:
+    every = {"name": "schedule", "every": 60}
+    federation, _ = continuous(every, rounds=rounds, a1=stream_of("a-1"))
+
+    (finished,) = events(federation, "run.finished")
+    assert finished["tags"]["reason"] == reason
