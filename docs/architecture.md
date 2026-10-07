@@ -207,18 +207,19 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
   - **Weight.** The edge is weighted by its n recent rows, as it would be without a memory: a replayed row was weighted when it was new.
   - **Records.** After each training that worked, the edge reports `diagnostic.memory`: the memory as it is now, the rows that training replayed, and the mean age of what is kept since it was observed. The bundle saves the memory.
 - **Triggers** (`continuum: {trigger, edge_trigger, status_every}`, `onion_fl.continuum.triggers`). A stream gives either `round_every` or a continuum, never both.
-  - **Plugins.** `schedule` (data time since the last round), `volume` (new trainable rows), `drift` (a kind and its detector) and `any`. Durations are data time.
+  - **Plugins.** `schedule` (data time since the last round), `volume` (new trainable rows), `drift` (a kind and its detector) and `any`. Durations are data time. A federated schedule must be a multiple of `status_every`, since the root checks its trigger at each tick.
   - **Two levels.**
-    - The federated trigger, at the coordinator, sees the rows that became trainable in the whole federation and the drift detected anywhere since the last round opened.
-    - The local trigger, at each edge, sees its own unconsumed rows and its own detections since it last trained. An edge whose local trigger has not fired answers the round idle and keeps its rows.
+    - The federated trigger, at the coordinator, sees the rows that became trainable and the drift detected anywhere, as reported after the current round reached each node: rows and detections from before were taken by that round, or opened it.
+    - The local trigger, at each edge, sees its own unconsumed rows and its own detections since it last trained. An edge whose local trigger has not fired answers the round idle and keeps its rows. It does not hold back an edge's first model (v0 trains on the history) or any round after the edge's last label, which trains what is left.
   - **Statuses.**
-    - Every `status_every`, each streaming edge predicts what arrived with the model it serves, then sends a `status` message: the rows that became trainable since its last one and, per kind of drift, the window's statistic, never data.
-    - Each collector pools its children's statuses on its own tick, by sample counts, and passes them up. The root ticks from round 1, so a schedule keeps C3's grid.
+    - Every `status_every`, each streaming edge predicts what arrived with the model it serves, then sends a `status` message: the round it last got, the rows that became trainable since its last one and, per kind of drift, the window's statistic, never data.
+    - Each collector pools its children's statuses on its own tick, by sample counts, and passes them up with its own round. The counts of a status sent before the collector's current round reached its sender are left out, and a round's opening clears what was pooled for the one before. The root ticks from round 1, so a schedule keeps C3's grid.
+    - Every node ticks until the last label, the tick after it included, so a stop lost on its way down does not keep the run alive.
   - **Drift** (`onion_fl.continuum.drift`).
-    - `data` is the shift of the window's features from the window before, in history standard deviations; `prior` is the total variation between the classes of the labels that arrived and the window before's; `performance` is the error rate of the stored predictions. The first window is compared with the history.
-    - `data` and `prior` measure a change, so that a recording in blocks of conditions gives one spike per switch: against the history, their distance would stay high all along and the detector would never see a rise.
+    - `data` is the shift of the window's features from a reference window, in history standard deviations; `prior` is the total variation between the classes of the labels that arrived and the reference's; `performance` is the error rate of the stored predictions.
+    - The reference is the edge's first window with rows, held until a drift of that kind is detected, when the window that showed it becomes the reference. A switch of condition and a gradual drift both rise; the history is not the reference, because on recordings in blocks of conditions its distance stays high from the first window and the detector would never see a rise.
     - Each edge, fog and the root runs its own detector (`page_hinkley`) on its statistic, so drift is detected per edge, per zone and for the federation.
-  - **Rounds.** Round 1 opens at registration. Later ones open when the federated trigger fires, one at a time, checked at each root tick and when a round closes. At the first tick after the last label, one final round opens and the run finishes; `rounds` stays an upper bound.
+  - **Rounds.** Round 1 opens at registration. Later ones open when the federated trigger fires, one at a time, checked at each root tick and when a round closes. After the last label, one final round opens, at the next tick or when the round then open closes, and the run finishes. `rounds` stays an upper bound, and `run.finished` says which ended the run (`reason`: `horizon` or `rounds`).
   - **Events.** `trigger.fired` (at the root, and at an edge whose local trigger fired), `drift.detected` and, with a continuum, `round.started` carry `at`, the data time: the cursor of the run.
 
 ## 8. Observability

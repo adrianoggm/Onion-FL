@@ -43,7 +43,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
 | Continuum | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, and a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`). Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. Semi-supervision and versions are next (C5 and C7, [#160](https://github.com/adrianoggm/Onion-FL/issues/160), [#162](https://github.com/adrianoggm/Onion-FL/issues/162)) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
-| Tests | ✅ | 1160 tests. With SWELL, WESAD and a local broker, 1156 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
+| Tests | ✅ | 1176 tests. With SWELL, WESAD and a local broker, 1172 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
 
@@ -198,9 +198,11 @@ sweep: {data.placement.alpha: [0.0, 0.5, 1.0]}
     status_every: 5m
   ```
 
-  - Edges report what became trainable and their drift statistics every `status_every`, without data. The fogs pool them, and the coordinator opens a round when its trigger fires.
+  - Edges report what became trainable and their drift statistics every `status_every`, without data. The fogs pool them, and the coordinator opens a round when its trigger fires, counting what was reported after the current round reached each edge.
+  - The local trigger never holds back an edge's first model (v0) or its rounds after its last label.
   - Drift (`data`, `prior` or `performance`) is detected per edge, per zone and for the federation, and reported as `drift.detected`. `trigger.fired` names what opened each round.
-  - A schedule whose `every` equals the old `round_every`, with `status_every` equal to it, gives the same rounds and the same model.
+  - A schedule must be a multiple of `status_every`. One whose `every` and `status_every` equal the old `round_every` gives C3's model, as long as each round closes within its period.
+  - `run.finished` says whether the last label (`horizon`) or the `rounds` cap ended the run.
 - **Edge validation.** `data.roles.local_val_split: class_tail` holds out the last rows of each class instead of the last rows of the recording, which are usually a single condition.
 - **Downloadable data.** `experiments/mix_swell_wesad.yaml` runs the same sweep with SWELL and WESAD, the two datasets that can be downloaded. It trains for 10 local epochs: with one, the model only learns the majority class ([§7](#7-results)).
 

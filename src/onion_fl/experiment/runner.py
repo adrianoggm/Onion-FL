@@ -437,7 +437,8 @@ def _scenario_data(
             raise ConfigError(
                 f"stream: participation other than all at {partial} would leave "
                 "the arrivals of the edges not selected unhandled; streams need "
-                "every edge in every round until the triggers of C6"
+                "every edge in every round (with a continuum, an edge's local "
+                "trigger decides whether it trains)"
             )
     if config.stream is not None:  # the preprocessing sees the bootstrap only
         untimed = sorted({s.dataset for s in subjects if s.t is None})

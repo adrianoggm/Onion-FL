@@ -5,11 +5,12 @@
 # 10 minutes, a continuum trigger opens the rounds:
 # - schedule: every 10 minutes of data, with a status every 10 minutes. These
 #   are C3's rounds, so this scenario must give C3's final models bit for bit;
-# - volume: once 300 new rows have become trainable across the federation
-#   (about two C3 rounds' worth), with a status every 5 minutes;
+# - volume: once the edges report 300 rows that became trainable after the
+#   current round reached them (about two C3 rounds' worth), with a status
+#   every 5 minutes;
 # - drift: when a prior shift (the classes of the arriving labels moving away
-#   from the history's) is detected at an edge, a fog or the cloud, with a
-#   status every 5 minutes.
+#   from those of a reference window) is detected at an edge, a fog or the
+#   cloud, with a status every 5 minutes.
 # Every scenario ends with one final round after the last label.
 #
 # Neither the volume nor the detector is tuned; this shows the triggers on the

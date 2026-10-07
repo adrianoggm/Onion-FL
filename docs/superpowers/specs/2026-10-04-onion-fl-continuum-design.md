@@ -303,17 +303,17 @@ continuum:
 - **Rondas síncronas.** FedAsync y FedBuff (#150) se conectan después como política de consumo.
 - **Decisiones de C6** (#161; el plan, `docs/superpowers/plans/2026-10-07-continuum-c6-triggers.md`, da el detalle):
   - **Tipos de deriva.** Se detectan tres:
-    - `data`, el desplazamiento de las features respecto a la ventana anterior (la primera, respecto al histórico), en desviaciones del histórico;
-    - `prior`, la variación total entre las clases de las etiquetas llegadas y las de la ventana anterior (o del histórico);
+    - `data`, el desplazamiento de las features respecto a una ventana de referencia, en desviaciones del histórico;
+    - `prior`, la variación total entre las clases de las etiquetas llegadas y las de la referencia;
     - `performance`, la tasa de error de las predicciones guardadas.
-    - `data` y `prior` miden un cambio, no la distancia al histórico: en SWELL y WESAD esa distancia se mantiene alta en cada bloque de condiciones y el detector no ve ninguna subida.
+    - La referencia es la primera ventana del edge con filas, y se mantiene hasta que se detecta deriva de ese tipo: entonces la ventana que la mostró pasa a ser la referencia. Así sube tanto un cambio de condición como una deriva gradual. No se usa el histórico: en SWELL y WESAD su distancia es alta desde la primera ventana y el detector no ve ninguna subida.
     - La de concepto espera a C8, porque hay que descontar antes el cambio de P(Y). La de cliente ya la cubre `diagnostic.divergence_*`.
   - **Detector.** `page_hinkley`, que busca una subida sostenida del estadístico y vuelve a empezar tras cada detección.
   - **Dónde.** Cada edge, cada fog y la raíz tienen un detector por cada tipo que nombre algún disparador. Los colectores lo alimentan con la media de sus hijos ponderada por muestras: deriva por zona y por federación.
-  - **Mensajes de estado.** Llevan las filas que pasaron a ser entrenables desde el anterior y, por tipo de deriva, la suma, las muestras y las detecciones. Son incrementos, así que el coordinador cuenta lo oído desde que abrió la última ronda.
-  - **Ritmo.** Los fogs reenvían en su propio tic, y la raíz hace tic desde la ronda 1, de modo que un `schedule` conserva la rejilla de C3. Un `schedule` con `every` y `status_every` iguales al antiguo `round_every` da el mismo modelo.
-  - **Final.** La ronda 1 abre al registrarse. En el primer tic tras la última etiqueta se abre una última ronda (`horizon`), y `rounds` queda como tope.
-  - **Disparador local.** Ve las filas sin usar del edge, el tiempo desde su último entrenamiento correcto y sus detecciones desde entonces. Si no salta, el edge responde ocioso y conserva sus filas.
+  - **Mensajes de estado.** Llevan la ronda que el emisor recibió por última vez, las filas que pasaron a ser entrenables desde el anterior y, por tipo de deriva, la suma, las muestras y las detecciones. Un colector solo cuenta las filas y detecciones de mensajes enviados después de que su ronda actual llegara al emisor, y al abrir ronda descarta lo acumulado para la anterior.
+  - **Ritmo.** Los fogs reenvían en su propio tic, y la raíz hace tic desde la ronda 1, de modo que un `schedule` conserva la rejilla de C3. Un `schedule` federativo debe ser múltiplo de `status_every`. Con `every` y `status_every` iguales al antiguo `round_every`, y rondas que cierran dentro de su periodo, da el mismo modelo. Todos los nodos hacen tic hasta la última etiqueta, así que un stop perdido no deja la simulación viva.
+  - **Final.** La ronda 1 abre al registrarse. Tras la última etiqueta se abre una última ronda (`horizon`), y `rounds` queda como tope; `run.finished` dice cuál de los dos terminó la ejecución.
+  - **Disparador local.** Ve las filas sin usar del edge, el tiempo desde su último entrenamiento correcto y sus detecciones desde entonces. Si no salta, el edge responde ocioso y conserva sus filas. No frena el primer modelo del edge (v0 entrena con el histórico) ni las rondas tras su última etiqueta, que entrenan lo que queda.
   - **`stream.round_every`** pasa a ser opcional: un stream lleva `round_every` o `continuum`, nunca los dos.
 
 ## 11. Observabilidad y control (C7)
