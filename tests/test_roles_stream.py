@@ -545,6 +545,32 @@ def test_the_snapshot_saves_the_replay_memory() -> None:
 
     np.testing.assert_array_equal(saved.arrays["replay/rows"], edge.replay.rows())
     assert saved.meta["replay"]["seen"] == edge.replay.seen
+    # what was consumed goes with it: a row is in memory or still unconsumed
+    np.testing.assert_array_equal(saved.arrays["stream/consumed_by"], edge._consumed_by)
+
+
+@pytest.mark.parametrize("edge_state", [True, False])
+def test_the_memory_and_what_was_consumed_go_with_the_edge_state(
+    edge_state: bool,
+) -> None:
+    from types import SimpleNamespace
+
+    from onion_fl.experiment.runner import _restore_parts
+    from onion_fl.roles import snapshot_federation
+
+    federation, _ = replaying(Recording(), name="reservoir")
+    restore = SimpleNamespace(model=True, server_state=True, edge_state=edge_state)
+
+    kept = _restore_parts(snapshot_federation(federation), restore, {"a1"})
+
+    saved = kept.nodes["a1"]
+    parts = {k.split("/")[0] for k in saved.arrays}
+    assert (
+        {"replay", "stream"} <= parts
+        if edge_state
+        else not parts & {"replay", "stream"}
+    )
+    assert ("replay" in saved.meta) == edge_state
 
 
 @pytest.mark.parametrize("ratio", [1.0, 1.5, -0.1])

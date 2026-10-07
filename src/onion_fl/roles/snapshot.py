@@ -66,7 +66,11 @@ def snapshot_federation(federation: Federation) -> FederationSnapshot:
             {"rng": rng_state(runtime._rng(node_id))},
         )
         state.arrays |= _prefixed("privacy", getattr(edge.privacy, "state", dict)())
-        # The replay memory is saved; restoring it waits for streams to continue.
+        # The replay memory and what the stream consumed are saved together, so a
+        # row is either kept or unconsumed; restoring them waits for streams to
+        # continue.
+        if getattr(edge, "stream", None) is not None:
+            state.arrays["stream/consumed_by"] = edge._consumed_by
         if getattr(edge, "replay", None) is not None:
             replay, meta = edge.replay.state()
             state.arrays |= _prefixed("replay", replay)
