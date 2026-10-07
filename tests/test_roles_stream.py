@@ -742,6 +742,11 @@ def test_an_edge_detects_a_prior_shift_after_it_happens() -> None:
     assert sum(detected) == len(found)  # and its status says so
 
 
+def bypassed(edge, recording) -> int:
+    """Trainings the local trigger does not decide: v0, and after the stream."""
+    return 1 + sum(1 for now, _ in recording.calls[1:] if now >= edge.stream.drain)
+
+
 def test_an_edge_trains_only_when_its_local_trigger_fires() -> None:
     from onion_fl.continuum.triggers import triggers
 
@@ -755,7 +760,9 @@ def test_an_edge_trains_only_when_its_local_trigger_fires() -> None:
     updates = [m for m in ctx.sent if m.kind == "update"]
     idle = [m for m in updates if "idle" in m.payload.metrics]
     fired = ctx.named("trigger.fired")
-    assert idle and len(fired) == len(recording.calls) == len(updates) - len(idle)
+    assert idle and len(recording.calls) == len(updates) - len(idle)
+    # v0 and what is left once the stream ended train without the trigger
+    assert len(fired) == len(recording.calls) - bypassed(edge, recording)
     assert all(value >= 5 for value, _ in fired)
     trained = np.concatenate([t for _, t in recording.calls])
     assert len(trained) == len(set(trained))  # nothing repeated
@@ -948,7 +955,8 @@ def test_an_edge_in_a_federation_trains_only_when_its_trigger_fires() -> None:
 
     calls = trainers_by_edge["a1"].calls
     fired = events(federation, "trigger.fired", "a1")
-    assert calls and len(fired) == len(calls)
+    edge = federation.edges["a1"]
+    assert calls and len(fired) == len(calls) - bypassed(edge, trainers_by_edge["a1"])
     assert all(e["value"] >= 5 for e in fired)
     updates = [
         e
@@ -1037,3 +1045,29 @@ def test_an_edge_tags_its_status_with_the_round_it_last_got() -> None:
 
     rounds = [m.payload.metrics["round"] for m in ctx.sent if m.kind == "status"]
     assert rounds == [0.0, 0.0, 1.0, 1.0]
+
+
+def test_the_bootstrap_round_trains_whatever_the_local_trigger() -> None:
+    from onion_fl.continuum.triggers import triggers
+
+    never = triggers.create("volume", {"samples": 10_000})
+    edge, ctx, recording = edge_by_hand(stream_of("a-1"), edge_trigger=never)
+
+    serve(edge, ctx, 1)  # the first model: v0 trains on the history
+
+    assert len(recording.calls) == 1 and not ctx.named("trigger.fired")
+
+
+def test_an_edge_whose_stream_has_ended_trains_what_is_left() -> None:
+    from onion_fl.continuum.triggers import triggers
+
+    never = triggers.create("volume", {"samples": 10_000})
+    edge, ctx, recording = edge_by_hand(stream_of("a-1"), edge_trigger=never)
+    serve(edge, ctx, 1)
+    ctx.t = 600 / SPEED
+    serve(edge, ctx, 2)  # mid-stream: the trigger holds the rows back
+    ctx.t = edge.stream.drain / SPEED
+    serve(edge, ctx, 3)  # the last label is in: nothing more will come
+
+    assert len(recording.calls) == 2
+    assert (edge._consumed_by >= 0).all()  # every row trained once

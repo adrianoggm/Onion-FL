@@ -1252,11 +1252,13 @@ class Edge(_Greeter, Node):
         payload = Payload(metrics=metrics)
         ctx.send(Message(kind="status", src=self.id, dst=self.parent, payload=payload))
 
-    def _wants_update(self, round: int, ctx: Context) -> bool:
+    def _wants_update(self, round: int, ctx: Context, first: bool) -> bool:
         """The local trigger (spec §10): whether this edge has an update for the
-        round; without one, it always has."""
+        round; without one, it always has. It does not hold back the first
+        model, which trains v0 on the history, nor an edge whose stream has
+        ended, which trains what is left."""
         trigger = None if self.continuum is None else self.continuum.edge_trigger
-        if trigger is None:
+        if trigger is None or first or self._clock >= self.stream.drain:
             return True
         view = View(
             now=self._clock,
@@ -1292,7 +1294,8 @@ class Edge(_Greeter, Node):
         if self.stream is not None:
             self._served = state_arrays(self.model)
             # Nothing to train on, or no update wanted yet: idle, with its scores.
-            if own is None or not self._wants_update(msg.round, ctx):
+            first = bool(msg.meta.get("bootstrap"))
+            if own is None or not self._wants_update(msg.round, ctx, first):
                 _send_idle(self, msg.round, metrics, ctx)
                 return
         scoring = (
