@@ -283,3 +283,25 @@ def test_replay_needs_a_stream(workspace: Path) -> None:
 
 def test_a_stream_without_replay_keeps_its_config_id(workspace: Path) -> None:
     assert "continual" not in parse_experiment(experiment(workspace)).dump()
+
+
+def test_each_edges_memory_draws_from_its_own_seeded_stream(workspace: Path) -> None:
+    from onion_fl.core.context import node_rng
+    from onion_fl.experiment.runner import _replay
+
+    (scenario,) = scenarios(parse_experiment(experiment(workspace, continual=REPLAY)))
+    one, two = (_replay(scenario, e)["replay"].rng for e in ("e1", "e2"))
+
+    expected = node_rng(scenario.seed, "memory/e1").random(4)
+    np.testing.assert_array_equal(one.random(4), expected)
+    assert not np.array_equal(two.random(4), expected)
+
+
+def test_memory_none_runs_exactly_as_without_a_memory(workspace: Path) -> None:
+    none = {"memory": "none", "replay_ratio": 0.5}
+
+    def trace(path: Path) -> list:
+        lines = (path / "events.jsonl").read_text(encoding="utf-8").splitlines()
+        return [(e["name"], e["node"], e["value"]) for e in map(json.loads, lines)]
+
+    assert trace(run(workspace, continual=none)) == trace(run(workspace))

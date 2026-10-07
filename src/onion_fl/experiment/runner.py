@@ -22,7 +22,7 @@ from typing import Any
 import numpy as np
 
 from onion_fl.continuum.bundle import Bundle, load_bundle, save_bundle
-from onion_fl.continuum.memory import memories
+from onion_fl.continuum.memory import NoMemory, memories
 from onion_fl.core.context import node_rng
 from onion_fl.core.topology import Topology, load_topology, parse_topology
 from onion_fl.data.cache import load_prepared, prepare
@@ -752,6 +752,8 @@ def _replay(scenario: Scenario, edge: str) -> dict[str, Any]:
     if continual is None:
         return {}
     memory = create(memories, continual.memory)
+    if isinstance(memory, NoMemory):  # nothing to replay: the edge runs as in C3
+        return {}
     memory.rng = node_rng(scenario.seed, f"memory/{edge}")
     return {"replay": memory, "replay_ratio": continual.replay_ratio}
 

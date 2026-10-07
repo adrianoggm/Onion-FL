@@ -188,7 +188,7 @@ sweep: {data.placement.alpha: [0.0, 0.5, 1.0]}
   - Real mode, `init: run`, `local_val`, a local scaler and participation other than `all` are refused with a stream for now.
 - **Replay.** `continual: {memory: {name: reservoir, capacity: 512}, replay_ratio: 0.5}` gives every streaming edge a memory of rows it already trained on.
   - Each training adds a sample from the memory to its new rows, so that a fraction `replay_ratio` of it is replayed.
-  - A row enters the memory only after its first successful training.
+  - A row enters the memory only after its first successful training. The edge is still weighted by its new rows, and `memory: none` runs exactly as without `continual`.
 - **Edge validation.** `data.roles.local_val_split: class_tail` holds out the last rows of each class instead of the last rows of the recording, which are usually a single condition.
 - **Downloadable data.** `experiments/mix_swell_wesad.yaml` runs the same sweep with SWELL and WESAD, the two datasets that can be downloaded. It trains for 10 local epochs: with one, the model only learns the majority class ([§7](#7-results)).
 
@@ -517,7 +517,7 @@ The workflows run only on release PRs into `main`, to save CI minutes; task PRs 
 - **Real-run latency** across machines needs NTP-synchronised clocks.
 - **Manual deployments** across machines need the same data and cache on each machine, because every process rebuilds the scenario.
 - **Compute in simulation** is modelled as samples per second (or the measured wall time), not as a device profile.
-- **Streams before C4 and C6.**
+- **Streams before C6 (triggers).**
   - Each round trains on the rows it has not used yet, plus a replay sample when `continual` is set. The replay settings are not tuned.
   - Rounds come at a fixed pace, with `rounds` as an upper bound.
   - Every edge must take part in every round: `close_at_quorum` and time-based availability are outside the temporal guarantee.
