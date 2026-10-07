@@ -1,0 +1,50 @@
+# Triggers on the SWELL + WESAD streams (issue #161, continuum C6).
+#
+# The stream, labels and training are stream_swell_wesad's with every row
+# labelled, 10 minutes late, and no replay memory. Instead of a round every
+# 10 minutes, a continuum trigger opens the rounds:
+# - schedule: every 10 minutes of data, with a status every 10 minutes. These
+#   are C3's rounds, so this scenario must give C3's final models bit for bit;
+# - volume: once 300 new rows have become trainable across the federation
+#   (about two C3 rounds' worth), with a status every 5 minutes;
+# - drift: when a prior shift (the classes of the arriving labels moving away
+#   from the history's) is detected at an edge, a fog or the cloud, with a
+#   status every 5 minutes.
+# Every scenario ends with one final round after the last label.
+#
+# Neither the volume nor the detector is tuned; this shows the triggers on the
+# real recordings, the benchmark is C8.
+#
+#   onion_fl run experiments/stream_triggers_swell_wesad.yaml --workers 3
+name: stream_triggers_swell_wesad
+description: Disparadores por calendario, volumen y deriva en los streams de SWELL y WESAD.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+rounds: 60                 # an upper bound: the run ends at the last label
+stream:
+  bootstrap: 20m
+  batch_size: 1
+  speed: 60
+labels: {fraction: 1.0, delay: 10m}
+continuum:
+  trigger: {name: schedule, every: 10m}
+  status_every: 10m
+evaluation:
+  metrics: [loss, accuracy, macro_f1, confusion_matrix]
+  aggregators: {every: 1}
+  global: {every: 5}
+seeds: [0, 1, 2]
+sweep:
+  continuum.trigger, continuum.status_every:
+    - [{name: schedule, every: 10m}, 10m]
+    - [{name: volume, samples: 300}, 5m]
+    - [{name: drift, kind: prior}, 5m]
