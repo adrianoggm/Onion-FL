@@ -305,3 +305,47 @@ def test_memory_none_runs_exactly_as_without_a_memory(workspace: Path) -> None:
         return [(e["name"], e["node"], e["value"]) for e in map(json.loads, lines)]
 
     assert trace(run(workspace, continual=none)) == trace(run(workspace))
+
+
+# --- triggers and continuous federation (continuum C6) ----------------------------
+
+SCHEDULE = {"trigger": {"name": "schedule", "every": 300}, "status_every": 300}
+PACED = {k: v for k, v in STREAM.items() if k != "round_every"}
+PRIOR = {"name": "drift", "kind": "prior"}
+STRICTER = {"name": "page_hinkley", "threshold": 2}
+
+
+@pytest.mark.parametrize(
+    "change, message",
+    [
+        ({"continuum": SCHEDULE}, "round_every"),  # both pace the rounds
+        ({"stream": PACED}, "round_every"),  # neither does
+        ({"stream": None, "labels": None, "continuum": SCHEDULE}, "continuum"),
+        (
+            {"stream": PACED, "continuum": {"trigger": PRIOR | {"kind": "concept"}}},
+            "kind",
+        ),
+        ({"stream": PACED, "continuum": {"trigger": "carrier_pigeon"}}, "pigeon"),
+        (
+            {
+                "stream": PACED,
+                "continuum": {
+                    "trigger": PRIOR,
+                    "edge_trigger": PRIOR | {"detector": STRICTER},
+                },
+            },
+            "prior",
+        ),
+    ],
+)
+def test_a_continuum_that_cannot_run_is_refused(
+    workspace: Path, change: dict, message: str
+) -> None:
+    raw = {k: v for k, v in (experiment(workspace) | change).items() if v is not None}
+    with pytest.raises(ConfigError, match=message):
+        parse_experiment(raw)
+
+
+def test_a_stream_paced_by_round_every_keeps_its_config_id(workspace: Path) -> None:
+    dumped = parse_experiment(experiment(workspace)).dump()
+    assert dumped["stream"]["round_every"] == 300 and "continuum" not in dumped

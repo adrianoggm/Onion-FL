@@ -11,6 +11,8 @@ import numpy as np
 import pytest
 
 from onion_fl.continuum.drift import Reference, detectors, window
+from onion_fl.continuum.pace import View
+from onion_fl.continuum.triggers import drift_detectors, triggers
 
 
 def ph(**params):
@@ -84,3 +86,57 @@ def test_a_window_with_nothing_for_its_kind_rests_on_no_rows() -> None:
 
     for kind in ("data", "prior", "performance"):
         assert window(kind, s, nothing, nothing, None, nothing, Reference(s))[1] == 0
+
+
+def fired(spec, **view) -> str | None:
+    name, params = (spec, {}) if isinstance(spec, str) else (spec["name"], spec)
+    trigger = triggers.create(name, {k: v for k, v in params.items() if k != "name"})
+    return trigger.fired(View(**({"now": 0.0, "since": 0.0, "volume": 0.0} | view)))
+
+
+def test_a_schedule_fires_once_its_data_time_has_passed() -> None:
+    every = {"name": "schedule", "every": "5m"}
+    assert fired(every, now=299.0) is None
+    assert fired(every, now=400.0, since=100.0) == "schedule"
+
+
+def test_a_volume_trigger_fires_at_its_rows() -> None:
+    assert fired({"name": "volume", "samples": 10}, volume=9) is None
+    assert fired({"name": "volume", "samples": 10}, volume=10) == "volume"
+
+
+def test_a_drift_trigger_fires_on_its_kind_only() -> None:
+    prior = {"name": "drift", "kind": "prior"}
+    assert fired(prior, drift={"data": 2}) is None
+    assert fired(prior, drift={"prior": 1}) == "drift/prior"
+
+
+def test_any_names_the_first_trigger_that_fired() -> None:
+    both = {
+        "name": "any",
+        "of": [{"name": "schedule", "every": 600}, {"name": "volume", "samples": 5}],
+    }
+    assert fired(both, now=100.0, volume=7) == "volume"
+    assert fired(both, now=700.0, volume=7) == "schedule"
+    assert fired(both, now=100.0, volume=1) is None
+
+
+def test_the_detectors_come_from_every_drift_trigger() -> None:
+    nested = triggers.create(
+        "any",
+        {"of": [{"name": "drift", "kind": "prior"}, {"name": "volume", "samples": 1}]},
+    )
+    stricter = {"name": "page_hinkley", "threshold": 1.0}
+    local = triggers.create("drift", {"kind": "data", "detector": stricter})
+
+    found = drift_detectors(nested, local, None)
+
+    assert found == {"prior": "page_hinkley", "data": stricter}
+
+
+def test_one_kind_cannot_have_two_detectors() -> None:
+    stricter = {"name": "page_hinkley", "threshold": 2.0}
+    a = triggers.create("drift", {"kind": "prior"})
+    b = triggers.create("drift", {"kind": "prior", "detector": stricter})
+    with pytest.raises(ValueError, match="prior"):
+        drift_detectors(a, b)
