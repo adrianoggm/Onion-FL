@@ -254,6 +254,16 @@ continual:
   - Cada liberación cuenta en la composición del presupuesto.
   - No se añade ruido a los ejemplos guardados.
 - **Seguridad del almacenamiento.** La DP del protocolo no protege el búfer frente a quien comprometa físicamente el edge; eso es seguridad de almacenamiento. En C4 el búfer es local, no sale del edge y tiene capacidad (y opcionalmente TTL). El cifrado queda para después.
+- **Decisiones de C4** (#159; el plan, `docs/superpowers/plans/2026-10-05-continuum-c4-memory.md`, da el detalle):
+  - **Cuándo entra una fila.** Solo después del primer entrenamiento que la consumió con éxito (`first_consumed_by_version`), nunca por estar etiquetada. Un entrenamiento fallido no mete nada en la memoria.
+  - **Qué guarda.** Índices de las filas del stream del propio edge, nunca copias de los datos.
+  - **Cuánto replay.** A sus n filas recientes, cada entrenamiento añade r·n / (1 − r) filas de la memoria, sin reemplazo (r es `replay_ratio`). De media, una fracción r de cada lote sale de la memoria.
+    - Sin filas nuevas, el edge sigue ocioso.
+    - Una fila repetida no vuelve a contar como consumida.
+  - **Aleatoriedad.** Cada memoria tiene su propio stream (`memory/<edge>`) y no toca el del edge.
+  - **`class_balanced`.** Al llenarse, descarta la fila más antigua de la clase con más filas.
+  - **Bundle.** La memoria se guarda en el bundle de cada ejecución. Restaurarla espera a que un stream pueda continuar en el tiempo; `init: run` con un stream sigue rechazado.
+  - **Diagnóstico.** `diagnostic.memory`, por edge y ronda: filas, capacidad, edad media, clases y filas repetidas.
 
 ## 9. Datos sin etiquetar (C5)
 

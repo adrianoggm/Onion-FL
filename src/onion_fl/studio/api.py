@@ -98,6 +98,13 @@ AXES: list[tuple[str, str, str, str | None]] = [
         "Ruido de privacidad diferencial que cada edge añade antes de enviar.",
         None,
     ),
+    (
+        "memory",
+        "Memoria",
+        "Qué filas ya entrenadas guarda cada edge de un stream para volver a "
+        "entrenar con ellas (replay).",
+        None,
+    ),
     ("init", "Inicialización", "De dónde sale el modelo inicial.", None),
     ("participation", "Participación", "Qué hijos participan en cada ronda.", None),
     (

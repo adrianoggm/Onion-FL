@@ -256,3 +256,52 @@ def test_a_stream_needs_every_edge_in_every_round(workspace: Path) -> None:
 
     with pytest.raises(ConfigError, match="participation"):
         plan(parse_experiment(experiment(workspace, topology=topology)))
+
+
+# --- replay memory (continuum C4) ---------------------------------------------------
+
+REPLAY = {"memory": {"name": "reservoir", "capacity": 64}, "replay_ratio": 0.5}
+
+
+def test_a_stream_run_can_replay_each_edges_memory(workspace: Path) -> None:
+    path = run(workspace, continual=REPLAY)
+
+    memory = events(path, "diagnostic.memory")
+    edges = {e["node"] for e in events(path, "data.arrived")}
+    assert {e["node"] for e in memory} == edges
+    assert all(e["value"] <= 64 and e["tags"]["capacity"] == 64 for e in memory)
+    assert sum(e["tags"]["replayed"] for e in memory) > 0
+
+
+def test_replay_needs_a_stream(workspace: Path) -> None:
+    raw = experiment(workspace, continual=REPLAY)
+    del raw["stream"], raw["labels"]
+
+    with pytest.raises(ConfigError, match="continual"):
+        parse_experiment(raw)
+
+
+def test_a_stream_without_replay_keeps_its_config_id(workspace: Path) -> None:
+    assert "continual" not in parse_experiment(experiment(workspace)).dump()
+
+
+def test_each_edges_memory_draws_from_its_own_seeded_stream(workspace: Path) -> None:
+    from onion_fl.core.context import node_rng
+    from onion_fl.experiment.runner import _replay
+
+    (scenario,) = scenarios(parse_experiment(experiment(workspace, continual=REPLAY)))
+    one, two = (_replay(scenario, e)["replay"].rng for e in ("e1", "e2"))
+
+    expected = node_rng(scenario.seed, "memory/e1").random(4)
+    np.testing.assert_array_equal(one.random(4), expected)
+    assert not np.array_equal(two.random(4), expected)
+
+
+def test_memory_none_runs_exactly_as_without_a_memory(workspace: Path) -> None:
+    none = {"memory": "none", "replay_ratio": 0.5}
+
+    def trace(path: Path) -> list:
+        lines = (path / "events.jsonl").read_text(encoding="utf-8").splitlines()
+        return [(e["name"], e["node"], e["value"]) for e in map(json.loads, lines)]
+
+    assert trace(run(workspace, continual=none)) == trace(run(workspace))

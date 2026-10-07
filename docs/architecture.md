@@ -159,7 +159,7 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
 - **Bundle.** Every simulated run writes `runs/<run_id>/bundle/` (`onion_fl.continuum.bundle`), which `run_hash` covers. It holds the state `snapshot_federation` captures, with `.npz` and JSON only:
   - the global model, round and server optimizer;
   - each aggregator's zone, previous aggregate and own state (the central DP budget);
-  - each edge's model, trainer memory (`export_memory`) and local DP budget;
+  - each edge's model, trainer memory (`export_memory`), local DP budget, replay memory and what its stream consumed (`stream/consumed_by`), saved together so a row is either kept or unconsumed;
   - every node's random stream (`rng_state`, with its spawned children).
 
   Next to that state it keeps the lineage and, per dataset, what the whole lineage knows of it, even when this run does not load that dataset: the frozen preprocessing (`DataSplit.preprocessing`), the task and classes, and every subject that ever trained, validated or tested. A subject keeps its role along a lineage, so these roles stay a partition.
@@ -170,7 +170,7 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
   - records the parent in `run.json`.
 - **What `restore` covers.**
   - `model`: every model weight, meaning the global model, the zones, the previous aggregates, the edge models, and the trainer memory that holds weights (marked `weights` by `export_memory`).
-  - `edge_state`: the rest of each edge, meaning its trainer memory (SCAFFOLD's c_i, for example) and its random stream.
+  - `edge_state`: the rest of each edge, meaning its trainer memory (SCAFFOLD's c_i, for example), its replay memory, what its stream consumed, and its random stream. Restoring a stream and its memory waits for streams to continue.
   - `server_state`: the server optimizer, and the algorithm state riding in the global model as auxiliary keys (SCAFFOLD's c). SCAFFOLD and FedDyn need it restored together with `edge_state`.
 - **DP budgets.** They always carry over. Each budget (`privacy.Accountant`) is the Rényi DP accumulated at each order, Σ α/(2σ²), so σ may change between generations and ε stays right.
   - An edge with a budget also keeps its random stream, since a fresh one would replay its parent's noise.
@@ -200,6 +200,12 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
 - **Participation.** An edge handles its stream when a round reaches it, so streams require participation `all`. `close_at_quorum` and time-based availability are outside the temporal guarantee until C6.
 - **Evaluation.** Validation evaluators with a stream score what arrived since their previous request. Test evaluators score whole test subjects, so the final test score stays comparable.
 - **The bootstrap fit.** `split_subjects(fit_rows=...)` fits the preprocessing on the rows before t₀ only.
+- **Replay memory** (`continual: {memory, replay_ratio}`, `onion_fl.continuum.memory`).
+  - **Plugins.** `none`, `fifo`, `reservoir` and `class_balanced`, each keeping indices into its edge's own stream on a stream seeded per edge. An external one follows the `Memory` protocol, which the edge checks when it is built, together with `replay_ratio` in [0, 1) and the stream a memory needs.
+  - **What enters.** The rows of a training that ended with finite weights, offered in time order: nothing enters on a failed training, even if its round then fails for other reasons.
+  - **Replay.** Each training adds r·n / (1 − r) rows sampled from the memory to its n recent ones. An edge with nothing new stays idle.
+  - **Weight.** The edge is weighted by its n recent rows, as it would be without a memory: a replayed row was weighted when it was new.
+  - **Records.** After each training that worked, the edge reports `diagnostic.memory`: the memory as it is now, the rows that training replayed, and the mean age of what is kept since it was observed. The bundle saves the memory.
 
 ## 8. Observability
 
@@ -289,7 +295,7 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | privacy | `local_dp` |
 | server_optimizer | `replace`, `fedavgm`, `fedadam`, `fedyogi`, `fedadagrad`, `fedasync_mix`, `scaffold`, `fednova`, `feddyn` |
 | trainer | `standard`, `fedprox`, `ditto`, `apfl`, `fedrep`, `fedbabu`, `scaffold`, `fednova`, `feddyn`, `moon`, `stub` |
-| init | `random`, `checkpoint` |
+| init | `random`, `checkpoint`, `run` |
 | metric | `loss`, `accuracy`, `macro_f1`, `recall_per_class`, `confusion_matrix` |
 | diagnostic | `divergence`, `dataset_conflict`, `drift`, `participation`, `fairness` |
 | participation | `all`, `fraction` |
@@ -297,5 +303,6 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | stale_weighting | `constant`, `polynomial` |
 | placement | `explicit`, `mixing`, `dirichlet`, `label_skew`, `pooled` |
 | reader | `csv`, `excel`, `parquet`, `pickle`, `npz`, `wesad_pickle` |
-| step | `subject`, `label`, `features`, `replace`, `join`, `window`, `select` |
+| step | `subject`, `label`, `features`, `replace`, `join`, `window`, `select`, `time` |
+| memory | `none`, `fifo`, `reservoir`, `class_balanced` |
 | baseline | `lr`, `rf`, `xgboost` |

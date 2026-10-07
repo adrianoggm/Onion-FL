@@ -22,6 +22,7 @@ from typing import Any
 import numpy as np
 
 from onion_fl.continuum.bundle import Bundle, load_bundle, save_bundle
+from onion_fl.continuum.memory import NoMemory, memories
 from onion_fl.core.context import node_rng
 from onion_fl.core.topology import Topology, load_topology, parse_topology
 from onion_fl.data.cache import load_prepared, prepare
@@ -363,7 +364,8 @@ def _restore_parts(
     ``model`` governs every model weight: the global model, zones, previous
     aggregates, edge models and the trainer memory that holds weights.
     ``server_state`` governs the server optimizer; ``edge_state`` the rest of an
-    edge, its trainer memory and random stream. SCAFFOLD's c, auxiliary keys of
+    edge, its trainer memory, replay memory, what its stream consumed and its
+    random stream. SCAFFOLD's c, auxiliary keys of
     the global state, is server state. DP budgets always carry over, and so does
     the stream of an edge that has one: what was released stays released.
     """
@@ -374,6 +376,8 @@ def _restore_parts(
             return restore.server_state if is_aux(rest) else restore.model
         if part in ("zone", "previous", "model"):
             return restore.model
+        if part in ("replay", "stream"):
+            return restore.edge_state
         return restore.server_state if part == "server" else True
 
     nodes = {}
@@ -391,6 +395,8 @@ def _restore_parts(
                 for k, v in arrays.items()
                 if not k.startswith("memory/") or k.split("/")[1] in meta["memory"]
             }
+        if not restore.edge_state:
+            meta.pop("replay", None)
         # A DP edge keeps its stream: a fresh one would replay the parent's noise.
         private = any(k.startswith("privacy/") for k in node.arrays)
         if node_id in edges and not restore.edge_state and not private:
@@ -740,6 +746,18 @@ def _placed(placement: Placement) -> list[Any]:
     return sorted(clients, key=lambda c: (c.dataset, natural_key(c.id)))
 
 
+def _replay(scenario: Scenario, edge: str) -> dict[str, Any]:
+    """An edge's replay memory, on its own seeded stream, and its share."""
+    continual = scenario.config.continual
+    if continual is None:
+        return {}
+    memory = create(memories, continual.memory)
+    if isinstance(memory, NoMemory):  # nothing to replay: the edge runs as in C3
+        return {}
+    memory.rng = node_rng(scenario.seed, f"memory/{edge}")
+    return {"replay": memory, "replay_ratio": continual.replay_ratio}
+
+
 def edge_specs(
     scenario: Scenario, topology: Topology, split: DataSplit, placement: Placement
 ) -> tuple[dict[str, list[EdgeSpec]], dict[str, Any]]:
@@ -785,6 +803,7 @@ def edge_specs(
                     else create(privacies, config.privacy)
                 ),
                 stream=streams.get(client.id),
+                **_replay(scenario, client.id),
                 **device,
             )
             for client in clients

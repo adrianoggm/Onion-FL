@@ -382,3 +382,233 @@ def test_a_training_that_raises_leaves_no_trace_in_the_local_model() -> None:
     first, retry = trainer.heads[0], trainer.heads[1]
     for key, value in first.items():
         np.testing.assert_array_equal(retry[key], value, err_msg=key)
+
+
+# --- replay memory (continuum C4) ---------------------------------------------------
+
+
+def replaying(
+    trainer,
+    name: str = "fifo",
+    ratio: float = 0.5,
+    rounds: int = 8,
+    before=lambda federation: None,
+    **kw,
+):
+    from onion_fl.continuum.memory import memories
+
+    replay = memories.create(name, {} if name == "none" else {"capacity": 1000})
+    replay.rng = np.random.default_rng(7)
+    spec = EdgeSpec(
+        "a1",
+        ModularMLP(CONFIG, [A], seed=0),
+        trainer=trainer,
+        stream=kw.pop("stream", stream_of("a-1")),
+        replay=replay,
+        replay_ratio=ratio,
+    )
+    federation = build_federation(
+        tree(1, fog={"deadline": 1}),
+        {"fog_0": [spec]},
+        initial_state=INITIAL,
+        rounds=rounds,
+        round_every=EVERY / SPEED,
+    )
+    before(federation)
+    federation.run()
+    return federation, federation.edges["a1"]
+
+
+@pytest.mark.parametrize("how", ["raise", "nan"])
+def test_a_row_enters_the_memory_only_once_its_training_succeeded(how: str) -> None:
+    flaky = Flaky(how)
+    federation, edge = replaying(flaky)
+
+    consumed = np.flatnonzero(edge._consumed_by >= 0)
+    assert sorted(edge.replay.rows().tolist()) == consumed.tolist()
+    assert set(flaky.failed) <= set(edge.stream.data.t[edge.replay.rows()])
+
+
+def test_each_training_replays_its_share_of_the_memory() -> None:
+    recording = Recording()
+    replaying(recording, ratio=0.5)
+
+    seen: set[float] = set()
+    assert len(recording.calls) > 2
+    for _, t in recording.calls:
+        recent = [x for x in t if x not in seen]
+        replayed = len(t) - len(recent)
+        # replay_ratio 0.5: as many replayed rows as recent ones, if kept
+        assert recent and replayed == min(len(recent), len(seen))
+        seen |= set(t.tolist())
+
+
+class Weights:
+    """A fog's aggregator, keeping the weight each child sent."""
+
+    def __init__(self, inner) -> None:
+        self.inner, self.sent = inner, []
+
+    def aggregate(self, contributions, *args, **kw):
+        self.sent += [max(c.weights.values()) for c in contributions]
+        return self.inner.aggregate(contributions, *args, **kw)
+
+
+def test_replayed_rows_add_nothing_to_the_aggregation_weight() -> None:
+    recording, weights = Recording(), []
+
+    def wrap(federation) -> None:
+        fog = federation.aggregators["fog_0"]
+        fog.aggregator = Weights(fog.aggregator)
+        weights.append(fog.aggregator)
+
+    federation, _ = replaying(recording, ratio=0.5, before=wrap)
+
+    seen: set[float] = set()
+    recent = []
+    for _, t in recording.calls:
+        recent.append(sum(1 for x in t if x not in seen))
+        seen |= set(t.tolist())
+    trained = [e["tags"]["examples"] for e in events(federation, "edge.trained", "a1")]
+    assert any(len(t) > n for (_, t), n in zip(recording.calls, recent, strict=True))
+    assert weights[0].sent == recent and trained == recent  # new rows only
+
+
+def test_the_memory_is_reported_after_each_training_that_worked() -> None:
+    federation, edge = replaying(Flaky("raise"))
+
+    reports = events(federation, "diagnostic.memory", "a1")
+    trained = [e["tags"]["round"] for e in events(federation, "edge.trained", "a1")]
+    assert [e["tags"]["round"] for e in reports] == trained  # not the failed one
+    assert reports[-1]["value"] == len(edge.replay.rows())  # the memory as it ends
+    assert sum(reports[-1]["tags"]["classes"]) == reports[-1]["value"]
+    assert reports[-1]["tags"]["capacity"] == 1000 and reports[-1]["tags"]["age"] > 0
+
+
+def test_the_age_of_the_memory_counts_from_when_its_rows_were_observed() -> None:
+    recording = Recording()
+    federation, _ = replaying(recording)
+
+    first = events(federation, "diagnostic.memory", "a1")[0]
+    now, t = recording.calls[0]  # the first training: nothing replayed yet
+    # t₀ is 120 s, so the history rows were observed 120 and 60 s before it
+    assert first["tags"]["age"] == pytest.approx(float(np.mean(now - (t - 120.0))))
+
+
+def test_a_replay_run_is_deterministic() -> None:
+    def trace():
+        federation, _ = replaying(Recording(), name="reservoir")
+        return [
+            (e["name"], e["node"], e["tags"].get("round"), e["value"])
+            for e in federation.runtime.events
+        ], federation.coordinator.state
+
+    (first, state), (second, again) = trace(), trace()
+    assert first == second
+    for key, value in state.items():
+        np.testing.assert_array_equal(again[key], value)
+
+
+def test_without_replay_the_edge_trains_as_before() -> None:
+    plain = Recording()
+    federation = build_federation(
+        tree(1),
+        {
+            "fog_0": [
+                EdgeSpec(
+                    "a1",
+                    ModularMLP(CONFIG, [A], seed=0),
+                    trainer=plain,
+                    stream=stream_of("a-1"),
+                )
+            ]
+        },
+        initial_state=INITIAL,
+        rounds=8,
+        round_every=EVERY / SPEED,
+    )
+    federation.run()
+    nothing = Recording()
+    _, edge = replaying(nothing, name="none")
+
+    assert [t.tolist() for _, t in nothing.calls] == [
+        t.tolist() for _, t in plain.calls
+    ]
+    assert edge.replay.rows().tolist() == []
+
+
+def test_the_snapshot_saves_the_replay_memory() -> None:
+    from onion_fl.roles import snapshot_federation
+
+    federation, edge = replaying(Recording(), name="reservoir")
+    saved = snapshot_federation(federation).nodes["a1"]
+
+    np.testing.assert_array_equal(saved.arrays["replay/rows"], edge.replay.rows())
+    assert saved.meta["replay"]["seen"] == edge.replay.seen
+    # what was consumed goes with it: a row is in memory or still unconsumed
+    np.testing.assert_array_equal(saved.arrays["stream/consumed_by"], edge._consumed_by)
+
+
+@pytest.mark.parametrize("edge_state", [True, False])
+def test_the_memory_and_what_was_consumed_go_with_the_edge_state(
+    edge_state: bool,
+) -> None:
+    from types import SimpleNamespace
+
+    from onion_fl.experiment.runner import _restore_parts
+    from onion_fl.roles import snapshot_federation
+
+    federation, _ = replaying(Recording(), name="reservoir")
+    restore = SimpleNamespace(model=True, server_state=True, edge_state=edge_state)
+
+    kept = _restore_parts(snapshot_federation(federation), restore, {"a1"})
+
+    saved = kept.nodes["a1"]
+    parts = {k.split("/")[0] for k in saved.arrays}
+    assert (
+        {"replay", "stream"} <= parts
+        if edge_state
+        else not parts & {"replay", "stream"}
+    )
+    assert ("replay" in saved.meta) == edge_state
+
+
+@pytest.mark.parametrize("ratio", [1.0, 1.5, -0.1])
+def test_a_replay_ratio_outside_zero_to_one_is_refused(ratio: float) -> None:
+    with pytest.raises(ValueError, match="replay_ratio"):
+        replaying(Recording(), ratio=ratio, rounds=1)
+
+
+def edge_with(replay, stream=None) -> EdgeSpec:
+    model = ModularMLP(CONFIG, [A], seed=0)
+    return EdgeSpec("a1", model, trainer=Recording(), stream=stream, replay=replay)
+
+
+def test_a_replay_memory_needs_a_stream() -> None:
+    from onion_fl.continuum.memory import memories
+
+    memory = memories.create("fifo", {"capacity": 10})
+    with pytest.raises(ValueError, match="stream"):
+        build_federation(
+            tree(1), {"fog_0": [edge_with(memory)]}, initial_state=INITIAL, rounds=1
+        )
+
+
+def test_a_memory_plugin_must_offer_what_the_edge_uses() -> None:
+    class Partial:  # no capacity, rows, sample or state
+        def add(self, rows, y) -> None:
+            pass
+
+    with pytest.raises(TypeError, match="replay memory"):
+        build_federation(
+            tree(1),
+            {"fog_0": [edge_with(Partial(), stream_of("a-1"))]},
+            initial_state=INITIAL,
+            rounds=1,
+        )
+
+
+def test_an_edge_replays_the_configs_default_share() -> None:
+    from onion_fl.experiment.config import ContinualConfig
+
+    assert EdgeSpec("a1", None).replay_ratio == ContinualConfig().replay_ratio

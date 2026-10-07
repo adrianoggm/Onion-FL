@@ -24,6 +24,7 @@ from typing import Any
 
 import numpy as np
 
+from onion_fl.continuum.memory import Memory
 from onion_fl.core.context import Context, child_rng
 from onion_fl.core.message import Message, Payload
 from onion_fl.core.node import Node
@@ -862,13 +863,30 @@ class Edge(_Greeter, Node):
         attack: Any = None,
         privacy: Any = None,
         stream: Any = None,
+        replay: Any = None,
+        replay_ratio: float = 0.25,
         metrics: Sequence[str] = ("loss", "accuracy"),
     ) -> None:
         super().__init__(node_id)
+        if replay is not None:  # refused here, not as an error inside a round
+            if stream is None:
+                raise ValueError(f"{node_id}: a replay memory needs a stream")
+            if not isinstance(replay, Memory):
+                raise TypeError(
+                    f"{node_id}: {type(replay).__name__} is not a replay memory; "
+                    "it needs capacity, rng, add, rows, sample, state and load_state"
+                )
+            if not 0 <= replay_ratio < 1:
+                raise ValueError(
+                    f"{node_id}: replay_ratio must be in [0, 1), not {replay_ratio}"
+                )
         self.hello_retry = hello_retry
         # A stream (continuum C3): rows arrive over time, are predicted by the
         # model the edge serves when they come, and train once labelled.
         self.stream, self.metrics = stream, tuple(metrics)
+        # A replay memory keeps rows already consumed, to train on them again.
+        self.replay, self.replay_ratio = replay, replay_ratio
+        self._replayed = 0  # rows the current training replays
         self._clock = -np.inf  # continuum time up to which arrivals are handled
         self._served: State | None = None  # the last model received, as served
         if stream is not None:
@@ -1015,7 +1033,31 @@ class Edge(_Greeter, Node):
         since = -np.inf if s.window is None else now - s.window
         buffer = s.trainable(since, now) & (self._consumed_by < 0)
         self._pending = buffer
-        return (s.take(buffer) if buffer.any() else None), metrics
+        rows = buffer.copy()
+        if self.replay is not None:
+            # replay_ratio r of the training comes from memory: k = r·n / (1 − r);
+            # with nothing new the edge stays idle, whatever it remembers
+            n = int(buffer.sum())
+            r = self.replay_ratio
+            replayed = self.replay.sample(int(r * n / (1 - r) + 0.5))
+            rows[replayed] = True
+            self._replayed = len(replayed)  # reported if the training works
+        return (s.take(rows) if buffer.any() else None), metrics
+
+    def _report_memory(self, round: int, ctx: Context) -> None:
+        """The memory after a training that worked, and what that training replayed."""
+        s, kept = self.stream, self.replay.rows()
+        age = float(np.mean(self._clock - s.observed_at[kept])) if len(kept) else 0.0
+        ctx.emit(
+            "diagnostic.memory",
+            float(len(kept)),
+            round=round,
+            capacity=int(self.replay.capacity),
+            age=age,  # since each kept row was observed, in data seconds
+            classes=np.bincount(s.data.y[kept], minlength=s.data.n_classes).tolist(),
+            replayed=self._replayed,
+            **self.tags,
+        )
 
     def _train(self, msg: Message, ctx: Context) -> None:
         received = dict(msg.payload.state)
@@ -1084,6 +1126,10 @@ class Edge(_Greeter, Node):
             return
         if self.stream is not None:  # trained with finite weights: now used
             self._consumed_by[self._pending] = msg.round
+            if self.replay is not None:  # and only now eligible for replay
+                fresh = np.flatnonzero(self._pending)  # in time order
+                self.replay.add(fresh, self.stream.data.y[fresh])
+                self._report_memory(msg.round, ctx)
         if scoring and "local" in self.eval_models:
             metrics |= self._score("local", msg.round, ctx)
         try:
@@ -1117,15 +1163,18 @@ class Edge(_Greeter, Node):
                 round=msg.round,
                 mechanism="local",
             )
-        ctx.emit("edge.trained", result.loss, round=msg.round, examples=result.examples)
+        examples = result.examples
+        if self.replay is not None:  # replayed rows were weighted when they were new
+            examples = int(self._pending.sum())
+        ctx.emit("edge.trained", result.loss, round=msg.round, examples=examples)
         # One vote per edge for trainers whose papers average clients (SCAFFOLD).
         uniform = getattr(self.trainer, "uniform_weights", False)
         payload = Payload(
             state=arrays,
-            weights=dict.fromkeys(up, 1.0 if uniform else float(result.examples)),
+            weights=dict.fromkeys(up, 1.0 if uniform else float(examples)),
             metrics={
                 "train_loss": float(result.loss),
-                "train_examples": float(result.examples),
+                "train_examples": float(examples),
                 "train_steps": float(result.batches),
                 "train_edges": 1.0,
                 **{f"train_edges/{g}": 1.0 for g in self._groups_up(up)},
