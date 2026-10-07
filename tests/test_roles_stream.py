@@ -779,6 +779,7 @@ def continuous(
     compute=None,
     before=lambda federation: None,
     runtime=None,
+    fogs=None,
     **streams,
 ):
     """A continuous federation of stub edges, run to its end."""
@@ -811,7 +812,7 @@ def continuous(
         )
         for name, s in sorted(streams.items())
     ]
-    fogs = min(2, len(specs))  # a fog without edges would never register
+    fogs = fogs or min(2, len(specs))  # a fog without edges would never register
     federation = build_federation(
         tree(fogs),
         {f"fog_{i}": specs[i::fogs] for i in range(fogs)},
@@ -942,8 +943,11 @@ def test_a_trigger_during_an_open_round_waits_for_it() -> None:
     started = events(federation, "round.started", "cloud")
     rounds = [e["tags"]["round"] for e in started]
     assert rounds == list(range(1, len(rounds) + 1)) and len(rounds) > 2
-    for e in started[1:]:  # each opens once the previous one has closed
-        assert e["t"] >= closed[e["tags"]["round"] - 1]
+    # Each round takes two virtual seconds and the schedule is due after one,
+    # so every next round is due while the previous one is open: it opens at
+    # the very moment that one closes, not at a later status tick.
+    for e in started[1:]:
+        assert e["t"] == closed[e["tags"]["round"] - 1]
 
 
 def test_an_edge_in_a_federation_trains_only_when_its_trigger_fires() -> None:
@@ -1082,3 +1086,54 @@ def test_a_run_says_whether_its_cap_or_its_last_label_ended_it(
 
     (finished,) = events(federation, "run.finished")
     assert finished["tags"]["reason"] == reason
+
+
+def sparse(subject: str, n: int = 5):
+    """One row every five minutes: four after t0, never five unconsumed."""
+    t = np.arange(n) * 300.0
+    data = SubjectData(
+        X=np.stack([t / 600, np.cos(t)], axis=1).astype(np.float32),
+        y=np.arange(n) % 2,
+        dataset="a",
+        subject=subject,
+        task="t",
+        n_classes=2,
+        feature_names=["f0", "f1"],
+        t=t,
+    )
+    config = StreamConfig(bootstrap=120, batch_size=1, speed=SPEED)
+    return edge_stream(data, config, LabelsConfig(fraction=1.0), seed=0)
+
+
+def test_an_edge_whose_trigger_never_fires_does_not_hold_back_its_sibling() -> None:
+    federation, trainers_by_edge = continuous(
+        {"name": "schedule", "every": 120},
+        edge_trigger={"name": "volume", "samples": 5},
+        fogs=1,  # both under fog_0
+        dense=stream_of("a-1"),
+        sparse=sparse("a-2"),
+    )
+
+    quiet = federation.edges["sparse"]
+    rounds = len(events(federation, "round.started", "cloud"))
+    trained = [e["tags"]["round"] for e in events(federation, "edge.trained", "sparse")]
+    # It trains v0, and what is left once its stream has ended; never its trigger.
+    assert trained == [1, trained[-1]] and not events(
+        federation, "trigger.fired", "sparse"
+    )
+    assert trainers_by_edge["sparse"].calls[1][0] >= quiet.stream.drain
+    # In between it answers every round idle, and its rows wait for the end.
+    sent = events(federation, "message.sent", "sparse")
+    assert len([e for e in sent if e["tags"]["kind"] == "update"]) == rounds
+    live = ~quiet.stream.history
+    assert set(quiet._consumed_by[live].tolist()) == {trained[-1]}
+    # Its sibling trains in between, and every round of their fog closes.
+    assert len(trainers_by_edge["dense"].calls) > 2
+    ends = ("round.closed", "round.idle")
+    closed = [
+        e
+        for e in federation.runtime.events
+        if e["node"] == "fog_0" and e["name"] in ends
+    ]
+    assert len(closed) == rounds
+    assert not events(federation, "round.quorum_failed")
