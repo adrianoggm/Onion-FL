@@ -509,14 +509,12 @@ def test_preview_errors_name_the_problem(client: TestClient) -> None:
 def test_a_file_error_is_reported_without_the_local_path(
     client: TestClient, monkeypatch
 ) -> None:
-    import onion_fl.experiment.runner as runner
-
     def missing(config):
         raise FileNotFoundError(
             2, "No such file or directory", "C:/private/place/x.csv"
         )
 
-    monkeypatch.setattr(runner, "plan", missing)
+    monkeypatch.setattr("onion_fl.experiment.runner.plan", missing)
     response = client.post("/api/experiments/demo_exp/plan")
 
     text = json.dumps(response.json())
