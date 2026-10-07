@@ -155,7 +155,7 @@ def test_a_tampered_cache_is_detected(raw: Path, tmp_path: Path) -> None:
 def test_losing_a_race_to_another_process_keeps_its_cache(
     raw: Path, tmp_path: Path, monkeypatch
 ) -> None:
-    import onion_fl.data.cache as cache
+    from onion_fl.data import cache
 
     real_ingest = cache.ingest
 

@@ -335,10 +335,6 @@ def load_swell_dataset(
         if merged_df.empty:
             raise SWELLDatasetError("No rows remaining after subject filtering")
 
-    feature_columns = [
-        col for col in merged_df.columns if col not in {subject_col, "condition"}
-    ]
-
     # Keep potential meta columns for time/windowing but exclude from features
     meta_candidate_cols = {
         subject_col,

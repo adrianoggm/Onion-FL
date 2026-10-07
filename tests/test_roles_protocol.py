@@ -391,19 +391,25 @@ class Recording:
 
 
 def test_round_one_sends_the_full_state_and_later_rounds_only_what_crosses() -> None:
+    # The first model carries the local heads too (here 5 off a fresh build),
+    # though they never travel again; the trainer is anchored to what crosses.
+    start = {k: v + (5.0 if k.startswith("head.") else 0.0) for k, v in INITIAL.items()}
     recorder = Recording()
-
-    run(
+    federation = build_federation(
         tree(1),
         {"fog_0": [EdgeSpec("e1", model(A), trainer=recorder)]},
+        initial_state=start,
         rounds=2,
         sharing="fedper",
     )
+    federation.run()
 
+    head = state_arrays(federation.edges["e1"].model)["head.t.weight"]
+    shift = recorder.stub.params.shift
+    np.testing.assert_allclose(head, start["head.t.weight"] + 2 * shift, rtol=1e-6)
     first, second = recorder.received
-    assert "head.t.weight" in first and "adapter.b.0.weight" in first
-    assert not any(k.startswith("head.") for k in second)
-    assert "trunk.0.weight" in second
+    assert "trunk.0.weight" in first and "trunk.0.weight" in second
+    assert not any(k.startswith("head.") for k in first | second)
 
 
 def test_an_edge_sends_up_only_what_its_link_lets_through() -> None:
@@ -1092,3 +1098,55 @@ def test_a_trainer_that_cannot_be_copied_still_rolls_back_its_model() -> None:
     assert_global(federation, "trunk.0.weight", 2.0)
     (failed,) = names(federation, "edge.train_failed", "e2")
     assert "non-finite" in failed["tags"]["error"]
+
+
+# --- the first model each child gets is the whole one (QA2, #174) ------------------
+
+
+class Anchors:
+    """The stub trainer, keeping the keys of every model it was anchored to."""
+
+    def __init__(self) -> None:
+        self.stub = trainers.create("stub", {"shift": 1.0})
+        self.anchors: list[set[str]] = []
+
+    def train(self, model, data=None, received=None, ctx=None):
+        self.anchors.append(set(received or {}))
+        return self.stub.train(model, data, received, ctx)
+
+
+def test_a_child_first_drawn_late_still_starts_from_the_initial_state() -> None:
+    # A checkpoint-like start: heads that a fresh build would not have.
+    start = {k: v + (5.0 if k.startswith("head.") else 0.0) for k, v in INITIAL.items()}
+    fog = {"participation": {"name": "fraction", "p": 0.5}}
+    specs = {f"e{i}": EdgeSpec(f"e{i}", model(A), trainer=Anchors()) for i in range(4)}
+    federation = build_federation(
+        tree(1, fog=fog),
+        {"fog_0": list(specs.values())},
+        initial_state=start,
+        rounds=4,
+        sharing="fedper",  # heads stay on the edge: only the first model has them
+    )
+    federation.run()
+
+    first = {
+        e["node"] for e in names(federation, "edge.trained") if e["tags"]["round"] == 1
+    }
+    late = {e["node"] for e in names(federation, "edge.trained")} - first
+    assert late  # some edge first trained after round 1
+    for edge_id in late:
+        trained = len(names(federation, "edge.trained", edge_id))
+        head = state_arrays(federation.edges[edge_id].model)["head.t.weight"]
+        np.testing.assert_allclose(head, start["head.t.weight"] + trained, rtol=1e-6)
+
+
+def test_a_trainer_is_anchored_only_to_what_crosses_to_its_parent() -> None:
+    recording = Anchors()
+    spec = EdgeSpec("e1", model(A), trainer=recording)
+
+    run(tree(1), {"fog_0": [spec]}, rounds=2, sharing="fedper")
+
+    assert len(recording.anchors) == 2
+    assert all(
+        not any(k.startswith("head.") for k in keys) for keys in recording.anchors
+    )
