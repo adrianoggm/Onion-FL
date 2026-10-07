@@ -23,6 +23,8 @@ import numpy as np
 
 from onion_fl.continuum.bundle import Bundle, load_bundle, save_bundle
 from onion_fl.continuum.memory import NoMemory, memories
+from onion_fl.continuum.pace import Continuum
+from onion_fl.continuum.triggers import drift_detectors, triggers
 from onion_fl.core.context import node_rng
 from onion_fl.core.topology import Topology, load_topology, parse_topology
 from onion_fl.data.cache import load_prepared, prepare
@@ -712,14 +714,39 @@ def _streams(scenario: Scenario, placement: Placement) -> dict[str, Any]:
     return out
 
 
-def _paced(config: ExperimentConfig, streams: Mapping[str, Any]) -> tuple[int, Any]:
-    """Rounds and their virtual spacing: a stream lasts until its last label."""
+def _paced(
+    config: ExperimentConfig, streams: Mapping[str, Any]
+) -> tuple[int, Any, Continuum | None]:
+    """Rounds, their virtual spacing, and a continuous federation's pace: a
+    stream lasts until its last label; triggers or ``round_every`` pace it."""
     if config.stream is None:
-        return config.rounds, None
+        return config.rounds, None, None
+    drain = max((s.drain for s in streams.values()), default=0.0)
+    speed = config.stream.speed
+    c = config.continuum
+    if c is not None:
+        trigger = create(triggers, c.trigger)
+        local = None if c.edge_trigger is None else create(triggers, c.edge_trigger)
+        pace = Continuum(
+            trigger=trigger,
+            edge_trigger=local,
+            status_every=c.status_every / speed,
+            speed=speed,
+            until=drain / speed,
+            drift=drift_detectors(trigger, local),
+        )
+        return config.rounds, None, pace  # rounds stays an upper bound
     every = config.stream.round_every
-    horizon = max((s.drain for s in streams.values()), default=0.0)
-    rounds = min(config.rounds, math.ceil(horizon / every) + 1)  # one at or after it
-    return rounds, every / config.stream.speed
+    rounds = min(config.rounds, math.ceil(drain / every) + 1)  # one at or after it
+    return rounds, every / speed, None
+
+
+def _rounds_preview(config: ExperimentConfig, learners: Mapping[str, Any]) -> dict:
+    """How many rounds a stream run has, or which trigger decides them."""
+    rounds, _, pace = _paced(config, learners)
+    if pace is None:
+        return {"rounds": rounds}
+    return {"rounds": None, "trigger": _name(config.continuum.trigger)}
 
 
 def _stream_summary(config: ExperimentConfig, streams: Mapping[str, Any]) -> dict:
@@ -727,7 +754,7 @@ def _stream_summary(config: ExperimentConfig, streams: Mapping[str, Any]) -> dic
     return {
         "horizon": max((s.horizon for s in learners.values()), default=0.0),
         "drain": max((s.drain for s in learners.values()), default=0.0),
-        "rounds": _paced(config, learners)[0],
+        **_rounds_preview(config, learners),
         "edges": {
             k: {
                 "rows": len(s.history),
@@ -836,13 +863,14 @@ def build_scenario(
         parent = _parent(config, scenario.seed)
     start = parent[1].snapshot.round if parent else 0
     learners = {s.id: s.stream for g in edges.values() for s in g if s.train}
-    rounds, round_every = _paced(config, {k: v for k, v in learners.items() if v})
+    rounds, round_every, pace = _paced(config, {k: v for k, v in learners.items() if v})
     federation = build_federation(
         topology,
         edges,
         initial_state=initial,
         rounds=start + rounds,  # a continuation's numbering goes on
         round_every=round_every,
+        continuum=pace,
         sharing=config.learning.sharing,
         seed=scenario.seed,
         metrics=config.evaluation.metrics,

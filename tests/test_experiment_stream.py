@@ -349,3 +349,32 @@ def test_a_continuum_that_cannot_run_is_refused(
 def test_a_stream_paced_by_round_every_keeps_its_config_id(workspace: Path) -> None:
     dumped = parse_experiment(experiment(workspace)).dump()
     assert dumped["stream"]["round_every"] == 300 and "continuum" not in dumped
+
+
+def test_a_schedule_trigger_runs_as_round_every_did(workspace: Path) -> None:
+    paced = run(workspace)
+    triggered = run(workspace, stream=PACED, continuum=SCHEDULE)
+
+    with np.load(paced / "model.npz") as a, np.load(triggered / "model.npz") as b:
+        assert a.files == b.files and all(np.array_equal(a[k], b[k]) for k in a.files)
+
+
+def test_the_events_carry_the_data_time_of_each_trigger(workspace: Path) -> None:
+    path = run(
+        workspace,
+        stream=PACED,
+        continuum={"trigger": {"name": "volume", "samples": 8}, "status_every": 60},
+    )
+
+    fired = events(path, "trigger.fired")
+    assert fired[0]["tags"]["trigger"] == "start"
+    assert fired[-1]["tags"]["trigger"] == "horizon"
+    assert all("at" in e["tags"] for e in fired + events(path, "round.started"))
+
+
+def test_the_plan_names_the_trigger(workspace: Path) -> None:
+    raw = experiment(workspace, stream=PACED, continuum=SCHEDULE)
+    (preview,) = plan(parse_experiment(raw))
+
+    assert preview["stream"]["rounds"] is None
+    assert preview["stream"]["trigger"] == "schedule"

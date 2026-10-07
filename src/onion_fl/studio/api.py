@@ -105,6 +105,19 @@ AXES: list[tuple[str, str, str, str | None]] = [
         "entrenar con ellas (replay).",
         None,
     ),
+    (
+        "trigger",
+        "Disparador",
+        "Cuándo abre ronda el coordinador de una federación continua, y cuándo "
+        "tiene un edge una actualización: por calendario, por volumen o por deriva.",
+        None,
+    ),
+    (
+        "detector",
+        "Detector de deriva",
+        "Cómo vigila cada edge, zona y la federación su estadístico de deriva.",
+        None,
+    ),
     ("init", "Inicialización", "De dónde sale el modelo inicial.", None),
     ("participation", "Participación", "Qué hijos participan en cada ronda.", None),
     (
