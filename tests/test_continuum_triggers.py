@@ -69,6 +69,19 @@ def test_prior_drift_is_the_class_shift_of_the_labels_that_arrived() -> None:
     assert (value, n) == (pytest.approx(0.5), 2)  # half and half, then all 1
 
 
+@pytest.mark.parametrize("kind", ["data", "prior"])
+def test_a_window_is_compared_with_the_one_before(kind: str) -> None:
+    # history: class 0 at 0; then two windows of class 1 at 5
+    s = stream([[0.0], [0.0], [5.0], [5.0]], [0, 0, 1, 1], [1, 1, 0, 0])
+    first, second = np.array([0, 0, 1, 0], bool), np.array([0, 0, 0, 1], bool)
+    reference = Reference(s)
+
+    changed, _ = window(kind, s, first, first, None, None, reference)
+    same, _ = window(kind, s, second, second, None, None, reference)
+
+    assert changed > 0 and same == pytest.approx(0.0)  # a change, then none
+
+
 def test_performance_drift_is_the_error_of_the_stored_predictions() -> None:
     s = stream([[0.0]] * 4, [0, 1, 1, 1], [0, 0, 0, 0])
     logits = np.array([[2.0, 0.0], [2.0, 0.0], [0.0, 2.0], [np.nan, np.nan]])

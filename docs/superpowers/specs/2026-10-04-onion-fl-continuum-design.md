@@ -303,9 +303,10 @@ continuum:
 - **Rondas síncronas.** FedAsync y FedBuff (#150) se conectan después como política de consumo.
 - **Decisiones de C6** (#161; el plan, `docs/superpowers/plans/2026-10-07-continuum-c6-triggers.md`, da el detalle):
   - **Tipos de deriva.** Se detectan tres:
-    - `data`, el desplazamiento de las features respecto al histórico del edge, en desviaciones del histórico;
-    - `prior`, la variación total entre las clases de las etiquetas llegadas y las del histórico;
+    - `data`, el desplazamiento de las features respecto a la ventana anterior (la primera, respecto al histórico), en desviaciones del histórico;
+    - `prior`, la variación total entre las clases de las etiquetas llegadas y las de la ventana anterior (o del histórico);
     - `performance`, la tasa de error de las predicciones guardadas.
+    - `data` y `prior` miden un cambio, no la distancia al histórico: en SWELL y WESAD esa distancia se mantiene alta en cada bloque de condiciones y el detector no ve ninguna subida.
     - La de concepto espera a C8, porque hay que descontar antes el cambio de P(Y). La de cliente ya la cubre `diagnostic.divergence_*`.
   - **Detector.** `page_hinkley`, que busca una subida sostenida del estadístico y vuelve a empezar tras cada detección.
   - **Dónde.** Cada edge, cada fog y la raíz tienen un detector por cada tipo que nombre algún disparador. Los colectores lo alimentan con la media de sus hijos ponderada por muestras: deriva por zona y por federación.

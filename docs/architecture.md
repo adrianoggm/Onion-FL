@@ -215,7 +215,8 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
     - Every `status_every`, each streaming edge predicts what arrived with the model it serves, then sends a `status` message: the rows that became trainable since its last one and, per kind of drift, the window's statistic, never data.
     - Each collector pools its children's statuses on its own tick, by sample counts, and passes them up. The root ticks from round 1, so a schedule keeps C3's grid.
   - **Drift** (`onion_fl.continuum.drift`).
-    - `data` is the shift of the features from the edge's history, in history standard deviations; `prior` is the total variation between the classes of the labels that arrived and the history's; `performance` is the error rate of the stored predictions.
+    - `data` is the shift of the window's features from the window before, in history standard deviations; `prior` is the total variation between the classes of the labels that arrived and the window before's; `performance` is the error rate of the stored predictions. The first window is compared with the history.
+    - `data` and `prior` measure a change, so that a recording in blocks of conditions gives one spike per switch: against the history, their distance would stay high all along and the detector would never see a rise.
     - Each edge, fog and the root runs its own detector (`page_hinkley`) on its statistic, so drift is detected per edge, per zone and for the federation.
   - **Rounds.** Round 1 opens at registration. Later ones open when the federated trigger fires, one at a time, checked at each root tick and when a round closes. At the first tick after the last label, one final round opens and the run finishes; `rounds` stays an upper bound.
   - **Events.** `trigger.fired` (at the root, and at an edge whose local trigger fired), `drift.detected` and, with a continuum, `round.started` carry `at`, the data time: the cursor of the run.
