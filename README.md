@@ -428,18 +428,22 @@ Source: [results/continuum_replay/](results/continuum_replay/INDEX.md), commit `
 
 ### New framework: triggers on the streams
 
-Source: [results/continuum_triggers/](results/continuum_triggers/INDEX.md), commit `27728fe`. The streams above, every row labelled, no replay. A continuum trigger opens the rounds: a schedule every 10 minutes (C3's pace), 300 new rows (volume), or a prior shift detected at an edge, a fog or the cloud (drift). Mean ± 95% CI over 3 seeds:
+Source: [results/continuum_triggers/](results/continuum_triggers/INDEX.md), commit `29bf949`. The streams above, every row labelled, no replay. A continuum trigger opens the rounds: a schedule every 10 minutes (C3's pace), 300 reported rows (volume), or a prior shift detected at an edge, a fog or the cloud (drift). Mean ± 95% CI over 3 seeds:
 
 | Trigger | Rounds | Bytes | Prequential SWELL | Prequential WESAD | Test SWELL | Test WESAD |
 |---|---|---|---|---|---|---|
 | Schedule | 18 | 186 MB | 0.783 ± 0.045 | 0.000 ± 0.000 | 0.404 ± 0.000 | 0.262 ± 0.000 |
-| Volume | 9 | 100 MB | 0.625 ± 0.055 | 0.003 ± 0.014 | 0.404 ± 0.000 | 0.262 ± 0.000 |
-| Drift | 5–6 | 55–67 MB | 0.769 ± 0.143 | 0.056 ± 0.122 | 0.404 ± 0.000 | 0.262 ± 0.000 |
+| Volume | 8 | 86 MB | 0.514 ± 0.023 | 0.003 ± 0.014 | 0.404 ± 0.000 | 0.262 ± 0.000 |
+| Drift | 4 | 45 MB | 0.203 ± 0.032 | 0.056 ± 0.122 | 0.404 ± 0.000 | 0.262 ± 0.000 |
 
 - **The schedule reproduces C3's runs bit for bit.**
-- **Drift opens a third of the rounds, where the conditions change.** Each SWELL edge detects its switch to the stress blocks once, and so do the SWELL fogs on their pooled statistic. The prequential score stays close to the schedule's at about a third of the bytes, though with a wide interval.
+- **A prior-drift trigger alone sees the switch, not what follows.**
+  - Every SWELL edge detects its switch to the stress blocks once, and so do both SWELL fogs and then the cloud on their pooled statistics. The trigger opens rounds there, at a quarter of the bytes.
+  - It then opens none until the end: the model served from minute 65 predicts no stress through the stress blocks, and the classes of the arriving labels no longer change.
+  - C8 combines triggers (`any`), with a `performance` drift or a schedule.
 - **Volume** opens rounds when rows pile up, not at the switches, and its prequential score drops.
 - **Every final model predicts stress for every test row**, so the test scores cannot tell the triggers apart; C8 tunes the training on validation.
+- **These runs replace two earlier ones.** In the first, the statistic measured against the history never fired. In the second, statuses in flight counted toward the next round. Both are explained in the INDEX.
 
 ### Before the redesign
 
