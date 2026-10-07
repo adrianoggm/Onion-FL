@@ -94,3 +94,47 @@ def test_a_saved_memory_goes_on_as_if_it_never_stopped(name: str) -> None:
     offer(second, range(50, 90), np.arange(50, 90) % 2)
     assert second.rows().tolist() == straight.rows().tolist()
     assert second.sample(3).tolist() == straight.sample(3).tolist()
+
+
+def plain_reservoir(kept, seen, rows, rng, capacity):
+    """Algorithm R, one draw per row offered once the memory is full."""
+    kept = list(kept)
+    for row in rows:
+        seen += 1
+        if len(kept) < capacity:
+            kept.append(row)
+        else:
+            j = int(rng.integers(seen))
+            if j < capacity:
+                kept[j] = row
+    return kept, seen
+
+
+def plain_class_balanced(kept, labels, rows, y, capacity):
+    """Append, then drop the oldest row of the largest class (lowest on a tie)."""
+    kept, labels = list(kept), list(labels)
+    for row, label in zip(rows, y, strict=True):
+        kept.append(row)
+        labels.append(int(label))
+        if len(kept) > capacity:
+            oldest = labels.index(int(np.bincount(labels).argmax()))
+            del kept[oldest], labels[oldest]
+    return kept, labels
+
+
+@pytest.mark.parametrize("name", ["reservoir", "class_balanced"])
+def test_the_memories_keep_what_the_plain_algorithms_keep(name: str) -> None:
+    data = np.random.default_rng(3)
+    kept, rng = memory(name, capacity=40, seed=11), np.random.default_rng(11)
+    rows, labels, seen, start = [], [], 0, 0
+    for size in data.integers(0, 60, size=12):
+        batch = np.arange(start, start + size)
+        y = data.integers(0, 3, size=size)
+        start += size
+        offer(kept, batch, y)
+        if name == "reservoir":
+            rows, seen = plain_reservoir(rows, seen, batch.tolist(), rng, 40)
+        else:
+            rows, labels = plain_class_balanced(rows, labels, batch, y, 40)
+        assert kept.rows().tolist() == rows  # the same rows, in the same order
+    assert kept.rng.random() == rng.random()  # and the same draws

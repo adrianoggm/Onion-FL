@@ -8,6 +8,7 @@ memory has its own random stream, which the runner seeds per edge; ``state``
 holds everything needed to go on as if it never stopped.
 """
 
+from collections import deque
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
@@ -55,8 +56,6 @@ class NoParams(BaseModel):
 
 
 class _Memory:
-    capacity = 0
-
     def __init__(self, capacity: int = 0) -> None:
         self.capacity = capacity
         self.kept = np.zeros(0, np.int64)
@@ -111,21 +110,24 @@ class Fifo(_Memory):
     explain="Cada fila ofrecida tiene la misma probabilidad de seguir guardada.",
 )
 class Reservoir(_Memory):
-    def __init__(self, capacity: int = 512) -> None:
+    def __init__(self, capacity: int) -> None:
         super().__init__(capacity)
         self.seen = 0
 
     def add(self, rows: np.ndarray, y: np.ndarray) -> None:
-        kept = list(self.kept)
-        for row in np.asarray(rows, np.int64):
-            self.seen += 1
-            if len(kept) < self.capacity:
-                kept.append(row)
-            else:
-                j = int(self.rng.integers(self.seen))
-                if j < self.capacity:
-                    kept[j] = row
-        self.kept = np.asarray(kept, np.int64)
+        rows = np.asarray(rows, np.int64)
+        room = max(self.capacity - len(self.kept), 0)
+        kept = np.concatenate([self.kept, rows[:room]])
+        rest, seen = rows[room:], self.seen + room
+        if len(rest):  # the i-th row past a full memory replaces slot j < capacity
+            # One draw per row, j in [0, seen_i), as algorithm R draws them one by one.
+            j = self.rng.integers(np.arange(seen + 1, seen + len(rest) + 1))
+            hit = j < self.capacity
+            slots, values = j[hit][::-1], rest[hit][::-1]  # the last write wins
+            _, last = np.unique(slots, return_index=True)
+            kept[slots[last]] = values[last]
+        self.seen += len(rows)
+        self.kept = kept
 
     def state(self) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         arrays, meta = super().state()
@@ -143,21 +145,32 @@ class Reservoir(_Memory):
     params=CapacityParams,
 )
 class ClassBalanced(_Memory):
-    def __init__(self, capacity: int = 512) -> None:
+    def __init__(self, capacity: int) -> None:
         super().__init__(capacity)
         self.labels = np.zeros(0, np.int64)
 
     def add(self, rows: np.ndarray, y: np.ndarray) -> None:
-        kept, labels = list(self.kept), list(self.labels)
-        for row, label in zip(np.asarray(rows, np.int64), np.asarray(y), strict=True):
-            kept.append(row)
-            labels.append(int(label))
-            if len(kept) > self.capacity:
-                largest = int(np.bincount(labels).argmax())  # the lowest on a tie
-                oldest = labels.index(largest)  # rows come in time order
-                del kept[oldest], labels[oldest]
-        self.kept = np.asarray(kept, np.int64)
-        self.labels = np.asarray(labels, np.int64)
+        # One queue per class, oldest first, of (arrival order, row): dropping the
+        # oldest row of the largest class is a popleft, not a scan of the memory.
+        queues: dict[int, deque] = {}
+        old = zip(self.kept.tolist(), self.labels.tolist(), strict=True)
+        for order, (row, label) in enumerate(old):
+            queues.setdefault(label, deque()).append((order, row))
+        order = size = len(self.kept)
+        new = zip(
+            np.asarray(rows, np.int64).tolist(), np.asarray(y).tolist(), strict=True
+        )
+        for row, label in new:
+            queues.setdefault(int(label), deque()).append((order, row))
+            order, size = order + 1, size + 1
+            if size > self.capacity:  # the lowest class on a tie
+                most = max(len(q) for q in queues.values())
+                largest = min(c for c, q in queues.items() if len(q) == most)
+                queues[largest].popleft()
+                size -= 1
+        merged = sorted((o, r, c) for c, q in queues.items() for o, r in q)
+        self.kept = np.array([r for _, r, _ in merged], np.int64)
+        self.labels = np.array([c for _, _, c in merged], np.int64)
 
     def state(self) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         arrays, meta = super().state()
