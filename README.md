@@ -47,7 +47,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 
 ### What the results can and can't support today
 
-- **Ten experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the continuation of a trained model, and two stream replays of SWELL + WESAD, without and with a replay memory. Each has three seeds, so many intervals overlap.
+- **Eleven experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), and the triggers on those streams. Each has three seeds, so many intervals overlap.
   - The reference run and the mixing sweep have no strong result. On SWELL, no model beats always predicting "stress" on the held-out subjects. On WESAD, the federated model reaches 0.77 accuracy where centralised logistic regression reaches 0.91.
   - In the technique comparisons, the clearest effects are on WESAD: FedDyn and SCAFFOLD beat FedAvg under drift, the adaptive server optimizers beat it too, and a strong sign-flip attack collapses FedAvg while norm clipping holds.
 - **Checking the data found real problems,** now fixed. 999 means "missing" in the SWELL physiology file, for 53% of the heart-rate values, and both the old and the new loaders read it as a value. The facial and physiology joins and the WESAD chest signals `Resp` and `Temp` failed to load. The SWELL posture file has every date a month early, so posture is left out.
@@ -423,6 +423,21 @@ Source: [results/continuum_replay/](results/continuum_replay/INDEX.md), commit `
   - At the untuned lr 0.1, training on twice the rows makes SWELL edges diverge: 1, 69 and 3 failed trainings in the three seeds. With quorum 1.0, that costs the cloud 1, 5 and 3 rounds, and all three final global models diverge too.
   - Every final model, with or without replay, predicts a single class for every test row. The test scores are the final models', scored offline.
 - **Recent only reproduces the stream runs above bit for bit.** The benchmark (C8) chooses the learning rate and replay settings on validation.
+
+### New framework: triggers on the streams
+
+Source: [results/continuum_triggers/](results/continuum_triggers/INDEX.md), commit `27728fe`. The streams above, every row labelled, no replay. A continuum trigger opens the rounds: a schedule every 10 minutes (C3's pace), 300 new rows (volume), or a prior shift detected at an edge, a fog or the cloud (drift). Mean ± 95% CI over 3 seeds:
+
+| Trigger | Rounds | Bytes | Prequential SWELL | Prequential WESAD | Test SWELL | Test WESAD |
+|---|---|---|---|---|---|---|
+| Schedule | 18 | 186 MB | 0.783 ± 0.045 | 0.000 ± 0.000 | 0.404 ± 0.000 | 0.262 ± 0.000 |
+| Volume | 9 | 100 MB | 0.625 ± 0.055 | 0.003 ± 0.014 | 0.404 ± 0.000 | 0.262 ± 0.000 |
+| Drift | 5–6 | 55–67 MB | 0.769 ± 0.143 | 0.056 ± 0.122 | 0.404 ± 0.000 | 0.262 ± 0.000 |
+
+- **The schedule reproduces C3's runs bit for bit.**
+- **Drift opens a third of the rounds, where the conditions change.** Each SWELL edge detects its switch to the stress blocks once, and so do the SWELL fogs on their pooled statistic. The prequential score stays close to the schedule's at about a third of the bytes, though with a wide interval.
+- **Volume** opens rounds when rows pile up, not at the switches, and its prequential score drops.
+- **Every final model predicts stress for every test row**, so the test scores cannot tell the triggers apart; C8 tunes the training on validation.
 
 ### Before the redesign
 
