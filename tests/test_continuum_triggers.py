@@ -179,3 +179,13 @@ def test_one_kind_cannot_have_two_detectors() -> None:
     b = triggers.create("drift", {"kind": "prior", "detector": stricter})
     with pytest.raises(ValueError, match="prior"):
         drift_detectors(a, b)
+
+
+@pytest.mark.parametrize(
+    "spec", [{"name": "page_hinkley"}, {"name": "page_hinkley", "threshold": 0.5}]
+)
+def test_the_same_detector_written_two_ways_is_one(spec: dict) -> None:
+    a = triggers.create("drift", {"kind": "prior", "detector": spec})
+    b = triggers.create("drift", {"kind": "prior"})
+
+    assert list(drift_detectors(a, b)) == ["prior"]

@@ -119,6 +119,14 @@ class AnyOf:
         return next((name for t in self.of if (name := t.fired(view))), None)
 
 
+def _same(spec: Any) -> tuple[str, dict[str, Any]]:
+    """A detector spec as its name and every parameter, defaults included."""
+    name, params = (spec, {}) if isinstance(spec, str) else (spec["name"], spec)
+    model = detectors.get(name).params
+    given = {k: v for k, v in params.items() if k != "name"}
+    return name, (dict(model.model_validate(given)) if model else {})
+
+
 def leaves(*tracked: Any) -> Iterator[Any]:
     """The triggers inside the ones given, ``any`` opened up."""
     for trigger in tracked:
@@ -135,7 +143,8 @@ def drift_detectors(*tracked: Any) -> dict[str, Any]:
     for trigger in leaves(*tracked):
         if not isinstance(trigger, Drift):
             continue
-        if trigger.kind in found and found[trigger.kind] != trigger.detector:
+        given = found.get(trigger.kind)
+        if given is not None and _same(given) != _same(trigger.detector):
             raise ValueError(
                 f"drift {trigger.kind!r} has two detectors, {found[trigger.kind]} "
                 f"and {trigger.detector}; give both triggers the same"
