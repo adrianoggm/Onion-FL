@@ -399,16 +399,16 @@ Macro-F1, mean ± 95% CI over 3 seeds:
 
 ### New framework: replay on the streams
 
-Source: [results/continuum_replay/](results/continuum_replay/INDEX.md), commit `0ca028e`. The streams above, every row labelled, recent rows only against recent rows plus replay (a 512-row reservoir, `replay_ratio` 0.5, not tuned). Macro-F1, mean ± 95% CI over 3 seeds:
+Source: [results/continuum_replay/](results/continuum_replay/INDEX.md), commit `ae6566f` (rerun after the review of PR #172). The streams above, every row labelled, recent rows only against recent rows plus replay (a 512-row reservoir, `replay_ratio` 0.5, not tuned). Macro-F1, mean ± 95% CI over 3 seeds:
 
 | Scenario | Prequential SWELL | Prequential WESAD | Test SWELL | Test WESAD |
 |---|---|---|---|---|
 | Recent only | 0.783 ± 0.045 | 0.000 ± 0.000 | 0.404 ± 0.000 | 0.262 ± 0.000 |
-| Replay | 0.633 ± 0.031 | 0.000 ± 0.000 | 0.351 ± 0.229 | 0.305 ± 0.187 |
+| Replay | 0.614 ± 0.085 | 0.000 ± 0.000 | 0.351 ± 0.229 | 0.305 ± 0.187 |
 
 - **Replay does not help in this setup.**
   - It slows the switch after a SWELL condition change, which costs a prequential score that mostly measures persistence.
-  - At the untuned lr 0.1, training on twice the rows makes SWELL edges diverge: 1, 73 and 3 failed trainings in the three seeds. With quorum 1.0, that costs the cloud 1, 5 and 3 rounds, and two of the three final global models diverge too.
+  - At the untuned lr 0.1, training on twice the rows makes SWELL edges diverge: 1, 69 and 3 failed trainings in the three seeds. With quorum 1.0, that costs the cloud 1, 5 and 3 rounds, and all three final global models diverge too.
   - Every final model, with or without replay, predicts a single class for every test row. The test scores are the final models', scored offline.
 - **Recent only reproduces the stream runs above bit for bit.** The benchmark (C8) chooses the learning rate and replay settings on validation.
 

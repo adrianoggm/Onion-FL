@@ -1,15 +1,15 @@
 {
-  "run_id": "20261005T111827Z-a8b6da2d9235",
+  "run_id": "20261007T071101Z-6504fbc7d1a2",
   "topology_id": "ff55fe4d2ce1a807f764bcc5205a8d2d4d43ab3d533163a1d13e173a9a6725fa",
-  "config_id": "c77b4c88a0f89687b6c29e59f702d8bee83eb47a51de026375031c7fcb2a60a9",
-  "data_id": "f79c1afad836591c82f72c11c6409118eeeb9e60c814b60214f166762d92b2c0",
+  "config_id": "127bb8bba6c1eaf1a1924bc64e5a3664784b840136a82c4e35d13c871d566ec3",
+  "data_id": "9fd573754157d68b111f037ecd891bdb62abcbff1d5e5e818da789dde470257c",
   "code_version": {
-    "commit": "0ca028eb3a83ac4b7670d8d71a9008575f51b9f1",
+    "commit": "ae6566fefe1ad2a03ff10f6914dac6d286e01074",
     "dirty": false
   },
   "seed": 1,
-  "scenario": "continual.memory=none",
-  "started_at": "2026-10-05T11:18:27.179918+00:00",
+  "scenario": "continual.memory=reservoir(capacity=512)",
+  "started_at": "2026-10-07T07:11:01.631286+00:00",
   "status": "finished",
   "config": {
     "name": "stream_replay_swell_wesad",
@@ -114,10 +114,13 @@
       "delay": 600.0
     },
     "continual": {
-      "memory": "none",
+      "memory": {
+        "name": "reservoir",
+        "capacity": 512
+      },
       "replay_ratio": 0.5
     }
   },
-  "finished_at": "2026-10-05T11:18:53.964138+00:00",
-  "run_hash": "3c99ae94140507e3be953a77d1470e90737fc1234da88c2e279a20ca08b2c74f"
+  "finished_at": "2026-10-07T07:11:22.629761+00:00",
+  "run_hash": "bad636a6dd682a7a271ab1fc94815fae17f1b93e9963187ada4965fdf1f1536f"
 }
