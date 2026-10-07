@@ -204,6 +204,7 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
   - **Plugins.** `none`, `fifo`, `reservoir` and `class_balanced`, each keeping indices into its edge's own stream on a stream seeded per edge.
   - **What enters.** The rows of a training that ended with finite weights, offered in time order: nothing enters on a failed training, even if its round then fails for other reasons.
   - **Replay.** Each training adds r·n / (1 − r) rows sampled from the memory to its n recent ones. An edge with nothing new stays idle.
+  - **Weight.** The edge is weighted by its n recent rows, as it would be without a memory: a replayed row was weighted when it was new.
   - **Records.** The edge reports `diagnostic.memory` each round, and the bundle saves the memory.
 
 ## 8. Observability

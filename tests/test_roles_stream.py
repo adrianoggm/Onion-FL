@@ -387,7 +387,14 @@ def test_a_training_that_raises_leaves_no_trace_in_the_local_model() -> None:
 # --- replay memory (continuum C4) ---------------------------------------------------
 
 
-def replaying(trainer, name: str = "fifo", ratio: float = 0.5, rounds: int = 8, **kw):
+def replaying(
+    trainer,
+    name: str = "fifo",
+    ratio: float = 0.5,
+    rounds: int = 8,
+    before=lambda federation: None,
+    **kw,
+):
     from onion_fl.continuum.memory import memories
 
     replay = memories.create(name, {} if name == "none" else {"capacity": 1000})
@@ -407,6 +414,7 @@ def replaying(trainer, name: str = "fifo", ratio: float = 0.5, rounds: int = 8, 
         rounds=rounds,
         round_every=EVERY / SPEED,
     )
+    before(federation)
     federation.run()
     return federation, federation.edges["a1"]
 
@@ -433,6 +441,37 @@ def test_each_training_replays_its_share_of_the_memory() -> None:
         # replay_ratio 0.5: as many replayed rows as recent ones, if kept
         assert recent and replayed == min(len(recent), len(seen))
         seen |= set(t.tolist())
+
+
+class Weights:
+    """A fog's aggregator, keeping the weight each child sent."""
+
+    def __init__(self, inner) -> None:
+        self.inner, self.sent = inner, []
+
+    def aggregate(self, contributions, *args, **kw):
+        self.sent += [max(c.weights.values()) for c in contributions]
+        return self.inner.aggregate(contributions, *args, **kw)
+
+
+def test_replayed_rows_add_nothing_to_the_aggregation_weight() -> None:
+    recording, weights = Recording(), []
+
+    def wrap(federation) -> None:
+        fog = federation.aggregators["fog_0"]
+        fog.aggregator = Weights(fog.aggregator)
+        weights.append(fog.aggregator)
+
+    federation, _ = replaying(recording, ratio=0.5, before=wrap)
+
+    seen: set[float] = set()
+    recent = []
+    for _, t in recording.calls:
+        recent.append(sum(1 for x in t if x not in seen))
+        seen |= set(t.tolist())
+    trained = [e["tags"]["examples"] for e in events(federation, "edge.trained", "a1")]
+    assert any(len(t) > n for (_, t), n in zip(recording.calls, recent, strict=True))
+    assert weights[0].sent == recent and trained == recent  # new rows only
 
 
 def test_the_memory_is_reported_each_round() -> None:

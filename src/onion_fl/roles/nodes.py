@@ -1145,15 +1145,18 @@ class Edge(_Greeter, Node):
                 round=msg.round,
                 mechanism="local",
             )
-        ctx.emit("edge.trained", result.loss, round=msg.round, examples=result.examples)
+        examples = result.examples
+        if self.replay is not None:  # replayed rows were weighted when they were new
+            examples = int(self._pending.sum())
+        ctx.emit("edge.trained", result.loss, round=msg.round, examples=examples)
         # One vote per edge for trainers whose papers average clients (SCAFFOLD).
         uniform = getattr(self.trainer, "uniform_weights", False)
         payload = Payload(
             state=arrays,
-            weights=dict.fromkeys(up, 1.0 if uniform else float(result.examples)),
+            weights=dict.fromkeys(up, 1.0 if uniform else float(examples)),
             metrics={
                 "train_loss": float(result.loss),
-                "train_examples": float(result.examples),
+                "train_examples": float(examples),
                 "train_steps": float(result.batches),
                 "train_edges": 1.0,
                 **{f"train_edges/{g}": 1.0 for g in self._groups_up(up)},
