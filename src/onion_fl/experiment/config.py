@@ -44,7 +44,7 @@ from pydantic import (
 from onion_fl.baselines import baseline_models
 from onion_fl.continuum.drift import detectors
 from onion_fl.continuum.memory import memories
-from onion_fl.continuum.triggers import drift_detectors, triggers
+from onion_fl.continuum.triggers import Schedule, drift_detectors, leaves, triggers
 from onion_fl.core.codec import codecs
 from onion_fl.core.registry import PluginError, Registry
 from onion_fl.data.ingest import readers, steps
@@ -157,14 +157,25 @@ class ContinuumConfig(Strict):
     )
 
     @model_validator(mode="after")
-    def _one_detector_per_kind(self) -> ContinuumConfig:
+    def _fits(self) -> ContinuumConfig:
+        federated = create(triggers, self.trigger)
         local = (
             None if self.edge_trigger is None else create(triggers, self.edge_trigger)
         )
         try:
-            drift_detectors(create(triggers, self.trigger), local)
+            drift_detectors(federated, local)
         except ValueError as exc:
             raise ValueError(f"continuum: {exc}") from None
+        # The coordinator checks its trigger at each status tick, so a schedule
+        # between two ticks would wait for the next one.
+        for schedule in (t for t in leaves(federated) if isinstance(t, Schedule)):
+            ticks = schedule.every / self.status_every
+            if ticks < 1 - 1e-9 or abs(ticks - round(ticks)) > 1e-9:
+                raise ValueError(
+                    f"continuum.trigger: a schedule every {schedule.every:g} s is "
+                    f"checked every status_every ({self.status_every:g} s), so it "
+                    "would fire later; make every a multiple of status_every"
+                )
         return self
 
 

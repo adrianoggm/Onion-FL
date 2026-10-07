@@ -378,3 +378,21 @@ def test_the_plan_names_the_trigger(workspace: Path) -> None:
 
     assert preview["stream"]["rounds"] is None
     assert preview["stream"]["trigger"] == "schedule"
+
+
+@pytest.mark.parametrize(
+    "trigger, status_every",
+    [
+        ({"name": "schedule", "every": 900}, 600),  # it would fire every 20 minutes
+        ({"name": "schedule", "every": 60}, 300),
+        ({"name": "any", "of": [{"name": "schedule", "every": 450}, PRIOR]}, 300),
+    ],
+)
+def test_a_schedule_must_fall_on_the_status_ticks(
+    workspace: Path, trigger: dict, status_every: int
+) -> None:
+    continuum = {"trigger": trigger, "status_every": status_every}
+    raw = experiment(workspace, stream=PACED, continuum=continuum)
+
+    with pytest.raises(ConfigError, match="status_every"):
+        parse_experiment(raw)

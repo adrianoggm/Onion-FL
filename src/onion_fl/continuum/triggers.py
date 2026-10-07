@@ -8,6 +8,7 @@ local one, at each edge, whether the edge has an update for it. Both get a
 duration is data time.
 """
 
+from collections.abc import Iterator
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, PositiveInt, field_validator
@@ -118,24 +119,26 @@ class AnyOf:
         return next((name for t in self.of if (name := t.fired(view))), None)
 
 
+def leaves(*tracked: Any) -> Iterator[Any]:
+    """The triggers inside the ones given, ``any`` opened up."""
+    for trigger in tracked:
+        if isinstance(trigger, AnyOf):
+            yield from leaves(*trigger.of)
+        elif trigger is not None:
+            yield trigger
+
+
 def drift_detectors(*tracked: Any) -> dict[str, Any]:
     """The detector each kind of drift needs, from every trigger given
     (``any`` included); one kind cannot have two different detectors."""
     found: dict[str, Any] = {}
-
-    def walk(trigger: Any) -> None:
-        if isinstance(trigger, AnyOf):
-            for inner in trigger.of:
-                walk(inner)
-        elif isinstance(trigger, Drift):
-            if trigger.kind in found and found[trigger.kind] != trigger.detector:
-                raise ValueError(
-                    f"drift {trigger.kind!r} has two detectors, {found[trigger.kind]} "
-                    f"and {trigger.detector}; give both triggers the same"
-                )
-            found[trigger.kind] = trigger.detector
-
-    for trigger in tracked:
-        if trigger is not None:
-            walk(trigger)
+    for trigger in leaves(*tracked):
+        if not isinstance(trigger, Drift):
+            continue
+        if trigger.kind in found and found[trigger.kind] != trigger.detector:
+            raise ValueError(
+                f"drift {trigger.kind!r} has two detectors, {found[trigger.kind]} "
+                f"and {trigger.detector}; give both triggers the same"
+            )
+        found[trigger.kind] = trigger.detector
     return found
