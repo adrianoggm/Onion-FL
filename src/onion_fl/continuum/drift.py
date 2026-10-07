@@ -6,14 +6,16 @@ Each node turns what reached it since its last status into one number per kind,
 and a detector watches that number for a sustained rise:
 
 - ``data``, P(X): the mean absolute shift of the window's features from the
-  window before (the history for the first), in history standard deviations;
+  reference window, in history standard deviations;
 - ``prior``, P(Y): the total variation between the classes of the labels that
-  arrived and those of the window before (the history's for the first);
+  arrived and those of the reference window;
 - ``performance``: the error rate of the stored predictions whose labels arrived.
 
-``data`` and ``prior`` measure a change, not a distance from the history: on
-recordings in blocks of conditions that distance stays high all along, and
-the detector, which looks for a rise, would never see one.
+The reference is the edge's first window with rows, held until a drift of that
+kind is detected; the window that showed it becomes the new one. So a switch
+of condition is a sustained rise, and so is a gradual one. The history is not
+the reference: on recordings in blocks of conditions its distance stays high
+from the first window, and the detector would never see a rise.
 
 Concept drift (the error net of a prior shift) and client drift are not
 detected here; ``diagnostic.divergence_*`` already covers the client.
@@ -69,24 +71,27 @@ class PageHinkley:
 
 
 class Reference:
-    """What an edge's next window is compared with: the window before, and
-    first its history, the rows before t₀ (whose deviations also scale the
-    features). The history's prior counts only rows labelled by t₀."""
+    """What an edge's windows are compared with, per kind: its first window
+    with rows, until ``moved`` makes the latest one the reference. The
+    history's standard deviations scale the features."""
 
     def __init__(self, stream: Any) -> None:
-        d, history = stream.data, stream.history
-        X = np.asarray(d.X, float)[history]
-        width = np.asarray(d.X).shape[1]
-        self.mean = X.mean(axis=0) if len(X) else np.zeros(width)
-        std = X.std(axis=0) if len(X) > 1 else np.ones(width)
+        X = np.asarray(stream.data.X, float)[stream.history]
+        std = X.std(axis=0) if len(X) > 1 else np.ones(X.shape[1])
         self.std = np.where(std > 0, std, 1.0)
-        known = history & (stream.label_at <= stream.available_at)
-        counts = np.bincount(d.y[known], minlength=d.n_classes).astype(float)
-        self.prior = (
-            counts / counts.sum()
-            if counts.sum()
-            else np.full(d.n_classes, 1 / d.n_classes)
-        )
+        self.held: dict[str, np.ndarray] = {}  # kind -> the reference window
+        self.last: dict[str, np.ndarray] = {}  # kind -> the latest window
+
+    def compare(self, kind: str, window: np.ndarray) -> np.ndarray:
+        """The reference for ``kind``; the first window becomes it."""
+        self.last[kind] = window
+        return self.held.setdefault(kind, window)
+
+    def moved(self, kind: str) -> None:
+        """A drift of ``kind`` was found: the window that showed it is the new
+        reference."""
+        if kind in self.last:
+            self.held[kind] = self.last[kind]
 
 
 def window(
@@ -98,8 +103,7 @@ def window(
     predicted: np.ndarray | None,
     reference: Reference | None,
 ) -> tuple[float, int]:
-    """The ``kind`` statistic over one window, and how many rows it rests on;
-    ``reference`` moves on to this window when it has rows.
+    """The ``kind`` statistic over one window, and how many rows it rests on.
 
     ``arrived`` and ``labelled`` mark the rows that arrived and whose labels
     arrived in the window; history rows are never part of one.
@@ -110,8 +114,7 @@ def window(
         if not rows.any():
             return 0.0, 0
         mean = np.asarray(d.X, float)[rows].mean(axis=0)
-        shift = np.abs(mean - reference.mean) / reference.std
-        reference.mean = mean  # the next window is compared with this one
+        shift = np.abs(mean - reference.compare("data", mean)) / reference.std
         return float(np.mean(shift)), int(rows.sum())
     rows = labelled & ~stream.history
     if kind == "performance":
@@ -121,8 +124,6 @@ def window(
         return 0.0, 0
     if kind == "prior":
         p = np.bincount(d.y[rows], minlength=d.n_classes) / n
-        change = float(0.5 * np.abs(p - reference.prior).sum())
-        reference.prior = p  # the next window is compared with this one
-        return change, n
+        return float(0.5 * np.abs(p - reference.compare("prior", p)).sum()), n
     wrong = logits[rows].argmax(axis=1) != d.y[rows]
     return float(wrong.mean()), n

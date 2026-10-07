@@ -1235,6 +1235,7 @@ class Edge(_Greeter, Node):
             )
             found = detector.update(value) if n else None
             if found is not None:
+                self._reference.moved(kind)  # compared from now on with this one
                 self._local_drift[kind] = self._local_drift.get(kind, 0) + 1
                 ctx.emit(
                     "drift.detected",

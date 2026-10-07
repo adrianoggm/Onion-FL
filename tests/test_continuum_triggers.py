@@ -51,35 +51,61 @@ def stream(X, y, history, label_at=None):
 
 
 def test_data_drift_is_the_feature_shift_in_history_deviations() -> None:
-    s = stream([[0.0], [2.0], [5.0], [5.0]], [0, 1, 0, 1], [1, 1, 0, 0])
-    arrived = np.array([0, 0, 1, 1], bool)
-    reference = Reference(s)  # history mean 1, std 1
+    # history at 0 and 2 (std 1); the first window sets the reference at 5
+    s = stream([[0.0], [2.0], [5.0], [9.0]], [0, 1, 0, 1], [1, 1, 0, 0])
+    first, second = np.array([0, 0, 1, 0], bool), np.array([0, 0, 0, 1], bool)
+    reference = Reference(s)
 
-    value, n = window("data", s, arrived, ~arrived, None, None, reference)
+    assert window("data", s, first, first, None, None, reference) == (0.0, 1)
+    value, n = window("data", s, second, second, None, None, reference)
 
-    assert (value, n) == (pytest.approx(4.0), 2)
+    assert (value, n) == (pytest.approx(4.0), 1)
 
 
 def test_prior_drift_is_the_class_shift_of_the_labels_that_arrived() -> None:
-    s = stream([[0.0]] * 6, [0, 0, 1, 1, 1, 1], [1, 1, 1, 1, 0, 0])
-    labelled = np.array([0, 0, 0, 0, 1, 1], bool)
+    s = stream([[0.0]] * 6, [0, 0, 0, 1, 1, 1], [1, 1, 0, 0, 0, 0])
+    first, second = (
+        np.array([0, 0, 1, 1, 0, 0], bool),
+        np.array([0, 0, 0, 0, 1, 1], bool),
+    )
+    reference = Reference(s)
 
-    value, n = window("prior", s, labelled, labelled, None, None, Reference(s))
+    assert window("prior", s, first, first, None, None, reference) == (0.0, 2)
+    value, n = window("prior", s, second, second, None, None, reference)
 
     assert (value, n) == (pytest.approx(0.5), 2)  # half and half, then all 1
 
 
 @pytest.mark.parametrize("kind", ["data", "prior"])
-def test_a_window_is_compared_with_the_one_before(kind: str) -> None:
-    # history: class 0 at 0; then two windows of class 1 at 5
-    s = stream([[0.0], [0.0], [5.0], [5.0]], [0, 0, 1, 1], [1, 1, 0, 0])
-    first, second = np.array([0, 0, 1, 0], bool), np.array([0, 0, 0, 1], bool)
+def test_the_reference_holds_until_a_drift_moves_it(kind: str) -> None:
+    s = stream(
+        [[0.0], [0.0], [0.0], [5.0], [5.0], [5.0]],
+        [0, 0, 0, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0],
+    )
+    rows = [np.eye(6, dtype=bool)[i] for i in range(2, 6)]
     reference = Reference(s)
 
-    changed, _ = window(kind, s, first, first, None, None, reference)
-    same, _ = window(kind, s, second, second, None, None, reference)
+    values = [window(kind, s, r, r, None, None, reference)[0] for r in rows[:3]]
+    reference.moved(kind)  # the drift was found in the last window
+    after = window(kind, s, rows[3], rows[3], None, None, reference)[0]
 
-    assert changed > 0 and same == pytest.approx(0.0)  # a change, then none
+    assert values[0] == 0.0 and values[1] > 0 and values[2] == values[1]
+    assert after == pytest.approx(0.0)
+
+
+def test_a_gradual_drift_is_detected() -> None:
+    ramp = np.arange(21) * 0.1  # ten history deviations over twenty windows
+    X = [[-1.0], [1.0]] + [[x] for x in ramp]
+    s = stream(X, [0] * 23, [1, 1] + [0] * 21)
+    reference, detector = Reference(s), ph()
+
+    found = [
+        detector.update(window("data", s, r, r, None, None, reference)[0])
+        for r in (np.eye(23, dtype=bool)[i] for i in range(2, 23))
+    ]
+
+    assert any(f is not None for f in found)
 
 
 def test_performance_drift_is_the_error_of_the_stored_predictions() -> None:
