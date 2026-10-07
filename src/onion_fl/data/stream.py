@@ -98,6 +98,7 @@ class EdgeStream:
     """One edge's rows, in time order, with when each arrives and can train."""
 
     data: SubjectData
+    observed_at: np.ndarray  # continuum time; before the offset for history
     available_at: np.ndarray
     label_at: np.ndarray  # inf for a row that is never labelled
     history: np.ndarray  # before t₀: never predicted
@@ -184,6 +185,7 @@ def edge_stream(
     label_at[labelled] = arrival[labelled] + labels.delay
     return EdgeStream(
         data=data,
+        observed_at=observed,
         available_at=np.maximum(arrival, offset),
         label_at=label_at,
         history=history,

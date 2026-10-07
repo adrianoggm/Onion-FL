@@ -886,6 +886,7 @@ class Edge(_Greeter, Node):
         self.stream, self.metrics = stream, tuple(metrics)
         # A replay memory keeps rows already consumed, to train on them again.
         self.replay, self.replay_ratio = replay, replay_ratio
+        self._replayed = 0  # rows the current training replays
         self._clock = -np.inf  # continuum time up to which arrivals are handled
         self._served: State | None = None  # the last model received, as served
         if stream is not None:
@@ -1038,22 +1039,25 @@ class Edge(_Greeter, Node):
             # with nothing new the edge stays idle, whatever it remembers
             n = int(buffer.sum())
             r = self.replay_ratio
-            replayed = self.replay.sample(int(r * n / (1 - r) + 0.5)) if n else []
+            replayed = self.replay.sample(int(r * n / (1 - r) + 0.5))
             rows[replayed] = True
-            kept = self.replay.rows()
-            ctx.emit(
-                "diagnostic.memory",
-                float(len(kept)),
-                round=round,
-                capacity=int(self.replay.capacity),
-                age=float(np.mean(now - s.available_at[kept])) if len(kept) else 0.0,
-                classes=np.bincount(
-                    s.data.y[kept], minlength=s.data.n_classes
-                ).tolist(),
-                replayed=len(replayed),
-                **self.tags,
-            )
+            self._replayed = len(replayed)  # reported if the training works
         return (s.take(rows) if buffer.any() else None), metrics
+
+    def _report_memory(self, round: int, ctx: Context) -> None:
+        """The memory after a training that worked, and what that training replayed."""
+        s, kept = self.stream, self.replay.rows()
+        age = float(np.mean(self._clock - s.observed_at[kept])) if len(kept) else 0.0
+        ctx.emit(
+            "diagnostic.memory",
+            float(len(kept)),
+            round=round,
+            capacity=int(self.replay.capacity),
+            age=age,  # since each kept row was observed, in data seconds
+            classes=np.bincount(s.data.y[kept], minlength=s.data.n_classes).tolist(),
+            replayed=self._replayed,
+            **self.tags,
+        )
 
     def _train(self, msg: Message, ctx: Context) -> None:
         received = dict(msg.payload.state)
@@ -1125,6 +1129,7 @@ class Edge(_Greeter, Node):
             if self.replay is not None:  # and only now eligible for replay
                 fresh = np.flatnonzero(self._pending)  # in time order
                 self.replay.add(fresh, self.stream.data.y[fresh])
+                self._report_memory(msg.round, ctx)
         if scoring and "local" in self.eval_models:
             metrics |= self._score("local", msg.round, ctx)
         try:

@@ -474,14 +474,25 @@ def test_replayed_rows_add_nothing_to_the_aggregation_weight() -> None:
     assert weights[0].sent == recent and trained == recent  # new rows only
 
 
-def test_the_memory_is_reported_each_round() -> None:
-    federation, edge = replaying(Recording())
+def test_the_memory_is_reported_after_each_training_that_worked() -> None:
+    federation, edge = replaying(Flaky("raise"))
 
     reports = events(federation, "diagnostic.memory", "a1")
-    assert [e["tags"]["round"] for e in reports] == list(range(1, 9))
-    assert reports[-1]["value"] == len(edge.replay.rows())
+    trained = [e["tags"]["round"] for e in events(federation, "edge.trained", "a1")]
+    assert [e["tags"]["round"] for e in reports] == trained  # not the failed one
+    assert reports[-1]["value"] == len(edge.replay.rows())  # the memory as it ends
     assert sum(reports[-1]["tags"]["classes"]) == reports[-1]["value"]
     assert reports[-1]["tags"]["capacity"] == 1000 and reports[-1]["tags"]["age"] > 0
+
+
+def test_the_age_of_the_memory_counts_from_when_its_rows_were_observed() -> None:
+    recording = Recording()
+    federation, _ = replaying(recording)
+
+    first = events(federation, "diagnostic.memory", "a1")[0]
+    now, t = recording.calls[0]  # the first training: nothing replayed yet
+    # t₀ is 120 s, so the history rows were observed 120 and 60 s before it
+    assert first["tags"]["age"] == pytest.approx(float(np.mean(now - (t - 120.0))))
 
 
 def test_a_replay_run_is_deterministic() -> None:
