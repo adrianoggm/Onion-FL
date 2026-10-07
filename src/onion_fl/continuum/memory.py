@@ -8,7 +8,7 @@ memory has its own random stream, which the runner seeds per edge; ``state``
 holds everything needed to go on as if it never stopped.
 """
 
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 from pydantic import BaseModel, Field, PositiveInt
@@ -17,6 +17,33 @@ from onion_fl.core.context import restore_rng, rng_state
 from onion_fl.core.registry import Registry
 
 memories = Registry("memory")
+
+
+@runtime_checkable
+class Memory(Protocol):
+    """What an edge uses of a replay memory; every ``memories`` plugin offers it.
+
+    The runner sets ``rng`` to the edge's own stream; ``state`` and
+    ``load_state`` go into and come out of the run's bundle.
+    """
+
+    capacity: int
+    rng: np.random.Generator
+
+    def add(self, rows: np.ndarray, y: np.ndarray) -> None:
+        """Offer rows just consumed, in time order, with their labels."""
+
+    def rows(self) -> np.ndarray:
+        """The kept rows, as indices into the edge's stream."""
+
+    def sample(self, k: int) -> np.ndarray:
+        """Up to ``k`` kept rows, without replacement."""
+
+    def state(self) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+        """Arrays and metadata to go on as if the memory never stopped."""
+
+    def load_state(self, arrays: dict[str, np.ndarray], meta: dict[str, Any]) -> None:
+        """Go on from what ``state`` returned."""
 
 
 class CapacityParams(BaseModel):

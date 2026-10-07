@@ -534,3 +534,44 @@ def test_the_snapshot_saves_the_replay_memory() -> None:
 
     np.testing.assert_array_equal(saved.arrays["replay/rows"], edge.replay.rows())
     assert saved.meta["replay"]["seen"] == edge.replay.seen
+
+
+@pytest.mark.parametrize("ratio", [1.0, 1.5, -0.1])
+def test_a_replay_ratio_outside_zero_to_one_is_refused(ratio: float) -> None:
+    with pytest.raises(ValueError, match="replay_ratio"):
+        replaying(Recording(), ratio=ratio, rounds=1)
+
+
+def edge_with(replay, stream=None) -> EdgeSpec:
+    model = ModularMLP(CONFIG, [A], seed=0)
+    return EdgeSpec("a1", model, trainer=Recording(), stream=stream, replay=replay)
+
+
+def test_a_replay_memory_needs_a_stream() -> None:
+    from onion_fl.continuum.memory import memories
+
+    memory = memories.create("fifo", {"capacity": 10})
+    with pytest.raises(ValueError, match="stream"):
+        build_federation(
+            tree(1), {"fog_0": [edge_with(memory)]}, initial_state=INITIAL, rounds=1
+        )
+
+
+def test_a_memory_plugin_must_offer_what_the_edge_uses() -> None:
+    class Partial:  # no capacity, rows, sample or state
+        def add(self, rows, y) -> None:
+            pass
+
+    with pytest.raises(TypeError, match="replay memory"):
+        build_federation(
+            tree(1),
+            {"fog_0": [edge_with(Partial(), stream_of("a-1"))]},
+            initial_state=INITIAL,
+            rounds=1,
+        )
+
+
+def test_an_edge_replays_the_configs_default_share() -> None:
+    from onion_fl.experiment.config import ContinualConfig
+
+    assert EdgeSpec("a1", None).replay_ratio == ContinualConfig().replay_ratio

@@ -24,6 +24,7 @@ from typing import Any
 
 import numpy as np
 
+from onion_fl.continuum.memory import Memory
 from onion_fl.core.context import Context, child_rng
 from onion_fl.core.message import Message, Payload
 from onion_fl.core.node import Node
@@ -863,10 +864,22 @@ class Edge(_Greeter, Node):
         privacy: Any = None,
         stream: Any = None,
         replay: Any = None,
-        replay_ratio: float = 0.0,
+        replay_ratio: float = 0.25,
         metrics: Sequence[str] = ("loss", "accuracy"),
     ) -> None:
         super().__init__(node_id)
+        if replay is not None:  # refused here, not as an error inside a round
+            if stream is None:
+                raise ValueError(f"{node_id}: a replay memory needs a stream")
+            if not isinstance(replay, Memory):
+                raise TypeError(
+                    f"{node_id}: {type(replay).__name__} is not a replay memory; "
+                    "it needs capacity, rng, add, rows, sample, state and load_state"
+                )
+            if not 0 <= replay_ratio < 1:
+                raise ValueError(
+                    f"{node_id}: replay_ratio must be in [0, 1), not {replay_ratio}"
+                )
         self.hello_retry = hello_retry
         # A stream (continuum C3): rows arrive over time, are predicted by the
         # model the edge serves when they come, and train once labelled.
