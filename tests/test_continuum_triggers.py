@@ -1,0 +1,86 @@
+"""Triggers, drift detectors and window statistics (continuum C6, issue #161).
+
+The rows are hand-written; nothing is trained (docs/RULES.md).
+"""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+
+from onion_fl.continuum.drift import Reference, detectors, window
+
+
+def ph(**params):
+    return detectors.create("page_hinkley", params)
+
+
+def test_page_hinkley_ignores_a_flat_series() -> None:
+    detector = ph()
+    assert all(detector.update(0.2) is None for _ in range(50))
+
+
+def test_page_hinkley_detects_a_sustained_rise_then_starts_over() -> None:
+    detector = ph(threshold=0.5)
+    found = [detector.update(x) for x in [0.1] * 10 + [0.9] * 10]
+
+    first = next(i for i, f in enumerate(found) if f is not None)
+    assert first >= 10 and found[first] > 0.5  # after the rise, with its statistic
+    assert detector.n < 10  # it started over
+
+
+def test_page_hinkley_waits_for_its_minimum_windows() -> None:
+    detector = ph(threshold=0.1, min_samples=5)
+    assert [detector.update(x) for x in (0.0, 1.0, 1.0, 1.0)] == [None] * 4
+
+
+def stream(X, y, history, label_at=None):
+    n = len(y)
+    data = SimpleNamespace(X=np.asarray(X, float), y=np.asarray(y), n_classes=2)
+    label_at = np.zeros(n) if label_at is None else np.asarray(label_at, float)
+    return SimpleNamespace(
+        data=data,
+        history=np.asarray(history, bool),
+        available_at=np.zeros(n),
+        label_at=label_at,
+    )
+
+
+def test_data_drift_is_the_feature_shift_in_history_deviations() -> None:
+    s = stream([[0.0], [2.0], [5.0], [5.0]], [0, 1, 0, 1], [1, 1, 0, 0])
+    arrived = np.array([0, 0, 1, 1], bool)
+    reference = Reference(s)  # history mean 1, std 1
+
+    value, n = window("data", s, arrived, ~arrived, None, None, reference)
+
+    assert (value, n) == (pytest.approx(4.0), 2)
+
+
+def test_prior_drift_is_the_class_shift_of_the_labels_that_arrived() -> None:
+    s = stream([[0.0]] * 6, [0, 0, 1, 1, 1, 1], [1, 1, 1, 1, 0, 0])
+    labelled = np.array([0, 0, 0, 0, 1, 1], bool)
+
+    value, n = window("prior", s, labelled, labelled, None, None, Reference(s))
+
+    assert (value, n) == (pytest.approx(0.5), 2)  # half and half, then all 1
+
+
+def test_performance_drift_is_the_error_of_the_stored_predictions() -> None:
+    s = stream([[0.0]] * 4, [0, 1, 1, 1], [0, 0, 0, 0])
+    logits = np.array([[2.0, 0.0], [2.0, 0.0], [0.0, 2.0], [np.nan, np.nan]])
+    predicted = np.array([1, 1, 1, 0], bool)
+    labelled = np.ones(4, bool)
+
+    value, n = window("performance", s, labelled, labelled, logits, predicted, None)
+
+    assert (value, n) == (pytest.approx(1 / 3), 3)  # the unpredicted row is left out
+
+
+def test_a_window_with_nothing_for_its_kind_rests_on_no_rows() -> None:
+    s = stream([[0.0]] * 2, [0, 1], [1, 1])
+    nothing = np.zeros(2, bool)
+
+    for kind in ("data", "prior", "performance"):
+        assert window(kind, s, nothing, nothing, None, nothing, Reference(s))[1] == 0
