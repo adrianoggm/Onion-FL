@@ -99,6 +99,11 @@ def _send_idle(node: Any, round: int, scores: Mapping[str, float], ctx) -> None:
     )
 
 
+def _counted(key: str) -> bool:
+    """Status keys that count toward a trigger since the last round."""
+    return key == "fresh" or key.endswith(".detected")
+
+
 def _emit_scores(ctx: Context, scores: Mapping[str, float], **tags: Any) -> None:
     for name, value in scores.items():
         ctx.emit(f"eval.{name}", value, **tags)
@@ -238,9 +243,7 @@ class _Collector(Node):
         elif msg.src in self.children and msg.kind == "eval_report":
             self._eval_report(msg, ctx)
         elif msg.src in self.children and msg.kind == "status":
-            for key, value in msg.payload.metrics.items():
-                if key != "at":
-                    self._heard[key] = self._heard.get(key, 0.0) + float(value)
+            self._heard_from(msg.payload.metrics)
         else:
             self._other(msg, ctx)
 
@@ -257,6 +260,8 @@ class _Collector(Node):
     ) -> None:
         if self.open:  # the parent moved on before this round closed
             self._abandon(round, ctx)
+        # What was heard for the round before is not for this one (continuum C6).
+        self._heard = {k: v for k, v in self._heard.items() if not _counted(k)}
         self.round, self.open, self.opened_at = round, True, ctx.now()
         self.responses, self.late, self.quorum_at = {}, 0, None
         # A round a child owes stops counting once its update would be dropped: a
@@ -429,6 +434,16 @@ class _Collector(Node):
                 self._eval_done(round, ctx)
         elif name == "status":
             self._tick(ctx)
+
+    def _heard_from(self, metrics: Mapping[str, float]) -> None:
+        """Pool a child's status. Its rows and detections count only if the child
+        sent it after this node's current round reached it: before, they are
+        what that round takes, or what opened it."""
+        stale = metrics.get("round", 0.0) < self.round
+        for key, value in metrics.items():
+            if key in ("at", "round") or (stale and _counted(key)):
+                continue
+            self._heard[key] = self._heard.get(key, 0.0) + float(value)
 
     def _tick(self, ctx: Context) -> None:
         """Pool what the children reported since the last tick, run this level's
@@ -873,7 +888,7 @@ class Aggregator(_Greeter, _Collector):
         self._say_hello(self._meta(), ctx)
 
     def _heard_all(self, heard: dict[str, float], now: float, ctx: Context) -> None:
-        payload = Payload(metrics={"at": now, **heard})
+        payload = Payload(metrics={"at": now, "round": float(self.round), **heard})
         ctx.send(Message(kind="status", src=self.id, dst=self.parent, payload=payload))
 
     def _late_child(self, ctx: Context) -> None:
@@ -1013,6 +1028,7 @@ class Edge(_Greeter, Node):
             float(stream.available_at.min()) if stream is not None else 0.0
         )  # of its last successful training: what the local trigger counts from
         self._local_drift: dict[str, int] = {}
+        self._seen_round = 0  # the last round whose model reached this edge
         drift = self.continuum.drift if self.continuum is not None else {}
         self._detectors = {k: create(detectors, d) for k, d in sorted(drift.items())}
         self._reference = Reference(stream) if self._detectors else None
@@ -1201,7 +1217,11 @@ class Edge(_Greeter, Node):
         arrived = s.arrived(lo, now)
         self._predict(arrived & ~s.history)
         fresh = s.trainable(lo, now) & (self._consumed_by < 0)
-        metrics = {"at": now, "fresh": float(fresh.sum())}
+        metrics = {
+            "at": now,
+            "round": float(self._seen_round),
+            "fresh": float(fresh.sum()),
+        }
         labelled = s.labelled(lo, now)
         for kind, detector in self._detectors.items():
             value, n = window(
@@ -1257,6 +1277,7 @@ class Edge(_Greeter, Node):
         return name is not None
 
     def _train(self, msg: Message, ctx: Context) -> None:
+        self._seen_round = msg.round
         received = dict(msg.payload.state)
         # The trainer is anchored to the model it shares: the first model a child
         # gets is whole, and its local groups must not be pulled to their start.

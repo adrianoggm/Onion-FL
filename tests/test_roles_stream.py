@@ -707,7 +707,7 @@ def test_an_edge_reports_what_became_trainable_without_data() -> None:
     statuses = [m for m in ctx.sent if m.kind == "status"]
     assert len(statuses) == 25 and all(m.dst == "fog_0" for m in statuses)
     assert all(not m.payload.state for m in statuses)  # no data, only counts
-    assert all(set(m.payload.metrics) == {"at", "fresh"} for m in statuses)
+    assert all(set(m.payload.metrics) == {"at", "round", "fresh"} for m in statuses)
     assert sum(m.payload.metrics["fresh"] for m in statuses) == 20  # every row
 
 
@@ -890,7 +890,8 @@ def test_statuses_carry_counts_and_statistics_only() -> None:
         a2=labels_switch("a-2"),
     )
 
-    keys = {"at", "fresh", "drift.prior.sum", "drift.prior.n", "drift.prior.detected"}
+    keys = {"at", "round", "fresh"}
+    keys |= {"drift.prior.sum", "drift.prior.n", "drift.prior.detected"}
     assert received
     assert all(not p.state and set(p.metrics) <= keys for p in received)
 
@@ -977,3 +978,62 @@ def test_a_lost_stop_does_not_keep_the_run_ticking(monkeypatch) -> None:
     )
 
     assert events(federation, "run.finished")  # and run() came back
+
+
+def fog_by_hand():
+    """A fog of a continuous federation with two registered edges, by hand."""
+    from onion_fl.continuum.pace import Continuum
+
+    pace = Continuum(None, None, 1.0, SPEED, float("inf"), {})
+    specs = [
+        EdgeSpec(
+            n, ModularMLP(CONFIG, [A], seed=0), trainer=Recording(), stream=stream_of(n)
+        )
+        for n in ("e1", "e2")
+    ]
+    federation = build_federation(
+        tree(1), {"fog_0": specs}, initial_state=INITIAL, rounds=5, continuum=pace
+    )
+    fog, ctx = federation.aggregators["fog_0"], Hand()
+    fog.on_start(ctx)
+    for child in ("e1", "e2"):
+        meta = {"role": "edge", "edges": 1}
+        fog.on_message(Message(kind="hello", src=child, dst="fog_0", meta=meta), ctx)
+    return fog, ctx
+
+
+def status(src: str, round: int, fresh: float) -> Message:
+    metrics = {"at": 0.0, "round": float(round), "fresh": fresh}
+    return Message(
+        kind="status", src=src, dst="fog_0", payload=Payload(metrics=metrics)
+    )
+
+
+def test_a_fog_counts_only_what_its_children_saw_after_the_round() -> None:
+    fog, ctx = fog_by_hand()
+    fog.on_message(status("e1", 0, 4.0), ctx)  # heard before round 1 opened here
+    model = Payload(state=INITIAL)
+    meta = {"bootstrap": True}
+    opened = Message(
+        kind="global_model", src="cloud", dst="fog_0", round=1, payload=model, meta=meta
+    )
+    fog.on_message(opened, ctx)
+    fog.on_message(status("e2", 0, 5.0), ctx)  # sent before e2 got round 1
+    fog.on_message(status("e1", 1, 3.0), ctx)  # after: rows round 1 did not take
+
+    ctx.t = 1.0
+    fog.on_timer("status", ctx)
+
+    (up,) = [m for m in ctx.sent if m.kind == "status"]
+    assert up.payload.metrics["fresh"] == 3.0 and up.payload.metrics["round"] == 1.0
+
+
+def test_an_edge_tags_its_status_with_the_round_it_last_got() -> None:
+    edge, ctx, _ = edge_by_hand(stream_of("a-1"))
+    tick(edge, ctx, until=2.0)
+    ctx.t = 2.5
+    serve(edge, ctx, 1)
+    tick(edge, ctx, until=4.0)
+
+    rounds = [m.payload.metrics["round"] for m in ctx.sent if m.kind == "status"]
+    assert rounds == [0.0, 0.0, 1.0, 1.0]
