@@ -449,7 +449,10 @@ class _Collector(Node):
                 heard[key] = heard.get(key, 0.0) + 1.0
                 ctx.emit("drift.detected", found, kind=kind, window=value, at=now)
         self._heard_all(heard, now, ctx)
-        ctx.set_timer(self.continuum.status_every, "status")
+        # Every node ticks until the last label, the tick after it included: a
+        # stop lost on its way down must not keep the run alive.
+        if ctx.now() < self.continuum.until:
+            ctx.set_timer(self.continuum.status_every, "status")
 
     def _heard_all(self, heard: dict[str, float], now: float, ctx: Context) -> None:
         """What the children said since the last tick, pooled at this level."""
@@ -1046,7 +1049,8 @@ class Edge(_Greeter, Node):
             self._send_hello(ctx)
         elif name == "status" and not self.stopped:
             self._status(ctx)
-            ctx.set_timer(self.continuum.status_every, "status")
+            if ctx.now() < self.continuum.until:  # see _Collector._tick
+                ctx.set_timer(self.continuum.status_every, "status")
 
     def on_message(self, msg: Message, ctx: Context) -> None:
         if self._acknowledged(msg, ctx):

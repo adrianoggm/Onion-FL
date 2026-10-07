@@ -771,6 +771,7 @@ def continuous(
     rounds: int = 1000,
     compute=None,
     before=lambda federation: None,
+    runtime=None,
     **streams,
 ):
     """A continuous federation of stub edges, run to its end."""
@@ -810,6 +811,7 @@ def continuous(
         initial_state=INITIAL,
         rounds=rounds,
         continuum=pace,
+        runtime=runtime,
     )
     before(federation)
     federation.run()
@@ -955,3 +957,23 @@ def test_an_edge_in_a_federation_trains_only_when_its_trigger_fires() -> None:
     assert len(updates) > len(calls)  # some rounds answered idle, rows kept
     trained = np.concatenate([t for _, t in calls])
     assert len(trained) == len(set(trained))  # nothing repeated
+
+
+# --- fixes from the review of the branch ------------------------------------------
+
+
+def test_a_lost_stop_does_not_keep_the_run_ticking(monkeypatch) -> None:
+    from onion_fl.runtime.sim import SimRuntime
+
+    lost = lambda node, ctx: None  # noqa: E731 - every stop is lost on its link
+    monkeypatch.setattr("onion_fl.roles.nodes._stop_children", lost)
+    every = {"name": "schedule", "every": 300}
+
+    federation, _ = continuous(
+        every,
+        runtime=SimRuntime(max_events=50_000),
+        a1=stream_of("a-1"),
+        a2=stream_of("a-2"),
+    )
+
+    assert events(federation, "run.finished")  # and run() came back
