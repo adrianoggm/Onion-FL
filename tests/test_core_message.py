@@ -25,6 +25,7 @@ def test_kinds_cover_the_round_protocol() -> None:
         "eval_request",
         "eval_report",
         "control",
+        "status",
     }
 
 

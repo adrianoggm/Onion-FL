@@ -24,7 +24,9 @@ from typing import Any
 
 import numpy as np
 
+from onion_fl.continuum.drift import Reference, detectors, window
 from onion_fl.continuum.memory import Memory
+from onion_fl.continuum.pace import View
 from onion_fl.core.context import Context, child_rng
 from onion_fl.core.message import Message, Payload
 from onion_fl.core.node import Node
@@ -35,7 +37,7 @@ from onion_fl.learning.sharing import SharingPolicy, keys_crossing, keys_held_at
 from onion_fl.learning.trainers import frozen_keys
 from onion_fl.observability.diagnostics import RoundView
 from onion_fl.observability.diagnostics import diagnostics as diagnostic_plugins
-from onion_fl.roles.policies import AllChildren, Drop, quorum_needed
+from onion_fl.roles.policies import AllChildren, Drop, create, quorum_needed
 
 State = dict[str, np.ndarray]
 Evaluate = Callable[[Any, Any], tuple[Mapping[str, float], int]]
@@ -865,6 +867,7 @@ class Edge(_Greeter, Node):
         stream: Any = None,
         replay: Any = None,
         replay_ratio: float = 0.25,
+        continuum: Any = None,
         metrics: Sequence[str] = ("loss", "accuracy"),
     ) -> None:
         super().__init__(node_id)
@@ -898,6 +901,17 @@ class Edge(_Greeter, Node):
             # weights, so a failed round trains the same rows next time.
             self._consumed_by = np.full(len(stream.data.y), -1)
             self._pending = np.zeros(len(stream.data.y), bool)
+        # A continuous federation (continuum C6): statuses, detectors and the
+        # local trigger; only a training edge with a stream takes part.
+        self.continuum = continuum if stream is not None and train else None
+        self._ticked = -np.inf  # continuum time of the last status
+        self._updated_at = (
+            float(stream.available_at.min()) if stream is not None else 0.0
+        )  # of its last successful training: what the local trigger counts from
+        self._local_drift: dict[str, int] = {}
+        drift = self.continuum.drift if self.continuum is not None else {}
+        self._detectors = {k: create(detectors, d) for k, d in sorted(drift.items())}
+        self._reference = Reference(stream) if self._detectors else None
         self.parent, self.model, self.data = parent, model, data
         self.trainer, self.train = trainer, train
         self.finetuner = finetuner
@@ -918,6 +932,8 @@ class Edge(_Greeter, Node):
         if self.train:
             meta["holders"] = dict.fromkeys(self._groups_up(self.model.state_dict()), 1)
         self._say_hello(meta, ctx)
+        if self.continuum is not None:
+            ctx.set_timer(self.continuum.status_every, "status")
 
     def _groups_up(self, keys: Iterable[str]) -> list[str]:
         """Parameter groups of ``keys`` that travel to the parent."""
@@ -927,6 +943,9 @@ class Edge(_Greeter, Node):
     def on_timer(self, name: str, ctx: Context) -> None:
         if name == "hello" and not self.acknowledged:
             self._send_hello(ctx)
+        elif name == "status" and not self.stopped:
+            self._status(ctx)
+            ctx.set_timer(self.continuum.status_every, "status")
 
     def on_message(self, msg: Message, ctx: Context) -> None:
         if self._acknowledged(msg, ctx):
@@ -934,6 +953,7 @@ class Edge(_Greeter, Node):
         if self._stop_requested(msg):
             self.stopped = True
             ctx.cancel_timer("hello")
+            ctx.cancel_timer("status")
             return
         if msg.src != self.parent or msg.round is None:
             _reject(ctx, msg, "unexpected sender")
@@ -1001,11 +1021,7 @@ class Edge(_Greeter, Node):
         )
         ctx.emit("data.labelled", float(late.sum()), round=round, **self.tags)
         new = arrived & ~s.history
-        if self._served is not None and new.any():
-            served = copy.deepcopy(self.model)
-            load_arrays(served, self._served)
-            self._logits[new] = predict(served, s.data.X[new])
-            self._predicted |= new
+        self._predict(new)
         metrics: dict[str, float] = {}
         # Every arrival against its truth (simulation only), and what a
         # deployment could score: the stored predictions whose label came.
@@ -1059,6 +1075,82 @@ class Edge(_Greeter, Node):
             **self.tags,
         )
 
+    def _predict(self, rows: np.ndarray) -> None:
+        """Predict the rows not predicted yet with the model served now."""
+        todo = rows & ~self._predicted
+        if self._served is None or not todo.any():
+            return
+        served = copy.deepcopy(self.model)
+        load_arrays(served, self._served)
+        self._logits[todo] = predict(served, self.stream.data.X[todo])
+        self._predicted |= todo
+
+    def _status(self, ctx: Context) -> None:
+        """What reached the edge since its last status, sent up without data
+        (spec §10): the rows that became trainable, and per kind of drift the
+        window's statistic, which also feeds the edge's own detector. New rows
+        are predicted now, by the model served, as the next round would."""
+        s = self.stream
+        lo, now = self._ticked, s.clock(ctx.now())
+        self._ticked = now
+        arrived = s.arrived(lo, now)
+        self._predict(arrived & ~s.history)
+        fresh = s.trainable(lo, now) & (self._consumed_by < 0)
+        metrics = {"at": now, "fresh": float(fresh.sum())}
+        labelled = s.labelled(lo, now)
+        for kind, detector in self._detectors.items():
+            value, n = window(
+                kind,
+                s,
+                arrived,
+                labelled,
+                self._logits,
+                self._predicted,
+                self._reference,
+            )
+            found = detector.update(value) if n else None
+            if found is not None:
+                self._local_drift[kind] = self._local_drift.get(kind, 0) + 1
+                ctx.emit(
+                    "drift.detected",
+                    found,
+                    kind=kind,
+                    window=value,
+                    at=now,
+                    **self.tags,
+                )
+            metrics |= {
+                f"drift.{kind}.sum": value * n,
+                f"drift.{kind}.n": float(n),
+                f"drift.{kind}.detected": float(found is not None),
+            }
+        payload = Payload(metrics=metrics)
+        ctx.send(Message(kind="status", src=self.id, dst=self.parent, payload=payload))
+
+    def _wants_update(self, round: int, ctx: Context) -> bool:
+        """The local trigger (spec §10): whether this edge has an update for the
+        round; without one, it always has."""
+        trigger = None if self.continuum is None else self.continuum.edge_trigger
+        if trigger is None:
+            return True
+        view = View(
+            now=self._clock,
+            since=self._updated_at,
+            volume=float(self._pending.sum()),
+            drift=dict(self._local_drift),
+        )
+        name = trigger.fired(view)
+        if name is not None:
+            ctx.emit(
+                "trigger.fired",
+                view.volume,
+                trigger=name,
+                at=view.now,
+                round=round,
+                **self.tags,
+            )
+        return name is not None
+
     def _train(self, msg: Message, ctx: Context) -> None:
         received = dict(msg.payload.state)
         # The trainer is anchored to the model it shares: the first model a child
@@ -1073,7 +1165,8 @@ class Edge(_Greeter, Node):
         load_arrays(self.model, received)
         if self.stream is not None:
             self._served = state_arrays(self.model)
-            if own is None:  # nothing to train on: idle, with what it scored
+            # Nothing to train on, or no update wanted yet: idle, with its scores.
+            if own is None or not self._wants_update(msg.round, ctx):
                 _send_idle(self, msg.round, metrics, ctx)
                 return
         scoring = (
@@ -1126,6 +1219,8 @@ class Edge(_Greeter, Node):
             return
         if self.stream is not None:  # trained with finite weights: now used
             self._consumed_by[self._pending] = msg.round
+            if self.continuum is not None:  # what the local trigger counts from
+                self._updated_at, self._local_drift = self._clock, {}
             if self.replay is not None:  # and only now eligible for replay
                 fresh = np.flatnonzero(self._pending)  # in time order
                 self.replay.add(fresh, self.stream.data.y[fresh])

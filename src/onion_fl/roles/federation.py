@@ -121,6 +121,7 @@ def build_federation(
     evaluate: Evaluate | None = None,
     server_optimizer: Any = None,
     round_every: float | None = None,
+    continuum: Any = None,
 ) -> Federation:
     """Coordinator, aggregators and edges of ``topology`` on ``runtime`` (a new SimRuntime).
 
@@ -199,6 +200,7 @@ def build_federation(
                 stream=spec.stream,
                 replay=spec.replay,
                 replay_ratio=spec.replay_ratio,
+                continuum=continuum,
                 metrics=list(metrics),
                 finetuner=(
                     create(trainer_plugins, finetune)
