@@ -303,6 +303,40 @@ def test_the_run_list_and_detail(client: TestClient, recorded: list[str]) -> Non
     assert detail["summary"]["rounds"] == 2
     assert set(detail["composition"]) == {"fog_a", "fog_b"}
     assert set(detail["roles"]["demo"]) >= {"test", "train"}
+    assert detail["triggers"] == [] and detail["drift"] == []
+
+
+def test_a_run_detail_lists_the_rounds_triggers_and_drift(
+    client: TestClient, root: Path, recorded: list[str]
+) -> None:
+    def event(node, role, level, name, value, **tags):
+        where = {"node": node, "role": role, "level": level}
+        return where | {"name": name, "value": value, "tags": tags}
+
+    lines = [
+        event("cloud", "coordinator", "global", "trigger.fired", 0.0,
+              trigger="start", at=0.0, round=1, drift={}),
+        event("e1", "edge", "edge", "trigger.fired", 40.0,
+              trigger="volume", at=300.0, round=1),
+        event("e1", "edge", "edge", "drift.detected", 0.7,
+              kind="prior", window=0.4, at=3600.0),
+        event("cloud", "coordinator", "global", "trigger.fired", 1100.0,
+              trigger="drift", at=3600.0, round=2, drift={"prior": 2}),
+    ]  # fmt: skip
+    events = root / "runs" / recorded[0] / "events.jsonl"
+    with events.open("a", encoding="utf-8") as out:
+        out.writelines(json.dumps(line) + "\n" for line in lines)
+
+    detail = client.get(f"/api/runs/{recorded[0]}").json()
+
+    assert detail["triggers"] == [
+        {"round": 1, "trigger": "start", "at": 0.0, "volume": 0.0, "drift": {}},
+        {"round": 2, "trigger": "drift", "at": 3600.0, "volume": 1100.0,
+         "drift": {"prior": 2}},
+    ]  # fmt: skip
+    assert detail["drift"] == [
+        {"node": "e1", "level": "edge", "kind": "prior", "at": 3600.0, "window": 0.4}
+    ]
 
 
 def test_events_come_in_pages_for_live_monitoring(
@@ -509,14 +543,12 @@ def test_preview_errors_name_the_problem(client: TestClient) -> None:
 def test_a_file_error_is_reported_without_the_local_path(
     client: TestClient, monkeypatch
 ) -> None:
-    import onion_fl.experiment.runner as runner
-
     def missing(config):
         raise FileNotFoundError(
             2, "No such file or directory", "C:/private/place/x.csv"
         )
 
-    monkeypatch.setattr(runner, "plan", missing)
+    monkeypatch.setattr("onion_fl.experiment.runner.plan", missing)
     response = client.post("/api/experiments/demo_exp/plan")
 
     text = json.dumps(response.json())

@@ -42,13 +42,21 @@ from pydantic import (
 )
 
 from onion_fl.baselines import baseline_models
+from onion_fl.continuum.drift import detectors
 from onion_fl.continuum.memory import memories
+from onion_fl.continuum.triggers import Schedule, drift_detectors, leaves, triggers
 from onion_fl.core.codec import codecs
 from onion_fl.core.registry import PluginError, Registry
 from onion_fl.data.ingest import readers, steps
 from onion_fl.data.placement import placements
 from onion_fl.data.roles import RolesConfig
-from onion_fl.data.stream import LabelsConfig, Samples, Staggered, StreamConfig
+from onion_fl.data.stream import (
+    LabelsConfig,
+    Positive,
+    Samples,
+    Staggered,
+    StreamConfig,
+)
 from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.attacks import attacks
 from onion_fl.learning.metrics import metrics
@@ -94,6 +102,8 @@ REGISTRIES: dict[str, Registry] = {
     "attack": attacks,
     "privacy": privacies,
     "memory": memories,
+    "trigger": triggers,
+    "detector": detectors,
 }
 
 
@@ -125,6 +135,48 @@ class ContinualConfig(Strict):
     )
 
     _memory = field_validator("memory")(lambda v: _plugin(memories, v))
+
+
+class ContinuumConfig(Strict):
+    trigger: PluginRef = Field(
+        description="Disparador federativo: cuándo abre ronda el coordinador"
+    )
+    edge_trigger: PluginRef | None = Field(
+        None,
+        description="Disparador local: cuándo un edge tiene una actualización; sin "
+        "él, en cada ronda en que tenga filas nuevas",
+        exclude_if=lambda v: v is None,
+    )
+    status_every: Positive = Field(
+        300.0, description="Tiempo de datos entre los mensajes de estado"
+    )
+
+    _trigger = field_validator("trigger")(lambda v: _plugin(triggers, v))
+    _edge_trigger = field_validator("edge_trigger")(
+        lambda v: v if v is None else _plugin(triggers, v)
+    )
+
+    @model_validator(mode="after")
+    def _fits(self) -> ContinuumConfig:
+        federated = create(triggers, self.trigger)
+        local = (
+            None if self.edge_trigger is None else create(triggers, self.edge_trigger)
+        )
+        try:
+            drift_detectors(federated, local)
+        except ValueError as exc:
+            raise ValueError(f"continuum: {exc}") from None
+        # The coordinator checks its trigger at each status tick, so a schedule
+        # between two ticks would wait for the next one.
+        for schedule in (t for t in leaves(federated) if isinstance(t, Schedule)):
+            ticks = schedule.every / self.status_every
+            if ticks < 1 - 1e-9 or abs(ticks - round(ticks)) > 1e-9:
+                raise ValueError(
+                    f"continuum.trigger: a schedule every {schedule.every:g} s is "
+                    f"checked every status_every ({self.status_every:g} s), so it "
+                    "would fire later; make every a multiple of status_every"
+                )
+        return self
 
 
 class DatasetUse(Strict):
@@ -296,6 +348,11 @@ class ExperimentConfig(Strict):
         description="Memoria de replay de los edges de un stream",
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
+    continuum: ContinuumConfig | None = Field(
+        None,
+        description="Federación continua: disparadores en vez de rondas a ritmo fijo",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
 
     _privacy = field_validator("privacy")(
         lambda v: v if v is None else _plugin(privacies, v)
@@ -346,8 +403,18 @@ class ExperimentConfig(Strict):
             raise ValueError(
                 "continual: a replay memory keeps rows of a stream; set stream too"
             )
+        if self.continuum is not None and self.stream is None:
+            raise ValueError("continuum: triggers pace a stream; set stream too")
         if self.stream is None:
             return self
+        paced = self.stream.round_every is not None
+        if paced == (self.continuum is not None):
+            raise ValueError(
+                "stream.round_every: a continuum trigger paces the rounds instead"
+                if paced
+                else "stream.round_every: set it, or let a continuum trigger pace "
+                "the rounds"
+            )
         roles, init, ref = self.data.roles, self.learning.init, self.data.placement
         one_each = isinstance(self.stream.start, Staggered) or isinstance(
             self.stream.bootstrap, Samples

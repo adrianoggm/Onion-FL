@@ -195,9 +195,9 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
   - An edge with nothing to train on answers idle, with its scores.
   - Collectors leave idle children out of the quorum, and a round where every child is idle closes as `round.idle` without changing the model.
 - **Pacing.**
-  - The coordinator opens a round every `round_every` of data time (`round_every` / `speed` virtual seconds).
-  - The observations end with the last row. The run then drains: it lasts until one round after the last chosen label arrives, bounded by `rounds`. C6 replaces this with triggers.
-- **Participation.** An edge handles its stream when a round reaches it, so streams require participation `all`. `close_at_quorum` and time-based availability are outside the temporal guarantee until C6.
+  - Without `continuum`, the coordinator opens a round every `round_every` of data time (`round_every` / `speed` virtual seconds).
+  - The observations end with the last row. The run then drains: it lasts until one round after the last chosen label arrives, bounded by `rounds`. With a continuum, triggers pace it instead (below).
+- **Participation.** An edge handles its stream when a round reaches it, so streams require participation `all`. `close_at_quorum` and time-based availability stay outside the temporal guarantee. With a continuum, an edge without an update answers idle instead of being left out.
 - **Evaluation.** Validation evaluators with a stream score what arrived since their previous request. Test evaluators score whole test subjects, so the final test score stays comparable.
 - **The bootstrap fit.** `split_subjects(fit_rows=...)` fits the preprocessing on the rows before t₀ only.
 - **Replay memory** (`continual: {memory, replay_ratio}`, `onion_fl.continuum.memory`).
@@ -206,6 +206,21 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
   - **Replay.** Each training adds r·n / (1 − r) rows sampled from the memory to its n recent ones. An edge with nothing new stays idle.
   - **Weight.** The edge is weighted by its n recent rows, as it would be without a memory: a replayed row was weighted when it was new.
   - **Records.** After each training that worked, the edge reports `diagnostic.memory`: the memory as it is now, the rows that training replayed, and the mean age of what is kept since it was observed. The bundle saves the memory.
+- **Triggers** (`continuum: {trigger, edge_trigger, status_every}`, `onion_fl.continuum.triggers`). A stream gives either `round_every` or a continuum, never both.
+  - **Plugins.** `schedule` (data time since the last round), `volume` (new trainable rows), `drift` (a kind and its detector) and `any`. Durations are data time. A federated schedule must be a multiple of `status_every`, since the root checks its trigger at each tick.
+  - **Two levels.**
+    - The federated trigger, at the coordinator, sees the rows that became trainable and the drift detected anywhere, as reported after the current round reached each node: rows and detections from before were taken by that round, or opened it.
+    - The local trigger, at each edge, sees its own unconsumed rows and its own detections since it last trained. An edge whose local trigger has not fired answers the round idle and keeps its rows. It does not hold back an edge's first model (v0 trains on the history) or any round after the edge's last label, which trains what is left.
+  - **Statuses.**
+    - Every `status_every`, each streaming edge predicts what arrived with the model it serves, then sends a `status` message: the round it last got, the rows that became trainable since its last one and, per kind of drift, the window's statistic, never data.
+    - Each collector pools its children's statuses on its own tick, by sample counts, and passes them up with its own round. The counts of a status sent before the collector's current round reached its sender are left out, and a round's opening clears what was pooled for the one before. The root ticks from round 1, so a schedule keeps C3's grid.
+    - Every node ticks until the last label, the tick after it included, so a stop lost on its way down does not keep the run alive.
+  - **Drift** (`onion_fl.continuum.drift`).
+    - `data` is the shift of the window's features from a reference window, in history standard deviations; `prior` is the total variation between the classes of the labels that arrived and the reference's; `performance` is the error rate of the stored predictions.
+    - The reference is the edge's first window with rows, held until a drift of that kind is detected, when the window that showed it becomes the reference. A switch of condition and a gradual drift both rise; the history is not the reference, because on recordings in blocks of conditions its distance stays high from the first window and the detector would never see a rise.
+    - Each edge, fog and the root runs its own detector (`page_hinkley`) on its statistic, so drift is detected per edge, per zone and for the federation.
+  - **Rounds.** Round 1 opens at registration. Later ones open when the federated trigger fires, one at a time, checked at each root tick and when a round closes. After the last label, one final round opens, at the next tick or when the round then open closes, and the run finishes. `rounds` stays an upper bound, and `run.finished` says which ended the run (`reason`: `horizon` or `rounds`).
+  - **Events.** `trigger.fired` (at the root, and at an edge whose local trigger fired), `drift.detected` and, with a continuum, `round.started` carry `at`, the data time: the cursor of the run.
 
 ## 8. Observability
 
@@ -247,8 +262,8 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
 | Area | What it shows |
 |---|---|
 | Topologies | The library with graphs and `topology_id`, and an editor that validates through `POST /api/topologies/validate` |
-| Experiments | Scenarios with their `config_id`, the dry-run plan with its warnings, and a launch that starts `onion_fl run` in a child process |
-| Runs | Status, identity, summary, metric series per level, and events polled every two seconds while a run is `running` |
+| Experiments | Scenarios with their `config_id`, the dry-run plan with its warnings (and, for a stream, its rows, horizon, drain and rounds or trigger), and a launch that starts `onion_fl run` in a child process |
+| Runs | Status, identity, summary, the rounds a continuum trigger opened and the drift detected (`trigger.fired`, `drift.detected`), metric series per level, and events polled every two seconds while a run is `running` |
 | Compare | `Runs.compare` by any tags, with the 95% CI band |
 | Tutorial | Every registry's plugins with their explanation and parameters, and dry-run previews (`studio.previews`) |
 

@@ -22,7 +22,15 @@ from typing import Any
 
 import numpy as np
 
-KINDS = ("hello", "global_model", "update", "eval_request", "eval_report", "control")
+KINDS = (
+    "hello",
+    "global_model",
+    "update",
+    "eval_request",
+    "eval_report",
+    "control",
+    "status",  # counts and drift statistics, never data (continuum C6)
+)
 
 
 class MessageError(ValueError):

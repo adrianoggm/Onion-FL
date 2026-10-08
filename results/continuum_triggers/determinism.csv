@@ -1,0 +1,10 @@
+scenario,seed,run_id,rerun_id,identical_model,identical_events
+"continuum.trigger,continuum.status_every=drift(kind=prior),5m",0,20261007T091402Z-cc90182f083a,20261007T091505Z-c4a8b5db5689,True,True
+"continuum.trigger,continuum.status_every=drift(kind=prior),5m",1,20261007T091402Z-1ccf41647c62,20261007T091506Z-6013e473a897,True,True
+"continuum.trigger,continuum.status_every=drift(kind=prior),5m",2,20261007T091402Z-3e70eb53fb75,20261007T091506Z-edab79ccba5f,True,True
+"continuum.trigger,continuum.status_every=schedule(every=10m),10m",0,20261007T091329Z-4de49f16b2bc,20261007T091420Z-5517c314a172,True,True
+"continuum.trigger,continuum.status_every=schedule(every=10m),10m",1,20261007T091329Z-84531ece8bce,20261007T091420Z-2b4215d854f8,True,True
+"continuum.trigger,continuum.status_every=schedule(every=10m),10m",2,20261007T091329Z-8908bf8c5426,20261007T091420Z-6b1c69d11072,True,True
+"continuum.trigger,continuum.status_every=volume(samples=300),5m",0,20261007T091352Z-d32addaf3d06,20261007T091448Z-f009d96bc0d2,True,True
+"continuum.trigger,continuum.status_every=volume(samples=300),5m",1,20261007T091352Z-ecfdf3be71bf,20261007T091449Z-00b0549ab40f,True,True
+"continuum.trigger,continuum.status_every=volume(samples=300),5m",2,20261007T091352Z-056875810a8f,20261007T091449Z-4f26d4b5b784,True,True
