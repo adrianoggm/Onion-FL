@@ -103,8 +103,8 @@ onion_fl serve                                  # http://127.0.0.1:8765
 
 The Studio reads and writes the same files as the command line (`topologies/`, `experiments/`, `runs/`). It has five areas:
 - **Topologies:** the library, the graph and an editor that validates as you type.
-- **Experiments:** scenarios, the dry-run plan (composition per fog, groups per link, warnings) and a launch button.
-- **Runs:** status, identity, metrics per level and live events.
+- **Experiments:** scenarios, the dry-run plan (composition per fog, groups per link, a stream's pace, warnings) and a launch button.
+- **Runs:** status, identity, the rounds and their triggers, the drift detected, metrics per level and live events.
 - **Compare:** mean ± CI over seeds, by topology, scenario or dataset.
 - **Tutorial:** every plugin explained, with previews of sharing, placement and network profiles.
 

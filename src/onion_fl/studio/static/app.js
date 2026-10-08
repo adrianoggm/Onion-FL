@@ -56,7 +56,7 @@ async function api(path, options = {}) {
   return body;
 }
 
-const fmt = (x, digits = 3) => (x === null || x === undefined || Number.isNaN(x) ? "–" : typeof x === "number" ? x.toFixed(digits).replace(/\.?0+$/, "") : String(x));
+const fmt = (x, digits = 3) => (x === null || x === undefined || Number.isNaN(x) ? "–" : typeof x === "number" ? String(Number(x.toFixed(digits))) : String(x));
 const short = (id) => (id ? `${id.slice(0, 12)}…` : "–");
 
 function errorBox(error) {
@@ -204,6 +204,27 @@ function groupLabels(links) {
 
 function trafficTable(links) {
   return table([["Enlace", (l) => (l.child === "*" ? `edges → ${l.parent_level}` : `${l.child} → ${l.parent}`)], ["Grupos que viajan", (l) => (l.groups.join(", ") || "nada")]], links);
+}
+
+const minutes = (seconds) => `${fmt(seconds / 60, 1)} min`; // data time, from the stream's t₀
+
+function streamSummary(stream) {
+  const edges = Object.values(stream.edges);
+  const total = (key) => edges.reduce((sum, e) => sum + e[key], 0);
+  return h("p", { class: "muted" },
+    `Stream: ${edges.length} edges · ${total("rows")} filas (${total("history")} de historia, ${total("labelled")} con etiqueta) · última fila a los ${minutes(stream.horizon)}, última etiqueta a los ${minutes(stream.drain)} · `,
+    stream.rounds === null ? `rondas según el disparador «${stream.trigger}»` : `${stream.rounds} rondas`);
+}
+
+function triggersPanel(triggers, drift) {
+  return h("div", { class: "panel" },
+    h("h3", {}, "Rondas y disparadores"),
+    table([["Ronda", (t) => t.round], ["Disparador", (t) => t.trigger], ["Tiempo de datos", (t) => minutes(t.at)], ["Filas reportadas", (t) => fmt(t.volume, 0)],
+      ["Derivas oídas", (t) => Object.entries(t.drift).map(([kind, n]) => `${kind}: ${n}`).join(", ") || "–"]], triggers),
+    drift.length
+      ? [h("h3", {}, "Derivas detectadas"),
+        table([["Tiempo de datos", (d) => minutes(d.at)], ["Nodo", (d) => d.node], ["Nivel", (d) => d.level], ["Tipo", (d) => d.kind], ["Estadístico", (d) => fmt(d.window)]], drift)]
+      : h("p", { class: "muted" }, "Ningún nodo detectó deriva."));
 }
 
 // --- topologies -------------------------------------------------------------------------------
@@ -373,6 +394,7 @@ async function planExperiment(name, output) {
       h("div", { class: "panel" },
         h("h3", {}, `${p.scenario} · semilla ${p.seed}`),
         p.warnings?.length ? h("div", { class: "errors" }, p.warnings.map((w) => h("div", {}, "⚠ ", w))) : "",
+        p.stream ? streamSummary(p.stream) : "",
         h("p", { class: "muted" }, "Composición por hoja (barras por dataset, H = entropía de la mezcla)"),
         stackedBars(p.composition),
         h("p", { class: "muted" }, "Grupos que viajan por cada enlace"),
@@ -457,6 +479,7 @@ async function runDetail(runId) {
       h("h3", {}, "Identidad"),
       table([["", (r) => r[0]], ["", (r) => copyable(r[1] || "–")]], [["run_id", meta.run_id], ["topology_id", meta.topology_id], ["config_id", meta.config_id], ["data_id", meta.data_id], ["code", meta.code_version?.commit], ["run_hash", meta.run_hash]])),
     Object.keys(detail.composition || {}).length ? h("div", { class: "panel" }, h("h3", {}, "Composición por hoja"), stackedBars(detail.composition)) : null,
+    detail.triggers?.length ? triggersPanel(detail.triggers, detail.drift) : null,
     charts,
     h("div", { class: "panel" }, h("h3", {}, "Eventos"), log));
   await drawCharts();
