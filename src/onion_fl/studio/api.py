@@ -105,6 +105,19 @@ AXES: list[tuple[str, str, str, str | None]] = [
         "entrenar con ellas (replay).",
         None,
     ),
+    (
+        "trigger",
+        "Disparador",
+        "Cuándo abre ronda el coordinador de una federación continua, y cuándo "
+        "tiene un edge una actualización: por calendario, por volumen o por deriva.",
+        None,
+    ),
+    (
+        "detector",
+        "Detector de deriva",
+        "Cómo vigila cada edge, zona y la federación su estadístico de deriva.",
+        None,
+    ),
     ("init", "Inicialización", "De dónde sale el modelo inicial.", None),
     ("participation", "Participación", "Qué hijos participan en cada ronda.", None),
     (
@@ -455,20 +468,36 @@ def create_app(root: str | Path = ".") -> FastAPI:
     @app.get("/api/runs/{run_id}")
     def run_detail(run_id: str) -> JSONResponse:
         record = run_record(run_id)
-        roles, composition = {}, {}
+        roles, composition, triggers, drift = {}, {}, [], []
         events = record.path / "events.jsonl"
         for event in read_events(events) if events.is_file() else []:
+            tags = event["tags"]
             if event["name"] == "data.roles":
-                roles = event["tags"].get("roles", {})
+                roles = tags.get("roles", {})
             elif event["name"] == "data.composition":
-                tags = dict(event["tags"])
+                tags = dict(tags)
                 composition[tags.pop("leaf")] = tags
+            elif event["name"] == "trigger.fired" and event["role"] == "coordinator":
+                # the rounds the federation opened; an edge's own trigger is local
+                triggers.append(
+                    {"round": tags["round"], "trigger": tags["trigger"]}
+                    | {"at": tags["at"], "volume": event["value"]}
+                    | {"drift": tags.get("drift", {})}
+                )
+            elif event["name"] == "drift.detected":
+                drift.append(
+                    {"node": event["node"], "level": event["level"]}
+                    | {"kind": tags["kind"], "at": tags["at"]}
+                    | {"window": tags["window"]}
+                )
         return _json(
             {
                 "meta": record.meta,
                 "summary": summary_of(record.path),
                 "roles": roles,
                 "composition": composition,
+                "triggers": triggers,
+                "drift": drift,
                 "levels": levels_of(record),
             }
         )

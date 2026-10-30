@@ -74,7 +74,12 @@ class StreamConfig(BaseModel):
     bootstrap: Positive | Samples = Field(
         description="El histórico antes de t₀: ajusta el preprocesado y entrena v0"
     )
-    round_every: Positive = Field(description="Tiempo de datos entre rondas")
+    round_every: Positive | None = Field(
+        None,
+        description="Tiempo de datos entre rondas; con continuum, lo decide su "
+        "disparador",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
     window: Positive | None = Field(
         None,
         description="Edad máxima del búfer: de lo que pasó a ser entrenable desde la "

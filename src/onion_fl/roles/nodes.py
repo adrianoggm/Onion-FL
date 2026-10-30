@@ -24,7 +24,9 @@ from typing import Any
 
 import numpy as np
 
+from onion_fl.continuum.drift import Reference, detectors, window
 from onion_fl.continuum.memory import Memory
+from onion_fl.continuum.pace import View
 from onion_fl.core.context import Context, child_rng
 from onion_fl.core.message import Message, Payload
 from onion_fl.core.node import Node
@@ -35,7 +37,7 @@ from onion_fl.learning.sharing import SharingPolicy, keys_crossing, keys_held_at
 from onion_fl.learning.trainers import frozen_keys
 from onion_fl.observability.diagnostics import RoundView
 from onion_fl.observability.diagnostics import diagnostics as diagnostic_plugins
-from onion_fl.roles.policies import AllChildren, Drop, quorum_needed
+from onion_fl.roles.policies import AllChildren, Drop, create, quorum_needed
 
 State = dict[str, np.ndarray]
 Evaluate = Callable[[Any, Any], tuple[Mapping[str, float], int]]
@@ -97,6 +99,11 @@ def _send_idle(node: Any, round: int, scores: Mapping[str, float], ctx) -> None:
     )
 
 
+def _counted(key: str) -> bool:
+    """Status keys that count toward a trigger since the last round."""
+    return key == "fresh" or key.endswith(".detected")
+
+
 def _emit_scores(ctx: Context, scores: Mapping[str, float], **tags: Any) -> None:
     for name, value in scores.items():
         ctx.emit(f"eval.{name}", value, **tags)
@@ -124,8 +131,15 @@ class _Collector(Node):
         aggregate_children: bool = True,
         holdout: bool = True,
         diagnostics: Sequence[Any] | None = None,
+        continuum: Any = None,
     ) -> None:
         super().__init__(node_id)
+        # A continuous federation (continuum C6): the children's statuses heard
+        # since the last tick, and this level's drift detectors.
+        self.continuum = continuum
+        self._heard: dict[str, float] = {}
+        drift = continuum.drift if continuum is not None else {}
+        self._detectors = {k: create(detectors, d) for k, d in sorted(drift.items())}
         self.children = set(children)
         self.level, self.levels, self.sharing = level, list(levels), sharing
         self.aggregator = aggregator
@@ -160,9 +174,14 @@ class _Collector(Node):
 
     # --- registration ------------------------------------------------------------
 
+    stopped: bool = False
+    _ticks_from_start = True  # the root ticks from its first round instead
+
     def on_start(self, ctx: Context) -> None:
         if self.register_timeout is not None:
             ctx.set_timer(self.register_timeout, "register")
+        if self.continuum is not None and self._ticks_from_start:
+            ctx.set_timer(self.continuum.status_every, "status")
 
     def _hello(self, msg: Message, ctx: Context) -> None:
         if msg.src not in self.registered:
@@ -223,6 +242,8 @@ class _Collector(Node):
             self._update(msg, ctx)
         elif msg.src in self.children and msg.kind == "eval_report":
             self._eval_report(msg, ctx)
+        elif msg.src in self.children and msg.kind == "status":
+            self._heard_from(msg.payload.metrics)
         else:
             self._other(msg, ctx)
 
@@ -239,6 +260,8 @@ class _Collector(Node):
     ) -> None:
         if self.open:  # the parent moved on before this round closed
             self._abandon(round, ctx)
+        # What was heard for the round before is not for this one (continuum C6).
+        self._heard = {k: v for k, v in self._heard.items() if not _counted(k)}
         self.round, self.open, self.opened_at = round, True, ctx.now()
         self.responses, self.late, self.quorum_at = {}, 0, None
         # A round a child owes stops counting once its update would be dropped: a
@@ -409,6 +432,46 @@ class _Collector(Node):
             round = int(name.split("/", 1)[1])
             if round in self.pending_eval:
                 self._eval_done(round, ctx)
+        elif name == "status":
+            self._tick(ctx)
+
+    def _heard_from(self, metrics: Mapping[str, float]) -> None:
+        """Pool a child's status. Its rows and detections count only if the child
+        sent it after this node's current round reached it: before, they are
+        what that round takes, or what opened it."""
+        stale = metrics.get("round", 0.0) < self.round
+        for key, value in metrics.items():
+            if key in ("at", "round") or (stale and _counted(key)):
+                continue
+            self._heard[key] = self._heard.get(key, 0.0) + float(value)
+
+    def _tick(self, ctx: Context) -> None:
+        """Pool what the children reported since the last tick, run this level's
+        detectors on it (zone drift at a fog, federation drift at the root) and
+        pass it on; until the run is over (spec §10)."""
+        if self.stopped:
+            return
+        now = ctx.now() * self.continuum.speed
+        heard, self._heard = self._heard, {}
+        for kind, detector in self._detectors.items():
+            n = heard.get(f"drift.{kind}.n", 0.0)
+            if n <= 0:
+                continue
+            value = heard[f"drift.{kind}.sum"] / n
+            found = detector.update(value)
+            if found is not None:
+                key = f"drift.{kind}.detected"
+                heard[key] = heard.get(key, 0.0) + 1.0
+                ctx.emit("drift.detected", found, kind=kind, window=value, at=now)
+        self._heard_all(heard, now, ctx)
+        # Every node ticks until the last label, the tick after it included: a
+        # stop lost on its way down must not keep the run alive.
+        if ctx.now() < self.continuum.until:
+            ctx.set_timer(self.continuum.status_every, "status")
+
+    def _heard_all(self, heard: dict[str, float], now: float, ctx: Context) -> None:
+        """What the children said since the last tick, pooled at this level."""
+        raise NotImplementedError
 
     def _close(self, ctx: Context) -> None:
         ctx.cancel_timer("deadline")
@@ -674,6 +737,12 @@ class Coordinator(_Collector):
         self.finished = False
         # Virtual seconds between round starts (a stream's pace); None: at once.
         self.round_every, self.started_at = round_every, None
+        # A continuous federation (continuum C6): what the statuses said since the
+        # last round opened, and when it opened (data time).
+        self._volume, self._drift, self._opened_at = 0.0, {}, 0.0
+        self._horizon = False  # the final round opened: the streams are over
+
+    _ticks_from_start = False  # from round 1, so a schedule keeps its grid
 
     def on_timer(self, name: str, ctx: Context) -> None:
         if name == "round":
@@ -694,6 +763,13 @@ class Coordinator(_Collector):
             if not self.pending_eval:
                 self._finish(ctx)
             return
+        if self.continuum is not None:  # rounds wait for a trigger (spec §10)
+            if self.round == 0:
+                self._start("start", ctx.now() * self.continuum.speed, ctx)
+                ctx.set_timer(self.continuum.status_every, "status")
+            else:
+                self._maybe_open(ctx)
+            return
         if self.round_every is not None:
             if self.started_at is None:
                 self.started_at = ctx.now()
@@ -704,10 +780,57 @@ class Coordinator(_Collector):
         ctx.emit("round.started", self.round + 1, round=self.round + 1)
         self._open(self.round + 1, self.state, ctx, bootstrap=self.round == 0)
 
+    def _heard_all(self, heard: dict[str, float], now: float, ctx: Context) -> None:
+        self._volume += heard.get("fresh", 0.0)
+        for key, value in heard.items():
+            if key.startswith("drift.") and key.endswith(".detected") and value:
+                kind = key.split(".")[1]
+                self._drift[kind] = self._drift.get(kind, 0) + int(value)
+        self._maybe_open(ctx)
+
+    def _maybe_open(self, ctx: Context) -> None:
+        """Open the next round if the trigger asks. At the first tick after the
+        last label, one final round, after which the run finishes."""
+        if self.open or self.finished or self.round == 0 or self.round >= self.rounds:
+            return
+        now = ctx.now() * self.continuum.speed
+        if ctx.now() >= self.continuum.until - 1e-9:
+            name, self.rounds = "horizon", self.round + 1  # the last one
+            self._horizon = True
+        else:
+            view = View(
+                now=now,
+                since=self._opened_at,
+                volume=self._volume,
+                drift=dict(self._drift),
+            )
+            name = self.continuum.trigger.fired(view)
+            if name is None:
+                return
+        self._start(name, now, ctx)
+
+    def _start(self, name: str, now: float, ctx: Context) -> None:
+        """Open the next round because ``name`` fired, at data time ``now``."""
+        ctx.emit(
+            "trigger.fired",
+            self._volume,
+            trigger=name,
+            at=now,
+            round=self.round + 1,
+            drift=dict(self._drift),
+        )
+        self._volume, self._drift, self._opened_at = 0.0, {}, now
+        ctx.emit("round.started", self.round + 1, round=self.round + 1, at=now)
+        self._open(self.round + 1, self.state, ctx, bootstrap=self.round == 0)
+
     def _finish(self, ctx: Context) -> None:
         if not self.finished:
             self.finished = True
-            ctx.emit("run.finished", self.round)
+            # With triggers, whether the streams ended or the rounds cap cut it.
+            why = {} if self.continuum is None else {"reason": "rounds"}
+            if self._horizon:
+                why["reason"] = "horizon"
+            ctx.emit("run.finished", self.round, **why)
             _stop_children(self, ctx)
 
     @property
@@ -769,6 +892,10 @@ class Aggregator(_Greeter, _Collector):
 
     def _registered(self, ctx: Context) -> None:
         self._say_hello(self._meta(), ctx)
+
+    def _heard_all(self, heard: dict[str, float], now: float, ctx: Context) -> None:
+        payload = Payload(metrics={"at": now, "round": float(self.round), **heard})
+        ctx.send(Message(kind="status", src=self.id, dst=self.parent, payload=payload))
 
     def _late_child(self, ctx: Context) -> None:
         if self._meta() != self._hello_meta:  # the parent counts what is below now
@@ -865,6 +992,7 @@ class Edge(_Greeter, Node):
         stream: Any = None,
         replay: Any = None,
         replay_ratio: float = 0.25,
+        continuum: Any = None,
         metrics: Sequence[str] = ("loss", "accuracy"),
     ) -> None:
         super().__init__(node_id)
@@ -898,6 +1026,18 @@ class Edge(_Greeter, Node):
             # weights, so a failed round trains the same rows next time.
             self._consumed_by = np.full(len(stream.data.y), -1)
             self._pending = np.zeros(len(stream.data.y), bool)
+        # A continuous federation (continuum C6): statuses, detectors and the
+        # local trigger; only a training edge with a stream takes part.
+        self.continuum = continuum if stream is not None and train else None
+        self._ticked = -np.inf  # continuum time of the last status
+        self._updated_at = (
+            float(stream.available_at.min()) if stream is not None else 0.0
+        )  # of its last successful training: what the local trigger counts from
+        self._local_drift: dict[str, int] = {}
+        self._seen_round = 0  # the last round whose model reached this edge
+        drift = self.continuum.drift if self.continuum is not None else {}
+        self._detectors = {k: create(detectors, d) for k, d in sorted(drift.items())}
+        self._reference = Reference(stream) if self._detectors else None
         self.parent, self.model, self.data = parent, model, data
         self.trainer, self.train = trainer, train
         self.finetuner = finetuner
@@ -918,6 +1058,8 @@ class Edge(_Greeter, Node):
         if self.train:
             meta["holders"] = dict.fromkeys(self._groups_up(self.model.state_dict()), 1)
         self._say_hello(meta, ctx)
+        if self.continuum is not None:
+            ctx.set_timer(self.continuum.status_every, "status")
 
     def _groups_up(self, keys: Iterable[str]) -> list[str]:
         """Parameter groups of ``keys`` that travel to the parent."""
@@ -927,6 +1069,10 @@ class Edge(_Greeter, Node):
     def on_timer(self, name: str, ctx: Context) -> None:
         if name == "hello" and not self.acknowledged:
             self._send_hello(ctx)
+        elif name == "status" and not self.stopped:
+            self._status(ctx)
+            if ctx.now() < self.continuum.until:  # see _Collector._tick
+                ctx.set_timer(self.continuum.status_every, "status")
 
     def on_message(self, msg: Message, ctx: Context) -> None:
         if self._acknowledged(msg, ctx):
@@ -934,6 +1080,7 @@ class Edge(_Greeter, Node):
         if self._stop_requested(msg):
             self.stopped = True
             ctx.cancel_timer("hello")
+            ctx.cancel_timer("status")
             return
         if msg.src != self.parent or msg.round is None:
             _reject(ctx, msg, "unexpected sender")
@@ -1001,11 +1148,7 @@ class Edge(_Greeter, Node):
         )
         ctx.emit("data.labelled", float(late.sum()), round=round, **self.tags)
         new = arrived & ~s.history
-        if self._served is not None and new.any():
-            served = copy.deepcopy(self.model)
-            load_arrays(served, self._served)
-            self._logits[new] = predict(served, s.data.X[new])
-            self._predicted |= new
+        self._predict(new)
         metrics: dict[str, float] = {}
         # Every arrival against its truth (simulation only), and what a
         # deployment could score: the stored predictions whose label came.
@@ -1059,7 +1202,91 @@ class Edge(_Greeter, Node):
             **self.tags,
         )
 
+    def _predict(self, rows: np.ndarray) -> None:
+        """Predict the rows not predicted yet with the model served now."""
+        todo = rows & ~self._predicted
+        if self._served is None or not todo.any():
+            return
+        served = copy.deepcopy(self.model)
+        load_arrays(served, self._served)
+        self._logits[todo] = predict(served, self.stream.data.X[todo])
+        self._predicted |= todo
+
+    def _status(self, ctx: Context) -> None:
+        """What reached the edge since its last status, sent up without data
+        (spec §10): the rows that became trainable, and per kind of drift the
+        window's statistic, which also feeds the edge's own detector. New rows
+        are predicted now, by the model served, as the next round would."""
+        s = self.stream
+        lo, now = self._ticked, s.clock(ctx.now())
+        self._ticked = now
+        arrived = s.arrived(lo, now)
+        self._predict(arrived & ~s.history)
+        fresh = s.trainable(lo, now) & (self._consumed_by < 0)
+        metrics = {
+            "at": now,
+            "round": float(self._seen_round),
+            "fresh": float(fresh.sum()),
+        }
+        labelled = s.labelled(lo, now)
+        for kind, detector in self._detectors.items():
+            value, n = window(
+                kind,
+                s,
+                arrived,
+                labelled,
+                self._logits,
+                self._predicted,
+                self._reference,
+            )
+            found = detector.update(value) if n else None
+            if found is not None:
+                self._reference.moved(kind)  # compared from now on with this one
+                self._local_drift[kind] = self._local_drift.get(kind, 0) + 1
+                ctx.emit(
+                    "drift.detected",
+                    found,
+                    kind=kind,
+                    window=value,
+                    at=now,
+                    **self.tags,
+                )
+            metrics |= {
+                f"drift.{kind}.sum": value * n,
+                f"drift.{kind}.n": float(n),
+                f"drift.{kind}.detected": float(found is not None),
+            }
+        payload = Payload(metrics=metrics)
+        ctx.send(Message(kind="status", src=self.id, dst=self.parent, payload=payload))
+
+    def _wants_update(self, round: int, ctx: Context, first: bool) -> bool:
+        """The local trigger (spec §10): whether this edge has an update for the
+        round; without one, it always has. It does not hold back the first
+        model, which trains v0 on the history, nor an edge whose stream has
+        ended, which trains what is left."""
+        trigger = None if self.continuum is None else self.continuum.edge_trigger
+        if trigger is None or first or self._clock >= self.stream.drain:
+            return True
+        view = View(
+            now=self._clock,
+            since=self._updated_at,
+            volume=float(self._pending.sum()),
+            drift=dict(self._local_drift),
+        )
+        name = trigger.fired(view)
+        if name is not None:
+            ctx.emit(
+                "trigger.fired",
+                view.volume,
+                trigger=name,
+                at=view.now,
+                round=round,
+                **self.tags,
+            )
+        return name is not None
+
     def _train(self, msg: Message, ctx: Context) -> None:
+        self._seen_round = msg.round
         received = dict(msg.payload.state)
         # The trainer is anchored to the model it shares: the first model a child
         # gets is whole, and its local groups must not be pulled to their start.
@@ -1073,7 +1300,9 @@ class Edge(_Greeter, Node):
         load_arrays(self.model, received)
         if self.stream is not None:
             self._served = state_arrays(self.model)
-            if own is None:  # nothing to train on: idle, with what it scored
+            # Nothing to train on, or no update wanted yet: idle, with its scores.
+            first = bool(msg.meta.get("bootstrap"))
+            if own is None or not self._wants_update(msg.round, ctx, first):
                 _send_idle(self, msg.round, metrics, ctx)
                 return
         scoring = (
@@ -1126,6 +1355,8 @@ class Edge(_Greeter, Node):
             return
         if self.stream is not None:  # trained with finite weights: now used
             self._consumed_by[self._pending] = msg.round
+            if self.continuum is not None:  # what the local trigger counts from
+                self._updated_at, self._local_drift = self._clock, {}
             if self.replay is not None:  # and only now eligible for replay
                 fresh = np.flatnonzero(self._pending)  # in time order
                 self.replay.add(fresh, self.stream.data.y[fresh])

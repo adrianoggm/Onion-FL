@@ -1,0 +1,125 @@
+{
+  "run_id": "20261007T091329Z-8908bf8c5426",
+  "topology_id": "ff55fe4d2ce1a807f764bcc5205a8d2d4d43ab3d533163a1d13e173a9a6725fa",
+  "config_id": "a13e9d5fdc991b9802592ee83e922d57235a1ee3cedb79cef32796f44bc1cafa",
+  "data_id": "9fd573754157d68b111f037ecd891bdb62abcbff1d5e5e818da789dde470257c",
+  "code_version": {
+    "commit": "29bf9491feb32eef7625eccaa4efddc4d5400b69",
+    "dirty": false
+  },
+  "seed": 2,
+  "scenario": "continuum.trigger,continuum.status_every=schedule(every=10m),10m",
+  "started_at": "2026-10-07T09:13:29.956838+00:00",
+  "status": "finished",
+  "config": {
+    "name": "stream_triggers_swell_wesad",
+    "description": "Disparadores por calendario, volumen y deriva en los streams de SWELL y WESAD.",
+    "topology": "four_fogs_swell_wesad_lossless",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        },
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.0,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.1
+      },
+      "init": "random"
+    },
+    "rounds": 60,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1",
+        "confusion_matrix"
+      ],
+      "edge": {
+        "every": null,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": 1,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 5
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    },
+    "stream": {
+      "order": "timestamp",
+      "batch_size": 1,
+      "speed": 60.0,
+      "start": "aligned",
+      "horizon": "session",
+      "bootstrap": 1200.0,
+      "window": null
+    },
+    "labels": {
+      "fraction": 1.0,
+      "delay": 600.0
+    },
+    "continuum": {
+      "trigger": {
+        "name": "schedule",
+        "every": "10m"
+      },
+      "status_every": 600.0
+    }
+  },
+  "finished_at": "2026-10-07T09:13:52.282776+00:00",
+  "run_hash": "8e358b54911e4d7121ab7b935f2e56060b5e7a51e996eb945d6d478f5e1d4970"
+}

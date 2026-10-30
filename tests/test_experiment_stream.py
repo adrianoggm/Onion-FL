@@ -305,3 +305,94 @@ def test_memory_none_runs_exactly_as_without_a_memory(workspace: Path) -> None:
         return [(e["name"], e["node"], e["value"]) for e in map(json.loads, lines)]
 
     assert trace(run(workspace, continual=none)) == trace(run(workspace))
+
+
+# --- triggers and continuous federation (continuum C6) ----------------------------
+
+SCHEDULE = {"trigger": {"name": "schedule", "every": 300}, "status_every": 300}
+PACED = {k: v for k, v in STREAM.items() if k != "round_every"}
+PRIOR = {"name": "drift", "kind": "prior"}
+STRICTER = {"name": "page_hinkley", "threshold": 2}
+
+
+@pytest.mark.parametrize(
+    "change, message",
+    [
+        ({"continuum": SCHEDULE}, "round_every"),  # both pace the rounds
+        ({"stream": PACED}, "round_every"),  # neither does
+        ({"stream": None, "labels": None, "continuum": SCHEDULE}, "continuum"),
+        (
+            {"stream": PACED, "continuum": {"trigger": PRIOR | {"kind": "concept"}}},
+            "kind",
+        ),
+        ({"stream": PACED, "continuum": {"trigger": "carrier_pigeon"}}, "pigeon"),
+        (
+            {
+                "stream": PACED,
+                "continuum": {
+                    "trigger": PRIOR,
+                    "edge_trigger": PRIOR | {"detector": STRICTER},
+                },
+            },
+            "prior",
+        ),
+    ],
+)
+def test_a_continuum_that_cannot_run_is_refused(
+    workspace: Path, change: dict, message: str
+) -> None:
+    raw = {k: v for k, v in (experiment(workspace) | change).items() if v is not None}
+    with pytest.raises(ConfigError, match=message):
+        parse_experiment(raw)
+
+
+def test_a_stream_paced_by_round_every_keeps_its_config_id(workspace: Path) -> None:
+    dumped = parse_experiment(experiment(workspace)).dump()
+    assert dumped["stream"]["round_every"] == 300 and "continuum" not in dumped
+
+
+def test_a_schedule_trigger_runs_as_round_every_did(workspace: Path) -> None:
+    paced = run(workspace)
+    triggered = run(workspace, stream=PACED, continuum=SCHEDULE)
+
+    with np.load(paced / "model.npz") as a, np.load(triggered / "model.npz") as b:
+        assert a.files == b.files and all(np.array_equal(a[k], b[k]) for k in a.files)
+
+
+def test_the_events_carry_the_data_time_of_each_trigger(workspace: Path) -> None:
+    path = run(
+        workspace,
+        stream=PACED,
+        continuum={"trigger": {"name": "volume", "samples": 8}, "status_every": 60},
+    )
+
+    fired = events(path, "trigger.fired")
+    assert fired[0]["tags"]["trigger"] == "start"
+    assert fired[-1]["tags"]["trigger"] == "horizon"
+    assert all("at" in e["tags"] for e in fired + events(path, "round.started"))
+
+
+def test_the_plan_names_the_trigger(workspace: Path) -> None:
+    raw = experiment(workspace, stream=PACED, continuum=SCHEDULE)
+    (preview,) = plan(parse_experiment(raw))
+
+    assert preview["stream"]["rounds"] is None
+    assert preview["stream"]["trigger"] == "schedule"
+
+
+@pytest.mark.parametrize(
+    "trigger, status_every",
+    [
+        ({"name": "schedule", "every": 900}, 600),  # it would fire every 20 minutes
+        ({"name": "schedule", "every": 60}, 300),
+        ({"name": "any", "of": [{"name": "schedule", "every": 450}, PRIOR]}, 300),
+    ],
+)
+def test_a_schedule_must_fall_on_the_status_ticks(
+    workspace: Path, trigger: dict, status_every: int
+) -> None:
+    continuum = {"trigger": trigger, "status_every": status_every}
+    raw = experiment(workspace, stream=PACED, continuum=continuum)
+
+    with pytest.raises(ConfigError, match="status_every"):
+        parse_experiment(raw)
