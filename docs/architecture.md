@@ -261,9 +261,9 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
 
 | Area | What it shows |
 |---|---|
-| Topologies | The library with graphs and `topology_id`, and an editor that validates through `POST /api/topologies/validate` |
+| Topologies | The library with graphs and `topology_id` (the plan draws each leaf with its number of edges, which the placement decides), and an editor that validates through `POST /api/topologies/validate` |
 | Experiments | Scenarios with their `config_id`, the dry-run plan with its warnings (and, for a stream, its rows, horizon, drain and rounds or trigger), and a launch that starts `onion_fl run` in a child process |
-| Runs | Status, identity, summary, the rounds a continuum trigger opened and the drift detected (`trigger.fired`, `drift.detected`), metric series per level, and events polled every two seconds while a run is `running` |
+| Runs | Status, identity, summary, the rounds a continuum trigger opened and the drift detected (`trigger.fired`, `drift.detected`), metric series per level, and events polled every two seconds while a run is `running`, which redraw the figures and the triggers when a round, a trigger or the end arrives. The runs list refreshes every three seconds |
 | Compare | `Runs.compare` by any tags, with the 95% CI band |
 | Tutorial | Every registry's plugins with their explanation and parameters, and dry-run previews (`studio.previews`) |
 

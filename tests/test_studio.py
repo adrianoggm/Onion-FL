@@ -222,6 +222,9 @@ def test_the_plan_of_an_experiment(client: TestClient) -> None:
 
     assert len(previews) == 4
     assert set(previews[0]["composition"]) == {"fog_a", "fog_b"}
+    # the graph labels each leaf with its number of edges, from the composition
+    trained = len(previews[0]["roles"]["demo"]["train"])
+    assert sum(c["clients"] for c in previews[0]["composition"].values()) == trained
 
 
 def test_the_plan_shows_the_config_id_a_run_from_the_root_signs(

@@ -79,7 +79,7 @@ function every(ms, fn) {
 
 // --- drawing ------------------------------------------------------------------------------
 
-function drawTopology(graph, linkLabels = {}) {
+function drawTopology(graph, linkLabels = {}, composition = null) {
   // Levels in rows, leaves spread evenly, each parent centred over its children.
   const children = {};
   for (const node of graph.nodes) (children[node.parent] ||= []).push(node);
@@ -117,7 +117,7 @@ function drawTopology(graph, linkLabels = {}) {
     const p = pos[leaf];
     svg.append(s("line", { class: "link", x1: p.x, y1: p.y, x2: p.x, y2: edgeY - 18 }));
     svg.append(s("rect", { class: "edgebox", x: p.x - 50, y: edgeY - 18, width: 100, height: 30, rx: 6 }));
-    svg.append(s("text", { x: p.x, y: edgeY + 1, "text-anchor": "middle" }, `edges (${levels[levels.length - 1]})`));
+    svg.append(s("text", { x: p.x, y: edgeY + 1, "text-anchor": "middle" }, composition ? `${composition[leaf]?.clients ?? 0} edges` : `edges (${levels[levels.length - 1]})`));
     if (linkLabels["*"]) svg.append(s("text", { class: "groups", x: p.x, y: edgeY + 28, "text-anchor": "middle" }, linkLabels["*"]));
   }
   for (const node of graph.nodes) {
@@ -257,7 +257,7 @@ async function showTopology(container, name) {
 }
 
 function graphPanel(graph) {
-  return h("div", {}, drawTopology(graph), h("p", { class: "muted" }, "topology_id: ", copyable(graph.topology_id)));
+  return h("div", {}, drawTopology(graph), h("p", { class: "muted" }, "Cuántos edges cuelgan de cada hoja lo decide la colocación del experimento: se ve en su plan."), h("p", { class: "muted" }, "topology_id: ", copyable(graph.topology_id)));
 }
 
 function editorState(graph) {
@@ -398,7 +398,7 @@ async function planExperiment(name, output) {
         h("p", { class: "muted" }, "Composición por hoja (barras por dataset, H = entropía de la mezcla)"),
         stackedBars(p.composition),
         h("p", { class: "muted" }, "Grupos que viajan por cada enlace"),
-        drawTopology(p.graph, groupLabels(p.traffic)),
+        drawTopology(p.graph, groupLabels(p.traffic), p.composition),
         trafficTable(p.traffic),
         h("p", { class: "muted" }, "Roles: ", Object.entries(p.roles).map(([ds, r]) => `${ds}: ${r.test.length} test · ${r.val.length} val · ${r.train.length} train`).join(" | ")))));
   } catch (error) {
@@ -429,13 +429,27 @@ async function runsView(selected) {
   }
   page("Ejecuciones", "Lo ejecutado en runs/: estado, identidad y rendimiento por nivel. Las que siguen corriendo se actualizan solas.", h("div", { class: "row" }, filter), h("div", { class: "panel" }, holder));
   const runs = await load();
-  if (runs.some((r) => r.status === "running")) every(3000, load);
+  every(3000, load); // runs launched from here appear once their run.json is written
 }
 
 async function runDetail(runId) {
   const detail = await api(`/api/runs/${encodeURIComponent(runId)}`);
-  const meta = detail.meta, summary = detail.summary || {};
+  const meta = detail.meta;
+  const head = h("div", {});
   const charts = h("div", { class: "grid2" });
+
+  function drawHead(d) {
+    const m = d.meta, summary = d.summary || {};
+    head.replaceChildren(
+      h("div", { class: "panel" },
+        h("div", { class: "kpis" },
+          [["Estado", h("span", { class: `badge ${m.status}` }, m.status)], ["Rondas", summary.rounds ?? "–"], ["Mensajes", summary.messages?.sent ?? "–"], ["Bytes", summary.messages?.bytes ?? "–"], ["Perdidos", summary.messages?.dropped ?? "–"], ["Quórum fallido", summary.quorum_failed ?? "–"]]
+            .map(([label, value]) => h("div", { class: "kpi" }, h("div", { class: "value" }, value), h("div", { class: "label" }, label)))),
+        h("h3", {}, "Identidad"),
+        table([["", (r) => r[0]], ["", (r) => copyable(r[1] || "–")]], [["run_id", m.run_id], ["topology_id", m.topology_id], ["config_id", m.config_id], ["data_id", m.data_id], ["code", m.code_version?.commit], ["run_hash", m.run_hash]])),
+      Object.keys(d.composition || {}).length ? h("div", { class: "panel" }, h("h3", {}, "Composición por hoja"), stackedBars(d.composition)) : null,
+      d.triggers?.length ? triggersPanel(d.triggers, d.drift) : null);
+  }
   const log = h("div", { class: "log" });
   let after = 0;
 
@@ -472,25 +486,24 @@ async function runDetail(runId) {
   }
 
   page(`Ejecución ${runId}`, meta.scenario ? `${meta.config?.name || ""} · ${meta.scenario} · semilla ${meta.seed}` : "",
-    h("div", { class: "panel" },
-      h("div", { class: "kpis" },
-        [["Estado", h("span", { class: `badge ${meta.status}` }, meta.status)], ["Rondas", summary.rounds ?? "–"], ["Mensajes", summary.messages?.sent ?? "–"], ["Bytes", summary.messages?.bytes ?? "–"], ["Perdidos", summary.messages?.dropped ?? "–"], ["Quórum fallido", summary.quorum_failed ?? "–"]]
-          .map(([label, value]) => h("div", { class: "kpi" }, h("div", { class: "value" }, value), h("div", { class: "label" }, label)))),
-      h("h3", {}, "Identidad"),
-      table([["", (r) => r[0]], ["", (r) => copyable(r[1] || "–")]], [["run_id", meta.run_id], ["topology_id", meta.topology_id], ["config_id", meta.config_id], ["data_id", meta.data_id], ["code", meta.code_version?.commit], ["run_hash", meta.run_hash]])),
-    Object.keys(detail.composition || {}).length ? h("div", { class: "panel" }, h("h3", {}, "Composición por hoja"), stackedBars(detail.composition)) : null,
-    detail.triggers?.length ? triggersPanel(detail.triggers, detail.drift) : null,
+    head,
     charts,
     h("div", { class: "panel" }, h("h3", {}, "Eventos"), log));
+  drawHead(detail);
   await drawCharts();
   await poll();
   if (meta.status === "running") {
     every(2000, async () => {
       const page_ = await poll();
-      if (page_.events.length) await drawCharts();
+      if (!page_.events.length) return;
+      // the figures and the triggers change with these; the detail is read again
+      if (page_.events.some((e) => REDRAW.has(e.name))) drawHead(await api(`/api/runs/${encodeURIComponent(runId)}`));
+      await drawCharts();
     });
   }
 }
+
+const REDRAW = new Set(["trigger.fired", "drift.detected", "round.started", "round.closed", "round.quorum_failed", "run.finished"]);
 
 // --- compare --------------------------------------------------------------------------------------
 
