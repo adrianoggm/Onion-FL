@@ -378,7 +378,7 @@ def _restore_parts(
             return restore.server_state if is_aux(rest) else restore.model
         if part in ("zone", "previous", "model"):
             return restore.model
-        if part in ("replay", "stream"):
+        if part in ("replay", "stream", "unlabelled"):
             return restore.edge_state
         return restore.server_state if part == "server" else True
 

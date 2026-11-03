@@ -62,6 +62,7 @@ class EdgeSpec:
     stream: Any = None  # an EdgeStream: rows arrive over time (continuum C3)
     replay: Any = None  # a replay memory of the stream's rows (continuum C4)
     replay_ratio: float = 0.25  # the share of each training that comes from it
+    unlabelled: Any = None  # an objective on rows not labelled yet (continuum C5)
 
 
 @dataclass
@@ -202,6 +203,7 @@ def build_federation(
                 stream=spec.stream,
                 replay=spec.replay,
                 replay_ratio=spec.replay_ratio,
+                unlabelled=spec.unlabelled,
                 continuum=continuum,
                 metrics=list(metrics),
                 finetuner=(
