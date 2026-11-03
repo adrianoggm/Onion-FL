@@ -355,12 +355,20 @@ class ExperimentConfig(Strict):
         description="Federación continua: disparadores en vez de rondas a ritmo fijo",
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
+    unlabelled: PluginRef | None = Field(
+        None,
+        description="Cómo aprende cada edge de un stream de sus filas aún sin etiqueta",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
 
     _privacy = field_validator("privacy")(
         lambda v: v if v is None else _plugin(privacies, v)
     )
     _attack = field_validator("attack")(
         lambda v: v if v is None else _plugin(attacks, v)
+    )
+    _unlabelled = field_validator("unlabelled")(
+        lambda v: v if v is None else _plugin(objectives, v)
     )
 
     @field_validator("sweep")
@@ -407,6 +415,11 @@ class ExperimentConfig(Strict):
             )
         if self.continuum is not None and self.stream is None:
             raise ValueError("continuum: triggers pace a stream; set stream too")
+        if self.unlabelled is not None and self.stream is None:
+            raise ValueError(
+                "unlabelled: it learns from the rows of a stream still waiting for "
+                "their label; set stream too"
+            )
         if self.stream is None:
             return self
         paced = self.stream.round_every is not None

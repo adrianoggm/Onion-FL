@@ -396,3 +396,55 @@ def test_a_schedule_must_fall_on_the_status_ticks(
 
     with pytest.raises(ConfigError, match="status_every"):
         parse_experiment(raw)
+
+
+# --- unlabelled rows (continuum C5) -----------------------------------------------
+
+PSEUDO = {"name": "pseudo_label", "threshold": 0.8}
+STANDARD = {"model": {"name": "modular_mlp", "adapter_width": 4, "trunk_hidden": [4]}}
+
+
+def test_a_stream_without_an_objective_keeps_its_config_id(workspace: Path) -> None:
+    assert "unlabelled" not in parse_experiment(experiment(workspace)).dump()
+
+
+def test_an_objective_needs_a_stream(workspace: Path) -> None:
+    raw = experiment(workspace, unlabelled=PSEUDO)
+    del raw["stream"], raw["labels"]
+
+    with pytest.raises(ConfigError, match="unlabelled"):
+        parse_experiment(raw)
+
+
+@pytest.mark.parametrize("trainer", ["stub", "ditto", "apfl", "fedrep"])
+def test_an_objective_needs_a_trainer_that_takes_it(
+    workspace: Path, trainer: str
+) -> None:
+    learning = STANDARD | {"trainer": trainer, "sharing": "fedper"}
+    config = parse_experiment(
+        experiment(workspace, learning=learning, unlabelled=PSEUDO)
+    )
+
+    with pytest.raises(ConfigError, match="own training loops"):
+        plan(config)
+
+
+def test_the_plan_accepts_an_objective_and_each_edge_gets_its_own(
+    workspace: Path,
+) -> None:
+    from onion_fl.continuum.unlabelled import PseudoLabel
+    from onion_fl.experiment.runner import _unlabelled
+
+    learning = STANDARD | {"trainer": "standard"}
+    config = parse_experiment(
+        experiment(workspace, learning=learning, unlabelled=PSEUDO)
+    )
+    assert plan(config)
+    (scenario,) = scenarios(config)
+
+    one, two = (_unlabelled(scenario)["unlabelled"] for _ in range(2))
+    assert isinstance(one, PseudoLabel) and one is not two
+    assert one.threshold == 0.8
+    none = parse_experiment(experiment(workspace, unlabelled="none"))
+    assert _unlabelled(next(iter(scenarios(none)))) == {}
+    assert plan(none)  # the stub is fine when nothing is added
