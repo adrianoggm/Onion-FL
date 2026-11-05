@@ -169,6 +169,27 @@ def test_mqtt_with_one_process_per_group_matches_the_simulation(tmp_path: Path) 
 
 
 @pytest.mark.skipif(not _broker_up(), reason=f"no MQTT broker at {BROKER}")
+def test_the_fidelity_of_local_against_sim_is_functionally_complete(
+    tmp_path: Path,
+) -> None:
+    from onion_fl.experiment.fidelity import fidelity
+
+    mqtt = {"name": "mqtt", "broker": BROKER}
+    folders = {}
+    for backend in ("sim", "local"):
+        raw = experiment(tmp_path, mqtt).dump() | {"backend": backend}
+        raw["paths"] = raw["paths"] | {"runs": str(tmp_path / f"runs_{backend}")}
+        run_experiment(parse_experiment(raw))
+        folders[backend] = tmp_path / f"runs_{backend}"
+
+    result = fidelity(folders["local"], folders["sim"], metrics=["time"])
+
+    assert result["backends"] == {"a": ["local"], "b": ["sim"]}
+    assert result["functional"]["complete"], result["pairs"][0]["functional"]
+    assert {"round_time", "link_latency", "duration"} <= set(result["performance"])
+
+
+@pytest.mark.skipif(not _broker_up(), reason=f"no MQTT broker at {BROKER}")
 def test_a_real_run_feeds_its_sinks_and_labels_its_traffic(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
