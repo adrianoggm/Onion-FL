@@ -3,7 +3,9 @@ from __future__ import annotations
 """Virtual-clock, single-process runtime (spec §9.1).
 
 Events are ordered by (virtual time, sequence), so a run is deterministic for
-a given seed unless a node uses the ``measured`` compute model.
+a given seed unless a node uses the ``measured`` compute model. A compute
+model whose ``duration`` takes ``rng`` draws its times from the node's compute
+stream (``node_rng(seed, "<node>/compute")``), apart from the node's own.
 
 A node handles one event at a time. Work declared with ``ctx.compute`` keeps
 it busy: what it sent in that handler leaves when the work ends
@@ -15,6 +17,7 @@ host, or on one without ``cpus``, never wait for a CPU.
 """
 
 import heapq
+import inspect
 import itertools
 import time
 from collections.abc import Mapping
@@ -92,6 +95,7 @@ class SimRuntime:
         self.events: list[dict[str, Any]] = []
         self._nodes: dict[str, Node] = {}
         self._compute: dict[str, Any] = {}
+        self._compute_rng: dict[str, Any] = {}  # for models that draw their times
         self._availability: dict[str, Any] = {}
         self._busy_until: dict[str, float] = {}
         self._hosts: set[str] = set()
@@ -114,7 +118,7 @@ class SimRuntime:
         if node.id in self._nodes:
             raise SimulationError(f"node {node.id!r} is already in the simulation")
         self._nodes[node.id] = node
-        self._compute[node.id] = compute
+        self.set_compute(node.id, compute)
         self._availability[node.id] = availability
         self._busy_until[node.id] = 0.0
 
@@ -139,6 +143,13 @@ class SimRuntime:
         if node_id not in self._nodes:
             raise SimulationError(f"unknown node {node_id!r}; add nodes first")
         self._compute[node_id] = compute
+        takes_rng = (
+            compute is not None
+            and "rng" in inspect.signature(compute.duration).parameters
+        )
+        self._compute_rng[node_id] = (
+            node_rng(self.seed, f"{node_id}/compute") if takes_rng else None
+        )
 
     def add_link(
         self,
@@ -305,8 +316,13 @@ class SimRuntime:
             )
             return
         wall_s = time.perf_counter() - started
-        model = self._compute[node_id]
-        busy = 0.0 if model is None else model.duration(samples=ctx.work, wall_s=wall_s)
+        model, rng = self._compute[node_id], self._compute_rng[node_id]
+        drawn = {} if rng is None else {"rng": rng}
+        busy = (
+            0.0
+            if model is None
+            else model.duration(samples=ctx.work, wall_s=wall_s, **drawn)
+        )
         if busy > 0:
             end = self._run_on_host(node_id, busy)
             self._busy_until[node_id] = end
