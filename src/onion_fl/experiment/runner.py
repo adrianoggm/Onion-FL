@@ -15,6 +15,7 @@ import json
 import math
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from copy import deepcopy
 from dataclasses import replace
 from itertools import permutations
 from pathlib import Path
@@ -45,6 +46,7 @@ from onion_fl.infrastructure.assignment import Resolved, assignments, resolve
 from onion_fl.infrastructure.model import (
     Infrastructure,
     InfrastructureError,
+    anchor_traces,
     load_infrastructure,
     parse_infrastructure,
 )
@@ -139,8 +141,9 @@ def resolve_infrastructure(config: ExperimentConfig) -> Infrastructure | None:
         return None
     ref = config.infrastructure.name
     try:
-        if isinstance(ref, dict):
-            return parse_infrastructure(ref)
+        if isinstance(ref, dict):  # its traces live with the infrastructures
+            raw = anchor_traces(deepcopy(ref), config.paths.infrastructures)
+            return parse_infrastructure(raw)
         path = Path(ref)
         if path.suffix not in (".yaml", ".yml"):
             path = Path(config.paths.infrastructures) / f"{ref}.yaml"

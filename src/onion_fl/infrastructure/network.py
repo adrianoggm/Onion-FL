@@ -48,9 +48,10 @@ def changes(infra: Infrastructure) -> list[tuple[float, str, dict | None, bool |
                 try:
                     at = float(row["t"]) + change.at
                     out.append((at, key, patch(fields), None))
-                except (KeyError, ValueError) as exc:
+                except (KeyError, ValueError):  # no file content in the message
                     raise InfrastructureError(
-                        f"{path.name} row {i + 1}: {exc}"
+                        f"{path.name} row {i + 1}: needs a numeric t and link fields "
+                        "with units (latency, jitter, bandwidth, loss)"
                     ) from None
     return sorted(out, key=lambda c: c[0])  # stable: same instant, declared order
 

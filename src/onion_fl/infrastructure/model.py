@@ -314,8 +314,27 @@ def load_infrastructure(path: str | Path) -> Infrastructure:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as exc:
         raise InfrastructureError(f"{path.name} is not valid YAML: {exc}") from None
-    if isinstance(raw, Mapping):  # traces are read next to the file
-        for change in (raw.get("network") or {}).get("schedule") or []:
-            if isinstance(change, dict) and change.get("trace"):
-                change["trace"] = str(path.parent / change["trace"])
-    return parse_infrastructure(raw)
+    return parse_infrastructure(anchor_traces(raw, path.parent))
+
+
+def anchor_traces(raw: Any, folder: str | Path) -> Any:
+    """Point each trace of ``raw`` at its file inside ``folder``.
+
+    A trace is a path relative to the folder of its infrastructure; an absolute
+    one, or one that climbs out with ``..``, is refused, so a config (the
+    Studio takes them from the browser) can only read traces kept with the
+    infrastructures.
+    """
+    if not isinstance(raw, Mapping):
+        return raw
+    root = Path(folder).resolve()
+    for change in (raw.get("network") or {}).get("schedule") or []:
+        if isinstance(change, dict) and change.get("trace"):
+            given = Path(str(change["trace"]))
+            target = (root / given).resolve()
+            if given.is_absolute() or not target.is_relative_to(root):
+                raise InfrastructureError(
+                    f"network trace {str(given)!r}: give a path inside {root}"
+                )
+            change["trace"] = str(target)
+    return raw

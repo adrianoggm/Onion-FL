@@ -18,7 +18,11 @@ from onion_fl.experiment.config import ConfigError, parse_experiment
 from onion_fl.experiment.runner import _on_machines, _paths, plan, run_scenario
 from onion_fl.experiment.sweep import scenarios
 from onion_fl.infrastructure.assignment import assignments, resolve
-from onion_fl.infrastructure.model import InfrastructureError, parse_infrastructure
+from onion_fl.infrastructure.model import (
+    InfrastructureError,
+    anchor_traces,
+    parse_infrastructure,
+)
 from onion_fl.infrastructure.network import PhysicalNetwork, travel
 from onion_fl.infrastructure.paths import hops
 from onion_fl.learning.model import state_arrays
@@ -261,6 +265,33 @@ def test_a_trace_becomes_one_change_per_row(tmp_path: Path) -> None:
     assert up and (fields.latency, fields.loss) == (pytest.approx(0.02), 0.1)
     fields, _ = net.state("link:fog|dc", 25)
     assert (fields.latency, fields.loss) == (pytest.approx(0.02), 0.2)
+
+
+@pytest.mark.parametrize("trace", ["../secret.csv", "ABSOLUTE"])
+def test_a_trace_outside_the_infrastructures_folder_is_refused(
+    tmp_path: Path, trace: str
+) -> None:
+    folder = tmp_path / "infrastructures"
+    folder.mkdir()
+    (tmp_path / "secret.csv").write_text("t,loss\n0,0.5\n", encoding="utf-8")
+    trace = str(tmp_path / "secret.csv") if trace == "ABSOLUTE" else trace
+    raw = {"network": {"schedule": [{"between": ["fog", "dc"], "trace": trace}]}}
+    with pytest.raises(InfrastructureError, match="give a path inside"):
+        anchor_traces(raw, folder)
+
+
+def test_a_bad_trace_row_does_not_echo_the_file(tmp_path: Path) -> None:
+    (tmp_path / "wan.csv").write_text("t,loss\nsecret,0.1\n", encoding="utf-8")
+    raw = lab(
+        network={
+            "links": [{"between": ["fog", "dc"]}],
+            "schedule": [{"between": ["fog", "dc"], "trace": "wan.csv"}],
+        }
+    )
+    net = parse_infrastructure(anchor_traces(raw, tmp_path))
+    with pytest.raises(InfrastructureError, match="row 1") as error:
+        PhysicalNetwork(net)
+    assert "secret" not in str(error.value)
 
 
 @pytest.mark.parametrize(
