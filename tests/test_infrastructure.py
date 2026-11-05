@@ -4,13 +4,20 @@ boundary (issue #186, spec I1 §5, §6). Nothing is trained here."""
 from __future__ import annotations
 
 import ast
+import math
 from pathlib import Path
 
 import pytest
 
 from onion_fl.core.registry import PluginError
 from onion_fl.core.topology import parse_topology
-from onion_fl.infrastructure.assignment import assignments, largest_remainder, resolve
+from onion_fl.infrastructure.assignment import (
+    assignments,
+    largest_remainder,
+    latent_correlation,
+    resolve,
+    spearman,
+)
 from onion_fl.infrastructure.model import (
     InfrastructureError,
     load_infrastructure,
@@ -304,6 +311,120 @@ def test_services_can_move_to_another_host() -> None:
     assert moved.load()["fog-1"] == ["e1", "fog_0"]
     with pytest.raises(InfrastructureError, match="mqtt_broker goes to unknown"):
         resolve(infra, tree(), services={"mqtt_broker": "moon"}, **common)
+
+
+# --- coupling ------------------------------------------------------------------------
+
+
+def speeds(n: int = 12):
+    """``n`` pool devices, each of a profile of its own speed."""
+    raw = lab(
+        profiles={f"p{i:02d}": {"train_rate": 10 * (i + 1)} for i in range(n)},
+        sites={
+            "dc": {"hosts": {"cloud-1": "p00"}},
+            "fog": {"hosts": {"fog-1": "p00", "fog-2": "p00"}},
+            "field": {"pool": {f"p{i:02d}": 1 for i in range(n)}},
+        },
+    )
+    return parse_infrastructure(raw)
+
+
+def couple(infra, edges, values, **params) -> dict[str, str]:
+    return assignments.create("coupled", params).assign(edges, infra, values)
+
+
+@pytest.mark.parametrize("rho", [-1.0, -0.6, -0.2, 0.0, 0.3, 0.7, 1.0])
+def test_the_mean_spearman_over_1000_seeds_is_rho(rho: float) -> None:
+    infra, n = speeds(), 12
+    edges = {f"e{i}": "swell" for i in range(n)}
+    values = {f"e{i}": float(i) for i in range(n)}
+    mix = {f"p{i:02d}": 1 / n for i in range(n)}
+    order = sorted(edges)
+    achieved = []
+    for seed in range(1000):
+        hosts = couple(infra, edges, values, rho=rho, mix=mix, seed=seed)
+        rates = [infra.profile_of(hosts[e]).train_rate for e in order]
+        achieved.append(spearman([values[e] for e in order], rates))
+    assert abs(sum(achieved) / len(achieved) - rho) <= 0.05
+
+
+def _on_vm(hosts: dict[str, str], top: list[str]) -> int:
+    return sum(hosts[e].split("-")[1] == "vm" for e in top)
+
+
+def test_without_coupling_it_is_a_profile_mix_in_distribution() -> None:
+    """rho = 0: how many of the edges of largest statistic land on the fast profile
+    follows the same law as with ``profile_mix``, which ignores the statistic."""
+    infra, mix = field(pi=6, vm=4), {"pi": 0.6, "vm": 0.4}
+    values = {e: float(i) for i, e in enumerate(sorted(EDGES))}
+    top = sorted(EDGES)[-4:]
+    coupled, mixed = [0] * 5, [0] * 5
+    for seed in range(2000):
+        params = {"mix": mix, "seed": seed, "sites": ["field"]}
+        coupled[_on_vm(couple(infra, EDGES, values, **params), top)] += 1
+        mixed[_on_vm(assign("profile_mix", infra, **params), top)] += 1
+    assert sum(abs(a - b) for a, b in zip(coupled, mixed, strict=True)) / 4000 < 0.04
+    full = couple(infra, EDGES, values, rho=1.0, mix=mix, sites=["field"])
+    assert _on_vm(full, top) == 4  # the fastest devices to the largest statistic
+    reverse = couple(infra, EDGES, values, rho=-1.0, mix=mix, sites=["field"])
+    assert _on_vm(reverse, top) == 0
+
+
+def test_rho_moves_edges_between_the_same_devices() -> None:
+    infra, mix = field(pi=6, vm=4), {"pi": 0.6, "vm": 0.4}
+    values = {e: float(i) for i, e in enumerate(sorted(EDGES))}
+    common = {"mix": mix, "sites": ["field"], "seed": 3}
+    devices = {
+        rho: couple(infra, EDGES, values, rho=rho, **common) for rho in (-1, 0, 0.5)
+    }
+    assert len({frozenset(h.values()) for h in devices.values()}) == 1
+    assert devices[0.5] == couple(infra, EDGES, values, rho=0.5, **common)
+    assert devices[0.5] != couple(infra, EDGES, values, rho=0.5, **common | {"seed": 4})
+
+
+def test_a_coupling_needs_the_statistic_of_every_edge() -> None:
+    with pytest.raises(InfrastructureError, match=r"no samples for edges \['e9'\]"):
+        couple(
+            field(pi=6, vm=4), EDGES, {f"e{i}": 1.0 for i in range(9)}, mix={"pi": 1}
+        )
+    with pytest.raises(PluginError, match="rho"):
+        assignments.create("coupled", {"mix": {"pi": 1}, "rho": 1.5})
+
+
+def test_spearman_ranks_ties_together() -> None:
+    assert spearman([1, 2, 3], [10, 20, 30]) == 1
+    assert spearman([1, 2, 3], [3, 3, 3]) is None
+    assert spearman([1, 2, 3, 4], [1, 1, 2, 2]) == pytest.approx(0.8944, abs=1e-4)
+    assert latent_correlation(1.0, 10) == 1.0 and latent_correlation(0.0, 10) == 0
+    assert latent_correlation(0.5, 10) > 2 * math.sin(math.pi / 12)  # small n
+
+
+def test_resolve_reports_the_statistic_and_the_spearman_achieved() -> None:
+    edges = assignments.create("coupled", {"mix": {"pi": 1}, "rho": 1.0})
+    common = {
+        "root": "cloud-1",
+        "aggregators": {"fog_0": "fog-1", "fog_1": "fog-2"},
+        "leaves": {"fog_0": ["e1", "e2"], "fog_1": ["e3"]},
+    }
+    resolved = resolve(
+        parse_infrastructure(lab()),
+        tree(),
+        edges=edges,
+        statistics={"e1": 1.0, "e2": 2.0, "e3": 3.0},
+        **common,
+    )
+    assert resolved.preview()["coupling"] == {
+        "statistic": "samples",
+        "rho": 1.0,
+        "spearman": None,  # one profile: every device is as fast
+    }
+    plain = resolve(
+        parse_infrastructure(lab()),
+        tree(),
+        edges=assignments.create("one_per_device", {}),
+        **common,
+    )
+    assert "coupling" not in plain.preview()
 
 
 # --- boundaries ----------------------------------------------------------------------
