@@ -7,13 +7,16 @@ challenger on the recent window and on the reference, and answers with a
 ``Decision``. Every threshold is a parameter.
 """
 
+import math
+
 from pydantic import BaseModel, Field, NonNegativeFloat, NonNegativeInt
 
-from onion_fl.continuum.versions import MODELS, Decision, Scores
+from onion_fl.continuum.versions import MODELS, PARTS, Decision, Scores
 from onion_fl.core.registry import Registry
 from onion_fl.data.stream import Positive
 
 promotions = Registry("promotion")
+EPS = 1e-12  # rounding slack at a threshold
 
 
 class ChampionChallengerParams(BaseModel):
@@ -70,15 +73,41 @@ class ChampionChallenger:
 
     def decide(self, scores: Scores) -> Decision:
         """``scores[model][part]``: the metrics and ``samples`` of each model on
-        each part, as the validators reported them together."""
-        recent = {m: scores[m]["recent"] for m in MODELS}
-        reference = {m: scores[m]["reference"] for m in MODELS}
-        n_recent = float(recent["challenger"].get("samples", 0.0))
-        n_reference = float(reference["challenger"].get("samples", 0.0))
-        measures = {"recent_samples": n_recent, "reference_samples": n_reference}
-        if n_recent < max(self.min_samples, 1):
+        each part, as the validators reported them together.
+
+        It fails closed: a missing or non-finite score or count never promotes,
+        and every gate is written so that NaN fails it.
+        """
+        measures: dict[str, float] = {}
+
+        def value(model: str, part: str, key: str) -> float | None:
+            raw = (scores.get(model) or {}).get(part, {}).get(key)
+            try:
+                return None if raw is None else float(raw)
+            except (TypeError, ValueError):
+                return float("nan")
+
+        counts = {
+            (m, p): (0.0 if (n := value(m, p, "samples")) is None else n)
+            for m in MODELS
+            for p in PARTS
+        }
+        if not all(math.isfinite(n) and n >= 0 for n in counts.values()):
+            return Decision(False, "non_finite", measures)
+        n_recent = min(counts[m, "recent"] for m in MODELS)  # both must reach it
+        n_reference = min(counts[m, "reference"] for m in MODELS)
+        measures |= {"recent_samples": n_recent, "reference_samples": n_reference}
+        if not n_recent >= max(self.min_samples, 1):
             return Decision(False, "min_samples", measures)
-        champion, challenger = (recent[m][self.metric] for m in MODELS)
+        champion, challenger = (value(m, "recent", self.metric) for m in MODELS)
+        old = new = None
+        if n_reference:
+            old, new = (value(m, "reference", self.metric) for m in MODELS)
+        needed = [champion, challenger] + ([old, new] if n_reference else [])
+        if any(v is None for v in needed):
+            return Decision(False, "missing_metric", measures)
+        if not all(math.isfinite(v) for v in needed):
+            return Decision(False, "non_finite", measures)
         delta = self._gain(champion, challenger)
         measures |= {
             "recent_champion": champion,
@@ -87,12 +116,11 @@ class ChampionChallenger:
         }
         forgetting = 0.0  # nothing earlier yet: nothing to forget
         if n_reference:
-            old, new = (reference[m][self.metric] for m in MODELS)
             forgetting = -self._gain(old, new)
             measures |= {"reference_champion": old, "reference_challenger": new}
         measures["forgetting"] = forgetting
-        if delta < self.min_delta - 1e-12:
+        if not delta >= self.min_delta - EPS:
             return Decision(False, "min_delta", measures)
-        if forgetting > self.max_forgetting + 1e-12:
+        if not forgetting <= self.max_forgetting + EPS:
             return Decision(False, "max_forgetting", measures)
         return Decision(True, "promoted", measures)
