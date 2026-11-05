@@ -124,14 +124,18 @@ def build_federation(
     round_every: float | None = None,
     continuum: Any = None,
     link_profiles: Mapping[str, Any] | None = None,
+    link_channels: Mapping[str, Any] | None = None,
 ) -> Federation:
     """Coordinator, aggregators and edges of ``topology`` on ``runtime`` (a new SimRuntime).
 
     ``evaluate(model, data) -> (scores, samples)`` defaults to the ``metrics`` plugins.
     ``link_profiles`` (child -> profile) replaces the topology's link profiles,
-    as an infrastructure compiles them.
+    as an infrastructure compiles them; ``link_channels`` (child -> a factory of
+    channels, see ``SimRuntime.add_link``) replaces them with paths over a
+    physical network.
     """
     profiles = link_profiles or {}
+    channels = link_channels or {}
     policy = _sharing(sharing)
     policy.validate_for(topology)
     runtime = runtime or SimRuntime(seed=seed)
@@ -229,6 +233,7 @@ def build_federation(
                 node.id,
                 node.parent,
                 profile=profiles.get(node.id, link.profile),
+                **({"channel": channels[node.id]} if node.id in channels else {}),
                 codec=link.codec,
                 transport=link.transport,
             )
@@ -239,6 +244,7 @@ def build_federation(
                 spec.id,
                 leaf,
                 profile=profiles.get(spec.id, edge_link.profile),
+                **({"channel": channels[spec.id]} if spec.id in channels else {}),
                 codec=edge_link.codec,
                 transport=edge_link.transport,
             )
