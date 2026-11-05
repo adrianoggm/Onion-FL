@@ -824,6 +824,24 @@ def test_a_late_update_ages_by_the_global_rounds_its_node_skipped() -> None:
     assert sent.payload.metrics["staleness"] == 1.0  # (0 * 1 + 2 * 1) / 2
 
 
+def test_late_updates_outlive_a_round_that_fails_its_quorum() -> None:
+    fog, ctx = fog_by_hand(**STALE)
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+    fog.on_message(model_msg(2), ctx)
+    fog.on_message(update_msg("e2", 1, 5.0, 2), ctx)  # late for round 2
+    fog.on_timer("deadline", ctx)  # nobody fresh: round 2 fails its quorum
+    assert ctx.sent[-1].round == 2 and not ctx.sent[-1].payload.state
+
+    fog.on_message(model_msg(3), ctx)
+    fog.on_message(update_msg("e1", 3, 3.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+
+    sent = ctx.sent[-1]
+    np.testing.assert_allclose(sent.payload.state[KEY], 4.0)  # (3 * 1 + 5 * 1) / 2
+    assert sent.payload.metrics["staleness"] == 1.0  # (0 + 2) / 2: one more round
+
 
 def test_the_server_optimizer_sees_the_staleness_below() -> None:
     recorder = StatsRecorder()

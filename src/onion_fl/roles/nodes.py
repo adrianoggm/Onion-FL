@@ -368,6 +368,13 @@ class _Collector(Node):
         self.stale_round[src] = round
         return True
 
+    def _keep_stale(self, sources: Iterable[str]) -> None:
+        """Forget every buffered update but those of ``sources``."""
+        kept = set(sources)
+        self.stale = {s: c for s, c in self.stale.items() if s in kept}
+        self.stale_carried = {s: a for s, a in self.stale_carried.items() if s in kept}
+        self.stale_round = {s: r for s, r in self.stale_round.items() if s in kept}
+
     def _factor(self, source: str) -> float | None:
         """A buffered update's staleness factor in the current round; None: too old."""
         return self.staleness.weight(self.round - self.stale_round[source])
@@ -515,7 +522,8 @@ class _Collector(Node):
             s: _mass(rebased[s]) for s in late
         }
         masses = [mass[s] for s in sorted(age)]
-        self.stale, self.stale_carried, self.stale_round = {}, {}, {}
+        # A round that fails its quorum keeps them for the next, a round older.
+        self._keep_stale(late)
         needed = quorum_needed(self.quorum, len(self.participants) - len(idle))
         count = len(fresh) + (len(stale) if self.close_at_quorum else 0)
         tags = {
@@ -540,6 +548,7 @@ class _Collector(Node):
                 self._children_scores([*reports.values(), *scored], ctx)
             self._failed(ctx)
             return
+        self._keep_stale([])
         given = [*fresh.values(), *stale]
         aggregated = self.aggregator.aggregate(
             given, source=self.id, reference=self.sent, rng=child_rng(ctx.rng)
