@@ -807,6 +807,24 @@ def test_the_mean_staleness_is_weighted_by_what_each_update_carries() -> None:
     assert ctx.sent[-1].payload.metrics["staleness"] == 0.5  # (0 * 3 + 2 * 1) / 4
 
 
+def test_a_late_update_ages_by_the_global_rounds_its_node_skipped() -> None:
+    polynomial = {"name": "next_round", "weighting": {"name": "polynomial", "a": 1}}
+    fog, ctx = fog_by_hand(**STALE | {"staleness": polynomial})
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+    fog.on_message(update_msg("e2", 1, 1.0, 3), ctx)  # late, while the fog is closed
+
+    fog.on_message(model_msg(3), ctx)  # the parent left this fog out of round 2
+    fog.on_message(update_msg("e1", 3, 1.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+
+    sent = ctx.sent[-1]
+    assert sent.payload.weights[KEY] == 2.0  # 1 + 3 * (1 + 2)^-1, two rounds late
+    assert sent.payload.metrics["staleness"] == 1.0  # (0 * 1 + 2 * 1) / 2
+
+
+
 def test_the_server_optimizer_sees_the_staleness_below() -> None:
     recorder = StatsRecorder()
     edges = {"fog_0": [edge("fast", shift=1), slow("slow", seconds=15, shift=7)]}

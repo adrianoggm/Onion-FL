@@ -104,7 +104,9 @@ class NextRoundParams(BaseModel):
         "constant", description="Plugin de ponderación por antigüedad"
     )
     max_staleness: int | None = Field(
-        None, ge=1, description="Antigüedad máxima en rondas; más vieja se descarta"
+        None,
+        ge=1,
+        description="Antigüedad máxima en rondas globales; más vieja se descarta",
     )
 
 

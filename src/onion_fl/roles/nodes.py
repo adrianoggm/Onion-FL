@@ -161,8 +161,9 @@ class _Collector(Node):
         self.round, self.open, self.opened_at = 0, False, 0.0
         self.participants: list[str] = []
         self.responses: dict[str, tuple[Contribution, Mapping[str, float]]] = {}
+        # Late updates as they arrived, weighted by their age when they join.
         self.stale: dict[str, Contribution] = {}
-        self.stale_age: dict[str, float] = {}  # rounds behind, plus what it carried
+        self.stale_carried: dict[str, float] = {}  # the staleness each one carried
         self.stale_round: dict[str, int] = {}  # the round each buffered update is from
         self.sent_history: dict[int, State] = {}  # what was sent down, per round
         self.owed: dict[str, list[int]] = {}  # rounds each child has not answered
@@ -357,32 +358,39 @@ class _Collector(Node):
         target: int,
         metrics: Mapping[str, float],
     ) -> bool:
-        """Hold a late update for round ``target``, weighted by its staleness."""
-        factor = self.staleness.weight(target - round)
-        if factor is None or not contribution.state:
+        """Hold a late update; ``target`` is the earliest round it can join, so one
+        already too old for it is dropped now. Its age, and so its weight, is
+        counted in global rounds when it joins: the parent may skip this node."""
+        if self.staleness.weight(target - round) is None or not contribution.state:
             return False
-        weights = {k: w * factor for k, w in contribution.weights.items()}
-        self.stale[src] = Contribution(src, contribution.state, weights)
-        carried = float((metrics or {}).get("staleness", 0.0))
-        self.stale_age[src] = target - round + carried
+        self.stale[src] = contribution
+        self.stale_carried[src] = float((metrics or {}).get("staleness", 0.0))
         self.stale_round[src] = round
         return True
+
+    def _factor(self, source: str) -> float | None:
+        """A buffered update's staleness factor in the current round; None: too old."""
+        return self.staleness.weight(self.round - self.stale_round[source])
 
     def _reached(self) -> bool:
         """A buffering round (FedBuff-style) closes on K updates, late ones included."""
         if not self.close_at_quorum:
             return False
         fresh = {s for s, (c, _) in self.responses.items() if c.state}
-        count = len(fresh) + sum(1 for s in self.stale if s not in fresh)
+        count = len(fresh) + sum(
+            1 for s in self.stale if s not in fresh and self._factor(s) is not None
+        )
         return count >= max(quorum_needed(self.quorum, len(self.participants)), 1)
 
     def _rebased(self, source: str) -> Contribution | None:
         """A late update as its change from the model it trained on, applied to the
-        model sent this round: an old model would pull the aggregate back. None
-        when that model is gone; the update is then dropped, never used as is."""
+        model sent this round (an old model would pull the aggregate back), with
+        its weights times its staleness factor. None when that model is gone or the
+        update is too old by now; it is then dropped, never used as is."""
         item = self.stale[source]
-        base = self.sent_history.get(self.stale_round.get(source, -1))
-        if base is None:
+        factor = self._factor(source)
+        base = self.sent_history.get(self.stale_round[source])
+        if base is None or factor is None:
             return None
         state = dict(item.state)
         for key, value in item.state.items():
@@ -391,7 +399,8 @@ class _Collector(Node):
             delta = np.asarray(value, np.float64) - np.asarray(base[key], np.float64)
             moved = np.asarray(self.sent[key], np.float64) + delta
             state[key] = moved.astype(np.asarray(value).dtype)
-        return Contribution(item.source, state, item.weights)
+        weights = {k: w * factor for k, w in item.weights.items()}
+        return Contribution(item.source, state, weights)
 
     def _update(self, msg: Message, ctx: Context) -> None:
         r = msg.round
@@ -498,13 +507,15 @@ class _Collector(Node):
         # Staleness of what is combined: rounds behind here plus what each carried,
         # weighted as each contribution enters the aggregate.
         age = {s: float(self.responses[s][1].get("staleness", 0.0)) for s in fresh}
-        age |= {s: self.stale_age[s] for s in late}
+        age |= {
+            s: self.round - self.stale_round[s] + self.stale_carried[s] for s in late
+        }
         ages = [age[s] for s in sorted(age)]
         mass = {s: _mass(c) for s, c in fresh.items()} | {
             s: _mass(rebased[s]) for s in late
         }
         masses = [mass[s] for s in sorted(age)]
-        self.stale, self.stale_age, self.stale_round = {}, {}, {}
+        self.stale, self.stale_carried, self.stale_round = {}, {}, {}
         needed = quorum_needed(self.quorum, len(self.participants) - len(idle))
         count = len(fresh) + (len(stale) if self.close_at_quorum else 0)
         tags = {
