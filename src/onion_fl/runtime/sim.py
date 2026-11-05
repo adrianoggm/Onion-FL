@@ -8,6 +8,10 @@ a given seed unless a node uses the ``measured`` compute model.
 A node handles one event at a time. Work declared with ``ctx.compute`` keeps
 it busy: what it sent in that handler leaves when the work ends
 (``compute_done``), and what arrives meanwhile waits.
+
+Nodes placed on a host with ``cpus`` share it: at most ``cpus`` of their jobs
+run at once, and the others wait in FIFO order (``host.queued``). Nodes on no
+host, or on one without ``cpus``, never wait for a CPU.
 """
 
 import heapq
@@ -90,6 +94,9 @@ class SimRuntime:
         self._compute: dict[str, Any] = {}
         self._availability: dict[str, Any] = {}
         self._busy_until: dict[str, float] = {}
+        self._hosts: set[str] = set()
+        self._host_of: dict[str, str] = {}
+        self._slots: dict[str, list[float]] = {}  # host -> when each CPU is free
         self._links: dict[tuple[str, str], _Link] = {}
         self._timers: dict[tuple[str, str], int] = {}
         self._queue: list[tuple[float, int, str, tuple]] = []
@@ -110,6 +117,28 @@ class SimRuntime:
         self._compute[node.id] = compute
         self._availability[node.id] = availability
         self._busy_until[node.id] = 0.0
+
+    def add_host(self, host: str, cpus: int | None = None) -> None:
+        """A machine; with ``cpus``, the jobs of its nodes contend for them."""
+        if host in self._hosts:
+            raise SimulationError(f"host {host!r} is already in the simulation")
+        self._hosts.add(host)
+        if cpus is not None:
+            self._slots[host] = [0.0] * cpus
+
+    def place(self, node_id: str, host: str) -> None:
+        """Run ``node_id`` on ``host`` (one added with ``add_host``)."""
+        if node_id not in self._nodes:
+            raise SimulationError(f"unknown node {node_id!r}; add nodes first")
+        if host not in self._hosts:
+            raise SimulationError(f"unknown host {host!r}; add it with add_host")
+        self._host_of[node_id] = host
+
+    def set_compute(self, node_id: str, compute: Any) -> None:
+        """Replace the compute model of a node already added."""
+        if node_id not in self._nodes:
+            raise SimulationError(f"unknown node {node_id!r}; add nodes first")
+        self._compute[node_id] = compute
 
     def add_link(
         self,
@@ -262,11 +291,27 @@ class SimRuntime:
         model = self._compute[node_id]
         busy = 0.0 if model is None else model.duration(samples=ctx.work, wall_s=wall_s)
         if busy > 0:
-            self._busy_until[node_id] = self.now + busy
-            self._push(self.now + busy, "compute_done", (node_id, ctx.outbox))
+            end = self._run_on_host(node_id, busy)
+            self._busy_until[node_id] = end
+            self._push(end, "compute_done", (node_id, ctx.outbox))
         else:
             for msg in ctx.outbox:
                 self._transmit(msg)
+
+    def _run_on_host(self, node_id: str, busy: float) -> float:
+        """When a job of ``busy`` seconds ends: it starts now, or when a CPU of
+        the node's host frees. Jobs ask in time order, so taking the CPU that
+        frees first is FIFO."""
+        host = self._host_of.get(node_id)
+        slots = self._slots.get(host)
+        if slots is None:
+            return self.now + busy
+        i = min(range(len(slots)), key=slots.__getitem__)
+        start = max(self.now, slots[i])
+        if start > self.now:
+            self._record(node_id, "host.queued", start - self.now, {"host": host})
+        slots[i] = start + busy
+        return slots[i]
 
     def _transmit(self, msg: Message) -> None:
         link = self._links[(msg.src, msg.dst)]

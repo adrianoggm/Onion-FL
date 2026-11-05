@@ -573,3 +573,47 @@ def test_each_message_gets_an_id_seen_at_both_ends() -> None:
     ]
     assert len(set(sent)) == len(sent) == 4
     assert sorted(delivered) == sorted(sent)
+
+
+# --- hosts ------------------------------------------------------------------------
+
+
+def shared_host(cpus: int | None, place: bool = True) -> list[float]:
+    """Two echoes of 2 s of work each, reached at t = 0.1, on one host."""
+    rt = SimRuntime(seed=0)
+    compute = compute_models.create("samples_per_second", {"samples_per_second": 500})
+    pingers = [Pinger("edge_1", "fog_0"), Pinger("edge_2", "fog_1")]
+    for pinger in pingers:
+        rt.add_node(pinger)
+    for fog in ("fog_0", "fog_1"):
+        rt.add_node(Echo(fog, work=1000), compute=compute)
+    rt.add_link("edge_1", "fog_0", FIXED)
+    rt.add_link("edge_2", "fog_1", FIXED)
+    rt.add_host("h", cpus)
+    if place:
+        rt.place("fog_0", "h")
+        rt.place("fog_1", "h")
+    rt.run()
+    queued = [e["value"] for e in rt.events if e["name"] == "host.queued"]
+    assert queued == ([pytest.approx(2.0)] if cpus == 1 and place else [])
+    return sorted(t for p in pingers for t, _ in p.replies)
+
+
+def test_two_jobs_on_one_cpu_end_at_t_and_2t() -> None:
+    assert shared_host(cpus=1) == [pytest.approx(2.2), pytest.approx(4.2)]
+
+
+def test_enough_cpus_or_no_host_means_no_waiting() -> None:
+    alone = [pytest.approx(2.2)] * 2
+    assert shared_host(cpus=2) == alone
+    assert shared_host(cpus=None) == alone
+    assert shared_host(cpus=1, place=False) == alone
+
+
+def test_placing_on_an_unknown_host_is_refused() -> None:
+    rt, _, _ = pair()
+    with pytest.raises(SimulationError, match="unknown host"):
+        rt.place("fog_0", "nowhere")
+    rt.add_host("h")
+    with pytest.raises(SimulationError, match="already in the simulation"):
+        rt.add_host("h")

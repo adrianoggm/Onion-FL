@@ -14,10 +14,11 @@ import pytest
 
 from onion_fl.core.topology import parse_topology
 from onion_fl.experiment.config import ConfigError, parse_experiment
-from onion_fl.experiment.runner import plan, run_scenario
+from onion_fl.experiment.runner import _on_machines, plan, run_scenario
 from onion_fl.experiment.sweep import scenarios
 from onion_fl.infrastructure.assignment import assignments, resolve
 from onion_fl.infrastructure.model import parse_infrastructure
+from onion_fl.learning.model import state_arrays
 from onion_fl.learning.trainers import trainers
 from onion_fl.roles import EdgeSpec, build_federation
 from onion_fl.runtime.devices import compute_models
@@ -72,17 +73,23 @@ def test_an_infrastructure_that_reproduces_the_implicit_one_gives_the_same_run()
 
         return {leaf: [spec(e) for e in group] for leaf, group in leaves.items()}
 
-    def run(**kw):
+    def run(resolved=None, **kw):
         federation = build_federation(
             topology, edges(), initial_state=INITIAL, rounds=3, seed=7, **kw
         )
+        if resolved is not None:  # on the hosts, with their CPUs
+            _on_machines(federation.runtime, resolved, topology)
         federation.run()
         return federation
 
     nodes = ["cloud", "fog_0", "fog_1", *[e for g in leaves.values() for e in g]]
     infra = parse_infrastructure(
         {
-            "profiles": {"server": {}, "device": {"train_rate": 50.0}},
+            # CPUs but one node per host, no aggregate rate: as today, bit for bit
+            "profiles": {
+                "server": {"cpus": 1},
+                "device": {"train_rate": 50.0, "cpus": 1},
+            },
             "sites": {
                 n: {"hosts": {n: "device" if n.startswith("e") else "server"}}
                 for n in nodes
@@ -111,12 +118,71 @@ def test_an_infrastructure_that_reproduces_the_implicit_one_gives_the_same_run()
     assert {resolved.train_rate(e) for e in nodes[3:]} == {50.0}
 
     plain = run()
-    compiled = run(link_profiles={c: p for c, (_, p) in resolved.links.items()})
+    compiled = run(
+        resolved, link_profiles={c: p for c, (_, p) in resolved.links.items()}
+    )
 
     assert compiled.runtime.events == plain.runtime.events
     assert plain.coordinator.finished
     for key, value in plain.coordinator.state.items():
         np.testing.assert_array_equal(compiled.coordinator.state[key], value)
+
+
+def test_a_fog_that_combines_twice_the_bytes_takes_twice_as_long() -> None:
+    topology = parse_topology(
+        {
+            "levels": ["global", "fog", "edge"],
+            "root": {"id": "cloud"},
+            "fog": {"nodes": [{"id": "fog_0"}, {"id": "fog_1"}]},
+        }
+    )
+    leaves = {"fog_0": ["e0", "e1"], "fog_1": ["e2"]}
+    federation = build_federation(
+        topology,
+        {
+            leaf: [
+                EdgeSpec(id=e, model=model(A), trainer=trainers.create("stub", {}))
+                for e in group
+            ]
+            for leaf, group in leaves.items()
+        },
+        initial_state=INITIAL,
+        rounds=1,
+    )
+    infra = parse_infrastructure(
+        {
+            "profiles": {"fog": {"aggregate_rate": 1000.0}, "box": {}},
+            "sites": {"all": {"hosts": {"cloud": "box", "f0": "fog", "f1": "fog"}}},
+        }
+    )
+    resolved = resolve(
+        infra,
+        topology,
+        root="cloud",
+        aggregators={"fog_0": "f0", "fog_1": "f1"},
+        edges=assignments.create("explicit", {"hosts": {"*": "cloud"}}),
+        leaves=leaves,
+    )
+    _on_machines(federation.runtime, resolved, topology)
+    federation.run()
+
+    def busy(fog: str) -> float:
+        events = federation.runtime.events
+        closed = next(
+            e["t"] for e in events if e["node"] == fog and e["name"] == "round.closed"
+        )
+        sent = next(
+            e["t"]
+            for e in events
+            if e["node"] == fog
+            and e["name"] == "message.sent"
+            and e["tags"]["kind"] == "update"
+        )
+        return sent - closed
+
+    sent = sum(np.asarray(v).nbytes for v in state_arrays(model(A)).values())
+    assert busy("fog_1") == pytest.approx(sent / 1000.0)  # one update's bytes
+    assert busy("fog_0") == pytest.approx(2 * busy("fog_1"))
 
 
 # --- experiment ----------------------------------------------------------------------
@@ -251,3 +317,16 @@ def test_the_assignment_can_be_swept(workspace: Path) -> None:  # noqa: F811
     assert len({s.config_id for s in found}) == 2
     (preview,) = plan(parse_experiment(with_infrastructure(workspace)))
     assert preview["infrastructure"]["load"]["field-pi-1"]
+
+
+def test_a_host_without_memory_for_its_nodes_is_refused(
+    workspace: Path,  # noqa: F811
+) -> None:
+    raw = with_infrastructure(workspace)
+    raw["infrastructure"]["name"] = lab(
+        profiles={"vm": {"train_rate": 100}, "pi": {"memory": "1KB"}}
+    )
+    with pytest.raises(
+        ConfigError, match="host field-pi-1 needs .* MiB for the models"
+    ):
+        plan(parse_experiment(raw))
