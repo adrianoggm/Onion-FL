@@ -219,12 +219,6 @@ class _Collector(Node):
             c for c, meta in self.registered.items() if meta.get("role") == "evaluator"
         )
 
-    def validators(self) -> list[str]:
-        """Children that score the champion against a challenger (continuum C7)."""
-        return sorted(
-            c for c, meta in self.registered.items() if meta.get("role") == "validator"
-        )
-
     def edges_below(self) -> int:
         return sum(
             int(meta.get("edges", 1))
@@ -765,9 +759,23 @@ class Coordinator(_Collector):
         server_optimizer: Any,
         round_every: float | None = None,
         promotion: Any = None,
+        validators: Iterable[str] = (),
+        operators: Iterable[str] = ("operator",),
         **kw: Any,
     ) -> None:
         super().__init__(node_id, children, **kw)
+        # Who validates and who may give orders come from the federation's
+        # build, never from what a child says of itself in its hello.
+        self._validators = frozenset(validators)
+        self.operators = frozenset(operators)
+        stray = sorted(self._validators - self.children)
+        if stray:
+            raise ValueError(f"validators {stray} are not children of {node_id}")
+        if self.operators & self.children:
+            raise ValueError(
+                f"operators {sorted(self.operators & self.children)} are children "
+                f"of {node_id}; an operator gives orders from outside the tree"
+            )
         self.state: State = dict(state)
         self.rounds = rounds
         self.server_optimizer = server_optimizer
@@ -971,8 +979,14 @@ class Coordinator(_Collector):
         ):
             _reject(ctx, msg, "validation report nobody asked for")
             return
-        waiting.discard(msg.src)
-        self._validation["reports"].append(dict(msg.payload.metrics))
+        waiting.discard(msg.src)  # answered, even if what it says is left out
+        metrics = msg.payload.metrics
+        broken = [k for k, v in metrics.items() if not np.isfinite(v)]
+        broken += [k for k, v in metrics.items() if k.endswith(".samples") and v < 0]
+        if broken:  # left out, so the decision goes on without it
+            _reject(ctx, msg, f"validation report with bad values: {sorted(broken)}")
+        else:
+            self._validation["reports"].append(dict(metrics))
         if not waiting:
             self._decide(ctx)
 
@@ -1011,12 +1025,23 @@ class Coordinator(_Collector):
         _load_server_state(self, version.server)
         self._promoted_at = ctx.now()
 
+    def validators(self) -> list[str]:
+        """The configured validators that registered (continuum C7)."""
+        return sorted(self._validators & set(self.registered))
+
+    def evaluators(self) -> list[str]:
+        return [c for c in super().evaluators() if c not in self._validators]
+
     def _other(self, msg: Message, ctx: Context) -> None:
         """An operator's order: ``{"rollback": v}`` (``None``: to the champion the
-        current one replaced) or ``{"promote": v}``, as a control message."""
+        current one replaced) or ``{"promote": v}``, as a control message from a
+        configured operator. Who that sender really is, the transport has to
+        authenticate (#203); here the id is checked."""
         orders = ("rollback", "promote")
         if msg.kind != "control" or not any(k in msg.meta for k in orders):
             super()._other(msg, ctx)
+        elif msg.src not in self.operators:
+            _reject(ctx, msg, f"{msg.src} is not an operator")
         elif self.promotion is None:
             _reject(ctx, msg, "no versions: the run has no promotion policy")
         elif self._deciding is not None:
@@ -1686,7 +1711,13 @@ class Edge(_Greeter, Node):
                 scores, samples = (
                     self.evaluate(self.model, s.take(rows)) if rows.any() else ({}, 0)
                 )
-                metrics |= {f"{model}.{part}.{k}": float(v) for k, v in scores.items()}
+                # a score that is not a number is left out: the decision then
+                # misses it and fails closed, and no codec has to carry a NaN
+                metrics |= {
+                    f"{model}.{part}.{k}": float(v)
+                    for k, v in scores.items()
+                    if np.isfinite(v)
+                }
                 metrics[f"{model}.{part}.samples"] = float(samples)
         ctx.send(
             Message(

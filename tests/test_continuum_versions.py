@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from onion_fl.continuum.promotion import promotions
-from onion_fl.core.message import Message
+from onion_fl.core.message import Message, Payload
 from onion_fl.core.node import Node
 from onion_fl.core.topology import parse_topology
 from onion_fl.data.contract import SubjectData
@@ -90,8 +90,8 @@ def scorer(forgets: float):
 class Operator(Node):
     """Sends its orders to the coordinator at the given virtual times."""
 
-    def __init__(self, orders: list[tuple[float, dict]]) -> None:
-        super().__init__("operator")
+    def __init__(self, orders: list[tuple[float, dict]], node_id="operator") -> None:
+        super().__init__(node_id)
         self.orders = orders
 
     def on_start(self, ctx) -> None:
@@ -110,6 +110,10 @@ def versioned(
     orders: list[tuple[float, dict]] | None = None,
     server_optimizer=None,
     continuum=None,
+    evaluate=None,
+    rogue: Node | None = None,
+    operator: str = "operator",
+    replace_validator: bool = False,
 ):
     serving = {name: Serving() for name in ("a1", "a2")}
     learners = [
@@ -124,20 +128,27 @@ def versioned(
         validates=True,
     )
     params = {"min_samples": 1} | (policy or {})
+    rogues = (
+        []
+        if rogue is None or replace_validator
+        else [EdgeSpec(rogue.id, ModularMLP(CONFIG, [A], seed=0), train=False)]
+    )
     federation = build_federation(
         tree(),
-        {"fog_0": learners, "cloud": [validator]},
+        {"fog_0": learners, "cloud": [validator] + rogues},
         initial_state=INITIAL,
         rounds=rounds,
         round_every=None if continuum else EVERY / SPEED,
         continuum=continuum,
-        evaluate=scorer(forgets),
+        evaluate=evaluate or scorer(forgets),
         promotion=promotions.create("champion_challenger", params),
         server_optimizer=server_optimizer,
     )
-    if orders:
-        federation.runtime.add_node(Operator(orders))
-        federation.runtime.add_link("operator", "cloud")
+    if rogue is not None:  # a child of the root that is not what it says
+        federation.runtime._nodes[rogue.id] = rogue
+    if orders and operator != "rogue":
+        federation.runtime.add_node(Operator(orders, operator))
+        federation.runtime.add_link(operator, "cloud")
     federation.run()
     return federation, serving
 
@@ -320,6 +331,185 @@ def test_an_order_for_a_version_that_cannot_take_it_is_refused() -> None:
         if e["node"] == "cloud" and e["tags"]["src"] == "operator"
     ]
     assert len(refused) == 1 and not events(federation, "version.rollback")
+
+
+def test_a_nan_score_is_never_promoted() -> None:
+    nan = float("nan")
+    for given in (scores((0.6, nan)), scores((0.6, 0.7), reference=(nan, 0.5))):
+        decision = policy().decide(given)
+        assert not decision.promote and decision.reason == "non_finite"
+    decision = policy().decide(scores((0.6, 0.7), n=(nan, 300)))
+    assert not decision.promote and decision.reason == "non_finite"
+
+
+def test_a_missing_metric_rejects_instead_of_raising() -> None:
+    given = scores((0.6, 0.7))
+    del given["challenger"]["recent"]["macro_f1"]
+
+    decision = policy().decide(given)
+
+    assert not decision.promote and decision.reason == "missing_metric"
+    assert not policy().decide({}).promote  # nothing reported at all
+
+
+def test_the_champion_needs_its_recent_samples_too() -> None:
+    given = scores((0.6, 0.7))
+    given["champion"]["recent"]["samples"] = 10
+
+    decision = policy(min_samples=500).decide(given)
+
+    assert not decision.promote and decision.reason == "min_samples"
+
+
+class Rogue(Node):
+    """A child of the root that calls itself a validator and reports a perfect
+    challenger, and gives orders, every virtual second."""
+
+    def __init__(self) -> None:
+        super().__init__("rogue")
+
+    def on_start(self, ctx) -> None:
+        meta = {"role": "validator", "edges": 0, "tags": {}}
+        ctx.send(Message(kind="hello", src=self.id, dst="cloud", meta=meta))
+        ctx.set_timer(1.0, "lie")
+
+    def on_timer(self, name: str, ctx) -> None:
+        perfect = {
+            f"{m}.{p}.{k}": (1.0 if m == "challenger" else 0.0)
+            if k != "samples"
+            else 9e3
+            for m in ("champion", "challenger")
+            for p in ("recent", "reference")
+            for k in ("macro_f1", "samples")
+        }
+        for v in range(1, 8):
+            ctx.send(
+                Message(
+                    kind="eval_report",
+                    src=self.id,
+                    dst="cloud",
+                    round=v,
+                    payload=Payload(metrics=perfect),
+                    meta={"validate": v},
+                )
+            )
+        ctx.send(Message(kind="control", src=self.id, dst="cloud", meta={"promote": 1}))
+        if ctx.now() < 30:
+            ctx.set_timer(1.0, "lie")
+
+
+def test_only_the_configured_validators_decide() -> None:
+    federation, _ = versioned(forgets=0.1, rogue=Rogue())
+
+    coordinator = federation.coordinator
+    assert coordinator.validators() == ["validate-a-9"]
+    assert not events(federation, "version.promoted")  # the lies changed nothing
+    asked = [
+        e
+        for e in events(federation, "message.delivered")
+        if e["node"] == "rogue" and e["tags"]["kind"] == "eval_request"
+    ]
+    assert not asked
+    refused = [
+        e
+        for e in events(federation, "message.rejected")
+        if e["node"] == "cloud" and e["tags"]["src"] == "rogue"
+    ]
+    assert {e["tags"]["kind"] for e in refused} == {"eval_report", "control"}
+
+
+@pytest.mark.parametrize("sender", ["rogue", "intruder"])
+def test_an_order_from_a_child_or_a_stranger_is_rejected(sender: str) -> None:
+    # the rogue is a child of the root; the intruder is outside, not configured
+    federation, _ = versioned(
+        forgets=0.1,
+        orders=[(2.5 * EVERY / SPEED, {"promote": 1})],
+        operator=sender,
+        rogue=Rogue() if sender == "rogue" else None,
+    )
+
+    assert not events(federation, "version.promoted")
+    refused = [
+        e
+        for e in events(federation, "message.rejected")
+        if e["node"] == "cloud" and e["tags"]["kind"] == "control"
+    ]
+    assert refused and all(
+        e["tags"]["reason"] == f"{e['tags']['src']} is not an operator" for e in refused
+    )
+
+
+def test_a_validator_that_cannot_score_decides_nothing() -> None:
+    def broken(model, data):
+        return {"macro_f1": float("nan")}, len(data.y)
+
+    federation, _ = versioned(evaluate=broken)
+
+    rejected = events(federation, "version.rejected")
+    assert rejected and not events(federation, "version.promoted")
+    assert {e["tags"]["reason"] for e in rejected} <= {"min_samples", "missing_metric"}
+    assert "missing_metric" in {e["tags"]["reason"] for e in rejected}
+
+
+class Lying(Node):
+    """The configured validator, reporting negative samples for its version."""
+
+    def __init__(self) -> None:
+        super().__init__("validate-a-9")
+
+    def on_start(self, ctx) -> None:
+        meta = {"role": "validator", "edges": 0, "tags": {}}
+        ctx.send(Message(kind="hello", src=self.id, dst="cloud", meta=meta))
+
+    def on_message(self, msg, ctx) -> None:
+        if msg.kind != "eval_request":
+            return
+        lie = {
+            f"{m}.{p}.{k}": (1.0 if m == "challenger" else 0.0)
+            if k != "samples"
+            else -5.0
+            for m in ("champion", "challenger")
+            for p in ("recent", "reference")
+            for k in ("macro_f1", "samples")
+        }
+        ctx.send(
+            Message(
+                kind="eval_report",
+                src=self.id,
+                dst="cloud",
+                round=msg.round,
+                payload=Payload(metrics=lie),
+                meta={"validate": msg.meta["validate"]},
+            )
+        )
+
+
+def test_a_validation_report_with_bad_values_is_left_out() -> None:
+    federation, _ = versioned(rogue=Lying(), replace_validator=True)
+
+    refused = [
+        e
+        for e in events(federation, "message.rejected")
+        if e["tags"]["src"] == "validate-a-9"
+    ]
+    assert refused and all("bad values" in e["tags"]["reason"] for e in refused)
+    assert not events(federation, "version.promoted")
+    assert {e["tags"]["reason"] for e in events(federation, "version.rejected")} == {
+        "min_samples"
+    }
+
+
+def test_an_operator_cannot_be_a_child() -> None:
+    learner = EdgeSpec("a1", ModularMLP(CONFIG, [A], seed=0), trainer=Serving())
+    with pytest.raises(ValueError, match="operator"):
+        build_federation(
+            tree(),
+            {"fog_0": [learner]},
+            initial_state=INITIAL,
+            rounds=1,
+            promotion=promotions.create("champion_challenger"),
+            operators=["fog_0"],
+        )
 
 
 def test_a_versioned_run_is_deterministic() -> None:

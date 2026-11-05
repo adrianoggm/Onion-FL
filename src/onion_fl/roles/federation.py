@@ -146,6 +146,7 @@ def build_federation(
     round_every: float | None = None,
     continuum: Any = None,
     promotion: Any = None,
+    operators: Sequence[str] = ("operator",),
     link_profiles: Mapping[str, Any] | None = None,
     link_channels: Mapping[str, Any] | None = None,
 ) -> Federation:
@@ -156,7 +157,9 @@ def build_federation(
     as an infrastructure compiles them; ``link_channels`` (child -> a factory of
     channels, see ``SimRuntime.add_link``) replaces them with paths over a
     physical network. ``promotion`` (a ``promotions`` plugin) keeps the
-    round's model as a challenger until the root's validators decide on it.
+    round's model as a challenger until the root's validators decide on it:
+    the root's specs with ``validates``, and only they. ``operators`` are the
+    ids whose control messages may roll back or promote a version.
     """
     profiles = link_profiles or {}
     channels = link_channels or {}
@@ -197,6 +200,8 @@ def build_federation(
         round_every=round_every,
         continuum=continuum,
         promotion=promotion,
+        validators=[e.id for e in edges.get(root.id, []) if e.validates],
+        operators=operators,
         server_optimizer=server_optimizer
         or create(server_optimizers, root.settings.get("server_optimizer"), "replace"),
         level=root.level,
