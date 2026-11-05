@@ -48,6 +48,7 @@ from onion_fl.infrastructure.assignment import (
     assignments,
     resolve,
 )
+from onion_fl.infrastructure.failover import NoFailover, failovers
 from onion_fl.infrastructure.model import (
     Infrastructure,
     InfrastructureError,
@@ -55,7 +56,12 @@ from onion_fl.infrastructure.model import (
     load_infrastructure,
     parse_infrastructure,
 )
-from onion_fl.infrastructure.network import PhysicalNetwork, travel
+from onion_fl.infrastructure.network import (
+    PhysicalNetwork,
+    downtime,
+    host_events,
+    travel,
+)
 from onion_fl.infrastructure.paths import LOOPBACK
 from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.attacks import attacks
@@ -757,6 +763,7 @@ def plan(config: ExperimentConfig) -> list[dict[str, Any]]:
         resolved = physical(scenario, topology, placement, state)
         if resolved is not None:
             check_memory(resolved, placement, state)
+            check_capacity(scenario.config, topology, placement)
         policy = create(sharing, scenario.config.learning.sharing)
         previews.append(
             {
@@ -1026,13 +1033,13 @@ def _paths(resolved: Resolved) -> tuple[PhysicalNetwork, dict[str, Any] | None]:
     network = PhysicalNetwork(resolved.infrastructure)
     if not (network.shared or network.changes):
         return network, None
+    return network, {child: _channel(network, h) for child, h in resolved.hops.items()}
 
-    def channel(hops: list) -> Any:
-        return lambda direction, rng: PathChannel(
-            network, travel(hops, direction), direction, rng
-        )
 
-    return network, {child: channel(h) for child, h in resolved.hops.items()}
+def _channel(network: PhysicalNetwork, hops: list) -> Any:
+    return lambda direction, rng: PathChannel(
+        network, travel(hops, direction), direction, rng
+    )
 
 
 def _on_machines(
@@ -1041,19 +1048,140 @@ def _on_machines(
     topology: Topology,
     network: PhysicalNetwork | None = None,
 ) -> None:
-    """Hosts with their CPUs, the nodes on them, the aggregators' cost and the
-    network's changes as events."""
-    for at, name, tags in network.events() if network is not None else ():
-        runtime.note(at, "network", name, **tags)
+    """Hosts with their CPUs and their downtime, the nodes on them, the
+    aggregators' cost and the network's changes as events."""
     infra = resolved.infrastructure
-    for host in sorted(set(resolved.hosts.values())):
+    links = network.events() if network is not None else []
+    for at, name, tags in [*links, *host_events(infra)]:
+        runtime.note(at, "network", name, **tags)
+    used = set(resolved.hosts.values())
+    for host in sorted(used):
         runtime.add_host(host, infra.profile_of(host).cpus)
+    for host, windows in downtime(infra).items():
+        for start, end in windows if host in used else ():
+            runtime.host_offline(host, start, end)
     for node, host in resolved.hosts.items():
         runtime.place(node, host)
     for node in topology.nodes:  # combining costs bytes / aggregate_rate
         rate = infra.profile_of(resolved.hosts[node.id]).aggregate_rate
         if rate is not None:
             runtime.set_compute(node.id, _rate(rate))
+
+
+def _failover_of(config: ExperimentConfig) -> Any:
+    return create(failovers, config.infrastructure.failover, "none")
+
+
+def _max_children(topology: Topology) -> dict[str, int]:
+    """``max_children`` of each leaf aggregator that sets it."""
+    out = {}
+    for leaf in topology.leaves():
+        cap = leaf.settings.get("max_children")
+        if cap is None:
+            continue
+        if isinstance(cap, bool) or not isinstance(cap, int) or cap < 1:
+            raise ConfigError(f"topology: {leaf.id}.max_children must be >= 1")
+        out[leaf.id] = cap
+    return out
+
+
+def check_capacity(
+    config: ExperimentConfig, topology: Topology, placement: Placement
+) -> None:
+    """Refuse a leaf with more edges than its ``max_children`` when no failover
+    can send the rest to another."""
+    caps = _max_children(topology)
+    if not isinstance(_failover_of(config), NoFailover):
+        return
+    for leaf, cap in caps.items():
+        n = len(placement.edges.get(leaf, []))
+        if n > cap:
+            raise ConfigError(
+                f"infrastructure: {leaf} has {n} edges but max_children {cap}; "
+                "set a failover to send the rest to another aggregator"
+            )
+
+
+def _failover(
+    federation: Any,
+    resolved: Resolved,
+    topology: Topology,
+    policy: Any,
+    network: PhysicalNetwork | None = None,
+) -> None:
+    """Move edges between leaf aggregators (I1 §9).
+
+    The edges of a leaf whose host is down for ``after`` seconds move to the
+    parent ``policy`` chooses among the leaves whose host is up and that have
+    room (``max_children``); at the start, a leaf with more edges than its
+    ``max_children`` sends the rest the same way. ``network``, when given,
+    carries the new links as it carries the others.
+    """
+    if isinstance(policy, NoFailover):
+        return
+    runtime, infra = federation.runtime, resolved.infrastructure
+    hosts, leaves = resolved.hosts, sorted(n.id for n in topology.leaves())
+    caps, spec = _max_children(topology), topology.edge.link_up
+    linked = {
+        (child, leaf)
+        for leaf in leaves
+        for child in federation.aggregators[leaf].children
+    }
+    shared = network is not None and bool(network.shared or network.changes)
+
+    def edges_of(leaf: str) -> list[str]:
+        held = federation.aggregators[leaf].children
+        return sorted(c for c in held if c in hosts and federation.edges[c].train)
+
+    def move(edge: str, old: str, down: bool) -> Any:
+        def call(node: Any, ctx: Any) -> None:
+            if node.parent != old or (down and runtime.host_up(hosts[old])):
+                return  # moved already, or its parent is back
+            candidates = {
+                leaf: hosts[leaf]
+                for leaf in leaves
+                if leaf != old
+                and runtime.host_up(hosts[leaf])
+                and len(edges_of(leaf)) < caps.get(leaf, math.inf)
+            }
+            new = policy.choose(edge, hosts[edge], candidates, infra)
+            if new is None:
+                ctx.emit("edge.unparented", parent=old)
+                return
+            federation.aggregators[old].release(edge)
+            federation.aggregators[new].adopt(edge)
+            if (edge, new) not in linked:
+                _, crossed, profile = resolved.link(edge, new, spec.transport)
+                runtime.add_link(
+                    edge,
+                    new,
+                    profile=profile,
+                    codec=spec.codec,
+                    transport=spec.transport,
+                    **({"channel": _channel(network, crossed)} if shared else {}),
+                )
+                linked.add((edge, new))
+            node.reparent(new, ctx)
+
+        return call
+
+    for leaf, cap in caps.items():  # before anything starts
+        for edge in edges_of(leaf)[cap:]:
+            runtime.call_at(0.0, move(edge, leaf, down=False), edge)
+
+    def failed(host: str) -> Any:
+        def call() -> None:
+            for leaf in leaves:
+                if hosts[leaf] == host:
+                    for edge in edges_of(leaf):
+                        runtime.call_at(runtime.now, move(edge, leaf, True), edge)
+
+        return call
+
+    for host, windows in downtime(infra).items():
+        for start, end in windows:
+            if start + policy.after < end:
+                runtime.call_at(start + policy.after, failed(host))
 
 
 def check_memory(
@@ -1097,6 +1225,7 @@ def build_scenario(
     network, channels = None, None
     if resolved is not None:
         check_memory(resolved, placement, initial)
+        check_capacity(config, topology, placement)
         edges, link_profiles = _on_hosts(edges, resolved)
         network, channels = _paths(resolved)
     if parent is ...:
@@ -1121,6 +1250,7 @@ def build_scenario(
     )
     if resolved is not None:
         _on_machines(federation.runtime, resolved, topology, network)
+        _failover(federation, resolved, topology, _failover_of(config), network)
     if parent:
         _restore(federation, parent[1], parent[2])
     return federation
