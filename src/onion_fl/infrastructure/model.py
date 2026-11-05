@@ -154,8 +154,55 @@ class Link(LinkFields):
     between: tuple[str, str]
 
 
+class Change(Strict):
+    """A change of a physical link at a time of the experiment (I1 §8).
+
+    ``set`` overrides some of its fields (``{latency: 50ms, loss: 0.1}``);
+    ``down: true`` cuts it and ``down: false`` brings it back; ``trace`` is a
+    CSV of measurements (a ``t`` column plus any of ``latency``, ``jitter``,
+    ``bandwidth``, ``bandwidth_up``, ``bandwidth_down``, ``loss``), one change
+    per row.
+    """
+
+    between: tuple[str, str]
+    at: float = Field(0.0, ge=0, description="Instante del cambio (s)")
+    set: dict[str, Any] | None = None
+    down: bool | None = None
+    trace: str | None = None
+
+    _at = field_validator("at", mode="before")(lambda v: quantity(v, "duration"))
+
+    @field_validator("set")
+    @classmethod
+    def _fields(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        return None if value is None else patch(value)
+
+    @model_validator(mode="after")
+    def _one_kind(self) -> Change:
+        given = [k for k in ("set", "down", "trace") if getattr(self, k) is not None]
+        if len(given) != 1:
+            raise ValueError(
+                f"a change takes exactly one of set, down or trace, got {given}"
+            )
+        return self
+
+
+def patch(fields: Mapping[str, Any]) -> dict[str, Any]:
+    """Link fields with their units converted, only those given."""
+    parsed = LinkFields.model_validate(dict(fields))
+    return parsed.model_dump(include=parsed.model_fields_set)
+
+
 class Network(Strict):
     links: list[Link] = Field(default_factory=list)
+    bandwidth: Literal["shared", "dedicated"] = Field(
+        "shared",
+        description="shared: los enlaces lógicos que cruzan un enlace físico "
+        "comparten su ancho de banda; dedicated: cada uno lo tiene entero",
+    )
+    schedule: list[Change] = Field(
+        default_factory=list, description="Cambios de la red con el tiempo"
+    )
 
 
 class Infrastructure(Strict):
@@ -200,6 +247,11 @@ class Infrastructure(Strict):
             if frozenset((a, b)) in pairs:
                 raise ValueError(f"network.links[{i}]: {a} and {b} are linked twice")
             pairs.add(frozenset((a, b)))
+        for i, change in enumerate(self.network.schedule):
+            if frozenset(change.between) not in pairs:
+                raise ValueError(
+                    f"network.schedule[{i}]: no link between {list(change.between)}"
+                )
         for service, host in self.services.items():
             if host not in seen:
                 raise ValueError(f"services.{service}: unknown host {host!r}")
@@ -262,4 +314,8 @@ def load_infrastructure(path: str | Path) -> Infrastructure:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as exc:
         raise InfrastructureError(f"{path.name} is not valid YAML: {exc}") from None
+    if isinstance(raw, Mapping):  # traces are read next to the file
+        for change in (raw.get("network") or {}).get("schedule") or []:
+            if isinstance(change, dict) and change.get("trace"):
+                change["trace"] = str(path.parent / change["trace"])
     return parse_infrastructure(raw)
