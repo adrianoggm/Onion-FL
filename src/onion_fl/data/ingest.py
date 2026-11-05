@@ -762,10 +762,14 @@ class FeaturesStep:
         columns = [c for c in columns if c not in self.exclude]
         if not columns:
             raise DataError("no feature columns left")
-        out = df[[c for c in ("subject", "label", TIME) if c in df.columns]].copy()
-        for column in columns:
-            out[column] = _numeric(df[column], column)
-        return out
+        head = df[[c for c in ("subject", "label", TIME) if c in df.columns]]
+        # One concat, not a column at a time: wide tables (FEMNIST's 784
+        # pixels) would fragment the frame.
+        values = pd.DataFrame(
+            {column: _numeric(df[column], column) for column in columns},
+            index=df.index,
+        )
+        return pd.concat([head, values], axis=1)
 
 
 def _numeric(series: pd.Series, name: str) -> pd.Series:
