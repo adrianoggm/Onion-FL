@@ -522,6 +522,11 @@ class _Collector(Node):
         aggregated = self.aggregator.aggregate(
             given, source=self.id, reference=self.sent, rng=child_rng(ctx.rng)
         )
+        # Combining costs host time by the bytes of what is combined (I1 §7);
+        # without an aggregate rate the node has no compute model: it is free.
+        ctx.compute(
+            float(sum(np.asarray(v).nbytes for c in given for v in c.state.values()))
+        )
         self._report_aggregation({c.source for c in given}, ctx)
         self._diagnose(fresh, aggregated.state, reports, ctx, failed=False)
         self.previous = dict(aggregated.state)

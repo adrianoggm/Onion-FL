@@ -700,6 +700,8 @@ def plan(config: ExperimentConfig) -> list[dict[str, Any]]:
         topology, split, placement, digests = _scenario_data(scenario)
         resolved = physical(scenario, topology, placement)
         _, state = _initial_state(scenario.config, _shapes(split), scenario.seed)
+        if resolved is not None:
+            check_memory(resolved, placement, state)
         policy = create(sharing, scenario.config.learning.sharing)
         previews.append(
             {
@@ -935,19 +937,11 @@ def _on_hosts(
     Evaluators are not physical clients: they sit on their parent's host.
     """
 
-    def compute(edge: str) -> Any:
-        rate = resolved.train_rate(edge)
-        return (
-            None
-            if rate is None
-            else compute_models.create(
-                "samples_per_second", {"samples_per_second": rate}
-            )
-        )
-
     out = {
         leaf: [
-            replace(s, host=resolved.hosts[s.id], compute=compute(s.id))
+            replace(
+                s, host=resolved.hosts[s.id], compute=_rate(resolved.train_rate(s.id))
+            )
             if s.train
             else replace(s, host=resolved.hosts[leaf])
             for s in specs
@@ -961,6 +955,51 @@ def _on_hosts(
         if not spec.train
     } | {child: profile for child, (_, profile) in resolved.links.items()}
     return out, profiles
+
+
+def _rate(rate: float | None) -> Any:
+    return (
+        None
+        if rate is None
+        else compute_models.create("samples_per_second", {"samples_per_second": rate})
+    )
+
+
+def _on_machines(runtime: Any, resolved: Resolved, topology: Topology) -> None:
+    """Hosts with their CPUs, the nodes on them, and the aggregators' cost."""
+    infra = resolved.infrastructure
+    for host in sorted(set(resolved.hosts.values())):
+        runtime.add_host(host, infra.profile_of(host).cpus)
+    for node, host in resolved.hosts.items():
+        runtime.place(node, host)
+    for node in topology.nodes:  # combining costs bytes / aggregate_rate
+        rate = infra.profile_of(resolved.hosts[node.id]).aggregate_rate
+        if rate is not None:
+            runtime.set_compute(node.id, _rate(rate))
+
+
+def check_memory(
+    resolved: Resolved, placement: Placement, state: Mapping[str, Any]
+) -> None:
+    """Refuse a host whose nodes' models and data do not fit in its memory.
+
+    ponytail: every node counts the whole initial model, an upper bound (an
+    edge holds only its dataset's adapter); per-key sizes if it ever matters.
+    """
+    model = sum(np.asarray(v).nbytes for v in state.values())
+    data = {
+        c.id: sum(d.X.nbytes + d.y.nbytes for d in (c.train, c.local_val) if d)
+        for c in _placed(placement)
+    }
+    infra = resolved.infrastructure
+    for host, nodes in resolved.load().items():
+        memory = infra.profile_of(host).memory
+        need = sum(model + data.get(n, 0) for n in nodes)
+        if memory is not None and need > memory:
+            raise ConfigError(
+                f"infrastructure: host {host} needs {need / 2**20:.1f} MiB for the "
+                f"models and data of {nodes}, but has {memory / 2**20:.1f} MiB"
+            )
 
 
 def build_scenario(
@@ -978,6 +1017,7 @@ def build_scenario(
     edges, initial = edge_specs(scenario, topology, split, placement)
     resolved, link_profiles = physical(scenario, topology, placement), None
     if resolved is not None:
+        check_memory(resolved, placement, initial)
         edges, link_profiles = _on_hosts(edges, resolved)
     if parent is ...:
         parent = _parent(config, scenario.seed)
@@ -998,6 +1038,8 @@ def build_scenario(
         runtime=runtime,
         link_profiles=link_profiles,
     )
+    if resolved is not None:
+        _on_machines(federation.runtime, resolved, topology)
     if parent:
         _restore(federation, parent[1], parent[2])
     return federation
