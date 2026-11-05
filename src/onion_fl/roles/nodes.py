@@ -398,6 +398,7 @@ class _Collector(Node):
         current = self.open and r == self.round
         if current and msg.src in self.participants and msg.src not in self.responses:
             self.responses[msg.src] = (contribution, dict(msg.payload.metrics))
+            self._observe(msg.src, True, dict(msg.payload.metrics), ctx)
             answered = sum(1 for c, _ in self.responses.values() if c.state)
             needed = quorum_needed(self.quorum, len(self.participants))
             if self.quorum_at is None and answered >= max(needed, 1):
@@ -473,9 +474,21 @@ class _Collector(Node):
         """What the children said since the last tick, pooled at this level."""
         raise NotImplementedError
 
+    def _observe(
+        self, child: str, answered: bool, metrics: Mapping[str, float], ctx: Context
+    ) -> None:
+        """Tell a participation that learns from past rounds how long a child took."""
+        observe = getattr(self.participation, "observe", None)
+        if observe is not None:
+            seconds = ctx.now() - self.opened_at
+            observe(child, self.round, seconds, answered, metrics)
+
     def _close(self, ctx: Context) -> None:
         ctx.cancel_timer("deadline")
         self.open = False
+        for child in self.participants:  # asked, no answer: at least this long
+            if child not in self.responses:
+                self._observe(child, False, {}, ctx)
         fresh = {s: c for s, (c, _) in self.responses.items() if c.state}
         # A child with nothing to train on (a stream's empty buffer) is idle.
         idle = {
