@@ -48,30 +48,72 @@ def site_path(infra: Infrastructure, src: str, dst: str) -> list[str]:
     raise InfrastructureError(f"no physical path between sites {src!r} and {dst!r}")
 
 
-def effective(infra: Infrastructure, src: str, dst: str) -> tuple[list[str], dict]:
-    """Path from host ``src`` to host ``dst`` and its profile, ``up`` = src -> dst.
+Hop = tuple[str, bool]  # a segment ("lan:<site>" or "link:<a>|<b>") and whether
+# it is crossed from between[0] to between[1]
 
-    The profile has the fields of the runtime's ``LinkProfile``.
-    """
+
+def hops(infra: Infrastructure, src: str, dst: str) -> tuple[list[str], list[Hop]]:
+    """Sites (or the one host) from host ``src`` to host ``dst``, and the
+    segments crossed on the way."""
     hosts = infra.hosts()
     for host in (src, dst):
         if host not in hosts:
             raise InfrastructureError(f"unknown host {host!r}")
     if src == dst:
-        return [src], dict(LOOPBACK)
+        return [src], []
     (a, _), (b, _) = hosts[src], hosts[dst]
     if a == b:
-        return [a], _combine([(infra.sites[a].lan, True)])
+        return [a], [(f"lan:{a}", True)]
     sites = site_path(infra, a, b)
     links = {frozenset(link.between): link for link in infra.network.links}
-    segments = []
+    crossed = []
     for x, y in zip(sites, sites[1:], strict=False):
         link = links[frozenset((x, y))]
-        segments.append((link, link.between[0] == x))
-    return sites, _combine(segments)
+        crossed.append(
+            (f"link:{link.between[0]}|{link.between[1]}", link.between[0] == x)
+        )
+    return sites, crossed
 
 
-def _combine(segments: list[tuple[Any, bool]]) -> dict[str, Any]:
+def segment(infra: Infrastructure, key: str) -> Any:
+    """The fields of a segment as the infrastructure declares them."""
+    kind, _, name = key.partition(":")
+    if kind == "lan":
+        return infra.sites[name].lan
+    a, _, b = name.partition("|")
+    return next(link for link in infra.network.links if link.between == (a, b))
+
+
+def route(
+    infra: Infrastructure, src: str, dst: str, via: str | None = None
+) -> tuple[list[str], list[Hop]]:
+    """:func:`hops`, through host ``via`` (a broker) when given."""
+    if via is None:
+        return hops(infra, src, dst)
+    first, second = hops(infra, src, via), hops(infra, via, dst)
+    path = (
+        first[0] + second[0][1:]
+        if first[0][-1:] == second[0][:1]
+        else first[0] + second[0]
+    )
+    return path, first[1] + second[1]
+
+
+def effective(
+    infra: Infrastructure, src: str, dst: str, via: str | None = None
+) -> tuple[list[str], dict]:
+    """Path from host ``src`` to host ``dst`` (through ``via``) and its profile,
+    ``up`` = src -> dst. The profile has the fields of the runtime's ``LinkProfile``.
+    """
+    path, crossed = route(infra, src, dst, via)
+    return path, combine([(segment(infra, k), forward) for k, forward in crossed])
+
+
+def combine(segments: list[tuple[Any, bool]]) -> dict[str, Any]:
+    """The profile of segments crossed in a row; none at all is the loopback."""
+    if not segments:
+        return dict(LOOPBACK)
+
     def bandwidth(up: bool) -> float | None:
         rates = [
             s.bandwidth_up if forward == up else s.bandwidth_down

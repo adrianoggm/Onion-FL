@@ -147,10 +147,13 @@ class SimRuntime:
         profile: str | Mapping[str, Any] | LinkProfile = "lan",
         codec: str = "json",
         transport: Any = None,
+        channel: Any = None,
     ) -> None:
         """Link ``child`` and ``parent`` in both directions (up = child -> parent).
 
         ``transport`` is for the real runtime: here the link layer is the transport.
+        ``channel(direction, rng)``, when given, builds each direction instead of
+        a ``LinkChannel`` over ``profile`` (a path over a physical network).
         """
         for node_id in (child, parent):
             if node_id not in self._nodes:
@@ -163,7 +166,18 @@ class SimRuntime:
         wire = get_codec(codec)
         for src, dst, direction in ((child, parent, "up"), (parent, child, "down")):
             rng = node_rng(self.seed, f"link/{src}->{dst}")
-            self._links[(src, dst)] = _Link(LinkChannel(resolved, direction, rng), wire)
+            built = (
+                LinkChannel(resolved, direction, rng)
+                if channel is None
+                else channel(direction, rng)
+            )
+            self._links[(src, dst)] = _Link(built, wire)
+
+    def note(
+        self, t: float, node: str, name: str, value: Any = None, **tags: Any
+    ) -> None:
+        """Record an event at virtual time ``t`` (e.g. a link going down)."""
+        self._push(t, "note", (node, name, value, tags))
 
     # --- running -----------------------------------------------------------
 
@@ -228,6 +242,9 @@ class SimRuntime:
             return
         del self._timers[(node_id, name)]
         self._handle(node_id, "on_timer", lambda node, ctx: node.on_timer(name, ctx))
+
+    def _on_note(self, node: str, name: str, value: Any, tags: dict) -> None:
+        self._record(node, name, value, tags)
 
     def _on_compute_done(self, node_id: str, outbox: list[Message]) -> None:
         if not self._is_up(node_id, None):

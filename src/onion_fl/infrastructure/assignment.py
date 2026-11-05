@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field, field_validator
 from onion_fl.core.registry import Registry
 from onion_fl.core.topology import Topology
 from onion_fl.infrastructure.model import Infrastructure, InfrastructureError
-from onion_fl.infrastructure.paths import effective
+from onion_fl.infrastructure.paths import Hop, combine, route, segment
 
 assignments = Registry("assignment")
 
@@ -261,6 +261,8 @@ class Resolved:
     links: dict[str, tuple[list[str], dict[str, Any]]] = field(default_factory=dict)
     # child -> (path, profile of the link to its parent)
     services: dict[str, str] = field(default_factory=dict)  # service -> host
+    hops: dict[str, list[Hop]] = field(default_factory=dict)
+    # child -> segments of the path to its parent, broker included
 
     @property
     def infrastructure_id(self) -> str:
@@ -328,7 +330,16 @@ def resolve(
             )
     parent = {n.id: n.parent for n in topology.nodes if n.parent is not None}
     parent |= {e: leaf for leaf, group in leaves.items() for e in group}
-    links = {
-        child: effective(infra, hosts[child], hosts[up]) for child, up in parent.items()
-    }
-    return Resolved(infra, hosts, parent, links, placed)
+    broker = placed.get("mqtt_broker")
+    links, crossed = {}, {}
+    for child, up in parent.items():
+        spec = topology.node(child).link_up if child in names else topology.edge.link_up
+        via = broker if _transport(spec.transport) == "mqtt" else None
+        path, crossed[child] = route(infra, hosts[child], hosts[up], via)
+        profile = combine([(segment(infra, k), f) for k, f in crossed[child]])
+        links[child] = (path, profile)
+    return Resolved(infra, hosts, parent, links, placed, crossed)
+
+
+def _transport(spec: Any) -> str:
+    return spec if isinstance(spec, str) else spec.get("name", "mqtt")
