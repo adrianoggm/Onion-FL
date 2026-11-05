@@ -108,6 +108,7 @@ def run_real(scenario: Scenario, python: str = sys.executable) -> Path:
         data_ids=digests,
         scenario=scenario.name,
         sinks=_sinks(config),  # fed as the events are merged, once the run ends
+        backend="real",
     )
     try:
         return _launch(run, scenario, topology, split, placement, python)

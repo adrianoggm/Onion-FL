@@ -15,6 +15,7 @@ import json
 import math
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import replace
 from itertools import permutations
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,14 @@ from onion_fl.data.stream import (
 )
 from onion_fl.experiment.config import ConfigError, ExperimentConfig
 from onion_fl.experiment.sweep import Scenario, identity, scenarios
+from onion_fl.infrastructure.assignment import Resolved, assignments, resolve
+from onion_fl.infrastructure.model import (
+    Infrastructure,
+    InfrastructureError,
+    load_infrastructure,
+    parse_infrastructure,
+)
+from onion_fl.infrastructure.paths import LOOPBACK
 from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.attacks import attacks
 from onion_fl.learning.model import (
@@ -78,6 +87,8 @@ def resolve_topology(config: ExperimentConfig) -> Topology:
         if path.suffix not in (".yaml", ".yml"):
             path = Path(config.paths.topologies) / f"{ref}.yaml"
         topology = load_topology(path)
+    if config.infrastructure is not None:
+        _single_source(topology)
     general = topology.model_dump()
     evaluation = config.evaluation
     for node in general["nodes"]:
@@ -103,6 +114,64 @@ def resolve_topology(config: ExperimentConfig) -> Topology:
     if config.runtime.codec:
         general["edge"]["link_up"]["codec"] = config.runtime.codec
     return Topology.model_validate(general)
+
+
+def _single_source(topology: Topology) -> None:
+    """With an infrastructure, network and device profiles come from it only."""
+    links = [(n.id, n.link_up) for n in topology.nodes if n.link_up is not None]
+    links.append(("edge", topology.edge.link_up))
+    given = [node for node, link in links if "profile" in link.model_fields_set]
+    if given:
+        raise ConfigError(
+            f"topology: link_up.profile at {given}; with an infrastructure the "
+            "links come from its network, so remove them from the topology"
+        )
+    if "device" in topology.edge.settings:
+        raise ConfigError(
+            "topology: edge.device; with an infrastructure the edges compute at "
+            "the train_rate of their host's profile, so remove it"
+        )
+
+
+def resolve_infrastructure(config: ExperimentConfig) -> Infrastructure | None:
+    if config.infrastructure is None:
+        return None
+    ref = config.infrastructure.name
+    try:
+        if isinstance(ref, dict):
+            return parse_infrastructure(ref)
+        path = Path(ref)
+        if path.suffix not in (".yaml", ".yml"):
+            path = Path(config.paths.infrastructures) / f"{ref}.yaml"
+        return load_infrastructure(path)
+    except InfrastructureError as exc:
+        raise ConfigError(f"infrastructure: {exc}") from None
+
+
+def physical(
+    scenario: Scenario, topology: Topology, placement: Placement
+) -> Resolved | None:
+    """Hosts and compiled links of a scenario, or None without an infrastructure."""
+    config = scenario.config
+    infra = resolve_infrastructure(config)
+    if infra is None:
+        return None
+    assignment = config.infrastructure.assignment
+    try:
+        return resolve(
+            infra,
+            topology,
+            root=assignment.root,
+            aggregators=assignment.aggregators,
+            edges=create(assignments, assignment.edges),
+            leaves={
+                leaf: [c.id for c in clients]
+                for leaf, clients in placement.edges.items()
+            },
+            seed=scenario.seed,
+        )
+    except InfrastructureError as exc:
+        raise ConfigError(f"infrastructure: {exc}") from None
 
 
 def load_data(config: ExperimentConfig) -> tuple[list[Any], dict[str, str]]:
@@ -590,15 +659,23 @@ def _check_learning(config: ExperimentConfig, state: Mapping[str, Any]) -> None:
             raise ConfigError(f"learning.server_optimizer: {exc}") from None
 
 
-def link_warnings(topology: Topology) -> list[str]:
+def link_warnings(topology: Topology, resolved: Resolved | None = None) -> list[str]:
     """Aggregators fed by lossy links without a deadline: one lost update stalls a round."""
     warnings = []
     leaves = {leaf.id for leaf in topology.leaves()}
     for node in topology.nodes:
-        links = [c.link_up for c in topology.children(node.id)]
-        if node.id in leaves or node.id == topology.root.id:  # edges or evaluators
-            links.append(topology.edge.link_up)
-        loss = max((resolve_profile(link.profile).loss for link in links), default=0.0)
+        if resolved is not None:  # evaluators sit on their parent's host: no loss
+            losses = [
+                profile["loss"]
+                for child, (_, profile) in resolved.links.items()
+                if resolved.parents[child] == node.id
+            ]
+        else:
+            links = [c.link_up for c in topology.children(node.id)]
+            if node.id in leaves or node.id == topology.root.id:  # edges, evaluators
+                links.append(topology.edge.link_up)
+            losses = [resolve_profile(link.profile).loss for link in links]
+        loss = max(losses, default=0.0)
         if loss > 0 and node.settings.get("deadline") is None:
             warnings.append(
                 f"{node.id}: its children's links lose messages (up to {loss:.1%}) and it has "
@@ -620,6 +697,7 @@ def plan(config: ExperimentConfig) -> list[dict[str, Any]]:
     previews = []
     for scenario in scenarios(config):
         topology, split, placement, digests = _scenario_data(scenario)
+        resolved = physical(scenario, topology, placement)
         _, state = _initial_state(scenario.config, _shapes(split), scenario.seed)
         policy = create(sharing, scenario.config.learning.sharing)
         previews.append(
@@ -633,8 +711,9 @@ def plan(config: ExperimentConfig) -> list[dict[str, Any]]:
                 "composition": placement.composition(),
                 "traffic": traffic(topology, policy, list(param_groups(state))),
                 "data": digests,
-                "warnings": link_warnings(topology),
+                "warnings": link_warnings(topology, resolved),
             }
+            | ({} if resolved is None else {"infrastructure": resolved.preview()})
             | (
                 {}
                 if scenario.config.stream is None
@@ -847,6 +926,37 @@ def edge_specs(
     return edges, initial
 
 
+def _on_hosts(
+    edges: Mapping[str, Sequence[EdgeSpec]], resolved: Resolved
+) -> tuple[dict[str, list[EdgeSpec]], dict[str, Any]]:
+    """Edges that compute at their host's rate, and the compiled link profiles.
+
+    Evaluators are not physical clients: they sit on their parent's host.
+    """
+
+    def compute(edge: str) -> Any:
+        rate = resolved.train_rate(edge)
+        return (
+            None
+            if rate is None
+            else compute_models.create(
+                "samples_per_second", {"samples_per_second": rate}
+            )
+        )
+
+    out = {
+        leaf: [replace(s, compute=compute(s.id)) if s.train else s for s in specs]
+        for leaf, specs in edges.items()
+    }
+    profiles = {
+        spec.id: dict(LOOPBACK)
+        for specs in edges.values()
+        for spec in specs
+        if not spec.train
+    } | {child: profile for child, (_, profile) in resolved.links.items()}
+    return out, profiles
+
+
 def build_scenario(
     scenario: Scenario,
     topology: Topology,
@@ -860,6 +970,9 @@ def build_scenario(
     """The federation of a scenario, on ``runtime`` (a new SimRuntime by default)."""
     config = scenario.config
     edges, initial = edge_specs(scenario, topology, split, placement)
+    resolved, link_profiles = physical(scenario, topology, placement), None
+    if resolved is not None:
+        edges, link_profiles = _on_hosts(edges, resolved)
     if parent is ...:
         parent = _parent(config, scenario.seed)
     start = parent[1].snapshot.round if parent else 0
@@ -877,6 +990,7 @@ def build_scenario(
         metrics=config.evaluation.metrics,
         evaluate=evaluate,
         runtime=runtime,
+        link_profiles=link_profiles,
     )
     if parent:
         _restore(federation, parent[1], parent[2])
@@ -896,6 +1010,7 @@ def run_scenario(
         return run_real(scenario)
     parent = _parent(config, scenario.seed)  # resolved once for the whole run
     topology, split, placement, digests = _scenario_data(scenario, parent)
+    infra = resolve_infrastructure(config)
     run = Run(
         config.paths.runs,
         config=identity(config),
@@ -904,6 +1019,7 @@ def run_scenario(
         data_ids=digests,
         scenario=scenario.name,
         sinks=_sinks(config),
+        infrastructure_id=None if infra is None else infra.infrastructure_id,
     )
     lineage_parent = None
     if parent:

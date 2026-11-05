@@ -168,6 +168,8 @@ class Run:
         data_ids: Mapping[str, str] | None = None,
         scenario: str = "",
         sinks: Iterable[Any] = (),
+        backend: str = "sim",
+        infrastructure_id: str | None = None,
     ) -> None:
         self.config_id = config_id(config)
         self.run_id = new_run_id(self.config_id, seed)
@@ -178,6 +180,8 @@ class Run:
             "run_id": self.run_id,
             "topology_id": topology.topology_id,
             "config_id": self.config_id,
+            "backend": backend,
+            "infrastructure_id": infrastructure_id,  # None: implicit in the topology
             "data_id": data_id(data_ids or {}),
             "code_version": code_version(),
             "seed": seed,
