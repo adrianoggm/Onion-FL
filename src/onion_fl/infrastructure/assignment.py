@@ -17,7 +17,7 @@ import random
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from fnmatch import fnmatchcase
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -248,6 +248,119 @@ class Colocated(_Pool):
         return {edge: devices[i // self.per_host] for i, edge in enumerate(order)}
 
 
+class CoupledParams(ProfileMixParams):
+    rho: float = Field(
+        0.0,
+        ge=-1,
+        le=1,
+        description="Correlación de rango objetivo entre el estadístico del edge y "
+        "la velocidad de su dispositivo; 0, independientes",
+    )
+    statistic: Literal["samples", "label_divergence", "initial_loss"] = Field(
+        "samples",
+        description="Estadístico del edge: nº de muestras, divergencia KL de sus "
+        "etiquetas frente a las de su dataset, o pérdida del modelo inicial",
+    )
+
+
+def _moran(r: float, n: int) -> float:
+    """Expected Spearman of ``n`` bivariate normal pairs with correlation ``r``
+    (Moran 1948)."""
+    return 6 / (math.pi * (n + 1)) * (math.asin(r) + (n - 2) * math.asin(r / 2))
+
+
+def latent_correlation(rho: float, n: int) -> float:
+    """The normal correlation whose ``n`` pairs have expected Spearman ``rho``."""
+    if rho in (-1, 0, 1) or n < 2:  # exact: independent or monotone
+        return rho
+    lo, hi = -1.0, 1.0
+    for _ in range(60):  # _moran grows with r
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if _moran(mid, n) < rho else (lo, mid)
+    return (lo + hi) / 2
+
+
+def _ranks(values: Sequence[float]) -> list[float]:
+    """Ranks from 1, ties sharing their mean rank."""
+    order = sorted(range(len(values)), key=lambda i: values[i])
+    ranks = [0.0] * len(values)
+    i = 0
+    while i < len(order):
+        j = i
+        while j + 1 < len(order) and values[order[j + 1]] == values[order[i]]:
+            j += 1
+        for k in order[i : j + 1]:
+            ranks[k] = (i + j) / 2 + 1
+        i = j + 1
+    return ranks
+
+
+def spearman(x: Sequence[float], y: Sequence[float]) -> float | None:
+    """Spearman's rank correlation, ties at their mean rank; None if one is constant."""
+    rx, ry = _ranks(x), _ranks(y)
+    mx, my = sum(rx) / len(rx), sum(ry) / len(ry)
+    sxy = sum((a - mx) * (b - my) for a, b in zip(rx, ry, strict=True))
+    sxx = sum((a - mx) ** 2 for a in rx)
+    syy = sum((b - my) ** 2 for b in ry)
+    return None if not sxx or not syy else sxy / math.sqrt(sxx * syy)
+
+
+@assignments.register(
+    "coupled",
+    title="Acoplamiento datos-dispositivo",
+    description="Los dispositivos de una mezcla de perfiles, emparejados con los "
+    "edges de modo que la velocidad y un estadístico de sus datos tengan una "
+    "correlación de rango objetivo.",
+    params=CoupledParams,
+    explain="Cópula gaussiana con la semilla propia: rho = 1 da los dispositivos "
+    "más rápidos a los edges de estadístico mayor, rho = -1 a los de menor y "
+    "rho = 0 es la mezcla de perfiles. Los dispositivos de igual velocidad "
+    "empatan, así que el Spearman que muestra plan puede quedar por debajo de rho.",
+)
+class Coupled(ProfileMix):
+    """``profile_mix`` devices, paired with the edges through a Gaussian copula.
+
+    The devices are those ``profile_mix`` would take; only their pairing with
+    the edges depends on ``rho``. ``n`` normal pairs with a correlation whose
+    expected Spearman is ``rho`` are drawn from the own seed; the edge with the
+    k-th smallest statistic gets the pair with the k-th smallest first value, and
+    the device whose speed ranks as that pair's second value.
+    """
+
+    name = "coupled"
+
+    def __init__(self, rho: float = 0.0, statistic: str = "samples", **kw: Any) -> None:
+        super().__init__(**kw)
+        self.rho, self.statistic = rho, statistic
+
+    def assign(
+        self,
+        edges: Mapping[str, str],
+        infra: Infrastructure,
+        statistics: Mapping[str, float] | None = None,
+    ) -> dict[str, str]:
+        missing = sorted(set(edges) - set(statistics or {}))
+        if missing:
+            raise InfrastructureError(
+                f"coupled: no {self.statistic} for edges {missing}"
+            )
+        devices = list(super().assign(edges, infra).values())
+        order = self.edges(edges)  # breaks ties of the statistic
+        order.sort(key=lambda e: statistics[e])
+        speed = {h: infra.profile_of(h).train_rate or math.inf for h in devices}
+        devices.sort(key=lambda h: speed[h])  # stable: ties in the seeded order
+        rng = random.Random(f"{self.seed}/coupling")
+        r = latent_correlation(self.rho, len(order))
+        pairs = []
+        for _ in order:
+            z = rng.gauss(0, 1)
+            pairs.append((z, r * z + math.sqrt(1 - r * r) * rng.gauss(0, 1)))
+        pairs.sort()
+        slot = sorted(range(len(pairs)), key=lambda i: pairs[i][1])
+        rank = {i: k for k, i in enumerate(slot)}
+        return {edge: devices[rank[i]] for i, edge in enumerate(order)}
+
+
 # --- resolution ----------------------------------------------------------------------
 
 
@@ -263,6 +376,7 @@ class Resolved:
     services: dict[str, str] = field(default_factory=dict)  # service -> host
     hops: dict[str, list[Hop]] = field(default_factory=dict)
     # child -> segments of the path to its parent, broker included
+    coupling: dict[str, Any] | None = None  # statistic, rho and Spearman achieved
 
     @property
     def infrastructure_id(self) -> str:
@@ -289,7 +403,7 @@ class Resolved:
                 child: {"path": path, "profile": profile}
                 for child, (path, profile) in sorted(self.links.items())
             },
-        }
+        } | ({} if self.coupling is None else {"coupling": self.coupling})
 
 
 def resolve(
@@ -302,12 +416,15 @@ def resolve(
     leaves: Mapping[str, Sequence[str]],
     datasets: Mapping[str, str] | None = None,
     services: Mapping[str, str] | None = None,
+    statistics: Mapping[str, float] | None = None,
 ) -> Resolved:
     """Assign every node and compile every link.
 
     ``leaves`` maps each leaf aggregator to the ids of its training edges and
     ``datasets`` each edge to its dataset; ``edges`` is an ``assignments`` plugin.
     ``services`` moves the infrastructure's services to other hosts.
+    ``statistics`` gives each edge its value of the statistic a ``coupled``
+    strategy pairs with the device speed.
     """
     known = infra.hosts()
     names = [n.id for n in topology.nodes if n.parent is not None]
@@ -321,7 +438,11 @@ def resolve(
         )
     datasets = datasets or {}
     ids = {e: datasets.get(e, "") for leaf in sorted(leaves) for e in leaves[leaf]}
-    hosts = {topology.root.id: root, **aggregators, **edges.assign(ids, infra)}
+    coupled = isinstance(edges, Coupled)
+    assigned = (
+        edges.assign(ids, infra, statistics) if coupled else edges.assign(ids, infra)
+    )
+    hosts = {topology.root.id: root, **aggregators, **assigned}
     placed = {**infra.services, **(services or {})}
     for node, host in [*hosts.items(), *placed.items()]:
         if host not in known:
@@ -338,7 +459,16 @@ def resolve(
         path, crossed[child] = route(infra, hosts[child], hosts[up], via)
         profile = combine([(segment(infra, k), f) for k, f in crossed[child]])
         links[child] = (path, profile)
-    return Resolved(infra, hosts, parent, links, placed, crossed)
+    coupling = None
+    if coupled:
+        order = sorted(assigned)
+        achieved = spearman(
+            [statistics[e] for e in order],
+            [infra.profile_of(assigned[e]).train_rate or math.inf for e in order],
+        )
+        coupling = {"statistic": edges.statistic, "rho": edges.rho}
+        coupling["spearman"] = None if achieved is None else round(achieved, 4)
+    return Resolved(infra, hosts, parent, links, placed, crossed, coupling)
 
 
 def _transport(spec: Any) -> str:
