@@ -9,6 +9,8 @@ from __future__ import annotations
     onion_fl plan <experiment.yaml>
     onion_fl run <experiment.yaml> [--scenario NAME] [--mode sim|real] [--workers N]
     onion_fl node --id <node> --run <run_id> --config <experiment.yaml>
+    onion_fl ceiling <experiment.yaml> [--replicas R] [--metric NAME] [--series KEY]
+                     [--resample] [--paired] [--workers N]
     onion_fl report <experiment.yaml | runs_dir>... [--out FILE] [--metric NAME]... [--by TAG]...
     onion_fl baseline <experiment.yaml> [--models lr rf xgboost] [--cv K]
     onion_fl schema [--out FILE]
@@ -166,6 +168,24 @@ def cmd_node(args: argparse.Namespace) -> int:
     )
 
 
+def cmd_ceiling(args: argparse.Namespace) -> int:
+    from onion_fl.experiment.ceiling import run_ceiling
+
+    _print_json(
+        run_ceiling(
+            _experiment(args.experiment),
+            n=args.replicas,
+            metric=args.metric,
+            series=args.series,
+            resample=args.resample,
+            paired=args.paired,
+            minimize=args.minimize,
+            workers=args.workers,
+        )
+    )
+    return 0
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     from onion_fl.observability.analysis import Runs, load_runs
 
@@ -287,6 +307,31 @@ def parser() -> argparse.ArgumentParser:
     node.add_argument("--scenario", help="with an experiment YAML: which scenario")
     node.add_argument("--seed", type=int, help="with an experiment YAML: which seed")
     node.set_defaults(func=cmd_node)
+
+    ceiling = sub.add_parser(
+        "ceiling", help="noise ceiling: top-1 and regret between replicas"
+    )
+    ceiling.add_argument("experiment")
+    ceiling.add_argument(
+        "--replicas", type=int, help="replicas per configuration; default len(seeds)"
+    )
+    ceiling.add_argument("--metric", default="accuracy")
+    ceiling.add_argument(
+        "--series", help="model/dataset of the root score, when there are several"
+    )
+    ceiling.add_argument(
+        "--resample", action="store_true", help="draw the search anew per replica"
+    )
+    ceiling.add_argument(
+        "--paired", action="store_true", help="one seed per replica, for every config"
+    )
+    ceiling.add_argument(
+        "--minimize",
+        action=argparse.BooleanOptionalAction,
+        help="lower is better; default only for loss",
+    )
+    ceiling.add_argument("--workers", type=int, default=1)
+    ceiling.set_defaults(func=cmd_ceiling)
 
     report = sub.add_parser("report", help="HTML report comparing runs")
     report.add_argument(
