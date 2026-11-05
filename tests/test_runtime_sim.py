@@ -257,6 +257,34 @@ def test_messages_wait_while_the_node_is_busy() -> None:
     assert [t for t, _ in pinger.replies] == pytest.approx([2.2, 4.2])
 
 
+def test_a_stochastic_compute_model_draws_from_the_node_compute_stream() -> None:
+    lognormal = {"samples_per_second": 500, "sigma": 0.5}
+    compute = compute_models.create("lognormal_rate", lognormal)
+    pinger = Pinger("edge_1", "fog_0", rounds=(0, 1))
+    rt, _, echo = pair(echo=Echo("fog_0", work=1000), pinger=pinger, compute=compute)
+    rt.run()
+
+    rng = node_rng(0, "fog_0/compute")
+    first, second = (compute.duration(samples=1000, wall_s=0, rng=rng) for _ in "ab")
+    assert [t for t, _ in pinger.replies] == pytest.approx(
+        [0.1 + first + 0.1, 0.1 + first + second + 0.1]
+    )
+
+
+def test_compute_times_repeat_with_the_seed_and_change_with_it() -> None:
+    def replies(seed: int) -> list[float]:
+        trace = compute_models.create("trace", {"durations": [1.0, 2.0, 3.0, 4.0]})
+        pinger = Pinger("edge_1", "fog_0", rounds=range(6))
+        rt, _, _ = pair(
+            echo=Echo("fog_0", work=1), pinger=pinger, compute=trace, seed=seed
+        )
+        rt.run()
+        return [t for t, _ in pinger.replies]
+
+    assert replies(0) == replies(0)
+    assert replies(0) != replies(1)
+
+
 def test_measured_compute_uses_the_wall_time() -> None:
     compute = compute_models.create("measured", {"factor": 1e6})
     rt, pinger, _ = pair(compute=compute)

@@ -8,6 +8,7 @@ arithmetic. No data is involved (docs/RULES.md).
 from __future__ import annotations
 
 import dataclasses
+import math
 import re
 from pathlib import Path
 
@@ -278,6 +279,38 @@ def slow(node_id: str, seconds: float = 100.0, **kw) -> EdgeSpec:
     return edge(
         node_id, compute=compute_models.create("samples_per_second", speed), **kw
     )
+
+
+def _on_time(compute, n: int = 500, deadline: float = 12.0) -> float:
+    """The share of ``n`` edges, each training 10 examples with ``compute``, whose
+    update makes a round with ``deadline``; links take no time."""
+    edges = {"fog_0": [edge(f"e{i}", compute=compute) for i in range(n)]}
+    free = {"latency_s": 0.0, "distribution": "fixed"}
+    federation = run(
+        tree(1, fog={"quorum": 1, "deadline": deadline}),
+        edges,
+        link_profiles={f"e{i}": free for i in range(n)},
+    )
+    (closed,) = names(federation, "round.closed", "fog_0")
+    return closed["tags"]["responded"] / n
+
+
+def test_the_share_on_time_matches_the_lognormal_distribution() -> None:
+    sigma = 0.5  # 10 examples at 1/s: 10 s on average, against a 12 s deadline
+    compute = compute_models.create(
+        "lognormal_rate", {"samples_per_second": 1, "sigma": sigma}
+    )
+    # P(10 · exp(sigma Z - sigma²/2) <= 12) = Phi((ln 1.2 + sigma²/2) / sigma)
+    z = (math.log(1.2) + sigma**2 / 2) / sigma
+    expected = 0.5 * (1 + math.erf(z / math.sqrt(2)))
+
+    assert _on_time(compute) == pytest.approx(expected, abs=0.05)  # ~2.5 std
+
+
+def test_the_share_on_time_matches_the_trace() -> None:
+    trace = compute_models.create("trace", {"durations": [3, 7, 11, 13, 20]})
+
+    assert _on_time(trace) == pytest.approx(3 / 5, abs=0.05)
 
 
 def test_an_edge_offline_at_the_start_joins_when_it_is_back() -> None:
