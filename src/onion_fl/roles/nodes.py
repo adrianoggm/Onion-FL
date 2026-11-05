@@ -197,6 +197,24 @@ class _Collector(Node):
     def _late_child(self, ctx: Context) -> None:
         """A child said hello after registration ended (``register_timeout``)."""
 
+    def adopt(self, child: str) -> None:
+        """Take a child moved here (failover, I1 §9). It enters the rounds opened
+        after its hello, never the one open: no edge changes zone mid-round."""
+        self.children.add(child)
+
+    def release(self, child: str) -> None:
+        """Let go of a child moved to another parent (failover, I1 §9). What it
+        sent and this node has not combined yet is dropped, as late from its old
+        parent, and the quorum counts the children left."""
+        self.children.discard(child)
+        self.registered.pop(child, None)
+        self.bootstrapped.discard(child)
+        self.owed.pop(child, None)
+        self.responses.pop(child, None)
+        for held in (self.stale, self.stale_age, self.stale_round):
+            held.pop(child, None)
+        self.participants = [c for c in self.participants if c != child]
+
     def _finish_registration(self, ctx: Context) -> None:
         self.ready = True
         ctx.cancel_timer("register")
@@ -931,6 +949,9 @@ class Aggregator(_Greeter, _Collector):
         if msg.src != self.parent or msg.kind != "global_model" or msg.round is None:
             _reject(ctx, msg, "unexpected sender or kind")
             return
+        if getattr(self, "_hello_meta", None) not in (None, self._meta()):
+            # it lost children (failover): the parent counts what is below now
+            self._say_hello(self._meta(), ctx)
         self.received = dict(msg.payload.state)
         self.whole.update(self.received)
         bootstrap = bool(msg.meta.get("bootstrap"))
@@ -1053,6 +1074,17 @@ class Edge(_Greeter, Node):
         self.val_data, self.evaluate = val_data, evaluate
         self.eval_every, self.eval_models = eval_every, tuple(eval_models)
         self.tags = dict(tags or {})
+
+    def reparent(self, parent: str, ctx: Context) -> None:
+        """Move under ``parent`` (failover, I1 §9) and say hello to it. The data
+        stay: they belong to the logical client. The first model the new parent
+        sends is whole, with its zone's groups."""
+        previous, self.parent = self.parent, parent
+        ctx.emit(
+            "edge.reparented", parent=parent, previous=previous, round=self._seen_round
+        )
+        if hasattr(self, "_hello_meta"):  # started: otherwise its start says hello
+            self._say_hello(self._hello_meta, ctx)
 
     def on_start(self, ctx: Context) -> None:
         meta = {
@@ -1291,6 +1323,10 @@ class Edge(_Greeter, Node):
         return name is not None
 
     def _train(self, msg: Message, ctx: Context) -> None:
+        if msg.round <= self._seen_round:  # a round it took under its old parent
+            _reject(ctx, msg, "round already taken under another parent")
+            _send_idle(self, msg.round, {}, ctx)
+            return
         self._seen_round = msg.round
         received = dict(msg.payload.state)
         # The trainer is anchored to the model it shares: the first model a child
