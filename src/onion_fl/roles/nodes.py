@@ -99,6 +99,12 @@ def _send_idle(node: Any, round: int, scores: Mapping[str, float], ctx) -> None:
     )
 
 
+def _mass(contribution: Contribution) -> float:
+    """What a contribution weighs in the aggregate: its largest per-key weight
+    (the samples behind it, discounted by staleness for a late one)."""
+    return float(max(contribution.weights.values(), default=0.0))
+
+
 def _counted(key: str) -> bool:
     """Status keys that count toward a trigger since the last round."""
     return key == "fresh" or key.endswith(".detected")
@@ -489,10 +495,15 @@ class _Collector(Node):
             ctx.emit(
                 "update.unrebased", float(len(lost)), sources=lost, round=self.round
             )
-        # Staleness of what is combined: rounds behind here plus what each carried.
+        # Staleness of what is combined: rounds behind here plus what each carried,
+        # weighted as each contribution enters the aggregate.
         age = {s: float(self.responses[s][1].get("staleness", 0.0)) for s in fresh}
         age |= {s: self.stale_age[s] for s in late}
         ages = [age[s] for s in sorted(age)]
+        mass = {s: _mass(c) for s, c in fresh.items()} | {
+            s: _mass(rebased[s]) for s in late
+        }
+        masses = [mass[s] for s in sorted(age)]
         self.stale, self.stale_age, self.stale_round = {}, {}, {}
         needed = quorum_needed(self.quorum, len(self.participants) - len(idle))
         count = len(fresh) + (len(stale) if self.close_at_quorum else 0)
@@ -534,7 +545,9 @@ class _Collector(Node):
         metrics = _train_metrics(reports)
         reports += scored  # idle children scored what arrived
         if any(ages):  # absent means 0, so synchronous runs send nothing new
-            metrics["staleness"] = float(np.mean(ages))
+            weighted = sum(masses) > 0
+            mean = np.average(ages, weights=masses if weighted else None)
+            metrics["staleness"] = float(mean)
         if self.aggregate_children:
             metrics |= self._children_scores(reports, ctx)
         ctx.emit("round.closed", ctx.now() - self.opened_at, stale=len(stale), **tags)

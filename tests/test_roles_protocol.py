@@ -798,6 +798,15 @@ def test_a_childs_staleness_adds_to_its_age() -> None:
     assert ctx.sent[-1].payload.metrics["staleness"] == 1.0  # (2 + 0) / 2
 
 
+def test_the_mean_staleness_is_weighted_by_what_each_update_carries() -> None:
+    fog, ctx = fog_by_hand(**STALE)
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 3), ctx)
+    fog.on_message(update_msg("e2", 1, 1.0, 1, staleness=2.0), ctx)
+
+    assert ctx.sent[-1].payload.metrics["staleness"] == 0.5  # (0 * 3 + 2 * 1) / 4
+
+
 def test_the_server_optimizer_sees_the_staleness_below() -> None:
     recorder = StatsRecorder()
     edges = {"fog_0": [edge("fast", shift=1), slow("slow", seconds=15, shift=7)]}
