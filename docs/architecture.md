@@ -143,7 +143,7 @@ sequenceDiagram
 **RealRuntime.**
 - The same `Context` on the wall clock, with one loop thread.
 - A process hosts its group of nodes and knows the others only to declare links.
-- Messages travel in a frame `codec   header   message`. The JSON header carries `msg_id` and `sent_at`, which the receiver puts in `meta`, so it records the same id and the end-to-end latency. The message is encoded as in simulation: `message.sent` counts its bytes, and the frame's go in the `frame` tag.
+- Messages travel in a frame `codec \0 header \0 message`. The JSON header carries `msg_id` and `sent_at`, which the receiver puts in `meta`, so it records the same id and the end-to-end latency. The message is encoded as in simulation: `message.sent` counts its bytes, and the frame's go in the `frame` tag.
 - Every node emits `node.heartbeat`.
 
 **Transports.** `mqtt` gives each node an inbox at `onionfl/<run_id>/<node>/inbox`, with QoS and broker per link; it reconnects and resubscribes after a broker restart. `memory` is an in-process bus for tests.
