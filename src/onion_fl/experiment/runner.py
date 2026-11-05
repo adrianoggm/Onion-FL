@@ -1206,13 +1206,22 @@ def run_experiment(
     if not todo:
         names = sorted({s.name for s in every})
         raise ConfigError(f"no scenario named {only!r}; the scenarios are {names}")
+    return run_scenarios(todo, workers=workers, evaluate=evaluate)
+
+
+def run_scenarios(
+    todo: Sequence[Scenario],
+    workers: int = 1,
+    evaluate: Callable[..., Any] | None = None,
+) -> list[Path]:
+    """Run the scenarios of one experiment, in order; in parallel when ``workers > 1``."""
     if workers > 1 and evaluate is not None:
         raise ValueError(
             "a custom evaluate cannot be sent to worker processes; use workers=1"
         )
     live = [
         s
-        for s in config.sinks
+        for s in todo[0].config.sinks
         if (s if isinstance(s, str) else s["name"]) == "prometheus"
     ]
     if workers > 1 and live:
