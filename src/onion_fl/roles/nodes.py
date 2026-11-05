@@ -270,7 +270,7 @@ class _Collector(Node):
         # What was heard for the round before is not for this one (continuum C6).
         self._heard = {k: v for k, v in self._heard.items() if not _counted(k)}
         self.round, self.open, self.opened_at = round, True, ctx.now()
-        self.responses, self.late, self.quorum_at = {}, 0, None
+        self.responses, self.quorum_at = {}, None
         # A round a child owes stops counting once its update would be dropped: a
         # lost message must not keep the child waiting for good.
         self.owed = {
@@ -592,6 +592,9 @@ class _Collector(Node):
     def _diagnose(
         self, fresh, aggregated: State, reports, ctx: Context, failed: bool
     ) -> None:
+        # Late updates since the last diagnosed round, those that arrived between
+        # two rounds included (they would be lost if the count restarted on open).
+        late, self.late = self.late, 0
         if not self.diagnostics:
             return
         view = RoundView(
@@ -611,7 +614,7 @@ class _Collector(Node):
             },
             reports=reports,
             participants=self.participants,
-            late=self.late,
+            late=late,
             quorum_failed=failed,
             time_to_quorum=self.quorum_at,
         )

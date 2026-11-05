@@ -843,6 +843,23 @@ def test_late_updates_outlive_a_round_that_fails_its_quorum() -> None:
     assert sent.payload.metrics["staleness"] == 1.0  # (0 + 2) / 2: one more round
 
 
+def test_participation_counts_the_updates_late_between_two_rounds() -> None:
+    fog, ctx = fog_by_hand(**STALE | {"quorum": 1, "close_at_quorum": True})
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)  # closes round 1
+    fog.on_message(update_msg("e2", 1, 5.0, 2), ctx)  # late, before round 2 opens
+
+    fog.on_message(model_msg(2), ctx)
+    fog.on_message(update_msg("e1", 2, 1.0, 1), ctx)
+
+    late = {
+        tags["round"]: tags["late"]
+        for name, tags in ctx.events
+        if name == "diagnostic.participation"
+    }
+    assert late == {1: 0, 2: 1}
+
+
 def test_the_server_optimizer_sees_the_staleness_below() -> None:
     recorder = StatsRecorder()
     edges = {"fog_0": [edge("fast", shift=1), slow("slow", seconds=15, shift=7)]}
