@@ -34,6 +34,7 @@ flowchart LR
 | `learning` | `model`, `sharing`, `aggregators`, `trainers`, `metrics` | What is trained, what travels, how it is combined and scored |
 | `roles` | `nodes`, `policies`, `federation` | The round protocol and the assembly of a federation on a runtime |
 | `runtime` | `sim`, `real`, `network`, `devices` | Virtual-clock and wall-clock hosts for the nodes |
+| `infrastructure` | `model`, `paths`, `assignment` | The physical infrastructure, its paths and the assignment of the logical nodes to its hosts; depends on `core` only |
 | `transports` | `memory`, `mqtt` | Bytes between processes for the real runtime |
 | `observability` | `events`, `run`, `diagnostics`, `analysis`, `sinks` | Event schema, run records, diagnostics, analysis and live sinks |
 | `experiment` | `config`, `sweep`, `runner`, `real`, `cli` | From an experiment YAML to signed runs |
@@ -154,6 +155,26 @@ sequenceDiagram
 
 With full quorum and the same seed, simulation and MQTT give the same final model. `tests/test_runtime_equivalence.py` checks it.
 
+## 7a. Infrastructure
+
+The federation is logical; an `infrastructure:` puts it on machines (spec `docs/superpowers/specs/2026-11-03-onion-fl-infrastructure-design.md`).
+
+```yaml
+infrastructure:
+  name: edge_fog_cloud_lab           # infrastructures/<name>.yaml, a path, or inline
+  assignment:
+    root: cloud-1
+    aggregators: {fog_a1: fog-1, fog_a2: fog-1}
+    edges: {name: explicit, hosts: {"swell-*": field-raspberry_pi-1, "*": fog-1}}
+```
+
+- **Model.** Profiles (`train_rate`, `aggregate_rate`, `cpus`, `memory`), sites with named hosts and pools (`field: {pool: {raspberry_pi: 20}}` gives `field-raspberry_pi-1..20`), links between sites, and services such as the MQTT broker.
+- **Paths.** Two nodes on one host talk for free; on one site, through its `lan`; across sites, along the path of least latency. The path's profile adds latencies, combines jitters as √Σσ², takes the narrowest bandwidth per direction and composes losses as 1 − ∏(1 − pᵢ); one segment keeps its profile exactly.
+- **What the runtimes see.** Each logical link gets its path's profile and each edge computes at its host's `train_rate`; evaluators sit on their parent's host. `SimRuntime` knows nothing of sites or hosts.
+- **One source of truth.** With an infrastructure, a `link_up.profile` or an edge `device` in the topology is refused. Without one, nothing changes: the ids are the same and the topology's links are the implicit infrastructure (`tests/test_infrastructure.py` checks that an infrastructure reproducing it gives the same events).
+- **Not yet.** Real runs refuse an infrastructure (I7, I14). The broker on the path and shared bandwidth come with I5; aggregation cost, contention and memory checks with I4; assignment strategies beyond `explicit` with I3.
+- `run.json` records `backend` (`sim` or `real`) and `infrastructure_id`.
+
 ## 7b. Continuing a run (continuum)
 
 - **Bundle.** Every simulated run writes `runs/<run_id>/bundle/` (`onion_fl.continuum.bundle`), which `run_hash` covers. It holds the state `snapshot_federation` captures, with `.npz` and JSON only:
@@ -237,6 +258,7 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
 | Identifier | Definition |
 |---|---|
 | `topology_id` | SHA-256 of the canonical tree |
+| `infrastructure_id` | SHA-256 of the canonical infrastructure; `null` without one (the topology's links are the infrastructure) |
 | `config_id` | SHA-256 of the validated config without seeds and sweep |
 | `data_id` | SHA-256 of the cache digests in use |
 | `code_version` | Git commit, and whether there were uncommitted changes |

@@ -57,6 +57,7 @@ from onion_fl.data.stream import (
     Staggered,
     StreamConfig,
 )
+from onion_fl.infrastructure.assignment import assignments
 from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.attacks import attacks
 from onion_fl.learning.metrics import metrics
@@ -104,6 +105,7 @@ REGISTRIES: dict[str, Registry] = {
     "memory": memories,
     "trigger": triggers,
     "detector": detectors,
+    "assignment": assignments,
 }
 
 
@@ -301,8 +303,29 @@ class RuntimeConfig(Strict):
         return value
 
 
+class AssignmentConfig(Strict):
+    root: str = Field(description="Host del coordinador")
+    aggregators: dict[str, str] = Field(
+        default_factory=dict, description="Agregador -> host"
+    )
+    edges: PluginRef = Field(description="Estrategia que reparte los edges en hosts")
+
+    _edges = field_validator("edges")(lambda v: _plugin(assignments, v))
+
+
+class InfrastructureConfig(Strict):
+    name: str | dict[str, Any] = Field(
+        description="infrastructures/<nombre>.yaml, una ruta, o en línea"
+    )
+    assignment: AssignmentConfig
+
+
 class PathsConfig(Strict):
     topologies: str = "topologies"
+    infrastructures: str = Field(
+        "infrastructures",
+        exclude_if=lambda v: v == "infrastructures",  # keeps existing config_ids
+    )
     datasets: str = "datasets"
     runs: str = "runs"
     cache: str = "data/cache"
@@ -354,6 +377,12 @@ class ExperimentConfig(Strict):
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
 
+    infrastructure: InfrastructureConfig | None = Field(
+        None,
+        description="Infraestructura física y asignación de lo lógico a ella",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+
     _privacy = field_validator("privacy")(
         lambda v: v if v is None else _plugin(privacies, v)
     )
@@ -392,6 +421,15 @@ class ExperimentConfig(Strict):
             policy.check_model(family.config)
         except ValueError as exc:
             raise ValueError(f"learning.sharing: {exc}") from None
+        return self
+
+    @model_validator(mode="after")
+    def _infrastructure_fits(self) -> ExperimentConfig:
+        if self.infrastructure is not None and self.runtime.mode == "real":
+            raise ValueError(
+                "infrastructure: real runs take the machines they run on; an "
+                "infrastructure is simulated only for now (I7, I14)"
+            )
         return self
 
     @model_validator(mode="after")
