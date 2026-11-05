@@ -309,6 +309,10 @@ class AssignmentConfig(Strict):
         default_factory=dict, description="Agregador -> host"
     )
     edges: PluginRef = Field(description="Estrategia que reparte los edges en hosts")
+    services: dict[str, str] = Field(
+        default_factory=dict,
+        description="Servicio -> host; sustituye lo que declare la infraestructura",
+    )
 
     _edges = field_validator("edges")(lambda v: _plugin(assignments, v))
 

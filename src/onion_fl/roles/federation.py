@@ -62,6 +62,7 @@ class EdgeSpec:
     stream: Any = None  # an EdgeStream: rows arrive over time (continuum C3)
     replay: Any = None  # a replay memory of the stream's rows (continuum C4)
     replay_ratio: float = 0.25  # the share of each training that comes from it
+    host: str | None = None  # where an infrastructure runs it; runtimes ignore it
 
 
 @dataclass

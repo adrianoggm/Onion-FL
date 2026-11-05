@@ -170,10 +170,11 @@ infrastructure:
 
 - **Model.** Profiles (`train_rate`, `aggregate_rate`, `cpus`, `memory`), sites with named hosts and pools (`field: {pool: {raspberry_pi: 20}}` gives `field-raspberry_pi-1..20`), links between sites, and services such as the MQTT broker.
 - **Paths.** Two nodes on one host talk for free; on one site, through its `lan`; across sites, along the path of least latency. The path's profile adds latencies, combines jitters as √Σσ², takes the narrowest bandwidth per direction and composes losses as 1 − ∏(1 − pᵢ); one segment keeps its profile exactly.
+- **Assignment.** The coordinator and the aggregators go to hosts by name; the edges, by an `assignments` strategy: `explicit` (names or patterns), `one_per_device`, `profile_mix` (fractions rounded by largest remainder), `by_dataset` and `colocated` (`per_host` edges per device). The pool strategies draw devices from the pools (named hosts are servers), optionally from some `sites`, in an order drawn from their own `seed`: changing it moves edges, never their data. `assignment.services` moves a service, such as the broker, to another host. The assignment is part of the `config_id` and can be swept.
 - **What the runtimes see.** Each logical link gets its path's profile and each edge computes at its host's `train_rate`; evaluators sit on their parent's host. `SimRuntime` knows nothing of sites or hosts.
 - **One source of truth.** With an infrastructure, a `link_up.profile` or an edge `device` in the topology is refused. Without one, nothing changes: the ids are the same and the topology's links are the implicit infrastructure (`tests/test_infrastructure.py` checks that an infrastructure reproducing it gives the same events).
-- **Not yet.** Real runs refuse an infrastructure (I7, I14). The broker on the path and shared bandwidth come with I5; aggregation cost, contention and memory checks with I4; assignment strategies beyond `explicit` with I3.
-- `run.json` records `backend` (`sim` or `real`) and `infrastructure_id`.
+- **Not yet.** Real runs refuse an infrastructure (I7, I14). The broker on the path and shared bandwidth come with I5; aggregation cost, contention and memory checks with I4.
+- `plan` shows each node's host, each host's load, the services and each link's path and profile; `run.json` records `backend` (`sim` or `real`) and `infrastructure_id`.
 
 ## 7b. Continuing a run (continuum)
 

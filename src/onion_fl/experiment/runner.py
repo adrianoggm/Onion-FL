@@ -168,7 +168,8 @@ def physical(
                 leaf: [c.id for c in clients]
                 for leaf, clients in placement.edges.items()
             },
-            seed=scenario.seed,
+            datasets={c.id: c.dataset for c in _placed(placement)},
+            services=assignment.services,
         )
     except InfrastructureError as exc:
         raise ConfigError(f"infrastructure: {exc}") from None
@@ -945,7 +946,12 @@ def _on_hosts(
         )
 
     out = {
-        leaf: [replace(s, compute=compute(s.id)) if s.train else s for s in specs]
+        leaf: [
+            replace(s, host=resolved.hosts[s.id], compute=compute(s.id))
+            if s.train
+            else replace(s, host=resolved.hosts[leaf])
+            for s in specs
+        ]
         for leaf, specs in edges.items()
     }
     profiles = {

@@ -107,7 +107,6 @@ def test_an_infrastructure_that_reproduces_the_implicit_one_gives_the_same_run()
         aggregators={"fog_0": "fog_0", "fog_1": "fog_1"},
         edges=assignments.create("explicit", {"hosts": {e: e for e in nodes[3:]}}),
         leaves=leaves,
-        seed=7,
     )
     assert {resolved.train_rate(e) for e in nodes[3:]} == {50.0}
 
@@ -218,3 +217,37 @@ def test_an_assignment_to_a_missing_host_says_so_in_plan(
     raw["infrastructure"]["assignment"]["root"] = "moon-1"
     with pytest.raises(ConfigError, match="infrastructure: assignment: cloud"):
         plan(parse_experiment(raw))
+
+
+def test_the_assignment_seed_moves_edges_but_never_their_data(
+    workspace: Path,  # noqa: F811
+) -> None:
+    def preview(seed: int) -> dict:
+        raw = with_infrastructure(workspace)
+        raw["infrastructure"]["name"] = lab(
+            sites=lab()["sites"] | {"field": {"pool": {"pi": 12}}}
+        )
+        raw["infrastructure"]["assignment"]["edges"] = {
+            "name": "one_per_device",
+            "seed": seed,
+        }
+        (out,) = plan(parse_experiment(raw))
+        return out
+
+    a, b, again = preview(0), preview(1), preview(0)
+    for key in ("roles", "composition", "data"):
+        assert a[key] == b[key]
+    assert a["infrastructure"]["hosts"] == again["infrastructure"]["hosts"]
+    assert a["infrastructure"]["hosts"] != b["infrastructure"]["hosts"]
+    assert a["config_id"] != b["config_id"]
+
+
+def test_the_assignment_can_be_swept(workspace: Path) -> None:  # noqa: F811
+    raw = with_infrastructure(
+        workspace,
+        sweep={"infrastructure.assignment.services.mqtt_broker": ["fog-1", "fog-2"]},
+    )
+    found = scenarios(parse_experiment(raw))
+    assert len({s.config_id for s in found}) == 2
+    (preview,) = plan(parse_experiment(with_infrastructure(workspace)))
+    assert preview["infrastructure"]["load"]["field-pi-1"]

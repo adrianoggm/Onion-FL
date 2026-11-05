@@ -8,8 +8,9 @@ from pathlib import Path
 
 import pytest
 
+from onion_fl.core.registry import PluginError
 from onion_fl.core.topology import parse_topology
-from onion_fl.infrastructure.assignment import assignments, resolve
+from onion_fl.infrastructure.assignment import assignments, largest_remainder, resolve
 from onion_fl.infrastructure.model import (
     InfrastructureError,
     load_infrastructure,
@@ -191,7 +192,6 @@ def test_an_explicit_assignment_takes_names_and_patterns_in_order() -> None:
         aggregators={"fog_0": "fog-1", "fog_1": "fog-2"},
         edges=edges,
         leaves={"fog_0": ["e1", "e2"], "fog_1": ["e3"]},
-        seed=0,
     )
     assert resolved.hosts["e1"] == "field-pi-1"
     assert resolved.hosts["e3"] == "field-pi-2"
@@ -216,8 +216,94 @@ def test_an_incomplete_assignment_is_refused(aggregators, hosts, message) -> Non
             aggregators=aggregators,
             edges=assignments.create("explicit", {"hosts": hosts}),
             leaves={"fog_0": ["e1"]},
-            seed=0,
         )
+
+
+# --- strategies ----------------------------------------------------------------------
+
+
+def field(**pool) -> object:
+    sites = lab()["sites"] | {"field": {"pool": pool}, "lab": {"pool": {"vm": 2}}}
+    return parse_infrastructure(lab(sites=sites))
+
+
+EDGES = {f"e{i}": "swell" if i % 2 else "wesad" for i in range(10)}
+
+
+def assign(name: str, infra=None, edges=EDGES, **params) -> dict[str, str]:
+    infra = infra or field(pi=6, vm=4)
+    return assignments.create(name, params).assign(edges, infra)
+
+
+def test_largest_remainder_rounds_deterministically() -> None:
+    assert largest_remainder({"a": 0.5, "b": 0.3, "c": 0.2}, 10) == {
+        "a": 5,
+        "b": 3,
+        "c": 2,
+    }
+    assert largest_remainder({"b": 0.5, "a": 0.5}, 7) == {"a": 4, "b": 3}
+
+
+def test_a_profile_mix_keeps_its_fractions_on_distinct_devices() -> None:
+    hosts = assign("profile_mix", mix={"pi": 0.6, "vm": 0.4}, sites=["field"])
+    assert len(set(hosts.values())) == 10
+    assert sorted(h.split("-")[1] for h in hosts.values()) == ["pi"] * 6 + ["vm"] * 4
+
+
+def test_a_strategy_depends_on_its_own_seed_only() -> None:
+    first = assign("one_per_device", seed=1)
+    assert assign("one_per_device", seed=1) == first
+    assert assign("one_per_device", seed=2) != first
+    assert len(set(first.values())) == 10
+
+
+def test_by_dataset_and_colocated() -> None:
+    hosts = assign("by_dataset", datasets={"swell": "pi"}, default="vm")
+    assert {h.split("-")[1] for e, h in hosts.items() if EDGES[e] == "swell"} == {"pi"}
+    assert {h.split("-")[1] for e, h in hosts.items() if EDGES[e] == "wesad"} == {"vm"}
+
+    packed = assign("colocated", per_host=4)
+    assert sorted(list(packed.values()).count(h) for h in set(packed.values())) == [
+        2,
+        4,
+        4,
+    ]
+
+
+@pytest.mark.parametrize(
+    "name, params, message",
+    [
+        ("one_per_device", {"sites": ["lab"]}, "10 edges need a pool device each"),
+        ("one_per_device", {"sites": ["moon"]}, "unknown sites"),
+        ("profile_mix", {"mix": {"pi": 0.9, "gpu": 0.1}}, "need a gpu device each"),
+        ("by_dataset", {"datasets": {"swell": "pi"}}, "no profile for dataset 'wesad'"),
+        ("colocated", {"per_host": 1, "sites": ["lab"]}, "need 10 devices"),
+    ],
+)
+def test_an_impossible_assignment_says_why(name, params, message) -> None:
+    with pytest.raises(InfrastructureError, match=message):
+        assign(name, **params)
+
+
+def test_mix_fractions_must_add_up_to_one() -> None:
+    with pytest.raises(PluginError, match="add up to 0.9"):
+        assignments.create("profile_mix", {"mix": {"pi": 0.5, "vm": 0.4}})
+
+
+def test_services_can_move_to_another_host() -> None:
+    infra = parse_infrastructure(lab(services={"mqtt_broker": "cloud-1"}))
+    common = {
+        "root": "cloud-1",
+        "aggregators": {"fog_0": "fog-1", "fog_1": "fog-2"},
+        "edges": assignments.create("explicit", {"hosts": {"*": "fog-1"}}),
+        "leaves": {"fog_0": ["e1"]},
+    }
+    assert resolve(infra, tree(), **common).services == {"mqtt_broker": "cloud-1"}
+    moved = resolve(infra, tree(), services={"mqtt_broker": "fog-2"}, **common)
+    assert moved.services == {"mqtt_broker": "fog-2"}
+    assert moved.load()["fog-1"] == ["e1", "fog_0"]
+    with pytest.raises(InfrastructureError, match="mqtt_broker goes to unknown"):
+        resolve(infra, tree(), services={"mqtt_broker": "moon"}, **common)
 
 
 # --- boundaries ----------------------------------------------------------------------
