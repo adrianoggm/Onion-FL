@@ -555,6 +555,52 @@ def test_the_assignment_can_be_swept(workspace: Path) -> None:  # noqa: F811
     assert preview["infrastructure"]["load"]["field-pi-1"]
 
 
+def coupled_plan(workspace: Path, **params) -> dict:  # noqa: F811
+    raw = with_infrastructure(workspace)
+    raw["infrastructure"]["name"] = lab(
+        sites=lab()["sites"] | {"field": {"pool": {"pi": 6, "vm": 6}}}
+    )
+    raw["infrastructure"]["assignment"]["edges"] = {
+        "name": "coupled",
+        "mix": {"pi": 0.5, "vm": 0.5},
+    } | params
+    (out,) = plan(parse_experiment(raw))
+    return out
+
+
+def test_rho_moves_edges_but_never_their_data_and_plan_shows_the_spearman(
+    workspace: Path,  # noqa: F811
+) -> None:
+    previews = {
+        rho: coupled_plan(workspace, rho=rho, statistic="initial_loss")
+        for rho in (-1.0, 0.0, 1.0)
+    }
+    for key in ("roles", "composition", "data"):
+        assert previews[-1.0][key] == previews[1.0][key] == previews[0.0][key]
+    assert len({p["config_id"] for p in previews.values()}) == 3
+    up, down = previews[1.0]["infrastructure"], previews[-1.0]["infrastructure"]
+    assert up["hosts"] != down["hosts"]
+    assert up["coupling"]["statistic"] == "initial_loss"
+    assert up["coupling"]["rho"] == 1.0
+    assert up["coupling"]["spearman"] > 0 > down["coupling"]["spearman"]
+    seeded = coupled_plan(workspace, rho=1.0, statistic="initial_loss", seed=1)
+    assert seeded["config_id"] != previews[1.0]["config_id"]
+
+
+@pytest.mark.parametrize("statistic", ["samples", "label_divergence"])
+def test_every_statistic_reaches_the_coupling(
+    workspace: Path,  # noqa: F811
+    statistic: str,
+) -> None:
+    coupling = coupled_plan(workspace, statistic=statistic)["infrastructure"]
+    # the fixture's subjects have the same rows and labels: nothing to correlate
+    assert coupling["coupling"] == {
+        "statistic": statistic,
+        "rho": 0.0,
+        "spearman": None,
+    }
+
+
 def test_a_host_without_memory_for_its_nodes_is_refused(
     workspace: Path,  # noqa: F811
 ) -> None:

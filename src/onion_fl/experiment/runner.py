@@ -42,7 +42,12 @@ from onion_fl.data.stream import (
 )
 from onion_fl.experiment.config import ConfigError, ExperimentConfig
 from onion_fl.experiment.sweep import Scenario, identity, scenarios
-from onion_fl.infrastructure.assignment import Resolved, assignments, resolve
+from onion_fl.infrastructure.assignment import (
+    Coupled,
+    Resolved,
+    assignments,
+    resolve,
+)
 from onion_fl.infrastructure.model import (
     Infrastructure,
     InfrastructureError,
@@ -54,9 +59,11 @@ from onion_fl.infrastructure.network import PhysicalNetwork, travel
 from onion_fl.infrastructure.paths import LOOPBACK
 from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.attacks import attacks
+from onion_fl.learning.metrics import compute, predict
 from onion_fl.learning.model import (
     group_of,
     is_aux,
+    load_arrays,
     models,
     param_groups,
     state_arrays,
@@ -153,30 +160,74 @@ def resolve_infrastructure(config: ExperimentConfig) -> Infrastructure | None:
 
 
 def physical(
-    scenario: Scenario, topology: Topology, placement: Placement
+    scenario: Scenario,
+    topology: Topology,
+    placement: Placement,
+    initial: Mapping[str, Any],
 ) -> Resolved | None:
-    """Hosts and compiled links of a scenario, or None without an infrastructure."""
+    """Hosts and compiled links of a scenario, or None without an infrastructure;
+    ``initial`` is the initial model state, for a coupling on the initial loss."""
     config = scenario.config
     infra = resolve_infrastructure(config)
     if infra is None:
         return None
     assignment = config.infrastructure.assignment
+    strategy = create(assignments, assignment.edges)
+    statistics = None
+    if isinstance(strategy, Coupled):
+        statistics = edge_statistics(strategy.statistic, scenario, placement, initial)
     try:
         return resolve(
             infra,
             topology,
             root=assignment.root,
             aggregators=assignment.aggregators,
-            edges=create(assignments, assignment.edges),
+            edges=strategy,
             leaves={
                 leaf: [c.id for c in clients]
                 for leaf, clients in placement.edges.items()
             },
             datasets={c.id: c.dataset for c in _placed(placement)},
             services=assignment.services,
+            statistics=statistics,
         )
     except InfrastructureError as exc:
         raise ConfigError(f"infrastructure: {exc}") from None
+
+
+def edge_statistics(
+    name: str, scenario: Scenario, placement: Placement, initial: Mapping[str, Any]
+) -> dict[str, float]:
+    """Each training edge's ``samples``, ``label_divergence`` (KL divergence of its
+    labels from those of all the training edges of its dataset) or
+    ``initial_loss`` (cross-entropy of the initial model on its training data)."""
+    clients = _placed(placement)
+    if name == "samples":
+        return {c.id: float(c.train.n_samples) for c in clients}
+    if name == "label_divergence":
+        counts = {
+            c.id: np.bincount(c.train.y, minlength=c.train.n_classes) for c in clients
+        }
+        pooled: dict[str, Any] = {}
+        for c in clients:
+            pooled[c.dataset] = pooled.get(c.dataset, 0) + counts[c.id]
+        out = {}
+        for c in clients:
+            p, q = counts[c.id], pooled[c.dataset]
+            p, q = p / max(p.sum(), 1), q / max(q.sum(), 1)
+            held = p > 0
+            out[c.id] = float(np.sum(p[held] * np.log(p[held] / q[held])))
+        return out
+    family = create(models, scenario.config.learning.model)
+    out = {}
+    for c in clients:
+        model = family.build([c.train.shape], seed=scenario.seed)
+        load_arrays(model, initial)
+        y = np.asarray(c.train.y, np.int64)
+        logits = predict(model, c.train.X)
+        loss = compute(logits, y, c.train.n_classes, ["loss"]) if len(y) else {}
+        out[c.id] = loss.get("loss", 0.0)
+    return out
 
 
 def load_data(config: ExperimentConfig) -> tuple[list[Any], dict[str, str]]:
@@ -702,8 +753,8 @@ def plan(config: ExperimentConfig) -> list[dict[str, Any]]:
     previews = []
     for scenario in scenarios(config):
         topology, split, placement, digests = _scenario_data(scenario)
-        resolved = physical(scenario, topology, placement)
         _, state = _initial_state(scenario.config, _shapes(split), scenario.seed)
+        resolved = physical(scenario, topology, placement, state)
         if resolved is not None:
             check_memory(resolved, placement, state)
         policy = create(sharing, scenario.config.learning.sharing)
@@ -1042,7 +1093,7 @@ def build_scenario(
     """The federation of a scenario, on ``runtime`` (a new SimRuntime by default)."""
     config = scenario.config
     edges, initial = edge_specs(scenario, topology, split, placement)
-    resolved, link_profiles = physical(scenario, topology, placement), None
+    resolved, link_profiles = physical(scenario, topology, placement, initial), None
     network, channels = None, None
     if resolved is not None:
         check_memory(resolved, placement, initial)
