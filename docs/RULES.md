@@ -23,6 +23,7 @@ Estas reglas protegen la validez científica de los resultados. Cada una existe 
 
 - **Solo se cita un número que esté respaldado por un fichero commiteado**, y ese fichero indica la topología y la ejecución que lo generaron (`topology_id`, `config_id`, `run_id`, `run_hash`).
 - **Los resultados anteriores al refactor** están en `results/legacy/`; consulta las salvedades de su `INDEX.md` antes de citarlos.
+- **La calibración y la validación van por separado.** Los perfiles de un backend se calibran con microbenchmarks (`calibrations/<calibration_id>/`), y la fidelidad se valida con una calibración ya cerrada y citada, sobre cargas distintas (otra topología, otro modelo u otro dataset). Si se cambian los perfiles después de ver una validación, hace falta una calibración nueva, declarada en el `INDEX.md`. Una tasa estimada (marcada `estimated`) no vale para resultados de fidelidad.
 
 ## 4. Forma de trabajo
 
