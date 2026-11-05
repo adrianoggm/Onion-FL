@@ -113,7 +113,7 @@ class NextRoundParams(BaseModel):
 @stalenesses.register(
     "next_round",
     title="Siguiente ronda",
-    description="Los updates tardíos entran en la agregación siguiente, ponderados por antigüedad.",
+    description="Los updates tardíos entran en la siguiente agregación que cierre, ponderados por su antigüedad en rondas globales al entrar.",
     params=NextRoundParams,
 )
 class NextRound:
