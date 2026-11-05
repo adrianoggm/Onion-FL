@@ -92,7 +92,7 @@ onion_fl report experiments/mix_ab.yaml --by topology_id --by scenario
 onion_fl baseline experiments/mix_ab.yaml     # LR, RF, XGBoost on the same test subjects
 ```
 
-For a real run over MQTT, start the stack (`just docker-up`, [docker/README.md](docker/README.md)), point the links at the broker and run `onion_fl run <experiment> --backend local` (`--mode real` is its alias).
+For a real run over MQTT, start the stack (`just docker-up`, [docker/README.md](docker/README.md)), point the links at the broker and run `onion_fl run <experiment> --backend local` (`--mode real` is its alias). Links with `transport: grpc` need no broker (`uv pip install -e ".[grpc]"`, already in dev).
 
 ### Studio
 
@@ -140,7 +140,7 @@ flowchart TD
 | `learning` | Modular model with namespaced keys (`adapter.<ds>`, `trunk`, `head.<task>`), sharing scopes, aggregators, server optimizers, trainers, inits, metrics |
 | `roles` | Coordinator, aggregators and edges. Every round sends each link only the groups its scope lets through; weights travel per key, so a tree of FedAvg equals a flat FedAvg |
 | `runtime` | `SimRuntime` (virtual clock) and `RealRuntime` (wall clock); both drive the same nodes |
-| `transports` | `memory` and `mqtt` (one inbox per node, QoS and broker per link) |
+| `transports` | `memory`, `mqtt` (one inbox per node, QoS and broker per link) and `grpc` (direct links, no broker; `grpc` extra) |
 | `observability` | Events, run identity and signature, diagnostics, analysis, report, sinks |
 | `experiment` | Config, sweeps, the dry-run plan, the runner and the CLI |
 
@@ -500,7 +500,7 @@ src/onion_fl/
 ├── learning/        model, sharing, aggregators (+ server optimizers), trainers (+ inits), metrics
 ├── roles/           coordinator, aggregator, edge; round policies; federation builder
 ├── runtime/         sim (virtual clock), real (wall clock), network, devices
-├── transports/      memory, mqtt
+├── transports/      memory, mqtt, grpc
 ├── observability/   events, run, diagnostics, analysis (+ report), sinks
 ├── experiment/      config, sweep, runner, real (processes), cli
 ├── studio/          the web app: FastAPI API, dry-run previews, static single-page app

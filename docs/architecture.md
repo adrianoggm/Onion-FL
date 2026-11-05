@@ -35,7 +35,7 @@ flowchart LR
 | `roles` | `nodes`, `policies`, `federation` | The round protocol and the assembly of a federation on a runtime |
 | `runtime` | `sim`, `real`, `network`, `devices` | Virtual-clock and wall-clock hosts for the nodes |
 | `infrastructure` | `model`, `paths`, `assignment`, `backends` | The physical infrastructure, its paths and the assignment of the logical nodes to its hosts; depends on `core` only |
-| `transports` | `memory`, `mqtt` | Bytes between processes for the real runtime |
+| `transports` | `memory`, `mqtt`, `grpc` | Bytes between processes for the real runtime |
 | `observability` | `events`, `run`, `diagnostics`, `analysis`, `sinks` | Event schema, run records, diagnostics, analysis and live sinks |
 | `experiment` | `config`, `sweep`, `runner`, `backends`, `real`, `ceiling`, `fidelity`, `cli` | From an experiment YAML to signed runs, and their fidelity |
 
@@ -146,7 +146,7 @@ sequenceDiagram
 - Messages travel in a frame `codec   header   message`. The JSON header carries `msg_id` and `sent_at`, which the receiver puts in `meta`, so it records the same id and the end-to-end latency. The message is encoded as in simulation: `message.sent` counts its bytes, and the frame's go in the `frame` tag.
 - Every node emits `node.heartbeat`.
 
-**Transports.** `mqtt` gives each node an inbox at `onionfl/<run_id>/<node>/inbox`, with QoS and broker per link; it reconnects and resubscribes after a broker restart. `memory` is an in-process bus for tests.
+**Transports.** `mqtt` gives each node an inbox at `onionfl/<run_id>/<node>/inbox`, with QoS and broker per link; it reconnects and resubscribes after a broker restart. `grpc` has no broker: each process serves its inboxes on one gRPC server (`127.0.0.1` and a free port by default), announced by a file per inbox in a discovery folder, and a sender delivers the frame straight to it (one generic bytes method, no `.proto`). One queue and one thread per inbox keep the order; a failed delivery retries with backoff and reads the inbox's file again, so a receiver not up yet, or restarted on another port, is found; on `stop` what is queued gets one more try within `flush_timeout`. It needs the `grpc` extra. `memory` is an in-process bus for tests.
 
 **Backends** (I1 §10). Every scenario runs on a backend from the `backends` registry (`infrastructure.backends`), chosen by the experiment's `backend:` or, without it, by `runtime.mode` (`real` is an alias of `local`; unset, the `config_id` does not change). The contract is `supports(infrastructure)` (the reasons it cannot reproduce it; the config refuses any), `prepare(scenario, infrastructure, assignment)` (an execution plan), `run(plan)` and `collect(plan)` (the signed run). `execute` chains them. The backends live in `experiment.backends`, since they build federations:
 - `sim`: the simulator in one process (`runner.simulate`);
@@ -155,12 +155,12 @@ sequenceDiagram
 `onion_fl run --backend NAME` overrides the experiment's; `--mode real` still works.
 
 **Real runs** (the `local` backend).
-1. `prepare` checks the links and the brokers and writes `scenario.json`.
+1. `prepare` checks the links (MQTT or gRPC) and the MQTT brokers and writes `scenario.json`.
 2. `run` starts one `onion_fl node` process per group: the root with the test evaluators, and each aggregator with its edges.
 3. Each process rebuilds the same scenario and writes its own event file.
 4. When the run finishes, a stop travels down the tree and the processes exit; `collect` merges and signs the run.
 
-With full quorum and the same seed, simulation and MQTT give the same final model. `tests/test_runtime_equivalence.py` checks it.
+With full quorum and the same seed, simulation, MQTT and gRPC give the same final model. `tests/test_runtime_equivalence.py` checks it, and compares `local` over MQTT with `local` over gRPC through the fidelity harness: the design id ignores the links' `transport`, so the two pair, and the harness measures their difference in time while the bytes per link stay the same.
 
 ## 7a. Infrastructure
 
@@ -343,7 +343,7 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | link_profile | `lan`, `wifi`, `4g`, `lora` |
 | compute_model | `samples_per_second`, `measured`, `lognormal_rate`, `trace` |
 | availability_model | `always`, `bernoulli`, `schedule`, `crash_at` |
-| transport | `memory`, `mqtt` |
+| transport | `memory`, `mqtt`, `grpc` |
 | model | `modular_mlp` |
 | sharing | `fedavg`, `fedper`, `lg_fedavg`, `zone`, `independent`, `harmonized`, `custom` |
 | aggregator | `fedavg`, `mean`, `median`, `trimmed_mean`, `krum`, `multi_krum`, `geometric_median`, `bulyan`, `norm_clip`, `dp_fedavg` |
