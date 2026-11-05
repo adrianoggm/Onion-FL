@@ -129,6 +129,34 @@ def test_the_real_runtime_in_one_process_matches_the_simulation(tmp_path: Path) 
     assert_same_model(simulated(config), federation.coordinator.state)
 
 
+def _round_bytes(events) -> dict:
+    out: dict = {}
+    for e in events:
+        if e["name"] == "message.sent" and e["tags"]["round"] is not None:
+            key = (e["node"], e["tags"]["dst"], e["tags"]["round"])
+            out[key] = out.get(key, 0) + e["value"]
+    return out
+
+
+def test_the_real_runtime_counts_the_bytes_the_simulation_counts(
+    tmp_path: Path,
+) -> None:
+    config = experiment(tmp_path, {"name": "memory", "bus": "bytes"})
+    (scenario,) = scenarios(config)
+    topology, split, placement, _ = _scenario_data(scenario)
+    sim = build_scenario(scenario, topology, split, placement)
+    sim.run()
+    runtime = RealRuntime("bytes", seed=scenario.seed, heartbeat_s=None)
+    build_scenario(scenario, topology, split, placement, runtime=runtime)
+
+    runtime.run(timeout=30)
+
+    expected = _round_bytes(sim.runtime.events)
+    assert expected and _round_bytes(runtime.events) == expected
+    framed = [e for e in runtime.events if e["name"] == "message.sent"]
+    assert all(e["tags"]["frame"] > 0 for e in framed)
+
+
 @pytest.mark.skipif(not _broker_up(), reason=f"no MQTT broker at {BROKER}")
 def test_mqtt_with_one_process_per_group_matches_the_simulation(tmp_path: Path) -> None:
     mqtt = {"name": "mqtt", "broker": BROKER}
