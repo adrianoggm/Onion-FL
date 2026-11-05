@@ -48,6 +48,7 @@ from onion_fl.infrastructure.model import (
     load_infrastructure,
     parse_infrastructure,
 )
+from onion_fl.infrastructure.network import PhysicalNetwork, travel
 from onion_fl.infrastructure.paths import LOOPBACK
 from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.attacks import attacks
@@ -73,7 +74,7 @@ from onion_fl.roles import (
 )
 from onion_fl.roles.policies import create, stalenesses
 from onion_fl.runtime.devices import availability_models, compute_models
-from onion_fl.runtime.network import resolve_profile
+from onion_fl.runtime.network import PathChannel, resolve_profile
 
 ROLES = ("train", "val", "test")  # kept apart along a lineage
 
@@ -965,8 +966,31 @@ def _rate(rate: float | None) -> Any:
     )
 
 
-def _on_machines(runtime: Any, resolved: Resolved, topology: Topology) -> None:
-    """Hosts with their CPUs, the nodes on them, and the aggregators' cost."""
+def _paths(resolved: Resolved) -> tuple[PhysicalNetwork, dict[str, Any] | None]:
+    """The physical network of a run and, when it is shared or changes, a channel
+    factory per logical link over it; otherwise the compiled profiles do."""
+    network = PhysicalNetwork(resolved.infrastructure)
+    if not (network.shared or network.changes):
+        return network, None
+
+    def channel(hops: list) -> Any:
+        return lambda direction, rng: PathChannel(
+            network, travel(hops, direction), direction, rng
+        )
+
+    return network, {child: channel(h) for child, h in resolved.hops.items()}
+
+
+def _on_machines(
+    runtime: Any,
+    resolved: Resolved,
+    topology: Topology,
+    network: PhysicalNetwork | None = None,
+) -> None:
+    """Hosts with their CPUs, the nodes on them, the aggregators' cost and the
+    network's changes as events."""
+    for at, name, tags in network.events() if network is not None else ():
+        runtime.note(at, "network", name, **tags)
     infra = resolved.infrastructure
     for host in sorted(set(resolved.hosts.values())):
         runtime.add_host(host, infra.profile_of(host).cpus)
@@ -1016,9 +1040,11 @@ def build_scenario(
     config = scenario.config
     edges, initial = edge_specs(scenario, topology, split, placement)
     resolved, link_profiles = physical(scenario, topology, placement), None
+    network, channels = None, None
     if resolved is not None:
         check_memory(resolved, placement, initial)
         edges, link_profiles = _on_hosts(edges, resolved)
+        network, channels = _paths(resolved)
     if parent is ...:
         parent = _parent(config, scenario.seed)
     start = parent[1].snapshot.round if parent else 0
@@ -1037,9 +1063,10 @@ def build_scenario(
         evaluate=evaluate,
         runtime=runtime,
         link_profiles=link_profiles,
+        link_channels=channels,
     )
     if resolved is not None:
-        _on_machines(federation.runtime, resolved, topology)
+        _on_machines(federation.runtime, resolved, topology, network)
     if parent:
         _restore(federation, parent[1], parent[2])
     return federation
