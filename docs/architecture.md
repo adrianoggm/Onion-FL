@@ -37,7 +37,7 @@ flowchart LR
 | `infrastructure` | `model`, `paths`, `assignment` | The physical infrastructure, its paths and the assignment of the logical nodes to its hosts; depends on `core` only |
 | `transports` | `memory`, `mqtt` | Bytes between processes for the real runtime |
 | `observability` | `events`, `run`, `diagnostics`, `analysis`, `sinks` | Event schema, run records, diagnostics, analysis and live sinks |
-| `experiment` | `config`, `sweep`, `runner`, `real`, `cli` | From an experiment YAML to signed runs |
+| `experiment` | `config`, `sweep`, `runner`, `real`, `ceiling`, `cli` | From an experiment YAML to signed runs |
 
 ## 3. Topology
 
@@ -275,6 +275,8 @@ infrastructure:
 - communication, derived by the run recorder from the message events.
 
 **Analysis and report.** `load_runs(...).metrics(...)` gives one row per event with every tag as a column. `.compare(level, metric, by, over="seed")` combines the nodes of a level inside each run (mean, min, max and spread), then the runs over the seeds, with a 95% t interval per round. `report()` and `onion_fl report` render it as HTML. **Time to target** (spec N5): `.time_to_target(level, metric, target)` gives, per run, the first `t_virtual` at which the level's per-round mean reaches a threshold fixed before running (`>=`, or `<=` with `lower=True`), and censors the runs that never reach it at their duration (last event), flagged `censored`. `.compare(..., target=x)` summarises it per group: runs reached and censored, and the mean time with a seeded 95% percentile bootstrap interval; censored runs count at their duration, so the mean is then a lower bound.
+
+**Noise ceiling.** `experiment.ceiling` reruns every swept scenario in R replicas (new seeds and, optionally, a redrawn `search`) and scores each from the root's last score in `summary.json`, the best trial of a search winning its cell. Over every ordered pair of replicas `(a, b)` it reports whether they pick the same winner (top-1) and the selection regret: the best score of `b` minus `b`'s score of `a`'s winner. A decision metric (I1 §12) only counts above this ceiling.
 
 **Sinks.**
 - `jsonl` is always on.

@@ -20,6 +20,10 @@ from __future__ import annotations
     runtime: {mode: sim, codec: json}
     seeds: [0, 1, 2]
     sweep: {data.placement.alpha: [0, 0.5, 1]}
+    search:                             # random search, in each swept scenario
+      budget: 16
+      seed: 0
+      space: {learning.trainer.lr: {low: 1.0e-4, high: 1.0e-1, log: true}}
     sinks: [prometheus]
 
 Every error names its path (``learning.trainer: ...``). Plugin references are
@@ -35,6 +39,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    NonNegativeInt,
     PositiveInt,
     ValidationError,
     field_validator,
@@ -324,6 +329,54 @@ class InfrastructureConfig(Strict):
     assignment: AssignmentConfig
 
 
+class Range(Strict):
+    low: float
+    high: float
+    log: bool = Field(False, description="Uniforme en escala logarítmica")
+
+    @model_validator(mode="after")
+    def _ordered(self) -> Range:
+        if self.high <= self.low:
+            raise ValueError(f"high ({self.high:g}) must be above low ({self.low:g})")
+        if self.log and self.low <= 0:
+            raise ValueError("log: a log-uniform range needs low > 0")
+        return self
+
+
+class SearchConfig(Strict):
+    budget: PositiveInt = Field(
+        description="Configuraciones aleatorias que se prueban en cada escenario"
+    )
+    seed: int = Field(
+        0, description="Semilla propia de la búsqueda; entra en el config_id"
+    )
+    space: dict[str, list[Any] | Range] = Field(
+        min_length=1,
+        description="Ruta de la config -> lista de valores o rango {low, high, log}",
+    )
+    trial: NonNegativeInt | None = Field(
+        None,
+        description="Configuración sorteada de un escenario; la fija el barrido",
+        exclude_if=lambda v: v is None,
+    )
+
+    @field_validator("space")
+    @classmethod
+    def _searchable(cls, value: dict[str, Any]) -> dict[str, Any]:
+        for path, domain in value.items():
+            if path.split(".")[0] in ("seeds", "sweep", "search"):
+                raise ValueError(f"{path}: it cannot be searched")
+            if isinstance(domain, list) and not domain:
+                raise ValueError(f"{path}: give at least one value")
+        return value
+
+    @model_validator(mode="after")
+    def _trial_in_budget(self) -> SearchConfig:
+        if self.trial is not None and self.trial >= self.budget:
+            raise ValueError(f"trial {self.trial} is outside a budget of {self.budget}")
+        return self
+
+
 class PathsConfig(Strict):
     topologies: str = "topologies"
     infrastructures: str = Field(
@@ -346,6 +399,11 @@ class ExperimentConfig(Strict):
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     seeds: list[int] = Field(default_factory=lambda: [0], min_length=1)
     sweep: dict[str, list[Any]] = Field(default_factory=dict)
+    search: SearchConfig | None = Field(
+        None,
+        description="Búsqueda aleatoria de hiperparámetros con presupuesto fijo",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
     sinks: list[PluginRef] = Field(default_factory=list)
     paths: PathsConfig = Field(default_factory=PathsConfig)
     attack: PluginRef | None = Field(
@@ -405,6 +463,24 @@ class ExperimentConfig(Strict):
                         "all the seeds; list them in seeds"
                     )
         return value
+
+    @model_validator(mode="after")
+    def _search_apart_from_sweep(self) -> ExperimentConfig:
+        if self.search is None:
+            return self
+        swept = [p.strip() for key in self.sweep for p in key.split(",")]
+        for path in self.search.space:
+            for other in swept:
+                if (
+                    path == other
+                    or f"{path}.".startswith(f"{other}.")
+                    or (f"{other}.".startswith(f"{path}."))
+                ):
+                    raise ValueError(
+                        f"search.space.{path}: it overlaps the swept {other}; "
+                        "a path is either swept or searched"
+                    )
+        return self
 
     @field_validator("sinks")
     @classmethod
