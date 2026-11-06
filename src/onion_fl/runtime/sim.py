@@ -192,6 +192,10 @@ class SimRuntime:
         """The channel of the direction ``src -> dst`` of a link."""
         return self._links[(src, dst)].channel
 
+    def codec_of(self, src: str, dst: str) -> Codec:
+        """The codec of the direction ``src -> dst`` of a link."""
+        return self._links[(src, dst)].codec
+
     def note(
         self, t: float, node: str, name: str, value: Any = None, **tags: Any
     ) -> None:
