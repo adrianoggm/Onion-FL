@@ -93,6 +93,7 @@ onion_fl baseline experiments/mix_ab.yaml     # LR, RF, XGBoost on the same test
 ```
 
 For a real run over MQTT, start the stack (`just docker-up`, [docker/README.md](docker/README.md)), point the links at the broker and run `onion_fl run <experiment> --backend local` (`--mode real` is its alias).
+With Docker, `--backend emulated` runs the same processes in one container per host of the experiment's `infrastructure`, with its CPU and memory limits and its links emulated by netem ([docs/architecture.md](docs/architecture.md), §7). The first run builds the host image, which takes a few minutes.
 
 ### Studio
 

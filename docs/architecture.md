@@ -34,10 +34,10 @@ flowchart LR
 | `learning` | `model`, `sharing`, `aggregators`, `trainers`, `metrics` | What is trained, what travels, how it is combined and scored |
 | `roles` | `nodes`, `policies`, `federation` | The round protocol and the assembly of a federation on a runtime |
 | `runtime` | `sim`, `real`, `network`, `devices` | Virtual-clock and wall-clock hosts for the nodes |
-| `infrastructure` | `model`, `paths`, `assignment`, `backends` | The physical infrastructure, its paths and the assignment of the logical nodes to its hosts; depends on `core` only |
+| `infrastructure` | `model`, `paths`, `assignment`, `backends`, `emulators` | The physical infrastructure, its paths and the assignment of the logical nodes to its hosts; depends on `core` only |
 | `transports` | `memory`, `mqtt` | Bytes between processes for the real runtime |
 | `observability` | `events`, `run`, `diagnostics`, `analysis`, `sinks` | Event schema, run records, diagnostics, analysis and live sinks |
-| `experiment` | `config`, `sweep`, `runner`, `backends`, `real`, `ceiling`, `fidelity`, `cli` | From an experiment YAML to signed runs, and their fidelity |
+| `experiment` | `config`, `sweep`, `runner`, `backends`, `real`, `emulated`, `ceiling`, `fidelity`, `cli` | From an experiment YAML to signed runs, and their fidelity |
 
 ## 3. Topology
 
@@ -150,7 +150,8 @@ sequenceDiagram
 
 **Backends** (I1 §10). Every scenario runs on a backend from the `backends` registry (`infrastructure.backends`), chosen by the experiment's `backend:` or, without it, by `runtime.mode` (`real` is an alias of `local`; unset, the `config_id` does not change). The contract is `supports(infrastructure)` (the reasons it cannot reproduce it; the config refuses any), `prepare(scenario, infrastructure, assignment)` (an execution plan), `run(plan)` and `collect(plan)` (the signed run). `execute` chains them. The backends live in `experiment.backends`, since they build federations:
 - `sim`: the simulator in one process (`runner.simulate`);
-- `local`: the real runs below, on this machine; it refuses an infrastructure.
+- `local`: the real runs below, on this machine; it refuses an infrastructure;
+- `emulated`: the same processes in containers, one per host, with the infrastructure's resources and network emulated (below).
 
 `onion_fl run --backend NAME` overrides the experiment's; `--mode real` still works.
 
@@ -161,6 +162,20 @@ sequenceDiagram
 4. When the run finishes, a stop travels down the tree and the processes exit; `collect` merges and signs the run.
 
 With full quorum and the same seed, simulation and MQTT give the same final model. `tests/test_runtime_equivalence.py` checks it.
+
+**Emulated runs** (the `emulated` backend, I1 §11; the emulator was chosen in `docs/decisions/2026-11-06-i9-emulator.md`). It needs Docker and an infrastructure with an `mqtt_broker`.
+1. `prepare` resolves the assignment and writes `runs/<run_id>/emulation/`: the Compose project that `infrastructure.emulators` generates and one setup script per container.
+   - One container per host that runs logical nodes, with `NET_ADMIN` and its profile's `cpus` (CPU quota) and `memory` (memory limit).
+   - A router per site, and a Docker network per site LAN and per physical link on a path between the hosts. netem runs on each router's end of a link (the `up` rate at `between[0]`, the `down` rate at the other end), and static routes follow the path of least latency.
+   - The LAN is shaped on each host's egress, for destinations in its own site only. The broker runs in the network namespace of its host.
+   - `scenario.json` carries the paths as the containers see them (under `/onionfl`; only the runs are writable, and the prepared data comes from the cache), the logical nodes of each host (`groups`) and the broker's address.
+2. `run` brings the project up and waits until every container has shaped its interfaces and the broker answers. It then restarts the run's clock and starts one `onion_fl node` per host with `docker exec`. The project is always taken down, and its logs are kept in `compose.log`.
+3. `collect` merges and signs the run as `local` does. `run.json` adds `emulation`: the project, the image, the containers, every tc command and the setup time.
+- **Image.** `onionfl-emulated:latest` by default. It is built from `infrastructure/emulated.Dockerfile` the first time, with the launcher's versions of torch, numpy, scipy, pandas and scikit-learn; a label records them, and other versions rebuild it. Another torch initialises the model with other bits. The `onion_fl` source is mounted, not copied.
+- **What the shaping means.** `bandwidth` is the rate netem shapes, Ethernet frames included; TCP gets about 95.6 % of it. netem's queue holds the link's bandwidth-delay product plus 1000 packets. `loss` is per packet: over MQTT and TCP it becomes retransmissions and delay, never a lost message as in `sim`. A physical link is one queue for all its traffic, as with `shared` in `sim`; a LAN is shaped per host, not shared.
+- **Refused.** `network.schedule`, `bandwidth: dedicated`, lognormal jitter and an infrastructure without `mqtt_broker`. `plan` shows the containers and refuses more than `max_containers`.
+- **Parameters.** `image`, `broker_image`, `project` (the prefix of every container and network), `subnet` (`10.195.0.0/16`, a /24 per network), `max_containers` (64) and `ready_timeout` (120 s, also the processes' extra time to start).
+- With Docker and the image present, `tests/test_runtime_equivalence.py` checks that the final model is the simulation's bit for bit and that the bytes per logical link and round are the same. The comparison of `sim` and `emulated` is in `results/fidelity_emulated/`.
 
 ## 7a. Infrastructure
 
@@ -182,8 +197,8 @@ infrastructure:
 - **Network.** With `network.bandwidth: shared` (the default) each direction of a segment (a site's LAN or a link) is one FIFO queue for every logical link that crosses it: a message waits until all the segments of its path are free and is through after its size over the narrowest one, so two flows on a link of capacity c get c/2 each; `dedicated` gives each logical link its path's full bandwidth. Uncontended, the two are the same, and so on the implicit infrastructure. An MQTT link goes child → broker → parent when the infrastructure places an `mqtt_broker`. `network.schedule` changes a link at a time (`set` fields, `down: true/false`, or a `trace` CSV, one change per row), recorded as `link.changed`, `link.down` and `link.up` of the node `network`; a message sent while a segment of its path is down is lost (one already in flight still arrives). `SimRuntime` sees only channels (`add_link(channel=...)`), never segments.
 - **Resources.** Nodes on a host with `cpus` share it: at most `cpus` jobs at once, the others wait in FIFO order (`host.queued`, valued by the wait). Combining a round costs the aggregator's host the bytes combined / `aggregate_rate`, so an overloaded fog closes later; without `aggregate_rate` it is free, as before. `plan` refuses a host whose nodes' models and data do not fit in its `memory` (every node counted with the whole initial model, an upper bound); swapping is not simulated.
 - **One source of truth.** With an infrastructure, a `link_up.profile` or an edge `device` in the topology is refused. Without one, nothing changes: the ids are the same and the topology's links are the implicit infrastructure (`tests/test_infrastructure.py` checks that an infrastructure reproducing it gives the same events).
-- **Not yet.** The `local` backend refuses an infrastructure (I10, I14). Mobility (a host changing site) comes later.
-- `plan` shows each node's host, each host's load, the services and each link's path and profile; `run.json` records `backend` (`sim` or `local`; runs from before the backends say `real`) and `infrastructure_id`.
+- **Not yet.** The `local` backend refuses an infrastructure (I14); `emulated` takes one. Mobility (a host changing site) comes later.
+- `plan` shows each node's host, each host's load, the services and each link's path and profile; `run.json` records `backend` (`sim`, `local` or `emulated`; runs from before the backends say `real`) and `infrastructure_id`.
 
 ## 7b. Continuing a run (continuum)
 
@@ -362,4 +377,4 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | step | `subject`, `label`, `features`, `replace`, `join`, `window`, `select`, `time` |
 | memory | `none`, `fifo`, `reservoir`, `class_balanced` |
 | baseline | `lr`, `rf`, `xgboost` |
-| backend | `sim`, `local` |
+| backend | `sim`, `local`, `emulated` |
