@@ -13,7 +13,7 @@ from __future__ import annotations
     onion_fl ceiling <experiment.yaml> [--replicas R] [--metric NAME] [--series KEY]
                      [--resample] [--paired] [--workers N]
     onion_fl fidelity <runs A> <runs B> [--metric NAME]... [--target METRIC=VALUE]
-                      [--ceiling FILE] [--csv FILE] [--html FILE]
+                      [--ceiling FILE] [--calibration ID] [--csv FILE] [--html FILE]
     onion_fl calibrate measure <spec.yaml> --out <session> [--image IMAGE]
                        [--project NAME] [--subnet CIDR]
     onion_fl calibrate fit <session>... [--out calibrations] [--infrastructure-out FILE]
@@ -222,6 +222,7 @@ def cmd_fidelity(args: argparse.Namespace) -> int:
         minimize=args.minimize or [],
         resamples=args.bootstrap,
         seed=args.seed,
+        calibration=args.calibration,
     )
     if args.csv:
         write_csv(result, args.csv)
@@ -440,6 +441,9 @@ def parser() -> argparse.ArgumentParser:
     )
     fidelity.add_argument("--bootstrap", type=int, default=2000)
     fidelity.add_argument("--seed", type=int, default=0, help="of the bootstrap")
+    fidelity.add_argument(
+        "--calibration", help="the calibration_id every run of B must cite, alone"
+    )
     fidelity.add_argument("--csv", help="also write the result as CSV rows")
     fidelity.add_argument("--html", help="also write an HTML report")
     fidelity.set_defaults(func=cmd_fidelity)

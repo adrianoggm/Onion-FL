@@ -240,11 +240,19 @@ def test_a_run_with_estimated_rates_is_marked_and_refused_by_fidelity(
     )
     again = write_calibration(tmp_path / "calibrations", *measured)
     (scenario,) = scenarios(_calibrated_experiment(workspace, again.name, again.parent))
-    meta = json.loads(
-        (run_scenario(scenario, evaluate=stub_score) / "run.json").read_text("utf-8")
-    )
+    measured_run = run_scenario(scenario, evaluate=stub_score)
+    meta = json.loads((measured_run / "run.json").read_text("utf-8"))
     assert "estimated" not in meta and meta["calibrations"] == [again.name]
     assert "outside_calibration" not in meta  # no path model limit given
+
+    # A validation names the calibration its runs must cite.
+    import shutil
+
+    alone = shutil.copytree(measured_run, tmp_path / "cited" / measured_run.name)
+    result = fidelity(alone.parent, alone.parent, calibration=again.name)
+    assert result["calibration"] == again.name
+    with pytest.raises(ValueError, match=f"do not cite calibration {cid}"):
+        fidelity(alone.parent, alone.parent, calibration=cid)
 
 
 def test_a_run_past_the_sizes_of_its_calibrated_paths_is_refused_by_fidelity(
