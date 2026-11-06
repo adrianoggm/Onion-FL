@@ -106,6 +106,13 @@ AXES: list[tuple[str, str, str, str | None]] = [
         None,
     ),
     (
+        "unlabelled",
+        "Datos sin etiquetar",
+        "Cómo aprende cada edge de un stream de las filas cuya etiqueta aún no "
+        "ha llegado: pseudoetiquetas o consistencia.",
+        None,
+    ),
+    (
         "trigger",
         "Disparador",
         "Cuándo abre ronda el coordinador de una federación continua, y cuándo "

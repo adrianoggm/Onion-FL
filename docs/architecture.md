@@ -215,7 +215,7 @@ infrastructure:
 - **Bundle.** Every simulated run writes `runs/<run_id>/bundle/` (`onion_fl.continuum.bundle`), which `run_hash` covers. It holds the state `snapshot_federation` captures, with `.npz` and JSON only:
   - the global model, round and server optimizer;
   - each aggregator's zone, previous aggregate and own state (the central DP budget);
-  - each edge's model, trainer memory (`export_memory`), local DP budget, replay memory and what its stream consumed (`stream/consumed_by`), saved together so a row is either kept or unconsumed;
+  - each edge's model, trainer memory (`export_memory`), local DP budget, replay memory and what its stream consumed (`stream/consumed_by`), saved together so a row is either kept or unconsumed, and, with an unlabelled objective, the rows it used unlabelled and the audit of each pseudo-label (`unlabelled/*`);
   - every node's random stream (`rng_state`, with its spawned children).
 
   Next to that state it keeps the lineage and, per dataset, what the whole lineage knows of it, even when this run does not load that dataset: the frozen preprocessing (`DataSplit.preprocessing`), the task and classes, and every subject that ever trained, validated or tested. A subject keeps its role along a lineage, so these roles stay a partition.
@@ -226,7 +226,7 @@ infrastructure:
   - records the parent in `run.json`.
 - **What `restore` covers.**
   - `model`: every model weight, meaning the global model, the zones, the previous aggregates, the edge models, and the trainer memory that holds weights (marked `weights` by `export_memory`).
-  - `edge_state`: the rest of each edge, meaning its trainer memory (SCAFFOLD's c_i, for example), its replay memory, what its stream consumed, and its random stream. Restoring a stream and its memory waits for streams to continue.
+  - `edge_state`: the rest of each edge, meaning its trainer memory (SCAFFOLD's c_i, for example), its replay memory, what its stream consumed (labelled and unlabelled, with the pseudo-label audit), and its random stream. Restoring a stream and its memory waits for streams to continue.
   - `server_state`: the server optimizer, and the algorithm state riding in the global model as auxiliary keys (SCAFFOLD's c). SCAFFOLD and FedDyn need it restored together with `edge_state`.
 - **DP budgets.** They always carry over. Each budget (`privacy.Accountant`) is the Rényi DP accumulated at each order, Σ α/(2σ²), so σ may change between generations and ε stays right.
   - An edge with a budget also keeps its random stream, since a fresh one would replay its parent's noise.
@@ -262,6 +262,20 @@ infrastructure:
   - **Replay.** Each training adds r·n / (1 − r) rows sampled from the memory to its n recent ones. An edge with nothing new stays idle.
   - **Weight.** The edge is weighted by its n recent rows, as it would be without a memory: a replayed row was weighted when it was new.
   - **Records.** After each training that worked, the edge reports `diagnostic.memory`: the memory as it is now, the rows that training replayed, and the mean age of what is kept since it was observed. The bundle saves the memory.
+- **How an edge updates** (`continual.update`, the baselines of the benchmark, C8).
+  - `warm`, the default, goes on from the model received and trains on its new rows, as above.
+  - `frozen` trains only with the first model it gets (v0, on its history) and then answers idle, so the global model stays v0. An edge with no labelled row in its history takes no part in v0.
+  - `scratch` serves the model received, but starts every training from the initial weights (the first model it got) and trains on every trainable row it has, used or not, weighted by all of them. It trains only in the rounds where `warm` would, when new rows arrived.
+  - `frozen` and `scratch` take no replay memory and no unlabelled objective, at the config and when the edge is built.
+  - `scripts/continuum_benchmark.py` measures the benchmark from run folders: prequential, the area under the per-round held-out curve, the final model, forgetting, recovery after the first change of the arriving class, costs and promotions.
+- **Unlabelled rows** (`unlabelled: <objective>`, `onion_fl.continuum.unlabelled`).
+  - **Plugins.** `none` (the default: C3/C4 unchanged), `pseudo_label` (`threshold`, `weight`) and `consistency` (`noise`, `weight`). An external one follows the `Objective` protocol (`size`, `fit`, `term`), which the edge checks when it is built, together with the stream it needs.
+  - **The pool.** Rows that arrived (history included, capped by `window`), whose label is not there yet, and that no successful training has used unlabelled. A row whose label arrives later still trains as labelled. Each row is looked at once: a pool row counts as used, with its round, once the training ends with finite weights, even when `pseudo_label` rejected it.
+  - **No labels leak.** The edge hands the objective the pool's features only. `fit` sees them once with the model as received (`pseudo_label` keeps the class of each row whose max probability reaches `threshold`); the trainer then adds `term` over a chunk of the pool to each labelled batch, each epoch splitting a fresh permutation of the pool into as many chunks as batches. The reported loss stays the supervised one.
+  - **Trainers.** The hook lives in `Standard.train`, which FedProx, FedBABU, SCAFFOLD, FedNova, FedDyn and MOON inherit (`takes_unlabelled`). Ditto, APFL and FedRep run their own loops and are refused, at the config and when the edge is built.
+  - **No labels, no training.** An edge without new labelled rows stays idle, and its pool waits.
+  - **Weight and memory.** The aggregation weight stays the new labelled rows. Pseudo-labelled rows do not enter the replay memory, which replays with the stream's labels: for those rows that would be the hidden label.
+  - **Records.** After each training that worked, `diagnostic.unlabelled` gives the rows seen, with `pseudo_labels_accepted`, `acceptance_rate`, `confidence` (the mean max probability) and, when rows were accepted, `pseudo_label_accuracy` against the hidden label (simulation only). The edge keeps each accepted pseudo-label's class, confidence and `generated_by_version` (the round whose received model generated it), saved in the bundle and not restored yet.
 - **Triggers** (`continuum: {trigger, edge_trigger, status_every}`, `onion_fl.continuum.triggers`). A stream gives either `round_every` or a continuum, never both.
   - **Plugins.** `schedule` (data time since the last round), `volume` (new trainable rows), `drift` (a kind and its detector) and `any`. Durations are data time. A federated schedule must be a multiple of `status_every`, since the root checks its trigger at each tick.
   - **Two levels.**
@@ -394,5 +408,6 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | reader | `csv`, `excel`, `parquet`, `pickle`, `npz`, `wesad_pickle` |
 | step | `subject`, `label`, `features`, `replace`, `join`, `window`, `select`, `time` |
 | memory | `none`, `fifo`, `reservoir`, `class_balanced` |
+| unlabelled | `none`, `pseudo_label`, `consistency` |
 | baseline | `lr`, `rf`, `xgboost` |
 | backend | `sim`, `local`, `emulated`, `distributed` |

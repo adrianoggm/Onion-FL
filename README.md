@@ -41,15 +41,16 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Observability | ✅ | `runs/<run_id>/` with signed events, summary and final model. Diagnostics at every aggregator; analysis API with mean ± CI over seeds; HTML report; Prometheus and OpenTelemetry sinks; Grafana dashboard |
 | CLI | ✅ | `onion_fl data · topology · plan · run · node · ceiling · fidelity · report · baseline · schema · serve` |
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
-| Continuum | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, and a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`). Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. A promotion policy keeps each round's model as a challenger until the validation streams promote it, with rollback. Semi-supervision is next (C5, [#160](https://github.com/adrianoggm/Onion-FL/issues/160)); the Studio's view and controls of the versions are [#203](https://github.com/adrianoggm/Onion-FL/issues/203) |
+| Continuum | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`), and objectives on the rows still waiting for their label (`pseudo_label`, `consistency`), with an audit of every pseudo-label. Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. A promotion policy keeps each round's model as a challenger until the validation streams promote it, with rollback. Each stream edge updates `warm`, `frozen` or `scratch`, the baselines of the continual benchmark, and `scripts/continuum_benchmark.py` measures it. The Studio's view and controls of the versions are [#203](https://github.com/adrianoggm/Onion-FL/issues/203) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
-| Tests | ✅ | 1178 tests. With SWELL, WESAD and a local broker, 1174 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
+| Tests | ✅ | 1385 tests. With SWELL, WESAD and a local broker, 1381 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
 
-- **Eleven experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), and the triggers on those streams. Each has three seeds, so many intervals overlap.
+- **Thirteen experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, the selection of the unlabelled objectives (a null result: nothing could be chosen), and the continual benchmark (five baselines chosen on validation, then run on test, with sweeps and a promotion run). Most have three seeds, so many intervals overlap.
   - The reference run and the mixing sweep have no strong result. On SWELL, no model beats always predicting "stress" on the held-out subjects. On WESAD, the federated model reaches 0.77 accuracy where centralised logistic regression reaches 0.91.
   - In the technique comparisons, the clearest effects are on WESAD: FedDyn and SCAFFOLD beat FedAvg under drift, the adaptive server optimizers beat it too, and a strong sign-flip attack collapses FedAvg while norm clipping holds.
+  - On the streams, no continual baseline learns to tell the classes apart on held-out subjects: every model that keeps updating ends predicting one class. The baselines differ only in how fast they follow the class that is arriving, and replay and the unlabelled rows add nothing measurable at a tenth of the labels.
 - **Checking the data found real problems,** now fixed. 999 means "missing" in the SWELL physiology file, for 53% of the heart-rate values, and both the old and the new loaders read it as a value. The facial and physiology joins and the WESAD chest signals `Resp` and `Temp` failed to load. The SWELL posture file has every date a month early, so posture is left out.
 - **Tests that need data** skip without `data/` ([docs/RULES.md](docs/RULES.md)). Protocol tests use a stub trainer that learns nothing.
 - **Legacy numbers stay legacy.** [§7](#7-results) lists the baselines from before the redesign with their caveats. Some of them predate the `blok` leak fix.
@@ -194,6 +195,10 @@ sweep: {data.placement.alpha: [0.0, 0.5, 1.0]}
 - **Replay.** `continual: {memory: {name: reservoir, capacity: 512}, replay_ratio: 0.5}` gives every streaming edge a memory of rows it already trained on.
   - Each training adds a sample from the memory to its new rows, so that a fraction `replay_ratio` of it is replayed.
   - A row enters the memory only after its first successful training. The edge is still weighted by its new rows, and `memory: none` runs exactly as without `continual`.
+- **Unlabelled rows.** `unlabelled: {name: pseudo_label, threshold: 0.9, weight: 0.5}` (or `{name: consistency, noise: 0.1}`) lets every streaming edge learn from the rows whose label has not arrived.
+  - The objective sees their features only, with the model as received, and adds a weighted term to each labelled batch. An edge with no new labelled rows stays idle.
+  - `diagnostic.unlabelled` reports the rows seen and accepted, the confidence and, in simulation, the accuracy of the pseudo-labels; the bundle keeps each one's class, confidence and the round whose model generated it.
+  - Ditto, APFL and FedRep are refused (their own loops add no term), and so is `unlabelled` without a stream.
 - **Triggers.** A `continuum` block replaces `stream.round_every`:
 
   ```yaml
@@ -458,7 +463,40 @@ Source: [results/continuum_triggers/](results/continuum_triggers/INDEX.md), comm
   - C8 combines triggers (`any`), with a `performance` drift or a schedule.
 - **Volume** opens rounds when rows pile up, not at the switches, and its prequential score drops.
 - **Every final model predicts stress for every test row**, so the test scores cannot tell the triggers apart; C8 tunes the training on validation.
+
+### New framework: unlabelled rows on the streams
+
+Source: [results/continuum_unlabelled/](results/continuum_unlabelled/INDEX.md), commit `07fb2c8`. The streams above with a tenth of the rows labelled, 10 minutes late, and nine configurations: `none`, `pseudo_label` (threshold 0.8/0.9/0.95 × weight 0.5/1.0) and `consistency` (noise 0.05/0.1). Mean ± 95% CI over 3 seeds:
+
+| Configuration | Validation SWELL (final model) | Prequential SWELL | Pseudo-label accuracy SWELL | Pseudo-label accuracy WESAD |
+|---|---|---|---|---|
+| none | 0.400 ± 0.000 | 0.800 ± 0.019 | — | — |
+| pseudo_label, best and worst | 0.400 ± 0.000 | 0.770 ± 0.014 (0.95/0.5) to 0.657 ± 0.025 (0.8/1.0) | 0.85–0.99 | 0.000 |
+| consistency | 0.400 ± 0.000 | 0.797 ± 0.016 | — | — |
+
+- **A null result: no setting could be chosen.** Every final model predicts stress for every validation row, so the selection ties and the test comparison was not run.
+- **On SWELL the pseudo-labels are accurate and still lower the prequential score**, more as the threshold falls and the weight rises.
+- **On WESAD every accepted pseudo-label is wrong**: the served model is confident in the class the stream left. The audit shows it.
+- **Consistency changes almost nothing.** The settings C8 chooses on validation should give the selection a model that is not constant.
 - **These runs replace two earlier ones.** In the first, the statistic measured against the history never fired. In the second, statuses in flight counted toward the next round. Both are explained in the INDEX.
+
+### New framework: the continual benchmark
+
+Source: [results/continuum_benchmark/](results/continuum_benchmark/INDEX.md), commit `3bb359b`. The streams of the unlabelled runs (a tenth of the rows labelled, 10 minutes late, a round every 10 minutes of data), with five baselines. Each baseline's learning rate, epochs, memory and objective were chosen on the validation streams before the test runs. Mean ± 95% CI over 5 seeds, on the test subjects:
+
+| Baseline | Prequential SWELL | Final SWELL | Final WESAD | Forgetting WESAD | SWELL recovery (rounds) | Sample-epochs |
+|---|---|---|---|---|---|---|
+| frozen (v0 only) | 0.319 ± 0.115 | 0.302 ± 0.092 | 0.463 ± 0.147 | 0.000 | never | 35 |
+| retrain from scratch | 0.546 ± 0.096 | 0.405 ± 0.003 | 0.262 ± 0.000 | 0.318 ± 0.148 | 7.4 ± 2.3 | 12,600 |
+| warm start | 0.795 ± 0.018 | 0.404 ± 0.000 | 0.262 ± 0.000 | 0.405 ± 0.243 | 3.2 ± 0.6 | 2,890 |
+| warm + replay | 0.724 ± 0.024 | 0.411 ± 0.020 | 0.262 ± 0.000 | 0.458 ± 0.124 | 4.2 ± 0.6 | 3,470 |
+| warm + replay + consistency | 0.728 ± 0.024 | 0.372 ± 0.088 | 0.312 ± 0.140 | 0.436 ± 0.187 | 4.2 ± 0.6 | 3,470 |
+
+- **Adaptation, not learning.** Every updating baseline ends predicting one class on the test subjects. What separates them is how fast they follow SWELL's switch to the stress blocks. Warm start is the fastest, and retraining from scratch is no ceiling: it is slower and costs 4.4× the compute.
+- **No retention.** On WESAD, whose stream is stress-only after t₀, every updating baseline forgets the other class. Frozen's better WESAD score comes from a v0 that leans to WESAD's test majority.
+- **Memory and unlabelled rows add nothing measurable here.** At a tenth of the labels a replay memory has at most a row to replay per training, so the memory type and capacity cannot be told apart.
+- **Sweeps.** More labels do not raise either score, while a longer label delay lowers the prequential one. A prior-drift trigger keeps most of the schedule's prequential score at 38% of its bytes.
+- **Champion and challenger almost never promote** with these validation streams, so the served model stays the initial weights. In every run, the first trained model was rejected because no validation label had arrived yet.
 
 ### Before the redesign
 
@@ -565,8 +603,8 @@ The workflows run only on release PRs into `main`, to save CI minutes; task PRs 
 - **Real-run latency** across machines needs NTP-synchronised clocks.
 - **Manual deployments** across machines need the same data and cache on each machine, because every process rebuilds the scenario.
 - **Compute in simulation** is modelled as samples per second (or the measured wall time), not as a device profile.
-- **Streams before C5 and C7.**
-  - Each round trains on the rows it has not used yet, plus a replay sample when `continual` is set. The replay settings are not tuned.
+- **Streams before C7.**
+  - Each round trains on the rows it has not used yet, plus a replay sample when `continual` is set and an unlabelled term when `unlabelled` is. Neither is tuned, and pseudo-labelled rows never enter the replay memory.
   - Rounds are synchronous: FedAsync and FedBuff are not yet consumption policies of a continuous federation. Only `data`, `prior` and `performance` drift are detected.
   - Every edge must take part in every round: `close_at_quorum` and time-based availability are outside the temporal guarantee.
   - A stream run cannot be continued (`init: run`) or run for real yet.
@@ -579,7 +617,7 @@ The workflows run only on release PRs into `main`, to save CI minutes; task PRs 
 |---|---|
 | v0.3.0 | ✅ Onion-FL Studio: topology library and editor, run monitor, comparisons between topologies and scenarios, tutorial with dry-run previews, `onion_fl serve` ([#103](https://github.com/adrianoggm/Onion-FL/issues/103)) |
 | v0.4.0 | ✅ Federated learning techniques as plugins, with comparisons on real data: personalisation ([#147](https://github.com/adrianoggm/Onion-FL/issues/147)), non-IID drift ([#148](https://github.com/adrianoggm/Onion-FL/issues/148)), robustness, attacks and privacy ([#149](https://github.com/adrianoggm/Onion-FL/issues/149)), server optimizers and buffering ([#150](https://github.com/adrianoggm/Onion-FL/issues/150)) |
-| v0.7.0 | In progress: continual federated learning in simulation ([spec](docs/superpowers/specs/2026-10-04-onion-fl-continuum-design.md)). Model bundle and continuation ([#157](https://github.com/adrianoggm/Onion-FL/issues/157)) ✅, streams with delayed labels ([#158](https://github.com/adrianoggm/Onion-FL/issues/158)) ✅, replay memory ([#159](https://github.com/adrianoggm/Onion-FL/issues/159)) ✅, triggers and continuous federation ([#161](https://github.com/adrianoggm/Onion-FL/issues/161)) ✅, then semi-supervision, versions and the benchmark ([#160](https://github.com/adrianoggm/Onion-FL/issues/160), [#162](https://github.com/adrianoggm/Onion-FL/issues/162), [#163](https://github.com/adrianoggm/Onion-FL/issues/163)) |
+| v0.7.0 | In progress: continual federated learning in simulation ([spec](docs/superpowers/specs/2026-10-04-onion-fl-continuum-design.md)). Model bundle and continuation ([#157](https://github.com/adrianoggm/Onion-FL/issues/157)) ✅, streams with delayed labels ([#158](https://github.com/adrianoggm/Onion-FL/issues/158)) ✅, replay memory ([#159](https://github.com/adrianoggm/Onion-FL/issues/159)) ✅, triggers and continuous federation ([#161](https://github.com/adrianoggm/Onion-FL/issues/161)) ✅, semi-supervision ([#160](https://github.com/adrianoggm/Onion-FL/issues/160)) ✅, versions, promotion and rollback ([#162](https://github.com/adrianoggm/Onion-FL/issues/162)) ✅, and the benchmark ([#163](https://github.com/adrianoggm/Onion-FL/issues/163)) ✅ |
 | Later | gRPC and Flower transports and richer network emulation (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104)); real distributed deployment (E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)); secure aggregation and TLS |
 
 ---

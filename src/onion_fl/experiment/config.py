@@ -51,6 +51,7 @@ from onion_fl.continuum.drift import detectors
 from onion_fl.continuum.memory import memories
 from onion_fl.continuum.promotion import promotions
 from onion_fl.continuum.triggers import Schedule, drift_detectors, leaves, triggers
+from onion_fl.continuum.unlabelled import objectives
 from onion_fl.core.codec import codecs
 from onion_fl.core.registry import PluginError, Registry
 from onion_fl.data.ingest import readers, steps
@@ -111,6 +112,7 @@ REGISTRIES: dict[str, Registry] = {
     "attack": attacks,
     "privacy": privacies,
     "memory": memories,
+    "unlabelled": objectives,
     "trigger": triggers,
     "detector": detectors,
     "promotion": promotions,
@@ -145,8 +147,25 @@ class ContinualConfig(Strict):
         lt=1,
         description="Fracción de cada entrenamiento que sale de la memoria",
     )
+    update: Literal["warm", "frozen", "scratch"] = Field(
+        "warm",
+        description="Cómo se actualiza cada edge: warm sigue desde el modelo "
+        "recibido, frozen solo entrena v0 con el histórico y scratch reentrena "
+        "desde los pesos iniciales con todas sus filas etiquetadas",
+        exclude_if=lambda v: v == "warm",  # unset, it keeps existing config_ids
+    )
 
     _memory = field_validator("memory")(lambda v: _plugin(memories, v))
+
+    @model_validator(mode="after")
+    def _warm_only(self) -> ContinualConfig:
+        name = self.memory if isinstance(self.memory, str) else self.memory["name"]
+        if self.update != "warm" and name != "none":
+            raise ValueError(
+                f"continual.update: {self.update} trains no rows twice from "
+                "memory; a replay memory needs warm"
+            )
+        return self
 
 
 class ContinuumConfig(Strict):
@@ -435,12 +454,17 @@ class ExperimentConfig(Strict):
     )
     continual: ContinualConfig | None = Field(
         None,
-        description="Memoria de replay de los edges de un stream",
+        description="Memoria de replay y forma de actualizar los edges de un stream",
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
     continuum: ContinuumConfig | None = Field(
         None,
         description="Federación continua: disparadores en vez de rondas a ritmo fijo",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+    unlabelled: PluginRef | None = Field(
+        None,
+        description="Cómo aprende cada edge de un stream de sus filas aún sin etiqueta",
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
     promotion: PluginRef | None = Field(
@@ -466,6 +490,9 @@ class ExperimentConfig(Strict):
     )
     _attack = field_validator("attack")(
         lambda v: v if v is None else _plugin(attacks, v)
+    )
+    _unlabelled = field_validator("unlabelled")(
+        lambda v: v if v is None else _plugin(objectives, v)
     )
     _promotion = field_validator("promotion")(
         lambda v: v if v is None else _plugin(promotions, v)
@@ -582,6 +609,20 @@ class ExperimentConfig(Strict):
             )
         if self.continuum is not None and self.stream is None:
             raise ValueError("continuum: triggers pace a stream; set stream too")
+        if self.unlabelled is not None and self.stream is None:
+            raise ValueError(
+                "unlabelled: it learns from the rows of a stream still waiting for "
+                "their label; set stream too"
+            )
+        update = "warm" if self.continual is None else self.continual.update
+        objective = self.unlabelled
+        if isinstance(objective, dict):
+            objective = objective["name"]
+        if update != "warm" and objective not in (None, "none"):
+            raise ValueError(
+                f"unlabelled: continual.update {update} has no training on the "
+                "pool to add it to; use warm"
+            )
         if self.stream is None:
             return self
         paced = self.stream.round_every is not None

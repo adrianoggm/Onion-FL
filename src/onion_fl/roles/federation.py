@@ -63,6 +63,8 @@ class EdgeSpec:
     stream: Any = None  # an EdgeStream: rows arrive over time (continuum C3)
     replay: Any = None  # a replay memory of the stream's rows (continuum C4)
     replay_ratio: float = 0.25  # the share of each training that comes from it
+    unlabelled: Any = None  # an objective on rows not labelled yet (continuum C5)
+    update: str = "warm"  # warm, frozen or scratch: the baselines of continuum C8
     host: str | None = None  # where an infrastructure runs it; runtimes ignore it
     validates: bool = False  # an evaluator that decides promotions (continuum C7)
 
@@ -243,8 +245,10 @@ def build_federation(
                 stream=spec.stream,
                 replay=spec.replay,
                 replay_ratio=spec.replay_ratio,
+                unlabelled=spec.unlabelled,
                 continuum=continuum,
                 validates=spec.validates,
+                update=spec.update,
                 metrics=list(metrics),
                 finetuner=(
                     create(trainer_plugins, finetune)

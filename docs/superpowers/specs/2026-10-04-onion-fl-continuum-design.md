@@ -288,6 +288,15 @@ unlabelled:
   - `pseudo_labels_seen`, `pseudo_labels_accepted`, `acceptance_rate` y `confidence`;
   - `pseudo_label_accuracy`, solo en simulación, con la etiqueta oculta.
 - **Auditoría.** Cada pseudoetiqueta guarda `pseudo_label`, `confidence` y `generated_by_version`, para saber después qué champion generó una etiqueta errónea.
+- **Decisiones de C5** (#160; el plan, `docs/superpowers/plans/2026-10-30-continuum-c5-unlabelled.md`, da el detalle):
+  - **El pool.** Filas llegadas (histórico incluido, con el límite de `stream.window`) cuya etiqueta aún no ha llegado y que ningún entrenamiento con éxito ha usado sin etiqueta. Una fila cuya etiqueta llega después entrena igualmente como etiquetada.
+    - Cada fila del pool se mira una vez: cuenta como usada, con su ronda, cuando el entrenamiento termina con pesos finitos, aunque `pseudo_label` la rechace. Una ronda fallida no gasta su pool.
+  - **Sin etiquetas, sin entrenamiento.** Un edge sin filas etiquetadas nuevas sigue ocioso, como en C3; su pool espera.
+  - **Qué recibe el entrenador.** El objetivo solo ve las features del pool, nunca `y`. `fit` las mira una vez con el modelo recibido, antes de entrenar; después cada lote etiquetado suma `term` sobre un trozo del pool, y cada época reparte una permutación nueva del pool en tantos trozos como lotes. La pérdida que se informa sigue siendo la supervisada.
+  - **Entrenadores.** El gancho está en `Standard.train` (y lo heredan FedProx, FedBABU, SCAFFOLD, FedNova, FedDyn y MOON). Ditto, APFL y FedRep tienen sus propios bucles y se rechazan, en la configuración y al construir el edge.
+  - **Peso y memoria.** El peso de agregación sigue siendo el de las filas etiquetadas nuevas. Las filas pseudoetiquetadas no entran en la memoria de replay, que repite con `stream.data.y`: para ellas sería la etiqueta oculta. Queda para después, con la etiqueta guardada.
+  - **`consistency`.** El ruido lo saca torch dentro del entrenamiento sembrado, así que la misma semilla da el mismo modelo. No genera pseudoetiquetas: su tasa de aceptación es 1 y no tiene `pseudo_label_accuracy`.
+  - **Bundle.** `generated_by_version` es la ronda cuyo modelo recibido generó la etiqueta. Las filas usadas y la auditoría van en `unlabelled/*`, con `edge_state`; restaurarlas espera, como la memoria, a que un stream pueda continuar.
 
 ## 10. Disparadores y federación continua (C6)
 
@@ -347,6 +356,23 @@ continuum:
 | Eficiencia de etiquetas | Rendimiento frente a la fracción etiquetada |
 
 Líneas base: congelado, reentrenar desde cero, warm start, warm start + replay, y warm start + replay + semisupervisado. Los hiperparámetros se eligen sobre validación y los resultados se confirman con su identidad.
+
+- **Decisiones de C8** (#163; los resultados, `results/continuum_benchmark/INDEX.md`):
+  - **Líneas base** (`continual.update`):
+    - `warm`, la de siempre: sigue desde el modelo recibido con sus filas nuevas;
+    - `frozen`: entrena v0 con el histórico, con el primer modelo que recibe, y desde entonces responde ocioso. Un edge sin etiquetas en su histórico no entra en v0;
+    - `scratch`: sirve el modelo recibido, pero cada entrenamiento parte de los pesos iniciales y usa todas sus filas entrenables, usadas o no, con todas ellas como peso. Entrena en las mismas rondas que `warm`.
+    - `frozen` y `scratch` no aceptan memoria ni objetivo sin etiquetar.
+  - **Métricas** (`scripts/continuum_benchmark.py`):
+    - prequential: las predicciones guardadas de los edges, agregadas en la ejecución;
+    - área bajo la curva: el macro-F1 de cada ronda en los sujetos reservados, ponderado por el tiempo de datos que estuvo activo;
+    - macro-F1 final: el `model.npz` puntuado fuera de línea;
+    - olvido: el mejor macro-F1 de una ronda anterior menos el de la última, en los mismos sujetos;
+    - recuperación: desde la primera ronda cuyas llegadas cambian de clase mayoritaria hasta la primera cuya exactitud prequential vuelve a 0,1 del nivel anterior. Sin ronda anterior (WESAD, que cambia en t₀) no se define;
+    - coste: rondas, bytes y filas·épocas entrenadas (las del pool sin etiquetar no cuentan).
+  - **Selección.** En los streams de validación: la puntuación agregada de lo que llegó en cada ronda, media de SWELL y WESAD. Por pasos: tasa y épocas de cada línea base, después la memoria y su proporción, después el objetivo. Los barridos se ejecutan en test y no eligen nada.
+  - **Promoción.** Para medir el proceso, las cuatro líneas base que se actualizan se ejecutan también detrás de `champion_challenger`. La versión 0 son los pesos iniciales, y el challenger de la ronda 1 se rechaza siempre por `min_samples`: con estos streams de validación casi nada se promueve.
+  - **Lo que muestran.** Ningún modelo final separa las clases en los sujetos de test: los que se actualizan acaban prediciendo una sola clase. Las líneas base se diferencian en lo rápido que siguen la clase que llega, y la memoria y lo no etiquetado no aportan nada medible con una décima de etiquetas.
 
 ## 13. Qué implementa cada issue
 

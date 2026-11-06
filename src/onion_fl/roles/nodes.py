@@ -27,6 +27,7 @@ import numpy as np
 from onion_fl.continuum.drift import Reference, detectors, window
 from onion_fl.continuum.memory import Memory
 from onion_fl.continuum.pace import View
+from onion_fl.continuum.unlabelled import Objective
 from onion_fl.continuum.versions import MODELS, PARTS, Version
 from onion_fl.core.context import Context, child_rng
 from onion_fl.core.message import Message, Payload
@@ -42,6 +43,9 @@ from onion_fl.roles.policies import AllChildren, Drop, create, quorum_needed
 
 State = dict[str, np.ndarray]
 Evaluate = Callable[[Any, Any], tuple[Mapping[str, float], int]]
+
+
+UPDATES = ("warm", "frozen", "scratch")
 
 
 def _reject(ctx: Context, msg: Message, reason: str) -> None:
@@ -1222,11 +1226,31 @@ class Edge(_Greeter, Node):
         stream: Any = None,
         replay: Any = None,
         replay_ratio: float = 0.25,
+        unlabelled: Any = None,
         continuum: Any = None,
         metrics: Sequence[str] = ("loss", "accuracy"),
         validates: bool = False,
+        update: str = "warm",
     ) -> None:
         super().__init__(node_id)
+        if update not in UPDATES:
+            raise ValueError(
+                f"{node_id}: update must be one of {UPDATES}, not {update}"
+            )
+        if update != "warm":
+            if stream is None:
+                raise ValueError(f"{node_id}: update {update} needs a stream")
+            if replay is not None or unlabelled is not None:
+                raise ValueError(
+                    f"{node_id}: update {update} takes no replay memory and no "
+                    "unlabelled objective; they need warm"
+                )
+        # How a stream edge updates (the baselines of continuum C8): warm goes on
+        # from the model received; frozen trains v0 on the history, with the
+        # first model it gets, and is idle from then on; scratch starts every training from the initial weights,
+        # on every trainable row it has.
+        self.update = update
+        self._initial: State | None = None  # the first model received, whole
         if validates and (train or stream is None):
             raise ValueError(f"{node_id}: a validator is an evaluator with a stream")
         # A validator scores the champion and a challenger on its stream (C7).
@@ -1243,6 +1267,19 @@ class Edge(_Greeter, Node):
                 raise ValueError(
                     f"{node_id}: replay_ratio must be in [0, 1), not {replay_ratio}"
                 )
+        if unlabelled is not None:
+            if stream is None:
+                raise ValueError(f"{node_id}: an unlabelled objective needs a stream")
+            if not isinstance(unlabelled, Objective):
+                raise TypeError(
+                    f"{node_id}: {type(unlabelled).__name__} is not an unlabelled "
+                    "objective; it needs size, fit and term"
+                )
+            if not getattr(trainer, "takes_unlabelled", False):
+                raise ValueError(
+                    f"{node_id}: trainer {type(trainer).__name__} runs its own "
+                    "loops and cannot train on unlabelled rows"
+                )
         self.hello_retry = hello_retry
         # A stream (continuum C3): rows arrive over time, are predicted by the
         # model the edge serves when they come, and train once labelled.
@@ -1250,6 +1287,9 @@ class Edge(_Greeter, Node):
         # A replay memory keeps rows already consumed, to train on them again.
         self.replay, self.replay_ratio = replay, replay_ratio
         self._replayed = 0  # rows the current training replays
+        # An objective on the rows whose label has not arrived (continuum C5).
+        self.unlabelled = unlabelled
+        self._fit: dict[str, Any] | None = None  # the current training's pool
         self._clock = -np.inf  # continuum time up to which arrivals are handled
         self._served: State | None = None  # the last model received, as served
         if stream is not None:
@@ -1261,6 +1301,14 @@ class Edge(_Greeter, Node):
             # weights, so a failed round trains the same rows next time.
             self._consumed_by = np.full(len(stream.data.y), -1)
             self._pending = np.zeros(len(stream.data.y), bool)
+            # The round whose training first used each row unlabelled, and per
+            # accepted pseudo-label its class, confidence and the round whose
+            # received model generated it (the audit of spec §9).
+            self._unlabelled_by = np.full(len(stream.data.y), -1)
+            self._pool = np.zeros(len(stream.data.y), bool)
+            self._pseudo_label = np.full(len(stream.data.y), -1)
+            self._pseudo_confidence = np.full(len(stream.data.y), np.nan)
+            self._generated_by = np.full(len(stream.data.y), -1)
         # A continuous federation (continuum C6): statuses, detectors and the
         # local trigger; only a training edge with a stream takes part.
         self.continuum = continuum if stream is not None and train else None
@@ -1414,7 +1462,15 @@ class Edge(_Greeter, Node):
         since = -np.inf if s.window is None else now - s.window
         buffer = s.trainable(since, now) & (self._consumed_by < 0)
         self._pending = buffer
+        if self.unlabelled is not None:
+            # Arrived, label not here yet, never used unlabelled; a row whose
+            # label comes later still trains as labelled.
+            self._pool = (
+                s.arrived(since, now) & (s.label_at > now) & (self._unlabelled_by < 0)
+            )
         rows = buffer.copy()
+        if self.update == "scratch":  # all it may train on, used or not
+            rows = s.trainable(since, now)
         if self.replay is not None:
             # replay_ratio r of the training comes from memory: k = r·n / (1 − r);
             # with nothing new the edge stays idle, whatever it remembers
@@ -1437,6 +1493,32 @@ class Edge(_Greeter, Node):
             age=age,  # since each kept row was observed, in data seconds
             classes=np.bincount(s.data.y[kept], minlength=s.data.n_classes).tolist(),
             replayed=self._replayed,
+            **self.tags,
+        )
+
+    def _report_unlabelled(self, round: int, ctx: Context) -> None:
+        """What the pool of a training that worked gave, and the audit it leaves."""
+        fit, rows = self._fit, np.flatnonzero(self._pool)
+        self._unlabelled_by[rows] = round
+        tags: dict[str, Any] = {
+            "pseudo_labels_accepted": fit["accepted"],
+            "acceptance_rate": fit["accepted"] / fit["seen"],
+            "confidence": fit["confidence"],
+        }
+        if fit["labels"] is not None and fit["accepted"]:
+            mask = fit["mask"]
+            accepted = rows[mask]
+            self._pseudo_label[accepted] = fit["labels"][mask]
+            self._pseudo_confidence[accepted] = fit["row_confidence"][mask]
+            self._generated_by[accepted] = round
+            # Against the hidden label: streams run only in simulation.
+            hits = fit["labels"][mask] == self.stream.data.y[accepted]
+            tags["pseudo_label_accuracy"] = float(hits.mean())
+        ctx.emit(
+            "diagnostic.unlabelled",
+            float(fit["seen"]),
+            round=round,
+            **tags,
             **self.tags,
         )
 
@@ -1536,13 +1618,18 @@ class Edge(_Greeter, Node):
         if self.stream is not None:
             own, metrics = self._arrivals(msg.round, ctx)
         load_arrays(self.model, received)
+        if self._initial is None:  # the first model a child gets is whole
+            self._initial = dict(received)
         if self.stream is not None:
             self._served = state_arrays(self.model)
             # Nothing to train on, or no update wanted yet: idle, with its scores.
             first = bool(msg.meta.get("bootstrap"))
-            if own is None or not self._wants_update(msg.round, ctx, first):
+            frozen = self.update == "frozen" and not first  # v0 only
+            if own is None or frozen or not self._wants_update(msg.round, ctx, first):
                 _send_idle(self, msg.round, metrics, ctx)
                 return
+            if self.update == "scratch":  # served as received, trained afresh
+                load_arrays(self.model, self._initial)
         scoring = (
             self.evaluate is not None
             and self.val_data is not None
@@ -1557,12 +1644,19 @@ class Edge(_Greeter, Node):
         if scoring and "received" in self.eval_models:
             metrics |= self._score("received", msg.round, ctx)
         model_before = state_arrays(self.model)
-        saved = None
+        saved, extra, self._fit = None, {}, None
         try:
+            if self.unlabelled is not None and self._pool.any():
+                # Features only, seen by the model as received.
+                pool = self.stream.data.X[self._pool]
+                self._fit = self.unlabelled.fit(self.model, pool)
+                extra = {"unlabelled": self.unlabelled}
             # What a diverged round rolls back to: the model, and the trainer's
             # memory if it can snapshot it (built-ins can; a plugin may opt in).
             saved = getattr(self.trainer, "snapshot", lambda: None)()
-            result = self.trainer.train(self.model, data, received=anchor, ctx=ctx)
+            result = self.trainer.train(
+                self.model, data, received=anchor, ctx=ctx, **extra
+            )
         except Exception as exc:  # the edge counts as absent; the run goes on
             # A trainer may have changed the model or its memory before failing:
             # roll both back, as for non-finite weights, so a retry starts clean.
@@ -1599,6 +1693,8 @@ class Edge(_Greeter, Node):
                 fresh = np.flatnonzero(self._pending)  # in time order
                 self.replay.add(fresh, self.stream.data.y[fresh])
                 self._report_memory(msg.round, ctx)
+            if self._fit is not None:  # the pool is used only now
+                self._report_unlabelled(msg.round, ctx)
         if scoring and "local" in self.eval_models:
             metrics |= self._score("local", msg.round, ctx)
         try:
