@@ -43,7 +43,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
 | Continuum | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, and a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`). Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. Semi-supervision and versions are next (C5 and C7, [#160](https://github.com/adrianoggm/Onion-FL/issues/160), [#162](https://github.com/adrianoggm/Onion-FL/issues/162)) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
-| Tests | ✅ | 1343 tests. With SWELL, WESAD and a local broker, 1339 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
+| Tests | ✅ | 1345 tests. With SWELL, WESAD and a local broker, 1341 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
 
@@ -392,7 +392,7 @@ Source: [results/infrastructure_architectures/](results/infrastructure_architect
 
 - **The architectures tie on learning** (B and C give the same model bit for bit), so they are ranked on system metrics only.
 - **In this model of the continuum**, the fogs cut WAN traffic 7× and round time 2.9× against the centralised cloud, slow devices make every round wait (4× B's), and a fog failure costs a round deadline (120 or 300 s) although the failover moves its edges within 5 s.
-- **Decision fidelity between `sim` and `local` was not obtained:** the `local` runs of the logical federations stalled on this machine's MQTT transport (bursts of 150 KB messages through one client), and C and D need the emulated backend (I10). The INDEX gives the details.
+- **Decision fidelity between `sim` and `local`** (the logical federations of A and B, commit `76d1bd8`, 5 seeds each): the final models, protocol events and bytes match bit for bit in all 10 pairs, so both backends rank A and B the same on learning (a tie, below the seeds' noise ceiling) and on traffic. They rank them in opposite order on time: the logical `sim` has no compute model and counts link hops, while `local` measures this machine's training, which B spreads over four processes. C and D wait for the emulated backend (I10). The `local` runs had first stalled on MQTT behind Docker Desktop's port forwarding, fixed by giving the transport one connection each way. The INDEX gives the details.
 
 ### New framework: continuing a trained model
 
