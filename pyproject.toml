@@ -55,6 +55,10 @@ studio = [
 grpc = [
     "grpcio>=1.60,<2",
 ]
+# Flower transport: every frame in a Flower Message, over the gRPC links
+flower = [
+    "flwr>=1.21,<2",
+]
 # XGBoost baseline (onion_fl.baselines) and analysis scripts (scripts/, results/legacy/)
 analysis = [
     "matplotlib>=3.5,<4",
