@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from onion_fl.continuum.memory import memories
+from onion_fl.continual.memory import memories
 
 
 def memory(name: str, capacity: int = 4, seed: int = 0):
@@ -138,3 +138,22 @@ def test_the_memories_keep_what_the_plain_algorithms_keep(name: str) -> None:
             rows, labels = plain_class_balanced(rows, labels, batch, y, 40)
         assert kept.rows().tolist() == rows  # the same rows, in the same order
     assert kept.rng.random() == rng.random()  # and the same draws
+
+
+def test_the_old_package_name_is_a_deprecated_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """onion_fl.continuum is onion_fl.continual for one version (M1, #193)."""
+    import importlib
+    import sys
+
+    import onion_fl.continual.memory as new
+
+    for name in [m for m in sys.modules if m.startswith("onion_fl.continuum")]:
+        monkeypatch.delitem(sys.modules, name)
+    with pytest.warns(DeprecationWarning, match="onion_fl.continual"):
+        old = importlib.import_module("onion_fl.continuum.memory")
+    assert old is new and old.memories is memories
+    assert sys.modules["onion_fl.continuum"].memory is new
+    by_old = memories.get("onion_fl.continuum.memory:Reservoir")
+    assert by_old.factory is memories.get("onion_fl.continual.memory:Reservoir").factory

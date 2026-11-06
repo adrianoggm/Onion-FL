@@ -838,7 +838,7 @@ def test_plan_warns_when_a_lost_update_keeps_a_child_out_for_good(
 
 
 def test_every_simulated_run_writes_its_bundle_and_signs_it(workspace: Path) -> None:
-    from onion_fl.continuum.bundle import load_bundle
+    from onion_fl.continual.bundle import load_bundle
 
     (scenario,) = scenarios(parse_experiment(experiment(workspace)))
     path = run_scenario(scenario, evaluate=stub_score)
@@ -904,7 +904,7 @@ def test_a_continued_run_equals_one_that_never_stopped(workspace: Path) -> None:
         "run_hash": parent_meta["run_hash"],
         "version": 2,
     }
-    from onion_fl.continuum.bundle import load_bundle
+    from onion_fl.continual.bundle import load_bundle
 
     assert load_bundle(child / "bundle").lineage["version"] == 4
     assert verify_run(child)
@@ -1289,7 +1289,7 @@ def test_a_dp_budget_outlives_a_generation_without_its_aggregator(
 ) -> None:
     import numpy as np
 
-    from onion_fl.continuum.bundle import load_bundle
+    from onion_fl.continual.bundle import load_bundle
 
     a = _parent_run(workspace, topology=_private(TOPOLOGY))
     b_raw = _child(workspace, a.name, topology=_private(ONE_FOG))
@@ -1319,7 +1319,7 @@ def test_a_dp_budget_outlives_a_generation_without_its_edge(
 ) -> None:
     import numpy as np
 
-    from onion_fl.continuum.bundle import load_bundle
+    from onion_fl.continual.bundle import load_bundle
 
     descriptor = (workspace / "datasets" / "demo.yaml").read_text(encoding="utf-8")
     (workspace / "datasets" / "other.yaml").write_text(
@@ -1391,7 +1391,7 @@ def _datasets(raw: dict, datasets: dict) -> dict:
 def test_the_lineage_remembers_a_dataset_a_generation_did_not_load(
     workspace: Path,
 ) -> None:
-    from onion_fl.continuum.bundle import load_bundle
+    from onion_fl.continual.bundle import load_bundle
 
     descriptor = (workspace / "datasets" / "demo.yaml").read_text(encoding="utf-8")
     (workspace / "datasets" / "other.yaml").write_text(

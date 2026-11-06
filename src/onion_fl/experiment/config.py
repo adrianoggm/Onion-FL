@@ -47,11 +47,11 @@ from pydantic import (
 )
 
 from onion_fl.baselines import baseline_models
-from onion_fl.continuum.drift import detectors
-from onion_fl.continuum.memory import memories
-from onion_fl.continuum.promotion import promotions
-from onion_fl.continuum.triggers import Schedule, drift_detectors, leaves, triggers
-from onion_fl.continuum.unlabelled import objectives
+from onion_fl.continual.drift import detectors
+from onion_fl.continual.memory import memories
+from onion_fl.continual.promotion import promotions
+from onion_fl.continual.triggers import Schedule, drift_detectors, leaves, triggers
+from onion_fl.continual.unlabelled import objectives
 from onion_fl.core.codec import codecs
 from onion_fl.core.registry import PluginError, Registry
 from onion_fl.data.ingest import readers, steps

@@ -432,7 +432,7 @@ def test_an_objective_needs_a_trainer_that_takes_it(
 def test_the_plan_accepts_an_objective_and_each_edge_gets_its_own(
     workspace: Path,
 ) -> None:
-    from onion_fl.continuum.unlabelled import PseudoLabel
+    from onion_fl.continual.unlabelled import PseudoLabel
     from onion_fl.experiment.runner import _unlabelled
 
     learning = STANDARD | {"trainer": "standard"}

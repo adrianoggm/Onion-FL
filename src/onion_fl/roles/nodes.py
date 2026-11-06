@@ -24,11 +24,11 @@ from typing import Any
 
 import numpy as np
 
-from onion_fl.continuum.drift import Reference, detectors, window
-from onion_fl.continuum.memory import Memory
-from onion_fl.continuum.pace import View
-from onion_fl.continuum.unlabelled import Objective
-from onion_fl.continuum.versions import MODELS, PARTS, Version
+from onion_fl.continual.drift import Reference, detectors, window
+from onion_fl.continual.memory import Memory
+from onion_fl.continual.pace import View
+from onion_fl.continual.unlabelled import Objective
+from onion_fl.continual.versions import MODELS, PARTS, Version
 from onion_fl.core.context import Context, child_rng
 from onion_fl.core.message import Message, Payload
 from onion_fl.core.node import Node

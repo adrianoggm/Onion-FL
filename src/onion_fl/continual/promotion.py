@@ -11,7 +11,7 @@ import math
 
 from pydantic import BaseModel, Field, NonNegativeFloat, NonNegativeInt
 
-from onion_fl.continuum.versions import MODELS, PARTS, Decision, Scores
+from onion_fl.continual.versions import MODELS, PARTS, Decision, Scores
 from onion_fl.core.registry import Registry
 from onion_fl.data.stream import Positive
 

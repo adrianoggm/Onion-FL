@@ -23,12 +23,12 @@ from typing import Any
 
 import numpy as np
 
-from onion_fl.continuum.bundle import Bundle, load_bundle, save_bundle
-from onion_fl.continuum.memory import NoMemory, memories
-from onion_fl.continuum.pace import Continuum
-from onion_fl.continuum.promotion import promotions
-from onion_fl.continuum.triggers import drift_detectors, triggers
-from onion_fl.continuum.unlabelled import NoObjective, objectives
+from onion_fl.continual.bundle import Bundle, load_bundle, save_bundle
+from onion_fl.continual.memory import NoMemory, memories
+from onion_fl.continual.pace import Continuum
+from onion_fl.continual.promotion import promotions
+from onion_fl.continual.triggers import drift_detectors, triggers
+from onion_fl.continual.unlabelled import NoObjective, objectives
 from onion_fl.core.context import node_rng
 from onion_fl.core.topology import Topology, load_topology, parse_topology
 from onion_fl.data.cache import load_prepared, prepare

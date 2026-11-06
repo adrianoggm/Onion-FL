@@ -11,7 +11,7 @@ import pytest
 import torch
 from torch import nn
 
-from onion_fl.continuum.unlabelled import objectives
+from onion_fl.continual.unlabelled import objectives
 from onion_fl.core.registry import PluginError
 
 

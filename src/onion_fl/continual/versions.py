@@ -10,7 +10,7 @@ next to the champion, on two sets of the labels that came:
   or within the last ``window`` of data time;
 - the **reference** (retention): every earlier one, the history included.
 
-A ``promotions`` plugin (``continuum.promotion``) decides from those scores.
+A ``promotions`` plugin (``continual.promotion``) decides from those scores.
 The test subjects never decide. Kept free of imports from the roles, so they
 can use it.
 """

@@ -396,7 +396,7 @@ def replaying(
     before=lambda federation: None,
     **kw,
 ):
-    from onion_fl.continuum.memory import memories
+    from onion_fl.continual.memory import memories
 
     replay = memories.create(name, {} if name == "none" else {"capacity": 1000})
     replay.rng = np.random.default_rng(7)
@@ -586,7 +586,7 @@ def edge_with(replay, stream=None) -> EdgeSpec:
 
 
 def test_a_replay_memory_needs_a_stream() -> None:
-    from onion_fl.continuum.memory import memories
+    from onion_fl.continual.memory import memories
 
     memory = memories.create("fifo", {"capacity": 10})
     with pytest.raises(ValueError, match="stream"):
@@ -670,7 +670,7 @@ def half_labelled(subject: str = "a-1"):
 
 
 def pooling(trainer, objective="pseudo_label", stream=None, rounds=8, **params):
-    from onion_fl.continuum.unlabelled import objectives
+    from onion_fl.continual.unlabelled import objectives
 
     if isinstance(objective, str):
         objective = objectives.create(objective, params)
@@ -697,7 +697,7 @@ def used_rounds(edge) -> list[int]:
 
 
 def test_the_objective_gets_the_features_of_the_pool_only() -> None:
-    from onion_fl.continuum.unlabelled import objectives
+    from onion_fl.continual.unlabelled import objectives
 
     spy = Spy(objectives.create("pseudo_label", {"threshold": 0.0}))
     _, edge = pooling(Unlabelled(), spy)
@@ -858,7 +858,7 @@ def test_the_audit_goes_with_the_edge_state(edge_state: bool) -> None:
 
 
 def unlabelled_edge(trainer, stream=None) -> EdgeSpec:
-    from onion_fl.continuum.unlabelled import objectives
+    from onion_fl.continual.unlabelled import objectives
 
     model = ModularMLP(CONFIG, [A], seed=0)
     objective = objectives.create("pseudo_label")
@@ -928,7 +928,7 @@ class Hand:
 
 def edge_by_hand(stream, edge_trigger=None, drift=None, status_every=60.0):
     """A streaming edge of a continuous federation, started by hand."""
-    from onion_fl.continuum.pace import Continuum
+    from onion_fl.continual.pace import Continuum
 
     pace = Continuum(
         trigger=None,
@@ -1023,7 +1023,7 @@ def bypassed(edge, recording) -> int:
 
 
 def test_an_edge_trains_only_when_its_local_trigger_fires() -> None:
-    from onion_fl.continuum.triggers import triggers
+    from onion_fl.continual.triggers import triggers
 
     five = triggers.create("volume", {"samples": 5})
     edge, ctx, recording = edge_by_hand(stream_of("a-1"), edge_trigger=five)
@@ -1058,8 +1058,8 @@ def continuous(
     **streams,
 ):
     """A continuous federation of stub edges, run to its end."""
-    from onion_fl.continuum.pace import Continuum
-    from onion_fl.continuum.triggers import drift_detectors, triggers
+    from onion_fl.continual.pace import Continuum
+    from onion_fl.continual.triggers import drift_detectors, triggers
 
     def built(spec):
         if spec is None:
@@ -1269,7 +1269,7 @@ def test_a_lost_stop_does_not_keep_the_run_ticking(monkeypatch) -> None:
 
 def fog_by_hand():
     """A fog of a continuous federation with two registered edges, by hand."""
-    from onion_fl.continuum.pace import Continuum
+    from onion_fl.continual.pace import Continuum
 
     pace = Continuum(None, None, 1.0, SPEED, float("inf"), {})
     specs = [
@@ -1327,7 +1327,7 @@ def test_an_edge_tags_its_status_with_the_round_it_last_got() -> None:
 
 
 def test_the_bootstrap_round_trains_whatever_the_local_trigger() -> None:
-    from onion_fl.continuum.triggers import triggers
+    from onion_fl.continual.triggers import triggers
 
     never = triggers.create("volume", {"samples": 10_000})
     edge, ctx, recording = edge_by_hand(stream_of("a-1"), edge_trigger=never)
@@ -1338,7 +1338,7 @@ def test_the_bootstrap_round_trains_whatever_the_local_trigger() -> None:
 
 
 def test_an_edge_whose_stream_has_ended_trains_what_is_left() -> None:
-    from onion_fl.continuum.triggers import triggers
+    from onion_fl.continual.triggers import triggers
 
     never = triggers.create("volume", {"samples": 10_000})
     edge, ctx, recording = edge_by_hand(stream_of("a-1"), edge_trigger=never)

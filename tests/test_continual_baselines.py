@@ -135,7 +135,7 @@ def test_an_unknown_update_is_refused() -> None:
 
 @pytest.mark.parametrize("update", ["frozen", "scratch"])
 def test_frozen_and_scratch_take_no_memory(update: str) -> None:
-    from onion_fl.continuum.memory import memories
+    from onion_fl.continual.memory import memories
 
     replay = memories.create("fifo", {"capacity": 8})
     with pytest.raises(ValueError, match="need warm"):
