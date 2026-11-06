@@ -8,11 +8,17 @@ given), so nothing learns; the rows are the stream tests' format fixture
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
+from onion_fl.experiment.config import ConfigError, parse_experiment
+from onion_fl.experiment.runner import _update
+from onion_fl.experiment.sweep import scenarios
 from onion_fl.learning.model import ModularMLP, state_arrays
 from onion_fl.roles import EdgeSpec, build_federation
+from tests.test_experiment_stream import experiment, workspace  # noqa: F401
 from tests.test_roles_stream import (
     CONFIG,
     EVERY,
@@ -124,3 +130,52 @@ def test_frozen_and_scratch_take_no_memory(update: str) -> None:
     replay = memories.create("fifo", {"capacity": 8})
     with pytest.raises(ValueError, match="need warm"):
         updating(update, replay=replay)
+
+
+# --- the configuration -----------------------------------------------------------
+
+
+def test_warm_keeps_the_config_id(workspace: Path) -> None:  # noqa: F811
+    plain = parse_experiment(experiment(workspace, continual={"memory": "none"}))
+    warm = parse_experiment(
+        experiment(workspace, continual={"memory": "none", "update": "warm"})
+    )
+    assert "update" not in plain.dump()["continual"]
+    assert plain.dump() == warm.dump()
+    assert _update(next(iter(scenarios(warm)))) == {}
+
+
+@pytest.mark.parametrize("update", ["frozen", "scratch"])
+def test_each_edge_gets_the_configured_update(
+    workspace: Path,  # noqa: F811
+    update: str,
+) -> None:
+    config = parse_experiment(experiment(workspace, continual={"update": update}))
+    assert _update(next(iter(scenarios(config)))) == {"update": update}
+
+
+@pytest.mark.parametrize(
+    "change, message",
+    [
+        (
+            {
+                "continual": {
+                    "update": "scratch",
+                    "memory": {"name": "fifo", "capacity": 8},
+                }
+            },
+            "needs warm",
+        ),
+        (
+            {"continual": {"update": "frozen"}, "unlabelled": {"name": "consistency"}},
+            "use warm",
+        ),
+    ],
+)
+def test_an_update_that_cannot_use_what_it_is_given_is_refused(
+    workspace: Path,  # noqa: F811
+    change: dict,
+    message: str,
+) -> None:
+    with pytest.raises(ConfigError, match=message):
+        parse_experiment(experiment(workspace, **change))

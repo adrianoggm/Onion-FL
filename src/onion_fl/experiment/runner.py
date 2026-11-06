@@ -932,6 +932,14 @@ def _replay(scenario: Scenario, edge: str) -> dict[str, Any]:
     return {"replay": memory, "replay_ratio": continual.replay_ratio}
 
 
+def _update(scenario: Scenario) -> dict[str, Any]:
+    """How a stream edge updates; warm, the default, runs as C3 to C5 do."""
+    continual = scenario.config.continual
+    if continual is None or continual.update == "warm":
+        return {}
+    return {"update": continual.update}
+
+
 def _unlabelled(scenario: Scenario) -> dict[str, Any]:
     """An edge's own objective on its unlabelled rows; none runs as C3/C4 do."""
     ref = scenario.config.unlabelled
@@ -991,6 +999,7 @@ def edge_specs(
                 stream=streams.get(client.id),
                 **_replay(scenario, client.id),
                 **_unlabelled(scenario),
+                **_update(scenario),
                 **device,
             )
             for client in clients
