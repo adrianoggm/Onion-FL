@@ -1,8 +1,8 @@
 """Simulation and real runtime give the same final model (spec §9.3, issue #100).
 
 With full quorum and the same seed, the coordinator's final model must match
-in SimRuntime, in RealRuntime over the memory bus, and over MQTT with one
-process per group. The edges use the stub trainer with per-node noise: it
+in SimRuntime, in RealRuntime over the memory bus and over gRPC, and over MQTT
+and gRPC with one process per group. The edges use the stub trainer with per-node noise: it
 learns nothing, but every edge sends a different, seeded update, so any
 difference in participants, rng streams or aggregation order would show.
 The dataset is a CSV format fixture (docs/RULES.md).
@@ -129,6 +129,36 @@ def test_the_real_runtime_in_one_process_matches_the_simulation(tmp_path: Path) 
 
     assert federation.coordinator.finished
     assert_same_model(simulated(config), federation.coordinator.state)
+
+
+def _grpc(tmp_path: Path) -> dict:
+    pytest.importorskip("grpc")
+    return {"name": "grpc", "directory": str(tmp_path / "peers")}
+
+
+def test_the_real_runtime_over_grpc_matches_the_simulation(tmp_path: Path) -> None:
+    config = experiment(tmp_path, _grpc(tmp_path))
+    (scenario,) = scenarios(config)
+    topology, split, placement, _ = _scenario_data(scenario)
+    runtime = RealRuntime("equivalence-grpc", seed=scenario.seed, heartbeat_s=None)
+    federation = build_scenario(scenario, topology, split, placement, runtime=runtime)
+
+    runtime.run(timeout=30)
+
+    assert federation.coordinator.finished
+    assert_same_model(simulated(config), federation.coordinator.state)
+
+
+def test_grpc_with_one_process_per_group_matches_the_simulation(
+    tmp_path: Path,
+) -> None:
+    grpc = _grpc(tmp_path)
+    expected = simulated(experiment(tmp_path, grpc))
+
+    (path,) = run_experiment(experiment(tmp_path, grpc, mode="real"))
+
+    with np.load(path / "model.npz", allow_pickle=False) as saved:
+        assert_same_model(expected, {k: saved[k] for k in saved.files})
 
 
 def _round_bytes(events) -> dict:
@@ -313,3 +343,24 @@ def test_the_emulated_backend_matches_the_simulation(tmp_path: Path) -> None:
     functional = result["pairs"][0]["functional"]
     assert result["functional"]["complete"], functional
     assert functional["model"]["bitwise"], functional["model"]
+
+
+@pytest.mark.skipif(not _broker_up(), reason=f"no MQTT broker at {BROKER}")
+def test_local_over_mqtt_and_over_grpc_give_the_same_model_and_measure_the_rest(
+    tmp_path: Path,
+) -> None:
+    from onion_fl.experiment.fidelity import fidelity
+
+    transports = {"mqtt": {"name": "mqtt", "broker": BROKER}, "grpc": _grpc(tmp_path)}
+    for name, transport in transports.items():
+        raw = experiment(tmp_path, transport).dump() | {"backend": "local"}
+        raw["paths"] = raw["paths"] | {"runs": str(tmp_path / f"runs_{name}")}
+        run_experiment(parse_experiment(raw))
+
+    result = fidelity(tmp_path / "runs_mqtt", tmp_path / "runs_grpc", metrics=["time"])
+
+    (pair,) = result["pairs"]
+    assert pair["functional"]["model"]["bitwise"], pair["functional"]
+    assert result["functional"]["complete"], pair["functional"]
+    assert pair["functional"]["bytes"]["a"] == pair["functional"]["bytes"]["b"] > 0
+    assert {"round_time", "link_latency", "duration"} <= set(result["performance"])

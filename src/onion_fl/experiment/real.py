@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Real runs: one process per group of nodes over MQTT (spec §9.2).
+"""Real runs: one process per group of nodes over MQTT or gRPC (spec §9.2).
 
 The ``local`` backend (``backend: local``, or its alias ``runtime.mode:
 real``) in three steps. ``prepare_local`` creates ``runs/<run_id>/`` and
@@ -83,17 +83,20 @@ def _root_evaluators(config: Any, placement: Any) -> list[str]:
     return [f"test-{e.dataset}-{e.subject}" for e in placement.test]
 
 
+CROSS_PROCESS = ("mqtt", "grpc")
+
+
 def _check_links(topology: Topology) -> None:
-    """Every link of a real run must cross processes: MQTT."""
+    """Every link of a real run must cross processes: MQTT or gRPC."""
     links = [n.link_up for n in topology.nodes if n.link_up is not None]
     links.append(topology.edge.link_up)
     for link in links:
         spec = link.transport
         name = spec if isinstance(spec, str) else spec.get("name")
-        if name != "mqtt":
+        if name not in CROSS_PROCESS:
             raise ConfigError(
-                f"runtime.mode: real needs mqtt links, but a link uses {name!r}; a "
-                "memory bus does not cross processes"
+                f"runtime.mode: real needs mqtt or grpc links, but a link uses "
+                f"{name!r}; a memory bus does not cross processes"
             )
 
 
