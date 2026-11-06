@@ -109,6 +109,13 @@ def test_a_calibration_is_signed_by_its_content(tmp_path: Path) -> None:
         load_calibration(folder, cid)
 
 
+def test_a_checkout_with_crlf_line_ends_keeps_the_signature(tmp_path: Path) -> None:
+    folder, cid = stored(tmp_path)
+    path = folder / cid / "measurements.jsonl"
+    path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+    assert load_calibration(folder, cid).calibration_id == cid
+
+
 def test_changed_measurements_break_the_signature(tmp_path: Path) -> None:
     folder, cid = stored(tmp_path)
     (folder / cid / "measurements.jsonl").write_text("{}\n", encoding="utf-8")

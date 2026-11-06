@@ -50,7 +50,6 @@ How each value is fitted:
 Every interval is a 95 % percentile bootstrap over the measurements.
 """
 
-import hashlib
 import json
 import pickle
 import platform
@@ -80,6 +79,7 @@ from onion_fl.infrastructure.calibration import (
     cited,
     link_key,
     load_calibration,
+    measurements_digest,
     train_rate,
     workload_key,
     write_calibration,
@@ -821,7 +821,7 @@ def fit(session: str | Path, out: str | Path = "calibrations") -> Path:
         code=meta["code"],
         environment=meta["environment"],
         spec=meta["spec"] | {"hosts": meta["hosts"], "clients": meta["clients"]},
-        measurements_sha256=hashlib.sha256(raw).hexdigest(),
+        measurements_sha256=measurements_digest(raw),
         workloads=meta["workloads"],
         profiles={
             name: ProfileCalibration(**p)
@@ -868,7 +868,7 @@ def check(
     spec = CalibrationSpec.model_validate(meta["spec"])
     infra = load_infrastructure(infrastructure, calibrations)
     cids = cited(infra)
-    digest = hashlib.sha256((Path(session) / MEASUREMENTS).read_bytes()).hexdigest()
+    digest = measurements_digest((Path(session) / MEASUREMENTS).read_bytes())
     for cid in cids:  # never judge a calibration on what it was fitted on
         if load_calibration(calibrations, cid).measurements_sha256 == digest:
             raise ConfigError(

@@ -122,6 +122,12 @@ def calibration_id(document: Mapping[str, Any]) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def measurements_digest(raw: bytes) -> str:
+    """SHA-256 of the measurements with LF line ends, so that a checkout that
+    turns them into CRLF keeps the signature."""
+    return hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
+
+
 def link_key(between: Sequence[str]) -> str:
     return f"{between[0]}|{between[1]}"
 
@@ -147,7 +153,7 @@ def write_calibration(
     folder: str | Path, calibration: Calibration, measurements: bytes
 ) -> Path:
     """Write ``<folder>/<calibration_id>/`` and return it."""
-    digest = hashlib.sha256(measurements).hexdigest()
+    digest = measurements_digest(measurements)
     if digest != calibration.measurements_sha256:
         raise InfrastructureError("calibration: the measurements are not those signed")
     document = calibration.model_dump(mode="json")
@@ -176,7 +182,7 @@ def load_calibration(folder: str | Path, cid: str) -> Calibration:
     if calibration.calibration_id != cid or document.get("calibration_id") != cid:
         raise InfrastructureError(f"calibration {cid}: its content does not match")
     raw = (path.parent / MEASUREMENTS).read_bytes()
-    if hashlib.sha256(raw).hexdigest() != calibration.measurements_sha256:
+    if measurements_digest(raw) != calibration.measurements_sha256:
         raise InfrastructureError(f"calibration {cid}: its measurements changed")
     return calibration
 
