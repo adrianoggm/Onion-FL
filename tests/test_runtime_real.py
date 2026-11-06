@@ -70,6 +70,7 @@ def test_memory_buses_are_separate() -> None:
 
 class FakeClient:
     instances: list[FakeClient] = []
+    acknowledges = True  # whether the broker answers subscriptions
 
     def __init__(self, *args, **kwargs) -> None:
         self.kwargs = kwargs
@@ -77,6 +78,7 @@ class FakeClient:
         self.published: list[tuple[str, bytes, int]] = []
         self.reconnect = None
         self.connected_to = None
+        self.pending: list[int] = []
         FakeClient.instances.append(self)
 
     def reconnect_delay_set(self, min_delay, max_delay):
@@ -87,6 +89,13 @@ class FakeClient:
 
     def loop_start(self):
         self.on_connect(self, None, None, 0, None)
+        if self.acknowledges:
+            self.acknowledge()
+
+    def acknowledge(self) -> None:
+        """The broker answers every pending subscription."""
+        while self.pending:
+            self.on_subscribe(self, None, self.pending.pop(0), [0], None)
 
     def loop_stop(self):
         pass
@@ -96,6 +105,8 @@ class FakeClient:
 
     def subscribe(self, topic, qos):
         self.subscribed.append((topic, qos))
+        self.pending.append(len(self.subscribed))
+        return 0, len(self.subscribed)
 
     def publish(self, topic, payload, qos):
         self.published.append((topic, payload, qos))
@@ -110,6 +121,7 @@ def fake_paho(monkeypatch):
     import paho.mqtt.client as mqtt
 
     FakeClient.instances = []
+    monkeypatch.setattr(FakeClient, "acknowledges", True)
     monkeypatch.setattr(mqtt, "Client", FakeClient)
     return FakeClient
 
@@ -119,14 +131,16 @@ def test_mqtt_publishes_and_subscribes_with_the_link_qos(fake_paho) -> None:
     transport = transports.create("mqtt", {"broker": "broker.local:1884", "qos": 2})
     transport.on_receive("onionfl/r/fog/inbox", got.append)
     transport.start()
-    (client,) = fake_paho.instances
+    listener, publisher = fake_paho.instances  # one connection each way (#192)
 
     transport.send("onionfl/r/cloud/inbox", b"payload")
-    client.deliver("onionfl/r/fog/inbox", b"reply")
+    listener.deliver("onionfl/r/fog/inbox", b"reply")
 
-    assert client.connected_to[:2] == ("broker.local", 1884)
-    assert client.subscribed == [("onionfl/r/fog/inbox", 2)]
-    assert client.published == [("onionfl/r/cloud/inbox", b"payload", 2)]
+    for client in (listener, publisher):
+        assert client.connected_to[:2] == ("broker.local", 1884)
+    assert listener.subscribed == [("onionfl/r/fog/inbox", 2)]
+    assert listener.published == [] and publisher.subscribed == []
+    assert publisher.published == [("onionfl/r/cloud/inbox", b"payload", 2)]
     assert got == [b"reply"]
     assert transport.stats["bytes_sent"] == 7 and transport.stats["received"] == 1
 
@@ -135,12 +149,24 @@ def test_mqtt_resubscribes_after_a_reconnect(fake_paho) -> None:
     transport = transports.create("mqtt", {"reconnect_min": 2, "reconnect_max": 60})
     transport.on_receive("a/inbox", lambda data: None)
     transport.start()
-    (client,) = fake_paho.instances
+    client = fake_paho.instances[0]
 
     client.on_connect(client, None, None, 0, None)  # the broker came back
 
     assert client.reconnect == (2, 60)
     assert client.subscribed == [("a/inbox", 1), ("a/inbox", 1)]
+
+
+def test_mqtt_starts_only_once_every_inbox_is_subscribed(fake_paho) -> None:
+    """Otherwise a node could send to one it hosts before that one listens."""
+    fake_paho.acknowledges = False
+    transport = transports.create("mqtt", {"connect_timeout": 0.05})
+    transport.on_receive("a/inbox", lambda data: None)
+    with pytest.raises(ConnectionError):
+        transport.start()
+
+    fake_paho.instances[0].acknowledge()
+    assert transport._listening.is_set()
 
 
 @pytest.mark.parametrize("params", [{"qos": 3}, {"broker": "no-port:x"}])
