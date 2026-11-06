@@ -81,6 +81,13 @@ def _root_evaluators(config: Any, placement: Any) -> list[str]:
     return [f"test-{e.dataset}-{e.subject}" for e in placement.test]
 
 
+def _root_members(config: Any, topology: Topology, placement: Any) -> list[str]:
+    """The edges under the root: its training clients when it is the leaf (two
+    levels), then its evaluators; as edge_specs builds them."""
+    clients = [c.id for c in placement.edges.get(topology.root.id, [])]
+    return clients + _root_evaluators(config, placement)
+
+
 def _check_links(topology: Topology) -> None:
     """Every link of a real run must cross processes: MQTT."""
     links = [n.link_up for n in topology.nodes if n.link_up is not None]
@@ -153,7 +160,7 @@ def prepare_local(scenario: Scenario, python: str = sys.executable) -> LocalPlan
             edge_ids.setdefault(leaf, []).extend(
                 f"val-{e.dataset}-{e.subject}" for e in evaluators
             )
-        edge_ids[topology.root.id] = _root_evaluators(config, placement)
+        edge_ids[topology.root.id] = _root_members(config, topology, placement)
         groups = list(process_groups(topology, edge_ids))
     except BaseException:  # never leave a run that looks still running
         run.finish(status="failed")
@@ -291,7 +298,7 @@ def _group_members(
     config: Any, topology: Topology, placement: Any, group: str
 ) -> set[str]:
     if group == topology.root.id:
-        return {group, *_root_evaluators(config, placement)}
+        return {group, *_root_members(config, topology, placement)}
     topology.node(group)  # raises for an unknown id
     members = {group, *(c.id for c in placement.edges.get(group, []))}
     members |= {

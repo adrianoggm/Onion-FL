@@ -169,6 +169,31 @@ def test_mqtt_with_one_process_per_group_matches_the_simulation(tmp_path: Path) 
 
 
 @pytest.mark.skipif(not _broker_up(), reason=f"no MQTT broker at {BROKER}")
+def test_a_two_level_federation_trains_its_edges_in_the_root_process(
+    tmp_path: Path,
+) -> None:
+    """With no fog, the root's process hosts the training edges too (#192)."""
+    mqtt = {"name": "mqtt", "broker": BROKER}
+
+    def flat(mode: str):
+        raw = experiment(tmp_path, mqtt, mode=mode).dump()
+        raw["topology"] = {
+            "name": "cloud_only",
+            "levels": ["global", "edge"],
+            "root": {"id": "cloud"},
+            "edge": {"link_up": {"transport": mqtt}},
+        }
+        return parse_experiment(raw)
+
+    expected = simulated(flat("sim"))
+
+    (path,) = run_experiment(flat("real"))
+
+    with np.load(path / "model.npz", allow_pickle=False) as saved:
+        assert_same_model(expected, {k: saved[k] for k in saved.files})
+
+
+@pytest.mark.skipif(not _broker_up(), reason=f"no MQTT broker at {BROKER}")
 def test_the_fidelity_of_local_against_sim_is_functionally_complete(
     tmp_path: Path,
 ) -> None:
