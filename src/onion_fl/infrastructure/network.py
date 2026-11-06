@@ -8,7 +8,9 @@ A segment (a site's LAN or a link between sites) changes as
 a segment is one FIFO queue for every logical link that crosses it: a message
 waits until all the segments of its path are free, holds each for its size over
 that segment's bandwidth, and is through after its size over the narrowest one.
-Nothing contends, and a shared path behaves as a dedicated one.
+Through a broker, the legs go one after the other (store and forward,
+``paths.legs``). When nothing contends, a shared path behaves as a dedicated
+one.
 
 Whether a message is lost to a segment being down is decided when it is sent.
 ponytail: a message already in flight when its segment goes down still
@@ -21,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from onion_fl.infrastructure.model import Infrastructure, InfrastructureError, patch
-from onion_fl.infrastructure.paths import Hop, combine, segment
+from onion_fl.infrastructure.paths import Hop, combine, legs, segment
 
 
 def _key(between: Sequence[str]) -> str:
@@ -91,16 +93,21 @@ class PhysicalNetwork:
         self, hops: Sequence[Hop], t: float, size_bytes: int
     ) -> tuple[float, float]:
         """Queue a message on every segment of its path: when it starts and when
-        it is through. Hops are in the direction of travel."""
-        durations = []
-        for key, forward in hops:
-            fields, _ = self.state(key, t)
-            rate = fields.bandwidth_up if forward else fields.bandwidth_down
-            durations.append(0.0 if rate is None else size_bytes * 8 / rate)
-        start = max([t, *(self._free.get(hop, 0.0) for hop in hops)])
-        for hop, duration in zip(hops, durations, strict=True):
-            self._free[hop] = start + duration
-        return start, start + max(durations, default=0.0)
+        it is through. Hops are in the direction of travel; through a broker,
+        the second leg starts once the first is through (``paths.legs``)."""
+        first, through = None, t
+        for leg in legs(hops):
+            durations = []
+            for key, forward in leg:
+                fields, _ = self.state(key, t)
+                rate = fields.bandwidth_up if forward else fields.bandwidth_down
+                durations.append(0.0 if rate is None else size_bytes * 8 / rate)
+            start = max([through, *(self._free.get(hop, 0.0) for hop in leg)])
+            for hop, duration in zip(leg, durations, strict=True):
+                self._free[hop] = start + duration
+            first = start if first is None else first
+            through = start + max(durations, default=0.0)
+        return (t if first is None else first), through
 
     def events(self) -> list[tuple[float, str, dict[str, Any]]]:
         """``link.down``, ``link.up`` and ``link.changed`` with their instants."""

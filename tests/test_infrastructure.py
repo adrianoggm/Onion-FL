@@ -161,6 +161,36 @@ def test_a_one_segment_path_keeps_the_segment_exactly() -> None:
     assert profile["loss"] == 0.005 and profile["distribution"] == "normal"
 
 
+def test_a_path_through_a_broker_transmits_once_per_leg() -> None:
+    """The broker forwards a message once it has all of it (issue #197): from
+    the field to fog-1 through cloud-1, fog -> dc is crossed twice, once each
+    way, and the legs' bandwidths add in series."""
+    infra = parse_infrastructure(lab())
+
+    path, profile = effective(infra, "field-pi-1", "fog-1", via="cloud-1")
+    assert path == ["field", "fog", "dc", "fog"]
+    assert profile["latency_s"] == pytest.approx(0.15)
+    assert profile["bandwidth_up_bps"] == pytest.approx(5e6)  # 1 / (1/1e7 + 1/1e7)
+    assert profile["bandwidth_down_bps"] == pytest.approx(5e6)
+    # a leg crossing nothing (the broker on the receiver) keeps the other exactly
+    _, direct = effective(infra, "field-pi-1", "cloud-1", via="cloud-1")
+    assert direct == effective(infra, "field-pi-1", "cloud-1")[1]
+    assert effective(infra, "cloud-1", "cloud-1", via="cloud-1")[1] == LOOPBACK
+
+
+def test_a_shared_network_sends_the_legs_one_after_the_other() -> None:
+    from onion_fl.infrastructure.network import PhysicalNetwork
+    from onion_fl.infrastructure.paths import route
+
+    infra = parse_infrastructure(
+        lab(network=lab()["network"] | {"bandwidth": "shared"})
+    )
+    _, hops = route(infra, "field-pi-1", "fog-1", "cloud-1")
+    start, through = PhysicalNetwork(infra).reserve(hops, 0.0, 125_000)  # 1 Mbit
+    # field -> fog at 100 Mbit/s and fog -> dc at 10 (0.1 s), then dc -> fog (0.1 s)
+    assert (start, through) == (0.0, pytest.approx(0.2))
+
+
 def test_the_path_of_least_latency_wins_and_a_missing_one_is_refused() -> None:
     links = [
         {"between": ["field", "dc"], "latency": 1.0},
