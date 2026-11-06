@@ -153,7 +153,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         config = parse_experiment(
             config.dump() | {"runtime": config.dump()["runtime"] | {"mode": args.mode}}
         )
-    for path in run_experiment(config, workers=args.workers, only=args.scenario):
+    for path in run_experiment(
+        config, workers=args.workers, only=args.scenario, paused=args.paused
+    ):
         print(path)
     return 0
 
@@ -294,6 +296,12 @@ def parser() -> argparse.ArgumentParser:
     run.add_argument("--scenario", help="only the scenario with this name")
     run.add_argument("--mode", choices=["sim", "real"])
     run.add_argument("--workers", type=int, default=1)
+    run.add_argument(
+        "--paused",
+        action="store_true",
+        help="start each simulation paused, for an operator to resume "
+        "(needs ONIONFL_OPERATORS)",
+    )
     run.set_defaults(func=cmd_run)
 
     node = sub.add_parser("node", help="start one node of a real run")
