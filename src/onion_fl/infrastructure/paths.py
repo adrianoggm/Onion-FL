@@ -13,6 +13,7 @@ import heapq
 import math
 from typing import Any
 
+from onion_fl.infrastructure.calibration import link_fields
 from onion_fl.infrastructure.model import Infrastructure, InfrastructureError
 
 LOOPBACK: dict[str, Any] = {
@@ -76,12 +77,15 @@ def hops(infra: Infrastructure, src: str, dst: str) -> tuple[list[str], list[Hop
 
 
 def segment(infra: Infrastructure, key: str) -> Any:
-    """The fields of a segment as the infrastructure declares them."""
+    """The fields of a segment as the simulation sees them: as the
+    infrastructure declares them, or as calibrated for a link that cites a
+    calibration."""
     kind, _, name = key.partition(":")
     if kind == "lan":
         return infra.sites[name].lan
     a, _, b = name.partition("|")
-    return next(link for link in infra.network.links if link.between == (a, b))
+    link = next(link for link in infra.network.links if link.between == (a, b))
+    return link_fields(infra, link)
 
 
 def route(
