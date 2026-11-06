@@ -1,0 +1,7 @@
+{"python": "3.11.15", "machine": "Windows-10-10.0.26300-SP0"}
+{"edges": 100, "fogs": 10, "rounds": 3, "codec": "npz", "diagnostics": ["dataset_conflict", "drift", "participation", "fairness"], "build_s": 0.2, "run_s": 3.28, "s_per_round": 1.09, "peak_rss_mib": 347.6, "import_rss_mib": 200.4}
+{"edges": 200, "fogs": 10, "rounds": 3, "codec": "npz", "diagnostics": ["dataset_conflict", "drift", "participation", "fairness"], "build_s": 0.34, "run_s": 6.81, "s_per_round": 2.27, "peak_rss_mib": 475.1, "import_rss_mib": 200.3}
+{"edges": 500, "fogs": 10, "rounds": 3, "codec": "npz", "diagnostics": ["dataset_conflict", "drift", "participation", "fairness"], "build_s": 0.9, "run_s": 14.37, "s_per_round": 4.79, "peak_rss_mib": 832.3, "import_rss_mib": 200.5}
+{"edges": 1000, "fogs": 10, "rounds": 3, "codec": "npz", "diagnostics": ["dataset_conflict", "drift", "participation", "fairness"], "build_s": 1.55, "run_s": 28.84, "s_per_round": 9.61, "peak_rss_mib": 1441.7, "import_rss_mib": 200.5}
+{"edges": 2000, "fogs": 10, "rounds": 3, "codec": "npz", "diagnostics": ["dataset_conflict", "drift", "participation", "fairness"], "build_s": 2.54, "run_s": 65.57, "s_per_round": 21.86, "peak_rss_mib": 2668.3, "import_rss_mib": 200.4}
+{"edges": 4000, "fogs": 10, "rounds": 3, "codec": "npz", "diagnostics": ["dataset_conflict", "drift", "participation", "fairness"], "build_s": 5.5, "run_s": 131.0, "s_per_round": 43.67, "peak_rss_mib": 5115.7, "import_rss_mib": 200.3}
