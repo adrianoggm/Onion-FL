@@ -1,0 +1,2 @@
+# Read by docker build in Linux: keep LF even with core.autocrlf.
+*.Dockerfile text eol=lf
