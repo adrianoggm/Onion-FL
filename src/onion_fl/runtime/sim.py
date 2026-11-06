@@ -184,6 +184,14 @@ class SimRuntime:
             )
             self._links[(src, dst)] = _Link(built, wire)
 
+    def compute_of(self, node_id: str) -> Any:
+        """The compute model of a node (None: its work takes no time)."""
+        return self._compute[node_id]
+
+    def channel_of(self, src: str, dst: str) -> Any:
+        """The channel of the direction ``src -> dst`` of a link."""
+        return self._links[(src, dst)].channel
+
     def note(
         self, t: float, node: str, name: str, value: Any = None, **tags: Any
     ) -> None:
