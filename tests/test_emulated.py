@@ -264,6 +264,33 @@ def test_prepare_writes_the_project_and_the_paths_the_containers_see(
     prepared.run.finish(status="failed")  # nothing ran
 
 
+def test_prepare_pins_each_host_to_the_cpus_it_was_calibrated_on(
+    workspace: Path,  # noqa: F811
+) -> None:
+    config = parse_experiment(on_lab(workspace))
+    (scenario,) = scenarios(config)
+    hosts = EmulatedBackend(project="onionfl-test").prepare(scenario)
+    used = sorted(hosts.emulation.layout.hosts)
+    hosts.run.finish(status="failed")
+    # a mapping keeps each host's CPUs, whatever other hosts the run leaves out
+    by_host = {h: [2 * i + 2] for i, h in enumerate(used)} | {"unused": [40]}
+    pin = {"cpus": by_host, "others": "20-23"}
+
+    prepared = EmulatedBackend(project="onionfl-test", pin=pin).prepare(scenario)
+
+    services = prepared.emulation.compose["services"]
+    lay = prepared.emulation.layout
+    assert {h: services[lay.services[h]]["cpuset"] for h in used} == {
+        h: str(c[0]) for h, c in by_host.items() if h in used
+    }
+    assert services["broker"]["cpuset"] == "20-23"
+    assert prepared.run.meta["emulation"]["cpusets"]["broker"] == "20-23"
+    prepared.run.finish(status="failed")  # nothing ran
+    short = {"cpus": {used[0]: [2]}, "others": "20"}
+    with pytest.raises(ConfigError, match="pin gives it 0"):
+        EmulatedBackend(project="onionfl-test", pin=short).prepare(scenario)
+
+
 def test_the_image_takes_the_ranges_of_pyproject() -> None:
     dockerfile = (
         ROOT / "src" / "onion_fl" / "infrastructure" / "emulated.Dockerfile"

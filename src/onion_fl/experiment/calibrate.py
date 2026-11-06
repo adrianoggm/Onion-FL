@@ -78,7 +78,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from onion_fl.core.ids import code_version
-from onion_fl.experiment.backends import EmulatedParams
+from onion_fl.experiment.backends import EmulatedParams, PinSpec
 from onion_fl.experiment.config import ConfigError, DataConfig, PathsConfig
 from onion_fl.infrastructure.calibration import (
     Calibration,
@@ -155,19 +155,6 @@ class LinksSpec(Strict):
         description="TCP_NODELAY en los clientes y en el broker (sin Nagle); "
         "por defecto, como en las ejecuciones FL, ninguno lo activa",
     )
-
-
-class PinSpec(Strict):
-    """Fixed CPUs for the containers (``cpuset``), the same in every session.
-
-    ``cpus`` go to the hosts in name order, each taking as many as its
-    profile's ``cpus``; ``others`` is the cpuset of the routers and the
-    broker. The CPUs are those Docker's VM shows, not physical cores: on
-    Docker Desktop the hypervisor still moves them over the machine's cores.
-    """
-
-    cpus: list[int] = Field(min_length=1, description="CPUs de los hosts, por orden")
-    others: str = Field(description="cpuset de los routers y del broker, p. ej. 20-23")
 
 
 class CalibrationSpec(Strict):
@@ -426,14 +413,23 @@ def pin(emulation: Any, spec: PinSpec) -> dict[str, str]:
     """Give every container of ``emulation`` its fixed CPUs (``PinSpec``);
     the cpuset of each service."""
     lay = emulation.layout
-    free, sets = list(spec.cpus), {}
+    by_host = spec.cpus if isinstance(spec.cpus, dict) else None
+    free, sets = ([] if by_host is not None else list(spec.cpus)), {}
     for host in sorted(lay.hosts):
         need = lay.infra.profile_of(host).cpus or 1
-        if len(free) < need:
+        if by_host is not None:
+            mine = by_host.get(host, [])
+            if len(mine) != need:
+                raise ConfigError(
+                    f"pin.cpus: host {host} has {need} cpus in its profile, but "
+                    f"pin gives it {len(mine)}"
+                )
+        elif len(free) < need:
             raise ConfigError(
                 f"pin.cpus: {len(spec.cpus)} CPUs do not cover the hosts' cpus"
             )
-        mine, free = free[:need], free[need:]
+        else:
+            mine, free = free[:need], free[need:]
         sets[lay.services[host]] = ",".join(str(c) for c in mine)
     for site in lay.routers:
         sets[lay.services[site]] = spec.others

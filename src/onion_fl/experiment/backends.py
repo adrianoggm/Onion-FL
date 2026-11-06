@@ -20,7 +20,7 @@ from ipaddress import IPv4Network
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from onion_fl.infrastructure.backends import backends
 
@@ -119,6 +119,25 @@ class LocalBackend:
         return merge(plan)
 
 
+class PinSpec(BaseModel):
+    """Fixed CPUs for the containers (``cpuset``), the same in every session or run.
+
+    ``cpus`` is either a list that the hosts take in name order, each as many
+    as its profile's ``cpus``, or a mapping from host to its CPUs, so that a
+    run on fewer hosts keeps each host's CPUs (those of a calibration's
+    session); ``others`` is the cpuset of the routers and the broker. The CPUs
+    are those Docker's VM shows, not physical cores: on Docker Desktop the
+    hypervisor still moves them over the machine's cores.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    cpus: list[int] | dict[str, list[int]] = Field(
+        min_length=1, description="CPUs de los hosts, por orden o por host"
+    )
+    others: str = Field(description="cpuset de los routers y del broker, p. ej. 20-23")
+
+
 class EmulatedParams(BaseModel):
     image: str = Field(
         "onionfl-emulated:latest",
@@ -138,6 +157,11 @@ class EmulatedParams(BaseModel):
     )
     ready_timeout: float = Field(
         120.0, gt=0, description="Espera máxima a que los contenedores estén listos (s)"
+    )
+    pin: PinSpec | None = Field(
+        None,
+        description="CPUs fijas de cada contenedor, como en la sesión de calibración",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
 
     @field_validator("subnet")

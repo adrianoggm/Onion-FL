@@ -260,6 +260,11 @@ def prepare_emulated(scenario: Scenario, params: EmulatedParams) -> EmulatedPlan
             volumes=volumes,
             setup=folder.resolve().as_posix(),
         )
+        cpusets = {}
+        if params.pin is not None:  # the CPUs the calibration's session pinned
+            from onion_fl.experiment.calibrate import pin
+
+            cpusets = pin(emulation, params.pin)
         # The containers' torch draws other initial bits: they take these.
         np.savez(folder / "initial.npz", **state)
         write_scenario(
@@ -285,7 +290,7 @@ def prepare_emulated(scenario: Scenario, params: EmulatedParams) -> EmulatedPlan
             "broker_image": params.broker_image,
             **lay.summary(),
             "shaping": emulation.shaping,
-        }
+        } | ({"cpusets": cpusets} if cpusets else {})
     except BaseException:  # never leave a run that looks still running
         run.finish(status="failed")
         raise
