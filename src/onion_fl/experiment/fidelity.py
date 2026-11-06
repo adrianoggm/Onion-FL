@@ -499,6 +499,17 @@ def fidelity(
             f"no run of {a} and {b} shares a configuration and seed; are they "
             "the same experiment?"
         )
+    estimated = [
+        cell.path.name
+        for cell in [cells_a[k] for k in keys] + [cells_b[k] for k in keys]
+        if cell.meta.get("estimated")
+    ]
+    if estimated:  # docs/RULES.md §3
+        raise ValueError(
+            f"runs {estimated} use training rates estimated by FLOPs (run.json "
+            "'estimated'); a fidelity result cannot rest on them: calibrate "
+            "those (profile, model) pairs"
+        )
     for cell in [cells_a[k] for k in keys] + [cells_b[k] for k in keys]:
         if not verify_run(cell.path):
             warnings.append(f"{cell.path.name}: its files do not match its run_hash")
@@ -612,7 +623,7 @@ def _identity(cell: Cell) -> dict[str, Any]:
         "topology_id": meta.get("topology_id"),
         "infrastructure_id": meta.get("infrastructure_id"),
         "config_id": meta.get("config_id"),
-    }
+    } | ({"calibrations": meta["calibrations"]} if meta.get("calibrations") else {})
 
 
 # --- CSV and HTML --------------------------------------------------------------------

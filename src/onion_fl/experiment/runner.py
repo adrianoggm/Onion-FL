@@ -49,6 +49,7 @@ from onion_fl.infrastructure.assignment import (
     resolve,
 )
 from onion_fl.infrastructure.backends import backends, execute
+from onion_fl.infrastructure.calibration import aggregate_rate, cited, workload_key
 from onion_fl.infrastructure.model import (
     Infrastructure,
     InfrastructureError,
@@ -149,13 +150,14 @@ def resolve_infrastructure(config: ExperimentConfig) -> Infrastructure | None:
         return None
     ref = config.infrastructure.name
     try:
+        calibrations = config.paths.calibrations
         if isinstance(ref, dict):  # its traces live with the infrastructures
             raw = anchor_traces(deepcopy(ref), config.paths.infrastructures)
-            return parse_infrastructure(raw)
+            return parse_infrastructure(raw, calibrations)
         path = Path(ref)
         if path.suffix not in (".yaml", ".yml"):
             path = Path(config.paths.infrastructures) / f"{ref}.yaml"
-        return load_infrastructure(path)
+        return load_infrastructure(path, calibrations)
     except InfrastructureError as exc:
         raise ConfigError(f"infrastructure: {exc}") from None
 
@@ -992,21 +994,34 @@ def edge_specs(
     return edges, initial
 
 
+def workload(spec: EdgeSpec) -> tuple[str, float]:
+    """The workload of an edge for a calibration: its model's parameter shapes
+    and its trainer's batch size."""
+    shapes = {k: list(np.shape(v)) for k, v in state_arrays(spec.model).items()}
+    params = getattr(spec.trainer, "params", None)
+    return workload_key(shapes, getattr(params, "batch_size", None))
+
+
 def _on_hosts(
-    edges: Mapping[str, Sequence[EdgeSpec]], resolved: Resolved
+    edges: Mapping[str, Sequence[EdgeSpec]],
+    resolved: Resolved,
+    estimated: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, list[EdgeSpec]], dict[str, Any]]:
     """Edges that compute at their host's rate, and the compiled link profiles.
 
-    Evaluators are not physical clients: they sit on their parent's host.
+    Evaluators are not physical clients: they sit on their parent's host. A
+    rate estimated by FLOPs from a calibration is noted in ``estimated``.
     """
+
+    def on_host(spec: EdgeSpec) -> EdgeSpec:
+        rate, note = resolved.rate(spec.id, workload(spec))
+        if note is not None and estimated is not None:
+            estimated.append({"node": spec.id, **note})
+        return replace(spec, host=resolved.hosts[spec.id], compute=_rate(rate))
 
     out = {
         leaf: [
-            replace(
-                s, host=resolved.hosts[s.id], compute=_rate(resolved.train_rate(s.id))
-            )
-            if s.train
-            else replace(s, host=resolved.hosts[leaf])
+            on_host(s) if s.train else replace(s, host=resolved.hosts[leaf])
             for s in specs
         ]
         for leaf, specs in edges.items()
@@ -1059,7 +1074,7 @@ def _on_machines(
     for node, host in resolved.hosts.items():
         runtime.place(node, host)
     for node in topology.nodes:  # combining costs bytes / aggregate_rate
-        rate = infra.profile_of(resolved.hosts[node.id]).aggregate_rate
+        rate = aggregate_rate(infra, resolved.hosts[node.id])
         if rate is not None:
             runtime.set_compute(node.id, _rate(rate))
 
@@ -1097,15 +1112,24 @@ def build_scenario(
     evaluate: Callable[..., Any] | None = None,
     runtime: Any = None,
     parent: Any = ...,
+    calibrations: dict[str, Any] | None = None,
 ) -> Any:
-    """The federation of a scenario, on ``runtime`` (a new SimRuntime by default)."""
+    """The federation of a scenario, on ``runtime`` (a new SimRuntime by default).
+
+    ``calibrations``, when given, gets the ids of the calibrations the
+    infrastructure cites and the rates estimated by FLOPs (``estimated``).
+    """
     config = scenario.config
     edges, initial = edge_specs(scenario, topology, split, placement)
     resolved, link_profiles = physical(scenario, topology, placement, initial), None
     network, channels = None, None
     if resolved is not None:
         check_memory(resolved, placement, initial)
-        edges, link_profiles = _on_hosts(edges, resolved)
+        estimated: list[dict[str, Any]] = []
+        edges, link_profiles = _on_hosts(edges, resolved, estimated)
+        if calibrations is not None:
+            calibrations["ids"] = cited(resolved.infrastructure)
+            calibrations["estimated"] = estimated
         network, channels = _paths(resolved)
     if parent is ...:
         parent = _parent(config, scenario.seed)
@@ -1176,9 +1200,20 @@ def simulate(scenario: Scenario, evaluate: Callable[..., Any] | None = None) -> 
         run.meta["parent"] = lineage_parent  # signed with the rest at finish
     try:
         record_data(run, scenario, split, placement)
+        calibrations: dict[str, Any] = {}
         federation = build_scenario(
-            scenario, topology, split, placement, evaluate=evaluate, parent=parent
+            scenario,
+            topology,
+            split,
+            placement,
+            evaluate=evaluate,
+            parent=parent,
+            calibrations=calibrations,
         )
+        if calibrations.get("ids"):  # signed with the rest at finish
+            run.meta["calibrations"] = calibrations["ids"]
+        if calibrations.get("estimated"):  # no fidelity result may rest on it
+            run.meta["estimated"] = calibrations["estimated"]
         run.attach(federation)
         if config.stream is not None:
             streams = {k: e.stream for k, e in federation.edges.items() if e.train}

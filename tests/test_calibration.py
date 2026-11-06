@@ -14,6 +14,10 @@ from typing import Any
 
 import pytest
 
+from onion_fl.experiment.config import parse_experiment
+from onion_fl.experiment.fidelity import fidelity
+from onion_fl.experiment.runner import run_scenario
+from onion_fl.experiment.sweep import scenarios
 from onion_fl.infrastructure.calibration import (
     Calibration,
     Estimate,
@@ -30,6 +34,7 @@ from onion_fl.infrastructure.calibration import (
 from onion_fl.infrastructure.emulators import compose_project, layout
 from onion_fl.infrastructure.model import InfrastructureError, parse_infrastructure
 from onion_fl.infrastructure.paths import effective
+from tests.test_experiment import experiment, stub_score, workspace  # noqa: F401
 from tests.test_infrastructure import lab
 
 SMALL = workload_key({"w": [4, 8], "b": [8]}, 32)
@@ -180,3 +185,59 @@ def test_the_simulation_uses_the_calibrated_link_and_the_emulator_the_nominal(
     )
     shaped = " ".join(c for cs in emulation.shaping.values() for c in cs)
     assert "delay 70000us" in shaped and "rate 10000000bit" in shaped
+
+
+# --- runs ----------------------------------------------------------------------------
+
+
+def _calibrated_experiment(workspace: Path, cid: str, folder: Path) -> Any:  # noqa: F811
+    raw = experiment(
+        workspace,
+        infrastructure={
+            "name": cited_lab(cid),
+            "assignment": {
+                "root": "cloud-1",
+                "aggregators": {"fog_a": "fog-1", "fog_b": "fog-2"},
+                "edges": {"name": "explicit", "hosts": {"*": "field-pi-1"}},
+            },
+        },
+    )
+    raw["paths"]["calibrations"] = str(folder)
+    return parse_experiment(raw)
+
+
+def test_a_run_with_estimated_rates_is_marked_and_refused_by_fidelity(
+    tmp_path: Path,
+    workspace: Path,  # noqa: F811
+) -> None:
+    folder, cid = stored(tmp_path)
+    (scenario,) = scenarios(_calibrated_experiment(workspace, cid, folder))
+    path = run_scenario(scenario, evaluate=stub_score)
+    meta = json.loads((path / "run.json").read_text("utf-8"))
+    assert meta["status"] == "finished" and meta["calibrations"] == [cid]
+    assert meta["estimated"] and {e["profile"] for e in meta["estimated"]} == {"pi"}
+    with pytest.raises(ValueError, match="estimated by FLOPs"):
+        fidelity(path.parent, path.parent)
+
+    # Measuring the edges' workload removes the estimate.
+    wid = meta["estimated"][0]["workload"]
+    flops = SMALL[1] * 400.0 / meta["estimated"][0]["train_rate"]
+    measured = calibration(
+        workloads={wid: _workload({"w": [1]}, flops)},
+        profiles={
+            "pi": ProfileCalibration(train={wid: _estimate(400.0)}),
+            "vm": ProfileCalibration(aggregate=_estimate(1e6)),
+        },
+    )
+    again = write_calibration(tmp_path / "calibrations", *measured)
+    (scenario,) = scenarios(_calibrated_experiment(workspace, again.name, again.parent))
+    meta = json.loads(
+        (run_scenario(scenario, evaluate=stub_score) / "run.json").read_text("utf-8")
+    )
+    assert "estimated" not in meta and meta["calibrations"] == [again.name]
+
+
+def test_without_calibrations_the_paths_and_ids_do_not_change(
+    workspace: Path,  # noqa: F811
+) -> None:
+    assert "calibrations" not in parse_experiment(experiment(workspace)).dump()["paths"]
