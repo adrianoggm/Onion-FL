@@ -1,12 +1,12 @@
 # The same federation over four architectures (new framework, real data)
 
-`experiments/infrastructure_architectures.yaml` was run on 2026-11-06 with SWELL-KW (computer interaction, per minute) and WESAD (wrist, 60 s windows), on the `sim` backend. Issue #192, spec I1 §1 (question 2) and §12.
+`experiments/infrastructure_architectures.yaml` was run on 2026-11-06 with SWELL-KW (computer interaction, per minute) and WESAD (wrist, 60 s windows), on the `sim` backend; its logical half also ran on `local`, for the decision fidelity between the two (`fidelity/`). Issue #192, spec I1 §1 (question 2) and §12.
 
 ```bash
 onion_fl run experiments/infrastructure_architectures_select.yaml --workers 3   # edge learning rate, validation only
 onion_fl run experiments/infrastructure_architectures.yaml --workers 5
 python scripts/architectures_summary.py runs --out run_metrics.csv
-python scripts/run_architectures_fidelity.py --backend sim --broker localhost:18836 --workers 3
+python scripts/run_architectures_fidelity.py --backend sim --broker localhost:18836 --workers 3   # logical_sim/
 python scripts/architectures_summary.py runs/architectures_sim --experiment infrastructure_architectures_logical --out logical_metrics.csv
 ```
 
@@ -74,22 +74,96 @@ Each run's `run_id` and `run_hash` are in `run_metrics.csv` (and `validation.csv
 - **The ranking on time depends on the physical network.** Without an infrastructure (`logical_metrics.csv`: the same federations on the topology's implicit LAN links, no device model), A finishes in 0.12 s and B in 0.22 s, because B has one more hop and no WAN to save. With the infrastructure, B is 2.9× faster. Both are the simulator's predictions; neither is a measurement.
 - **The learning scores are identical with and without the infrastructure** (`logical_metrics.csv` against the table above, to the fourth decimal), so the infrastructure only moves time and traffic in these runs.
 
-## Decision fidelity between `sim` and `local`: not obtained
+## Decision fidelity between `sim` and `local` (`fidelity/`)
 
-- **What was planned.** The `local` backend refuses an infrastructure (I10, I14), so only what tells A from B in the federation itself can run on it: `experiments/infrastructure_architectures_logical.yaml`, the two logical federations with the same subjects, seeds and training, run on `sim` and on `local` by `scripts/run_architectures_fidelity.py` (which points the MQTT links at the broker), then `onion_fl fidelity runs/architectures_local runs/architectures_sim`. C and D differ from B only in devices and host failures, which `local` cannot reproduce; they wait for the emulated backend (I10, #195), and the physical one (I14, #199).
-- **The `sim` half ran** (`logical_sim/`, `logical_metrics.csv`; commit `2833a9c`, clean): 10 runs, finished.
-- **The `local` half did not finish.** Its first attempt exposed a bug: a real run did not host the training edges of a two-level topology, so the coordinator waited for edges no process ran (fixed in `b56cfeb`, with a test). After the fix, the five runs of A (commit `b56cfeb`, clean, five at a time) were stopped after 33 minutes of wall clock:
+- **What runs.** The `local` backend refuses an infrastructure (I10, I14), so only what tells A from B in the federation itself can run on it. That is `experiments/infrastructure_architectures_logical.yaml`: the two logical federations, with the same subjects, seeds and training. `scripts/run_architectures_fidelity.py` runs them on each backend with the MQTT links pointed at the broker. `onion_fl fidelity` then pairs the runs by configuration and seed, with `sim` as the reference (A) and `local` as the backend under test (B). C and D differ from B only in devices and host failures, which `local` cannot reproduce. They wait for the emulated backend (I10, #195) and the distributed one (I14, #199).
 
-  | Run | Seed | Root CPU (s) | Messages sent / delivered | Edge trainings | Cloud rounds closed / failed |
-  |---|---|---|---|---|---|
-  | `20261106T014536Z-c5b4b476d95e` | 0 | 21 | 271 / 75 | 3 | 0 / 6 |
-  | `20261106T014536Z-e4977de034f0` | 1 | 22 | 271 / 75 | 3 | 0 / 6 |
-  | `20261106T014536Z-2c3de2e44407` | 2 | 26 | 274 / 78 | 6 | 0 / 6 |
-  | `20261106T014536Z-03ec41dfa140` | 3 | 20 | 270 / 74 | 2 | 0 / 6 |
-  | `20261106T014536Z-a68eeecbfa19` | 4 | 34 | 282 / 86 | 14 | 0 / 6 |
+  ```bash
+  python scripts/run_architectures_fidelity.py --backend sim --broker localhost:18840 --workers 3
+  python scripts/run_architectures_fidelity.py --backend local --broker localhost:18840   # one run at a time
+  onion_fl fidelity runs/architectures_sim runs/architectures_local --experiment infrastructure_architectures_logical \
+      --metric macro_f1 --metric time --metric bytes --metric time_to_target --series 'global/*' --target macro_f1=0.6 \
+      --csv fidelity.csv --html fidelity.html > fidelity.json
+  python scripts/architectures_summary.py runs/architectures_<backend> --experiment infrastructure_architectures_logical --out <backend>_metrics.csv
+  ```
 
-  The processes were idle (20–34 s of CPU in 2,000 s) while most messages were never delivered, and every cloud round failed at its 300 s deadline. A probe outside Onion-FL points at the transport on this machine: one paho client that publishes 30 messages of 150 KB (the size of this model's updates) at QoS 1 to a topic it subscribes to got none back in 120 s through the Mosquitto container, and the broker dropped it for keepalive timeout; 5 such messages, or 30 of 1 KB, went through at once. In the two-level federation, the root's process holds the cloud and its 28 edges behind one client. Why the burst stalls (TCP back-pressure between the client's reading and writing, Docker Desktop's port forwarding, or paho on Windows) is not established. These runs are not committed: none finished.
-- **So no decision fidelity between `sim` and `local` is reported here,** and none is claimed. What would be needed: a transport that does not stall on bursts of large messages (or one client per node), then the `local` half of `infrastructure_architectures_logical.yaml` on a machine without other load, for 5 seeds, and `onion_fl fidelity`. On learning metrics the decision would not inform anyway: A and B tie.
+- **Identity.** Code at commit `76d1bd8`, clean tree, for all 20 runs. The broker is Mosquitto 2.1.2 (`eclipse-mosquitto:2`) in Docker Desktop on Windows, at `localhost:18840`. The broker is part of the topology, so these `topology_id`s differ from those of `logical_sim/` (port 18836). The `sim` runs here and there give the same final models bit for bit.
+
+  | Identity | A (`cloud_swell_wesad`) | B (`four_fogs_swell_wesad_physical`) |
+  |---|---|---|
+  | `topology_id` | `8b641b981104750b4af0430477f3be0ca12c690edafbbe78648f5e8689487cb6` | `c5478110dfc1…` (full in each `run.json`) |
+  | `config_id` sim | `7a5037da10b43bcf5478ff82054c77f3e4d40e38a957e57ae3985456eb5a1d31` | in `sim_metrics.csv` |
+  | `config_id` local | `32e9f8e2b5a7c3c4beb1e70864caee873ef9f5e85568c8ab5729ec6181fde17f` | `f8946bbe508c…` (full in `local_metrics.csv`) |
+  | `design_id` (the pairing key) | `253dc7ab51cff7de3b2bc7304595b3baacc7ed06f46ac9dff52d49a0576377c4` | `6f1e770e181e662429e97f0cb1d9c65611abe527d2ef201a829696bd1fe1779e` |
+  | `local` processes | 1 (the cloud and its 28 edges) | 5 (the cloud, and each fog with its edges) |
+
+  - Each run's `run_id` and `run_hash` are in `sim_metrics.csv`, in `local_metrics.csv` and in the pairs of `fidelity.json`.
+  - The signed `run.json`, `summary.json` and `model.npz` of each run are in `fidelity/sim/` and `fidelity/local/`.
+  - The event files (3 MB each) are not committed. The functional and performance levels read them, so `fidelity.json` cannot be recomputed from this folder alone.
+
+- **Functional: identical.** All 10 pairs are complete and match on:
+  - the final model, bit for bit (`max_abs_diff` 0);
+  - every node's sequence of protocol events;
+  - the bytes per logical link and round: 229.4 MB per A run and 261.2 MB per B run, the same on both backends.
+
+- **Performance: the times do not compare, by construction.** Without an infrastructure, `sim` has no device model: training takes no simulated time, and only the latency of the implicit LAN links counts. `local` measures this machine's wall clock, which is mostly training. The relative errors `(local − sim) / sim`, with 95 % intervals, are:
+
+  | Quantity | Relative error | 95 % interval |
+  |---|---|---|
+  | round time | 352× | 254–450 |
+  | run duration | 384× | 288–480 |
+  | link latency | 392× | 256–527 |
+  | time to the target | 432× | 324–541 |
+
+  So the logical half of `sim` does not predict wall-clock time, and it does not claim to.
+
+- **Decision: the same ranking on learning and traffic, the opposite ranking on time.**
+
+  | Metric | `sim` A / B | `local` A / B | τ-b | Top-1 | Regret (relative) | Seeds' ceiling (top-1, regret) |
+  |---|---|---|---|---|---|---|
+  | final global macro-F1 (pooled) | 0.5940 / 0.5951 | 0.5940 / 0.5951 | 1.0 | yes, p = 1.0 | 0 | 0.4, 0.0018 |
+  | bytes per run | 229.5 / 261.2 MB | 229.5 / 261.2 MB | 1.0 | yes, p = 1.0 | 0 | 1.0, 0 |
+  | run duration (s) | 0.116 / 0.218 | 62.4 / 50.3 | −1.0 | no, p = 0.0 | 0.103 s (0.89) | 1.0, 0 |
+  | time to macro-F1 0.6 (s) | 0.076 / 0.143 | 45.9 / 37.5 | −1.0 | no, p = 0.03 | 0.067 s (0.87) | 1.0, 0 |
+
+  - **On learning, the agreement does not inform.** `local` reproduces `sim` exactly, but A and B differ by 0.001, while the seeds' own ceiling of top-1 agreement is 0.4. They tie, as in the main experiment, and picking a winner between them is a coin toss.
+  - **On bytes, the backends agree exactly.** The traffic is the protocol's, and the protocol is the same on both.
+  - **On time, the backends disagree, and the mechanism is not the network.**
+    - In `sim`, B is slower because it has one more hop and no compute to spread.
+    - In `local`, B finishes first (50 against 62 s): its 28 edges train in four fog processes, while A's train one after another in the cloud's single process. In seed 0 the edges' trainings of a round spread over 2.15 s in A, against 1.32 s in B.
+    - So `local` here ranks this machine's parallelism, and the logical `sim` ranks link hops. Neither is the time of a deployed continuum.
+    - In B, the run time on `local` grew from seed to seed (45 to 62 s), for a reason not looked into (the machine was shared with other work), so its interval is wide (± 9.7 s, against ± 2.8 s for A).
+  - **So the decision fidelity of `sim` against `local` holds on the metrics the protocol fixes (model, bytes) and fails on time.**
+    - The cause is a model gap, not a defect of either backend: the logical half of `sim` has no compute model.
+    - A comparison on time needs the infrastructure on both sides, which is the emulated backend's job (#195).
+
+- **Before the fix, the `local` half stalled.** The runs of A at commit `b56cfeb` delivered about 75 of 270 messages and failed every round at its 300 s deadline. The cause was the MQTT transport behind Docker Desktop's port forwarding on Windows, fixed in `76d1bd8`; the diagnosis follows. Those runs are not committed: none finished.
+
+### Why the `local` runs stalled
+
+Every test below ran on this machine with no other work running, against one Mosquitto container at `localhost:18840` with paho 2.1.0. Messages are 150 KB (one update of this model) unless said otherwise.
+
+| Probe | Result |
+|---|---|
+| One paho client, publishing to a topic it subscribes to: 5 × 150 KB, 30 × 1 KB or 300 × 15 KB | all arrive in under 0.1 s |
+| The same client: 8, 12, 16, 20 or 30 × 150 KB, at QoS 1 or 0, with or without `TCP_NODELAY` | none arrive (one of 30 with `TCP_NODELAY`), then the client drops on keepalive |
+| The same, instrumented | paho handed all 1.2 MB to the socket (no partial write, nothing left in its queue). In 10 s it got back 9 bytes, the CONNACK and SUBACK, and not one PUBACK |
+| Two clients, one publishing and one subscribing: 30 × 150 KB at QoS 1, or 100 × 150 KB at QoS 0 | all arrive, in 0.02 s and 0.05 s |
+| The single-client probe from a container in the broker's own network (no port forwarding) | 8 and 30 × 150 KB arrive in 0.01 s |
+| Raw TCP, no MQTT: a Python echo server in a container at a published port, with the client writing and reading at once from two threads | 750 KB is echoed in 0.05 s. For 1.2 MB, 4.5 MB or a single 2 MB write, nothing comes back in 15–20 s. Inside the container's network, 4.5 MB is echoed in 0.05 s |
+
+- **The stall is in Docker Desktop's port forwarding on Windows,** not in paho, in Mosquitto, in the QoS 1 acknowledgements or in Nagle. One TCP connection that carries more than about 1 MB each way at once stops for good.
+  - A deadlock in paho's network loop is ruled out. The transport publishes from the runtime's loop thread, never from a paho callback, and two clients on the same broker get through.
+  - Mosquitto's inflight and queue limits are ruled out too. The same single client gets through inside the container's network, and raw TCP stalls the same way without MQTT.
+- **The federation hit this in every round.** A process that hosts a parent and its children sends the model to its own children, and its one client receives it back at the same time. That is the cloud and its 28 edges in A, and each fog with its edges in B.
+- **The fix is in `76d1bd8`.**
+  - `MqttTransport` holds two connections, one that listens on the inboxes and one that publishes, so each carries one direction.
+  - It starts only once the broker has acknowledged every inbox. With two connections, a message to a node in the same process could otherwise arrive before that node listens.
+  - `tests/test_transport_mqtt.py` sends 30 × 150 KB through one transport to its own inbox. Before the fix, 0 of 30 arrived; after it, all 30 arrive, in order.
+  - `tests/test_runtime_equivalence.py` still passes.
+  - The two connections cost nothing on a broker that is reachable directly.
+- **A second limit turned up on the way.** With its default configuration, this Mosquitto image refuses a packet of about 2 MB or more and drops the client: 1,999,900 bytes pass, 2,000,100 do not, and the log says `oversize packet`. This model's 150 KB is far below it; a larger model needs a broker configured for it.
+- **Not measured: the latency cost of Nagle (#197).** `TCP_NODELAY` did not cure the stall. With the fix, training time dominates these runs, so Nagle's effect on them was not isolated.
 
 ## Limits
 
