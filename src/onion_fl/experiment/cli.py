@@ -23,6 +23,7 @@ exit code 2.
 import argparse
 import json
 import sys
+import warnings
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -382,6 +383,9 @@ def _utf8_output() -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     _utf8_output()
+    # Python hides a DeprecationWarning outside __main__; the old config forms
+    # (M1, #193) should reach whoever runs them.
+    warnings.filterwarnings("default", "continuum: ", DeprecationWarning)
     args = parser().parse_args(argv)
     try:
         return args.func(args)

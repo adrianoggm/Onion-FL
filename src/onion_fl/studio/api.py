@@ -460,7 +460,7 @@ def create_app(root: str | Path = ".") -> FastAPI:
         try:
             return list(
                 resolve_topology(
-                    rooted(parse_experiment(record.meta["config"]), root)
+                    rooted(parse_experiment(record.meta["config"], signed=True), root)
                 ).levels
             )
         except (ConfigError, TopologyError, KeyError, ValueError):

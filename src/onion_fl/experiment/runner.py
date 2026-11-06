@@ -870,8 +870,8 @@ def _paced(
         return config.rounds, None, None
     drain = max((s.drain for s in streams.values()), default=0.0)
     speed = config.stream.speed
-    c = config.continuum
-    if c is not None:
+    c = config.continual
+    if c is not None and c.trigger is not None:
         trigger = create(triggers, c.trigger)
         local = None if c.edge_trigger is None else create(triggers, c.edge_trigger)
         pace = Continuum(
@@ -893,7 +893,7 @@ def _rounds_preview(config: ExperimentConfig, learners: Mapping[str, Any]) -> di
     rounds, _, pace = _paced(config, learners)
     if pace is None:
         return {"rounds": rounds}
-    return {"rounds": None, "trigger": _name(config.continuum.trigger)}
+    return {"rounds": None, "trigger": _name(config.continual.trigger)}
 
 
 def _stream_summary(config: ExperimentConfig, streams: Mapping[str, Any]) -> dict:
