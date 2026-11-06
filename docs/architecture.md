@@ -231,6 +231,12 @@ infrastructure:
   - **Replay.** Each training adds r·n / (1 − r) rows sampled from the memory to its n recent ones. An edge with nothing new stays idle.
   - **Weight.** The edge is weighted by its n recent rows, as it would be without a memory: a replayed row was weighted when it was new.
   - **Records.** After each training that worked, the edge reports `diagnostic.memory`: the memory as it is now, the rows that training replayed, and the mean age of what is kept since it was observed. The bundle saves the memory.
+- **How an edge updates** (`continual.update`, the baselines of the benchmark, C8).
+  - `warm`, the default, goes on from the model received and trains on its new rows, as above.
+  - `frozen` trains only with the first model it gets (v0, on its history) and then answers idle, so the global model stays v0. An edge with no labelled row in its history takes no part in v0.
+  - `scratch` serves the model received, but starts every training from the initial weights (the first model it got) and trains on every trainable row it has, used or not, weighted by all of them. It trains only in the rounds where `warm` would, when new rows arrived.
+  - `frozen` and `scratch` take no replay memory and no unlabelled objective, at the config and when the edge is built.
+  - `scripts/continuum_benchmark.py` measures the benchmark from run folders: prequential, the area under the per-round held-out curve, the final model, forgetting, recovery after the first change of the arriving class, costs and promotions.
 - **Unlabelled rows** (`unlabelled: <objective>`, `onion_fl.continuum.unlabelled`).
   - **Plugins.** `none` (the default: C3/C4 unchanged), `pseudo_label` (`threshold`, `weight`) and `consistency` (`noise`, `weight`). An external one follows the `Objective` protocol (`size`, `fit`, `term`), which the edge checks when it is built, together with the stream it needs.
   - **The pool.** Rows that arrived (history included, capped by `window`), whose label is not there yet, and that no successful training has used unlabelled. A row whose label arrives later still trains as labelled. Each row is looked at once: a pool row counts as used, with its round, once the training ends with finite weights, even when `pseudo_label` rejected it.
