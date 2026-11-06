@@ -39,7 +39,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Simulation | ✅ | Virtual clock; links with latency, jitter, bandwidth and loss; compute and availability models; deterministic for a seed |
 | Real runs | ✅ | One process per aggregator over MQTT; a manual `onion_fl node` start for several machines. Verified locally against Mosquitto: 3 processes, every message delivered, latencies measured, and the same final model as the simulation |
 | Observability | ✅ | `runs/<run_id>/` with signed events, summary and final model. Diagnostics at every aggregator; analysis API with mean ± CI over seeds; HTML report; Prometheus and OpenTelemetry sinks; Grafana dashboard |
-| CLI | ✅ | `onion_fl data · topology · plan · run · node · ceiling · fidelity · report · baseline · schema · serve` |
+| CLI | ✅ | `onion_fl data · topology · plan · run · node · ceiling · fidelity · calibrate · report · baseline · schema · serve` |
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
 | Continuum | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, and a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`). Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. Semi-supervision and versions are next (C5 and C7, [#160](https://github.com/adrianoggm/Onion-FL/issues/160), [#162](https://github.com/adrianoggm/Onion-FL/issues/162)) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
@@ -94,6 +94,8 @@ onion_fl baseline experiments/mix_ab.yaml     # LR, RF, XGBoost on the same test
 
 For a real run over MQTT, start the stack (`just docker-up`, [docker/README.md](docker/README.md)), point the links at the broker and run `onion_fl run <experiment> --backend local` (`--mode real` is its alias).
 With Docker, `--backend emulated` runs the same processes in one container per host of the experiment's `infrastructure`, with its CPU and memory limits and its links emulated by netem ([docs/architecture.md](docs/architecture.md), §7). The first run builds the host image, which takes a few minutes.
+
+The simulation's compute rates and links can come from measurements: `onion_fl calibrate measure <spec>` runs microbenchmarks (training per profile and model, aggregation, MQTT paths) in that emulation, `calibrate fit` turns one session into a signed `calibrations/<calibration_id>/` that profiles and links cite with `calibration: <id>`, and `calibrate check` predicts another session with it. A run whose rate for a model had to be estimated by FLOPs says so in `run.json` (`estimated`), and `onion_fl fidelity` refuses it ([docs/architecture.md](docs/architecture.md), §7a).
 
 ### Studio
 
