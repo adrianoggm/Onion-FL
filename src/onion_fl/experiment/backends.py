@@ -7,9 +7,9 @@ same federation with ``build_federation``:
 
 - ``sim``: the virtual clock in one process, with the resources and network
   the infrastructure models;
-- ``local``: the wall clock, one process per group on this machine over MQTT
-  or gRPC, with its own resources and no emulated network. ``runtime.mode: real`` is
-  its alias.
+- ``local``: the wall clock, one process per group on this machine over MQTT,
+  gRPC or Flower, with its own resources and no emulated network.
+  ``runtime.mode: real`` is its alias.
 
 An experiment picks one with ``backend``; without it, ``runtime.mode`` does.
 """
@@ -73,13 +73,14 @@ class SimBackend:
     "local",
     title="Local",
     description=(
-        "Reloj de pared, un proceso por grupo en esta máquina, sobre MQTT o gRPC"
+        "Reloj de pared, un proceso por grupo en esta máquina, sobre MQTT, gRPC "
+        "o Flower"
     ),
     explain=(
         "Arranca un proceso `onion_fl node` por coordinador o agregador, con "
-        "sus edges, y los comunica por MQTT o por gRPC (sin broker). Usa los "
-        "recursos de la máquina, sin límites ni red emulada: es la referencia "
-        "de la fidelidad "
+        "sus edges, y los comunica por MQTT, por gRPC (sin broker) o por "
+        "Flower (mensajes de Flower sobre gRPC). Usa los recursos de la "
+        "máquina, sin límites ni red emulada: es la referencia de la fidelidad "
         "funcional. `runtime.mode: real` es su alias."
     ),
 )
