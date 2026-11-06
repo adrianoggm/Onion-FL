@@ -27,6 +27,7 @@ import numpy as np
 from onion_fl.continuum.drift import Reference, detectors, window
 from onion_fl.continuum.memory import Memory
 from onion_fl.continuum.pace import View
+from onion_fl.continuum.versions import MODELS, PARTS, Version
 from onion_fl.core.context import Context, child_rng
 from onion_fl.core.message import Message, Payload
 from onion_fl.core.node import Node
@@ -674,6 +675,30 @@ class _Collector(Node):
         """Hook for the coordinator, which waits for the last evaluation to finish."""
 
 
+def _server_state(node: Any) -> State:
+    """A copy of the server optimizer's state, to go with a version."""
+    state = getattr(node.server_optimizer, "state", dict)()
+    return {k: np.array(v, copy=True) for k, v in state.items()}
+
+
+def _load_server_state(node: Any, state: Mapping[str, np.ndarray]) -> None:
+    load = getattr(node.server_optimizer, "load_state", None)
+    if load is not None:
+        load({k: np.array(v, copy=True) for k, v in state.items()})
+
+
+def _part_scores(reports: Sequence[Mapping[str, float]], prefix: str) -> dict:
+    """The validators' scores under ``prefix``, combined by samples."""
+    parts = []
+    for report in reports:
+        values = {
+            k[len(prefix) :]: v for k, v in report.items() if k.startswith(prefix)
+        }
+        parts.append((values, values.pop("samples", 0.0)))
+    scores, samples = reduce_reports(parts)
+    return scores | {"samples": float(samples)}
+
+
 def _stop_children(node: _Collector, ctx: Context) -> None:
     """The run is over: tell every registered child, so their processes can exit."""
     for child in sorted(node.registered):
@@ -733,13 +758,38 @@ class Coordinator(_Collector):
         rounds: int,
         server_optimizer: Any,
         round_every: float | None = None,
+        promotion: Any = None,
+        validators: Iterable[str] = (),
+        operators: Iterable[str] = ("operator",),
         **kw: Any,
     ) -> None:
         super().__init__(node_id, children, **kw)
+        # Who validates and who may give orders come from the federation's
+        # build, never from what a child says of itself in its hello.
+        self._validators = frozenset(validators)
+        self.operators = frozenset(operators)
+        stray = sorted(self._validators - self.children)
+        if stray:
+            raise ValueError(f"validators {stray} are not children of {node_id}")
+        if self.operators & self.children:
+            raise ValueError(
+                f"operators {sorted(self.operators & self.children)} are children "
+                f"of {node_id}; an operator gives orders from outside the tree"
+            )
         self.state: State = dict(state)
         self.rounds = rounds
         self.server_optimizer = server_optimizer
         self.finished = False
+        # Champion and challenger (continuum C7): ``state`` is always the
+        # champion, the model the edges serve; a round's aggregate is a
+        # challenger until ``promotion`` decides on it.
+        self.promotion = promotion
+        self.versions: dict[int, Version] = {}
+        self.champion = 0
+        self._deciding: Version | None = None
+        self._validation: dict[str, Any] = {}
+        self._orders: list[Message] = []  # operator orders that wait for a decision
+        self._promoted_at = 0.0  # virtual time the champion was promoted
         # Virtual seconds between round starts (a stream's pace); None: at once.
         self.round_every, self.started_at = round_every, None
         # A continuous federation (continuum C6): what the statuses said since the
@@ -752,6 +802,9 @@ class Coordinator(_Collector):
     def on_timer(self, name: str, ctx: Context) -> None:
         if name == "round":
             self._next(ctx)
+        elif name == "validate":
+            if self._deciding is not None:
+                self._decide(ctx)  # with the reports that came in time
         else:
             super().on_timer(name, ctx)
 
@@ -761,6 +814,10 @@ class Coordinator(_Collector):
             self.edges_below(),
             children=sorted(self.registered),
         )
+        if self.promotion is not None:  # the model it starts from is the first
+            self.versions[0] = Version(
+                0, None, 0, dict(self.state), _server_state(self), status="active"
+            )
         self._next(ctx)
 
     def _next(self, ctx: Context) -> None:
@@ -797,6 +854,8 @@ class Coordinator(_Collector):
         """Open the next round if the trigger asks. At the first tick after the
         last label, one final round, after which the run finishes."""
         if self.open or self.finished or self.round == 0 or self.round >= self.rounds:
+            return
+        if self._deciding is not None:  # the next round serves what is decided
             return
         now = ctx.now() * self.continuum.speed
         if ctx.now() >= self.continuum.until - 1e-9:
@@ -846,7 +905,7 @@ class Coordinator(_Collector):
         held = keys_held_at(aggregated.state, self.sharing, self.levels, self.level)
         stats = dict(metrics) | {"edges_total": float(self.edges_below())}
         stats |= {f"edges_total/{g}": float(n) for g, n in self.holders_below().items()}
-        self.state = self.server_optimizer.apply(
+        state = self.server_optimizer.apply(
             self.state, _subset(aggregated.state, held), stats
         )
         if "train_loss" in metrics:
@@ -856,7 +915,173 @@ class Coordinator(_Collector):
                 examples=metrics["train_examples"],
                 round=self.round,
             )
+        if self.promotion is None:
+            self.state = state
+            self._evaluate_and_go_on(ctx)
+        else:
+            self._propose(state, ctx)
+
+    # --- versions (continuum C7) ----------------------------------------------------
+
+    def _propose(self, state: State, ctx: Context) -> None:
+        """The round's model is a challenger: the validators score it next to the
+        champion, and the next round waits for the decision (spec §5)."""
+        champion = self.versions[self.champion]
+        version = Version(
+            max(self.versions) + 1,
+            champion.v,
+            self.round,
+            dict(state),
+            _server_state(self),
+        )
+        self.versions[version.v] = version
+        self._deciding = version
+        ctx.emit(
+            "version.candidate",
+            version.v,
+            parent=champion.v,
+            round=self.round,
+            digest=version.digest,
+        )
+        validators = self.validators()
+        self._validation = {"waiting": set(validators), "reports": []}
+        if not validators:
+            self._decide(ctx)
+            return
+        both = {f"champion/{k}": v for k, v in champion.state.items()}
+        both |= {f"challenger/{k}": v for k, v in version.state.items()}
+        meta: dict[str, Any] = {"validate": version.v, "since": self._promoted_at}
+        if self.promotion.window is not None:
+            meta["window"] = float(self.promotion.window)
+        for child in validators:
+            ctx.send(
+                Message(
+                    kind="eval_request",
+                    src=self.id,
+                    dst=child,
+                    round=self.round,
+                    payload=Payload(state=both),
+                    meta=meta,
+                )
+            )
+        if self.deadline is not None:
+            ctx.set_timer(self.deadline, "validate")
+
+    def _eval_report(self, msg: Message, ctx: Context) -> None:
+        if "validate" not in msg.meta:
+            super()._eval_report(msg, ctx)
+            return
+        deciding, waiting = self._deciding, self._validation.get("waiting", set())
+        if (
+            deciding is None
+            or msg.meta["validate"] != deciding.v
+            or msg.src not in waiting
+        ):
+            _reject(ctx, msg, "validation report nobody asked for")
+            return
+        waiting.discard(msg.src)  # answered, even if what it says is left out
+        metrics = msg.payload.metrics
+        broken = [k for k, v in metrics.items() if not np.isfinite(v)]
+        broken += [k for k, v in metrics.items() if k.endswith(".samples") and v < 0]
+        if broken:  # left out, so the decision goes on without it
+            _reject(ctx, msg, f"validation report with bad values: {sorted(broken)}")
+        else:
+            self._validation["reports"].append(dict(metrics))
+        if not waiting:
+            self._decide(ctx)
+
+    def _decide(self, ctx: Context) -> None:
+        ctx.cancel_timer("validate")
+        version, self._deciding = self._deciding, None
+        reports = self._validation["reports"]
+        scores = {
+            model: {part: _part_scores(reports, f"{model}.{part}.") for part in PARTS}
+            for model in MODELS
+        }
+        decision = self.promotion.decide(scores)
+        tags = dict(decision.measures)
+        tags |= {"round": version.round, "reason": decision.reason}
+        champion = self.champion
+        if decision.promote:
+            self._activate(version, ctx)
+            ctx.emit("version.promoted", version.v, superseded=champion, **tags)
+        else:
+            version.status = "rejected"
+            _load_server_state(self, self.versions[champion].server)
+            ctx.emit("version.rejected", version.v, champion=champion, **tags)
+        orders, self._orders = self._orders, []
+        for msg in orders:
+            self._order(msg, ctx)
         self._evaluate_and_go_on(ctx)
+
+    def _activate(self, version: Version, ctx: Context) -> None:
+        """Make ``version`` the champion: the edges get it from the next round."""
+        current = self.versions[self.champion]
+        if version.status != "superseded":  # a rollback keeps where it returns to
+            version.replaced = current.v
+        current.status = "superseded"
+        version.status = "active"
+        self.champion, self.state = version.v, dict(version.state)
+        _load_server_state(self, version.server)
+        self._promoted_at = ctx.now()
+
+    def validators(self) -> list[str]:
+        """The configured validators that registered (continuum C7)."""
+        return sorted(self._validators & set(self.registered))
+
+    def evaluators(self) -> list[str]:
+        return [c for c in super().evaluators() if c not in self._validators]
+
+    def _other(self, msg: Message, ctx: Context) -> None:
+        """An operator's order: ``{"rollback": v}`` (``None``: to the champion the
+        current one replaced) or ``{"promote": v}``, as a control message from a
+        configured operator. Who that sender really is, the transport has to
+        authenticate (#203); here the id is checked."""
+        orders = ("rollback", "promote")
+        if msg.kind != "control" or not any(k in msg.meta for k in orders):
+            super()._other(msg, ctx)
+        elif msg.src not in self.operators:
+            _reject(ctx, msg, f"{msg.src} is not an operator")
+        elif self.promotion is None:
+            _reject(ctx, msg, "no versions: the run has no promotion policy")
+        elif self._deciding is not None:
+            self._orders.append(msg)  # after the decision, on what it decided
+        else:
+            self._order(msg, ctx)
+
+    def _order(self, msg: Message, ctx: Context) -> None:
+        current = self.versions[self.champion]
+        if "rollback" in msg.meta:
+            to = msg.meta["rollback"]
+            to = current.replaced if to is None else to
+            target = self.versions.get(to) if isinstance(to, int) else None
+            if target is None or target.status != "superseded":
+                _reject(ctx, msg, f"no superseded version {to} to roll back to")
+                return
+            self._activate(target, ctx)
+            current.status = "rolled_back"
+            ctx.emit(
+                "version.rollback",
+                target.v,
+                previous=current.v,
+                round=self.round,
+                reason="operator",
+            )
+            return
+        to = msg.meta["promote"]
+        target = self.versions.get(to) if isinstance(to, int) else None
+        if target is None or target.status not in ("rejected", "rolled_back"):
+            _reject(ctx, msg, f"no rejected or rolled back version {to} to promote")
+            return
+        target.status = "candidate"  # it replaces the champion as a new one would
+        self._activate(target, ctx)
+        ctx.emit(
+            "version.promoted",
+            target.v,
+            superseded=current.v,
+            round=self.round,
+            reason="operator",
+        )
 
     def _evaluate_and_go_on(self, ctx: Context) -> None:
         last = self.round == self.rounds
@@ -872,7 +1097,7 @@ class Coordinator(_Collector):
 
     def _eval_finished(self, round: int, ctx: Context) -> None:
         last_round_closed = self.round >= self.rounds and not self.open
-        if last_round_closed and not self.pending_eval:
+        if last_round_closed and not self.pending_eval and self._deciding is None:
             self._finish(ctx)
 
 
@@ -999,8 +1224,13 @@ class Edge(_Greeter, Node):
         replay_ratio: float = 0.25,
         continuum: Any = None,
         metrics: Sequence[str] = ("loss", "accuracy"),
+        validates: bool = False,
     ) -> None:
         super().__init__(node_id)
+        if validates and (train or stream is None):
+            raise ValueError(f"{node_id}: a validator is an evaluator with a stream")
+        # A validator scores the champion and a challenger on its stream (C7).
+        self.validates = validates
         if replay is not None:  # refused here, not as an error inside a round
             if stream is None:
                 raise ValueError(f"{node_id}: a replay memory needs a stream")
@@ -1055,8 +1285,9 @@ class Edge(_Greeter, Node):
         self.tags = dict(tags or {})
 
     def on_start(self, ctx: Context) -> None:
+        role = "validator" if self.validates else "evaluator"
         meta = {
-            "role": "edge" if self.train else "evaluator",
+            "role": "edge" if self.train else role,
             "edges": int(self.train),
             "tags": self.tags,
         }
@@ -1089,6 +1320,8 @@ class Edge(_Greeter, Node):
             return
         if msg.src != self.parent or msg.round is None:
             _reject(ctx, msg, "unexpected sender")
+        elif msg.kind == "eval_request" and self.validates:
+            self._validate(msg, ctx)
         elif msg.kind == "eval_request" and not self.train:
             self._answer_eval(msg, ctx)
         elif msg.kind == "global_model" and self.train:
@@ -1449,5 +1682,50 @@ class Edge(_Greeter, Node):
                 round=msg.round,
                 payload=Payload(metrics=metrics),
                 meta={"model": msg.meta.get("model")},
+            )
+        )
+
+    def _validate(self, msg: Message, ctx: Context) -> None:
+        """Score the champion and the challenger on the labels that came: the
+        recent window, and the reference before it (spec §5.2)."""
+        s = self.stream
+        now = s.clock(ctx.now())
+        window = msg.meta.get("window")
+        lo = (
+            s.clock(float(msg.meta.get("since", 0.0)))
+            if window is None
+            else now - window
+        )
+        known = np.isfinite(s.label_at) & (s.label_at <= now)
+        recent = known & (s.label_at > lo)
+        parts = {"recent": recent, "reference": known & ~recent}
+        state = msg.payload.state
+        metrics: dict[str, float] = {}
+        for model in MODELS:
+            head = f"{model}/"
+            load_arrays(
+                self.model,
+                {k[len(head) :]: v for k, v in state.items() if k.startswith(head)},
+            )
+            for part, rows in parts.items():
+                scores, samples = (
+                    self.evaluate(self.model, s.take(rows)) if rows.any() else ({}, 0)
+                )
+                # a score that is not a number is left out: the decision then
+                # misses it and fails closed, and no codec has to carry a NaN
+                metrics |= {
+                    f"{model}.{part}.{k}": float(v)
+                    for k, v in scores.items()
+                    if np.isfinite(v)
+                }
+                metrics[f"{model}.{part}.samples"] = float(samples)
+        ctx.send(
+            Message(
+                kind="eval_report",
+                src=self.id,
+                dst=self.parent,
+                round=msg.round,
+                payload=Payload(metrics=metrics),
+                meta={"validate": msg.meta.get("validate")},
             )
         )
