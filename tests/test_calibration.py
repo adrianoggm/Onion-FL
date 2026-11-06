@@ -427,3 +427,32 @@ def test_a_calibration_is_fitted_on_one_session_and_checked_on_another(
         ("fog-1", "cloud-1"),
         ("field-pi-1", "fog-1"),
     }
+
+
+def test_pinning_gives_each_host_its_own_cpus_and_the_rest_one_set(
+    tmp_path: Path,
+) -> None:
+    infra = parse_infrastructure(
+        lab(
+            profiles={"vm": {"cpus": 2, "train_rate": 100}, "pi": {"cpus": 1}},
+            services={"mqtt_broker": "cloud-1"},
+        )
+    )
+    lay = layout(infra, ["field-pi-1", "fog-1"], "cloud-1")
+    emulation = compose_project(lay, project="p", image="i")
+    spec = calibrate.PinSpec(cpus=[2, 4, 6, 8, 10], others="20-23")
+    sets = calibrate.pin(emulation, spec)
+    services = emulation.compose["services"]
+    # in name order: cloud-1 (2 CPUs), field-pi-1 (1), fog-1 (2)
+    assert [services[lay.services[h]]["cpuset"] for h in sorted(lay.hosts)] == [
+        "2,4",
+        "6",
+        "8,10",
+    ]
+    assert services["broker"]["cpuset"] == "20-23" == sets["router-dc"]
+    with pytest.raises(ValueError, match="do not cover"):
+        calibrate.pin(emulation, calibrate.PinSpec(cpus=[2, 4], others="20"))
+
+    calibrate.broker_nodelay(emulation, tmp_path)
+    assert "set_tcp_nodelay true" in (tmp_path / "mosquitto.conf").read_text("utf-8")
+    assert services["broker"]["command"][-1].endswith("/mosquitto.conf")

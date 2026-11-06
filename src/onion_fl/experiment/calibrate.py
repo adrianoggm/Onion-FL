@@ -84,7 +84,7 @@ from onion_fl.infrastructure.calibration import (
     workload_key,
     write_calibration,
 )
-from onion_fl.infrastructure.emulators import compose_project, layout
+from onion_fl.infrastructure.emulators import SETUP, compose_project, layout
 from onion_fl.infrastructure.model import (
     Infrastructure,
     InfrastructureError,
@@ -114,6 +114,9 @@ class TrainSpec(Strict):
         4, gt=0, description="Clientes por host, entrenados por turno"
     )
     jobs: int = Field(12, gt=1, description="Entrenamientos por host y carga")
+    warmup: int = Field(
+        1, ge=1, description="Entrenamientos iniciales de cada host que no cuentan"
+    )
 
 
 class AggregateSpec(Strict):
@@ -136,6 +139,24 @@ class LinksSpec(Strict):
     qos: int = Field(1, ge=0, le=2)
     gap: float = Field(0.5, ge=0, description="Pausa entre mensajes (s)")
     wait: float = Field(30.0, gt=0, description="Espera máxima de un acuse (s)")
+    nodelay: bool = Field(
+        False,
+        description="TCP_NODELAY en los clientes y en el broker (sin Nagle); "
+        "por defecto, como en las ejecuciones FL, ninguno lo activa",
+    )
+
+
+class PinSpec(Strict):
+    """Fixed CPUs for the containers (``cpuset``), the same in every session.
+
+    ``cpus`` go to the hosts in name order, each taking as many as its
+    profile's ``cpus``; ``others`` is the cpuset of the routers and the
+    broker. The CPUs are those Docker's VM shows, not physical cores: on
+    Docker Desktop the hypervisor still moves them over the machine's cores.
+    """
+
+    cpus: list[int] = Field(min_length=1, description="CPUs de los hosts, por orden")
+    others: str = Field(description="cpuset de los routers y del broker, p. ej. 20-23")
 
 
 class CalibrationSpec(Strict):
@@ -152,6 +173,7 @@ class CalibrationSpec(Strict):
     links: LinksSpec | None = None
     seed: int = 0
     lead: float = Field(20.0, gt=0, description="Margen para arrancar una fase (s)")
+    pin: PinSpec | None = None
     paths: PathsConfig = Field(default_factory=PathsConfig)
     emulation: EmulatedParams = Field(default_factory=EmulatedParams)
 
@@ -333,6 +355,9 @@ def measure(
         setup=(folder / "emulation").resolve().as_posix(),
     )
     session = _Session(emulation, p, folder / "emulation")
+    cpusets = pin(emulation, spec.pin) if spec.pin else {}
+    if spec.links is not None and spec.links.nodelay:
+        broker_nodelay(emulation, session.folder)
     from onion_fl.experiment.emulated import _Plain
 
     (session.folder / "compose.yaml").write_text(
@@ -355,9 +380,12 @@ def measure(
         "code": code_version(),
         "project": emulation.project,
         "shaping": emulation.shaping,
+        "cpusets": cpusets,
     }
     ensure_image(p.image)
     meta["environment"] = environment(p.image)
+    loads: list[dict[str, Any]] = []
+    meta["load"] = loads
     started = time.time()
     try:
         up = subprocess.run(
@@ -368,7 +396,7 @@ def measure(
         if up.returncode != 0:
             raise RuntimeError(f"calibrate: compose up failed: {up.stderr}")
         wait_ready(session)
-        _phases(spec, emulation, folder, workloads, known, broker)
+        _phases(spec, emulation, folder, workloads, known, broker, loads)
     finally:
         take_down(session)
     meta["started_at"] = datetime.fromtimestamp(started, UTC).isoformat()
@@ -381,6 +409,82 @@ def measure(
             f.write(json.dumps(row, sort_keys=True) + "\n")
     (folder / META).write_text(json.dumps(meta, indent=2), encoding="utf-8")
     return folder
+
+
+def pin(emulation: Any, spec: PinSpec) -> dict[str, str]:
+    """Give every container of ``emulation`` its fixed CPUs (``PinSpec``);
+    the cpuset of each service."""
+    lay = emulation.layout
+    free, sets = list(spec.cpus), {}
+    for host in sorted(lay.hosts):
+        need = lay.infra.profile_of(host).cpus or 1
+        if len(free) < need:
+            raise ConfigError(
+                f"pin.cpus: {len(spec.cpus)} CPUs do not cover the hosts' cpus"
+            )
+        mine, free = free[:need], free[need:]
+        sets[lay.services[host]] = ",".join(str(c) for c in mine)
+    for site in lay.routers:
+        sets[lay.services[site]] = spec.others
+    if lay.broker is not None:
+        sets["broker"] = spec.others
+    for name, cpuset in sets.items():
+        emulation.compose["services"][name]["cpuset"] = cpuset
+    return sets
+
+
+def broker_nodelay(emulation: Any, setup: Path) -> None:
+    """Run the broker with ``set_tcp_nodelay true`` (its config in ``setup``)."""
+    with open(setup / "mosquitto.conf", "w", encoding="utf-8", newline="\n") as f:
+        f.write("listener 1883\nallow_anonymous true\nset_tcp_nodelay true\n")
+    broker = emulation.compose["services"]["broker"]
+    broker["volumes"] = [
+        {
+            "type": "bind",
+            "source": setup.resolve().as_posix(),
+            "target": SETUP,
+            "read_only": True,
+        }
+    ]
+    broker["command"] = ["mosquitto", "-c", f"{SETUP}/mosquitto.conf"]
+
+
+WINDOWS_LOAD = (  # the whole machine: busy %, performance % (turbo) and MHz
+    "$p = Get-CimInstance Win32_PerfFormattedData_Counters_ProcessorInformation "
+    "-Filter \"Name='_Total'\"; "
+    '"$($p.PercentProcessorTime) $($p.PercentProcessorPerformance) '
+    '$($p.ProcessorFrequency)"'
+)
+
+
+def host_load(emulation: Any, phase: str) -> dict[str, Any]:
+    """How busy the machine and Docker's VM are, and how fast the CPU runs.
+
+    Taken at the edges of each phase, not during it, so as not to load it;
+    on Windows, the processor counters of the whole machine.
+    """
+    out: dict[str, Any] = {"phase": phase, "at": time.time()}
+    if platform.system() == "Windows":
+        try:
+            ps = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", WINDOWS_LOAD],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            busy, performance, mhz = (float(x) for x in ps.stdout.split())
+            out["machine"] = {
+                "busy_percent": busy,
+                "performance_percent": performance,
+                "frequency_mhz": mhz,
+            }
+        except (OSError, ValueError, subprocess.SubprocessError):
+            out["machine"] = None
+    host = sorted(emulation.layout.hosts)[0]
+    vm = _docker("exec", emulation.container(host), "cat", "/proc/loadavg")
+    if vm.returncode == 0:
+        out["vm_loadavg"] = [float(x) for x in vm.stdout.split()[:3]]
+    return out
 
 
 def _job(folder: Path, name: str, **job: Any) -> tuple[str, str]:
@@ -423,11 +527,17 @@ def _phases(
     workloads: Mapping[str, Any],
     known: Mapping[str, tuple[str, str]],
     broker: str | None,
+    loads: list[dict[str, Any]] | None = None,
 ) -> None:
+    def load(phase: str) -> None:
+        if loads is not None:
+            loads.append(host_load(emulation, phase))
+
     order = list(workloads)
     if spec.train is not None:
         for k, wid in enumerate(order):
             w = spec.workloads[k]
+            load(f"train {wid} before")
             procs, start_at = {}, time.time() + spec.lead
             for host in spec.train.hosts:
                 job, _ = _job(
@@ -445,9 +555,11 @@ def _phases(
                 )
                 procs[host] = _exec(emulation, host, job)
             _wait(procs, f"training workload {wid}")
+            load(f"train {wid} after")
     if spec.aggregate is not None:
         a = spec.aggregate
         wid = order[a.workload]
+        load("aggregate before")
         procs, start_at = {}, time.time() + spec.lead
         for host in a.hosts:
             job, _ = _job(
@@ -466,10 +578,12 @@ def _phases(
             )
             procs[host] = _exec(emulation, host, job)
         _wait(procs, "aggregation")
+        load("aggregate after")
     if spec.links is not None:
         if emulation.broker is None:
             raise ConfigError("links: the infrastructure has no mqtt_broker")
         x = spec.links
+        load("links before")
         for i, (a, b) in enumerate(x.pairs):
             for j, (src, dst) in enumerate(((a, b), (b, a))):
                 if j and src == dst:
@@ -481,6 +595,7 @@ def _phases(
                     "qos": x.qos,
                     "inbox": f"{topic}/inbox",
                     "ack": f"{topic}/ack",
+                    "nodelay": x.nodelay,
                 }
                 ready = folder / "out" / f"{name}.ready"
                 timeout = len(x.sizes) * x.repeats * (x.wait + x.gap) + 60
@@ -515,6 +630,7 @@ def _phases(
                 )
                 _wait({src: _exec(emulation, src, sender)}, f"sending {src} -> {dst}")
                 _wait({dst: listening}, f"echo on {dst}")
+        load("links after")
 
 
 # --- fit -----------------------------------------------------------------------------
@@ -530,11 +646,13 @@ def read_session(folder: str | Path) -> tuple[dict[str, Any], list[dict[str, Any
     return meta, rows
 
 
-def concurrent(rows: Sequence[Mapping[str, Any]], warm: str) -> list[Mapping[str, Any]]:
+def concurrent(
+    rows: Sequence[Mapping[str, Any]], warm: str, skip: int = 1
+) -> list[Mapping[str, Any]]:
     """The rows taken while every host of the phase was busy, warm-ups left out.
 
-    ``warm`` names the field whose first value per host (and per ``updates``
-    for an aggregation) is the warm-up.
+    ``warm`` names the field whose first ``skip`` values per host (and per
+    ``updates`` for an aggregation) are the warm-up.
     """
     hosts: dict[str, list[Mapping[str, Any]]] = {}
     for row in rows:  # a host warming up is busy too
@@ -548,8 +666,8 @@ def concurrent(rows: Sequence[Mapping[str, Any]], warm: str) -> list[Mapping[str
         groups.setdefault((row["host"], row.get("updates")), []).append(row)
     kept = []
     for group in groups.values():
-        first = min(r[warm] for r in group)
-        kept += [r for r in group if r[warm] != first]
+        warmup = sorted({r[warm] for r in group})[:skip]
+        kept += [r for r in group if r[warm] not in warmup]
     return [r for r in kept if r["t0"] >= lo and r["t1"] <= hi]
 
 
@@ -796,8 +914,9 @@ def fit(session: str | Path, out: str | Path = "calibrations") -> Path:
         p = infra.profiles[name]
         profiles.setdefault(name, {"cpus": p.cpus, "memory": p.memory, "train": {}})
     train = [r for r in rows if r["kind"] == "train"]
+    warmup = spec.train.warmup if spec.train else 1
     for wid in meta["workloads"]:
-        mine = concurrent([r for r in train if r["workload"] == wid], "job")
+        mine = concurrent([r for r in train if r["workload"] == wid], "job", warmup)
         for name in sorted({r["profile"] for r in mine}):
             these = [r for r in mine if r["profile"] == name]
             profiles[name]["train"][wid] = ratio(
@@ -889,9 +1008,10 @@ def check(
         "flops_estimates": [],
     }
     train = [r for r in rows if r["kind"] == "train"]
+    warmup = spec.train.warmup if spec.train else 1
     by_profile = {}
     for wid in meta["workloads"]:
-        mine = concurrent([r for r in train if r["workload"] == wid], "job")
+        mine = concurrent([r for r in train if r["workload"] == wid], "job", warmup)
         for name in sorted({r["profile"] for r in mine}):
             these = [r for r in mine if r["profile"] == name]
             host = these[0]["host"]

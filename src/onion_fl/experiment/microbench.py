@@ -143,6 +143,15 @@ def _transport(job: dict[str, Any]) -> Any:
     return MqttTransport(broker=job["broker"], qos=job["qos"])
 
 
+def _nodelay(transport: Any, job: dict[str, Any]) -> None:
+    """TCP_NODELAY on both connections of a started transport, if the job asks."""
+    import socket
+
+    if job.get("nodelay"):
+        for client in (transport._listener, transport._publisher):
+            client.socket().setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
+
 def echo(job: dict[str, Any], out: Any) -> None:
     """Receive until ``send`` says it is done, acknowledging every message."""
     transport = _transport(job)
@@ -169,6 +178,7 @@ def echo(job: dict[str, Any], out: Any) -> None:
 
     transport.on_receive(job["inbox"], received)
     transport.start()
+    _nodelay(transport, job)
     Path(job["ready"]).write_text("ready", encoding="utf-8")
     done.wait(job["timeout"])
     transport.stop()
@@ -187,6 +197,7 @@ def send(job: dict[str, Any], out: Any) -> None:
 
     transport.on_receive(job["ack"], ack)
     transport.start()
+    _nodelay(transport, job)
     seq = 0
     for size in job["sizes"]:
         for r in range(job["repeats"]):

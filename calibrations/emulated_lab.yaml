@@ -22,12 +22,14 @@ workloads:
     trainer: {name: standard, local_epochs: 5, batch_size: 32, lr: 0.01}
 # Five devices train at once, four clients each, as the edges of the lab's
 # experiments do (colocated, per_host 4); the fogs and the cloud aggregate at
-# once. Each phase starts on every host at the same instant.
+# once. Each phase starts on every host at the same instant. The first two
+# trainings of each host warm it up and are left out.
 train:
   hosts: [field-edge_device-1, field-edge_device-2, field-edge_device-3,
           field-edge_device-4, field-edge_device-5]
   per_host: 4
-  jobs: 13
+  jobs: 14
+  warmup: 2
 aggregate:
   hosts: [fog-a, fog-b, cloud-1]
   workload: 0
@@ -53,3 +55,11 @@ links:
   qos: 1
   gap: 0.5
 seed: 0
+# Fixed CPUs of Docker's VM (24 on the machine of issue #197), the same in
+# every session: one per host CPU and never two siblings of a core (the VM
+# pairs them as 0-1, 2-3, ...), so that torch sees exactly its profile's
+# CPUs. In name order: cloud-1 takes 2 and 4, the devices 6 to 14, fog-a 16 and
+# fog-b 18; the routers and the broker share 20-23, and 0-1 stay for the VM.
+pin:
+  cpus: [2, 4, 6, 8, 10, 12, 14, 16, 18]
+  others: 20-23
