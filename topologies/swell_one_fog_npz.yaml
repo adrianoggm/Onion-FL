@@ -1,0 +1,19 @@
+# Validation of issue #198: every SWELL edge under one fog, which reports to
+# the cloud; npz codec, full quorum and no deadline, as swell_cloud_npz. The
+# experiment decides on which host the fog runs.
+name: swell_one_fog_npz
+levels: [global, fog, edge]
+root:
+  id: cloud
+  aggregator: fedavg
+  server_optimizer: replace
+  quorum: 1.0
+fog:
+  defaults:
+    aggregator: fedavg
+    quorum: 1.0
+    link_up: {transport: mqtt, codec: npz}
+  nodes:
+    - {id: fog_1, home: swell}
+edge:
+  link_up: {transport: mqtt, codec: npz}

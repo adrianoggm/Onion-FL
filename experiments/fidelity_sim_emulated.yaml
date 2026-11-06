@@ -1,0 +1,83 @@
+# Validation of the simulation against the emulated backend (issue #198,
+# I1 §12-§13), with the calibration of #197 closed and cited. Pre-registered
+# in results/fidelity_sim_emulated/PREREGISTRATION.md before any run.
+#
+# It differs from what was calibrated (microbenchmarks of
+# calibrations/emulated_lab.yaml) and from the lab experiment of #195
+# (experiments/fidelity_emulated.yaml: two fogs, json codec) in its
+# topologies, the codec and the local epochs. The model, the trainer's batch
+# and the dataset stay those of the calibrated workload 0ed95108ec44feea
+# (modular_mlp adapter 32, trunk [16], batch 32, SWELL physiology): any other
+# would be estimated by FLOPs, which the harness refuses (docs/RULES.md §3).
+#
+# Six configurations, five seeds each:
+#
+#   cloud    every edge straight under the cloud (2 levels)
+#   fog_a    one fog on fog-a (40 ms from the broker)
+#   fog_b    one fog on fog-b (60 ms from the broker)
+#   x local_epochs 1 or 5
+#
+# The same file runs on both backends, into two runs folders:
+#
+#   python scripts/run_fidelity_validation.py --backend emulated
+#   python scripts/run_fidelity_validation.py --backend sim
+#   onion_fl fidelity runs/fidelity_validation_emulated runs/fidelity_validation_sim \
+#     --calibration <calibration_id> --metric time --metric bytes \
+#     --metric macro_f1 --metric loss --series global/swell
+#
+# The backend block is the emulated one's: the image and the CPUs of the
+# calibration's sessions. `--backend sim` replaces it; design_id leaves the
+# backend out, so the pairs still match.
+name: fidelity_sim_emulated
+description: Validación de la simulación frente a la emulación con la calibración cerrada, en otras topologías.
+topology: swell_cloud_npz
+data:
+  datasets:
+    swell: {descriptor: datasets/swell_physiology.yaml}
+  roles: {test: 0.2, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 1.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 32, trunk_hidden: [16]}
+  sharing: fedavg
+  trainer: {name: standard, local_epochs: 5, batch_size: 32, lr: 0.01}
+rounds: 10
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  global: {every: 1}
+infrastructure:
+  name: fidelity_validation_lab
+  assignment:
+    root: cloud-1
+    edges: {name: colocated, per_host: 4}
+backend:
+  name: emulated
+  # CALIBRATION (provisional): the image and the project of the sessions of
+  # calibration 5d7d0e70...; swap them with the refit's (calibration.json,
+  # environment.image) together with the id in the infrastructure.
+  image: onionfl-a197-emulated:latest
+  project: onionfl-a198
+  subnet: 10.198.0.0/16
+  # The CPUs calibrations/emulated_lab.yaml pins each host to (pin.cpus, in
+  # name order), by host, so that a run on fewer hosts keeps them.
+  pin:
+    cpus:
+      cloud-1: [2, 4]
+      field-edge_device-1: [6]
+      field-edge_device-2: [8]
+      field-edge_device-3: [10]
+      field-edge_device-4: [12]
+      field-edge_device-5: [14]
+      fog-a: [16]
+      fog-b: [18]
+    others: 20-23
+runtime: {timeout: 900}
+seeds: [0, 1, 2, 3, 4]
+sweep:
+  topology,infrastructure.assignment:
+    - [swell_cloud_npz,                                                    # cloud
+       {root: cloud-1, edges: {name: colocated, per_host: 4}}]
+    - [swell_one_fog_npz,                                                  # fog_a
+       {root: cloud-1, aggregators: {fog_1: fog-a}, edges: {name: colocated, per_host: 4}}]
+    - [swell_one_fog_npz,                                                  # fog_b
+       {root: cloud-1, aggregators: {fog_1: fog-b}, edges: {name: colocated, per_host: 4}}]
+  learning.trainer.local_epochs: [1, 5]
