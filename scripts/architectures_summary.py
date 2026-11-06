@@ -9,11 +9,14 @@ experiment given with ``--experiment``) and writes one row per run with its
 identity, its learning scores (the final global macro-F1 per dataset on the
 test subjects, and the edges' at the last edge evaluation) and its system
 metrics on the backend's clock: the mean and maximum time of a round at the
-root, the time until the global macro-F1 first reaches ``--target`` (censored
+root, the time until the global macro-F1 over every test subject first reaches
+``--target`` (censored
 at the run's end when it never does), and the bytes per level of the
-federation. ``wan`` is every message to or from the cloud: on these
-infrastructures the cloud is alone in its site, so each of them crosses a
-fog-cloud link. It also prints the mean and 95 % interval per architecture.
+federation. ``wan`` is every message between the cloud and a fog or an edge:
+on these infrastructures the cloud is alone in its site, so each of them
+crosses a fog-cloud link. ``evaluation`` is the traffic of the evaluators,
+which sit on their parent's host. Rounds that fail their quorum have no
+``round.closed`` and are counted in ``quorum_failed``, not in the round times. It also prints the mean and 95 % interval per architecture.
 """
 
 import argparse
@@ -60,10 +63,14 @@ def architecture(config: dict) -> str:
     return ARCHITECTURES.get(key, "?")
 
 
-def level(src: str, dst: str, edges: set[str], cloud: str) -> str:
-    if cloud in (src, dst):
-        other = dst if src == cloud else src
-        return "edge-cloud" if other in edges else "fog-cloud"
+def level(src: str, dst: str, roles: dict[str, str]) -> str:
+    """The level a message crosses. Evaluators sit on their parent's host, so
+    their traffic never leaves it."""
+    kinds = {roles.get(src), roles.get(dst)}
+    if "evaluator" in kinds:
+        return "evaluation"
+    if "coordinator" in kinds:
+        return "edge-cloud" if "edge" in kinds else "fog-cloud"
     return "edge-fog"
 
 
@@ -71,8 +78,7 @@ def metrics(path: Path, target: float) -> dict:
     meta = json.loads((path / "run.json").read_text(encoding="utf-8"))
     summary = json.loads((path / "summary.json").read_text(encoding="utf-8"))
     events = read_events(path / "events.jsonl")
-    cloud = next(e["node"] for e in events if e.get("role") == "coordinator")
-    edges = {e["node"] for e in events if e.get("role") == "edge"}
+    roles = {e["node"]: e["role"] for e in events if e.get("role")}
     started, closed, scores = {}, {}, defaultdict(list)
     sent: dict[str, float] = defaultdict(float)
     for e in events:
@@ -82,10 +88,14 @@ def metrics(path: Path, target: float) -> dict:
                 started.setdefault(tags.get("round"), e["t_virtual"])
             elif name == "round.closed":
                 closed.setdefault(tags.get("round"), e["t_virtual"])
-            elif name == "eval.macro_f1" and tags.get("model", "global") == "global":
+            elif (
+                name == "eval.macro_f1"
+                and tags.get("model") == "global"
+                and "dataset" not in tags  # the pooled score over every dataset
+            ):
                 scores[e.get("round")].append((e["t_virtual"], e["value"]))
         if name == "message.sent" and tags.get("dst") is not None:
-            sent[level(e["node"], tags["dst"], edges, cloud)] += e["value"] or 0.0
+            sent[level(e["node"], tags["dst"], roles)] += e["value"] or 0.0
     rounds = [closed[r] - started[r] for r in closed if r in started]
     end = float(summary["t_virtual_end"])
     reached, hit = end, False
@@ -113,15 +123,15 @@ def metrics(path: Path, target: float) -> dict:
         "bytes_total": summary["messages"]["bytes"],
         **{
             f"bytes_{k}": sent.get(k, 0.0)
-            for k in ("edge-fog", "fog-cloud", "edge-cloud")
+            for k in ("edge-fog", "fog-cloud", "edge-cloud", "evaluation")
         },
         "bytes_wan": sent.get("fog-cloud", 0.0) + sent.get("edge-cloud", 0.0),
         "topology_id": meta["topology_id"],
         "infrastructure_id": meta.get("infrastructure_id"),
         "config_id": meta["config_id"],
         "run_hash": meta["run_hash"],
-        "commit": (meta.get("code") or {}).get("commit"),
-        "dirty": (meta.get("code") or {}).get("dirty"),
+        "commit": (meta.get("code_version") or {}).get("commit"),
+        "dirty": (meta.get("code_version") or {}).get("dirty"),
     }
 
 
@@ -171,6 +181,7 @@ def main() -> None:
         "bytes_edge-fog",
         "bytes_fog-cloud",
         "bytes_edge-cloud",
+        "bytes_evaluation",
         "bytes_wan",
         "quorum_failed",
         "reparented",
