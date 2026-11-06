@@ -12,8 +12,9 @@ from __future__ import annotations
     onion_fl node --id <node> --run <run_id> --config <experiment.yaml>
     onion_fl ceiling <experiment.yaml> [--replicas R] [--metric NAME] [--series KEY]
                      [--resample] [--paired] [--workers N]
-    onion_fl fidelity <runs A> <runs B> [--metric NAME]... [--target METRIC=VALUE]
-                      [--ceiling FILE] [--csv FILE] [--html FILE]
+    onion_fl fidelity <runs A | predictor> <runs B | predictor[:floss]>
+                      [--metric NAME]... [--target METRIC=VALUE] [--control RUNS]
+                      [--no-predictor] [--ceiling FILE] [--csv FILE] [--html FILE]
     onion_fl report <experiment.yaml | runs_dir>... [--out FILE] [--metric NAME]... [--by TAG]...
     onion_fl baseline <experiment.yaml> [--models lr rf xgboost] [--cv K]
     onion_fl schema [--out FILE]
@@ -217,6 +218,8 @@ def cmd_fidelity(args: argparse.Namespace) -> int:
         minimize=args.minimize or [],
         resamples=args.bootstrap,
         seed=args.seed,
+        control=args.control,
+        predictor=not args.no_predictor,
     )
     if args.csv:
         write_csv(result, args.csv)
@@ -377,8 +380,14 @@ def parser() -> argparse.ArgumentParser:
     fidelity = sub.add_parser(
         "fidelity", help="fidelity of the runs of B against those of A (reference)"
     )
-    fidelity.add_argument("a", help="runs folder of the reference backend")
-    fidelity.add_argument("b", help="runs folder of the backend under test")
+    fidelity.add_argument(
+        "a", help="runs folder of the reference backend, or predictor"
+    )
+    fidelity.add_argument(
+        "b",
+        help="runs folder of the backend under test, or predictor (predictor:floss "
+        "for its corrected variant), which decides on the other side's runs",
+    )
     fidelity.add_argument(
         "--metric",
         action="append",
@@ -395,6 +404,16 @@ def parser() -> argparse.ArgumentParser:
     )
     fidelity.add_argument(
         "--minimize", action="append", help="a metric where lower is better"
+    )
+    fidelity.add_argument(
+        "--control",
+        help="synchronous runs without deadline of the same designs, whose rounds "
+        "to target the factorised predictor takes; default: the runs of A",
+    )
+    fidelity.add_argument(
+        "--no-predictor",
+        action="store_true",
+        help="do not show the factorised predictor next to each decision",
     )
     fidelity.add_argument("--bootstrap", type=int, default=2000)
     fidelity.add_argument("--seed", type=int, default=0, help="of the bootstrap")
