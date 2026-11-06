@@ -14,6 +14,7 @@ import pytest
 
 pytest.importorskip("grpc")
 
+from onion_fl.runtime.real import RealRuntime  # noqa: E402
 from onion_fl.transports import transports  # noqa: E402
 from onion_fl.transports.grpc import GrpcTransport  # noqa: E402
 
@@ -155,3 +156,52 @@ def test_stop_drops_what_cannot_be_delivered_within_the_flush(tmp_path: Path) ->
 def test_grpc_params_are_validated(params) -> None:
     with pytest.raises(ValueError):
         transports.create("grpc", params)
+
+
+def free_port() -> int:
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+# --- across machines (issue #199) ---------------------------------------------------------------
+
+
+def test_grpc_finds_its_peers_through_the_map_and_never_the_folder(
+    tmp_path: Path,
+) -> None:
+    a_port, b_port = free_port(), free_port()
+    peers = {"box/a": f"127.0.0.1:{a_port}", "box/b": f"127.0.0.1:{b_port}"}
+    folder = tmp_path / "never"
+    a = GrpcTransport(port=a_port, peers=peers, directory=str(folder))
+    b = GrpcTransport(port=b_port, peers=peers, directory=str(folder))
+    got = threading.Event()
+    seen = []
+    b.on_receive("box/b", lambda data: (seen.append(data), got.set()))
+    a.on_receive("box/a", lambda data: None)
+    a.start()
+    b.start()
+    try:
+        a.send("box/b", b"hello")
+        assert got.wait(10)
+    finally:
+        a.stop()
+        b.stop()
+
+    assert seen == [b"hello"] and not folder.exists()
+
+
+def test_a_real_runtime_can_give_every_grpc_link_its_listen_and_peers() -> None:
+    runtime = RealRuntime(
+        "r",
+        heartbeat_s=None,
+        grpc={"listen": "0.0.0.0:50999", "peers": {"a": "10.0.0.1:50051"}},
+    )
+    runtime.add_link("a", "b", transport={"name": "grpc", "call_timeout": 3})
+
+    (carrier,) = runtime._transports.values()
+    assert (carrier.params.host, carrier.params.port) == ("0.0.0.0", 50999)
+    assert carrier.params.peers == {"onionfl/r/a/inbox": "10.0.0.1:50051"}
+    assert carrier.params.call_timeout == 3

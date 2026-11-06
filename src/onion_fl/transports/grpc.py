@@ -14,7 +14,9 @@ inbox in the ``onionfl-address`` metadata. No ``.proto`` is needed.
 Discovery is a folder (``directory``, under the system temp by default):
 each transport writes there, per inbox it serves, a file with its
 ``host:port``, and the sender reads it. That covers every process of one
-machine (the ``local`` backend); hosts on other machines are I14's.
+machine (the ``local`` backend). Across machines (the ``distributed``
+backend, I14) the launcher gives ``peers`` instead, an explicit map from each
+inbox to the ``host:port`` that serves it, and the folder is not used.
 
 The guarantees of MQTT with QoS 1:
 
@@ -63,6 +65,12 @@ class GrpcParams(BaseModel):
     directory: str | None = Field(
         None, description="Carpeta de descubrimiento; por defecto, en el temporal"
     )
+    peers: dict[str, str] | None = Field(
+        None,
+        description=(
+            "Buzón -> host:puerto que lo sirve, entre máquinas; sustituye a la carpeta"
+        ),
+    )
     call_timeout: float = Field(10.0, gt=0, description="Plazo de cada envío (s)")
     reconnect_min: float = Field(0.05, gt=0, description="Primer reintento (s)")
     reconnect_max: float = Field(5.0, gt=0, description="Reintento máximo (s)")
@@ -85,7 +93,7 @@ def _require_grpc() -> Any:
     title="gRPC",
     description=(
         "Enlaces directos entre procesos, sin broker; un servidor gRPC por "
-        "proceso, descubierto por una carpeta local."
+        "proceso, descubierto por una carpeta local o por un mapa de direcciones."
     ),
     params=GrpcParams,
 )
@@ -113,6 +121,8 @@ class GrpcTransport:
         return self.directory / quote(address, safe="")
 
     def _announce(self, address: str) -> None:
+        if self.params.peers is not None:  # the launcher's map says where it is
+            return
         self.directory.mkdir(parents=True, exist_ok=True)
         path = self._file(address)
         partial = path.with_name(f"{path.name}.{os.getpid()}.tmp")
@@ -179,6 +189,8 @@ class GrpcTransport:
         outbox.put(data)
 
     def _resolve(self, address: str) -> str | None:
+        if self.params.peers is not None:
+            return self.params.peers.get(address)
         try:
             return self._file(address).read_text(encoding="utf-8").strip() or None
         except OSError:
@@ -236,7 +248,7 @@ class GrpcTransport:
             channels = list(self._channels.values())
             self._channels.clear()
         for address in addresses:
-            if self._resolve(address) == self.endpoint:
+            if self.params.peers is None and self._resolve(address) == self.endpoint:
                 self._file(address).unlink(missing_ok=True)
         for channel in channels:
             channel.close()
