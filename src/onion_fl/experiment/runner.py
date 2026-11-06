@@ -1002,6 +1002,45 @@ def workload(spec: EdgeSpec) -> tuple[str, float]:
     return workload_key(shapes, getattr(params, "batch_size", None))
 
 
+def valid_sizes(resolved: Resolved) -> dict[str, tuple[str, int]]:
+    """Per logical link (its child) that crosses a calibrated link, its parent
+    and the largest message the calibrations' path models hold."""
+    infra = resolved.infrastructure
+    limits = {}
+    for x in infra.network.links:
+        if x.calibration:
+            limit = infra._calibrations[x.calibration].valid_up_to
+            if limit is not None:
+                limits[f"link:{x.between[0]}|{x.between[1]}"] = limit
+    out = {}
+    for child, hops in resolved.hops.items():
+        crossed = [limits[k] for k, _ in hops if k in limits]
+        if crossed:
+            out[child] = (resolved.parents[child], min(crossed))
+    return out
+
+
+def _largest_messages(
+    federation: Any, limits: Mapping[str, tuple[str, int]] | None
+) -> dict[str, list[int]]:
+    """Follow the largest message each way of the logical links in
+    ``limits``: child -> [largest bytes, limit], filled as the run goes."""
+    if not limits:
+        return {}
+    largest = {child: [0, limit] for child, (_, limit) in limits.items()}
+
+    def listen(raw: Mapping[str, Any]) -> None:
+        if raw["name"] != "message.sent":
+            return
+        src, dst = raw["node"], (raw.get("tags") or {}).get("dst")
+        for child, other in ((src, dst), (dst, src)):
+            if child in limits and limits[child][0] == other:
+                largest[child][0] = max(largest[child][0], int(raw.get("value") or 0))
+
+    federation.runtime.listeners.append(listen)
+    return largest
+
+
 def _on_hosts(
     edges: Mapping[str, Sequence[EdgeSpec]],
     resolved: Resolved,
@@ -1117,7 +1156,9 @@ def build_scenario(
     """The federation of a scenario, on ``runtime`` (a new SimRuntime by default).
 
     ``calibrations``, when given, gets the ids of the calibrations the
-    infrastructure cites and the rates estimated by FLOPs (``estimated``).
+    infrastructure cites, the rates estimated by FLOPs (``estimated``) and,
+    per logical link whose path crosses a calibrated link, the largest
+    message its path model holds (``valid_up_to``).
     """
     config = scenario.config
     edges, initial = edge_specs(scenario, topology, split, placement)
@@ -1130,6 +1171,7 @@ def build_scenario(
         if calibrations is not None:
             calibrations["ids"] = cited(resolved.infrastructure)
             calibrations["estimated"] = estimated
+            calibrations["valid_up_to"] = valid_sizes(resolved)
         network, channels = _paths(resolved)
     if parent is ...:
         parent = _parent(config, scenario.seed)
@@ -1214,6 +1256,7 @@ def simulate(scenario: Scenario, evaluate: Callable[..., Any] | None = None) -> 
             run.meta["calibrations"] = calibrations["ids"]
         if calibrations.get("estimated"):  # no fidelity result may rest on it
             run.meta["estimated"] = calibrations["estimated"]
+        largest = _largest_messages(federation, calibrations.get("valid_up_to"))
         run.attach(federation)
         if config.stream is not None:
             streams = {k: e.stream for k, e in federation.edges.items() if e.train}
@@ -1226,6 +1269,13 @@ def simulate(scenario: Scenario, evaluate: Callable[..., Any] | None = None) -> 
                 edges=summary["edges"],
             )
         federation.run()
+        outside = [
+            {"link": child, "max_bytes": size, "valid_up_to": limit}
+            for child, (size, limit) in sorted(largest.items())
+            if size > limit
+        ]
+        if outside:  # nor on a path model used past what it was fitted on
+            run.meta["outside_calibration"] = outside
         save_model(run.path, federation.coordinator.state)
         # What the lineage knows of a dataset or node outlives a run without it.
         earlier = parent[1] if parent else None

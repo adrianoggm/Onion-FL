@@ -244,6 +244,42 @@ def test_a_run_with_estimated_rates_is_marked_and_refused_by_fidelity(
         (run_scenario(scenario, evaluate=stub_score) / "run.json").read_text("utf-8")
     )
     assert "estimated" not in meta and meta["calibrations"] == [again.name]
+    assert "outside_calibration" not in meta  # no path model limit given
+
+
+def test_a_run_past_the_sizes_of_its_calibrated_paths_is_refused_by_fidelity(
+    tmp_path: Path,
+    workspace: Path,  # noqa: F811
+) -> None:
+    """fog|dc's path model holds 10 bytes: every fog's update to the cloud is
+    larger, and the edges' links to their fogs do not cross it."""
+    folder, cid = stored(tmp_path)
+    (scenario,) = scenarios(_calibrated_experiment(workspace, cid, folder))
+    meta = json.loads(
+        (run_scenario(scenario, evaluate=stub_score) / "run.json").read_text("utf-8")
+    )
+    wid = meta["estimated"][0]["workload"]  # measure it: nothing is estimated
+    measured = calibration(
+        workloads={wid: _workload({"w": [1]}, 1.0)},
+        profiles={
+            "pi": ProfileCalibration(train={wid: _estimate(400.0)}),
+            "vm": ProfileCalibration(aggregate=_estimate(1e6)),
+        },
+        valid_up_to=10,
+    )
+    again = write_calibration(tmp_path / "limited", *measured)
+    (scenario,) = scenarios(_calibrated_experiment(workspace, again.name, again.parent))
+    path = run_scenario(scenario, evaluate=stub_score)
+    meta = json.loads((path / "run.json").read_text("utf-8"))
+    assert "estimated" not in meta
+    outside = meta["outside_calibration"]
+    assert {o["link"] for o in outside} == {"fog_a", "fog_b"}
+    assert all(o["max_bytes"] > o["valid_up_to"] == 10 for o in outside)
+    import shutil
+
+    alone = shutil.copytree(path, tmp_path / "alone" / path.name).parent
+    with pytest.raises(ValueError, match="outside_calibration"):
+        fidelity(alone, alone)
 
 
 def test_without_calibrations_the_paths_and_ids_do_not_change(
