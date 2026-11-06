@@ -1,0 +1,55 @@
+# Microbenchmarks that calibrate infrastructures/emulated_lab.yaml on the
+# emulated backend (issue #197, I1 §13). They are not FL experiments:
+#
+#   onion_fl calibrate measure calibrations/emulated_lab.yaml --out <session>
+#   onion_fl calibrate fit <session> --infrastructure-out <calibrated.yaml>
+#   onion_fl calibrate check <other session> --infrastructure <calibrated.yaml>
+#
+# The fit and the check use two sessions, each in its own emulation.
+name: emulated_lab
+description: Training, aggregation and MQTT paths of the small emulated lab.
+infrastructure: emulated_lab
+# Real SWELL training subjects, with the roles of experiments/fidelity_emulated.yaml.
+data:
+  datasets:
+    swell: {descriptor: datasets/swell_physiology.yaml}
+  roles: {test: 0.2, scaler: global, seed: 0}
+# Two models, so that the FLOPs estimate of one from the other can be checked.
+workloads:
+  - model: {name: modular_mlp, adapter_width: 32, trunk_hidden: [16]}
+    trainer: {name: standard, local_epochs: 5, batch_size: 32, lr: 0.01}
+  - model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32]}
+    trainer: {name: standard, local_epochs: 5, batch_size: 32, lr: 0.01}
+# Five devices train at once, four clients each, as the edges of the lab's
+# experiments do (colocated, per_host 4); the fogs and the cloud aggregate at
+# once. Each phase starts on every host at the same instant.
+train:
+  hosts: [field-edge_device-1, field-edge_device-2, field-edge_device-3,
+          field-edge_device-4, field-edge_device-5]
+  per_host: 4
+  jobs: 13
+aggregate:
+  hosts: [fog-a, fog-b, cloud-1]
+  workload: 0
+  updates: [10, 20]
+  seconds: 5
+  batch: 100
+# Through the broker on cloud-1, both directions of each pair, one message at
+# a time and 0.5 s apart; cloud-1 to itself measures the transport alone. The
+# paths are fitted on messages up to 10 kB, the size of the lab's FL messages
+# (12 kB on average in results/fidelity_emulated); 30 and 100 kB are only
+# predicted, to see how far the line holds.
+links:
+  pairs:
+    - [fog-a, cloud-1]
+    - [fog-b, cloud-1]
+    - [field-edge_device-1, cloud-1]
+    - [field-edge_device-1, fog-a]
+    - [field-edge_device-1, fog-b]
+    - [cloud-1, cloud-1]
+  sizes: [100, 1000, 5000, 10000, 30000, 100000]
+  fit_up_to: 10000
+  repeats: 15
+  qos: 1
+  gap: 0.5
+seed: 0

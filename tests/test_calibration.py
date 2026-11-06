@@ -14,6 +14,8 @@ from typing import Any
 
 import pytest
 
+from onion_fl.experiment import calibrate
+from onion_fl.experiment.cli import parser
 from onion_fl.experiment.config import parse_experiment
 from onion_fl.experiment.fidelity import fidelity
 from onion_fl.experiment.runner import run_scenario
@@ -241,3 +243,180 @@ def test_without_calibrations_the_paths_and_ids_do_not_change(
     workspace: Path,  # noqa: F811
 ) -> None:
     assert "calibrations" not in parse_experiment(experiment(workspace)).dump()["paths"]
+
+
+# --- fitting -------------------------------------------------------------------------
+
+
+def _train(host: str, job: int, t0: float, wall: float, samples: int = 600) -> dict:
+    return {
+        "kind": "train",
+        "workload": SMALL[0],
+        "host": host,
+        "profile": "pi",
+        "job": job,
+        "samples": samples,
+        "wall_s": wall,
+        "t0": t0,
+        "t1": t0 + wall,
+    }
+
+
+def test_only_concurrent_trainings_after_the_warm_up_are_kept() -> None:
+    rows = [_train("a", j, 10.0 + j, 1.0) for j in range(5)]  # 10..15
+    rows += [_train("b", j, 12.0 + j, 1.0) for j in range(5)]  # 12..17
+    kept = calibrate.concurrent(rows, "job")
+    # The window is [12, 15], when both train; b's warm-up (job 0) goes too.
+    assert sorted((r["host"], r["job"]) for r in kept) == [
+        ("a", 2),
+        ("a", 3),
+        ("a", 4),
+        ("b", 1),
+        ("b", 2),
+    ]
+
+
+def test_a_rate_is_total_samples_over_total_time_with_an_interval() -> None:
+    estimate = calibrate.ratio([600, 600, 300], [1.0, 1.5, 0.5])
+    assert estimate.value == pytest.approx(500.0)
+    assert estimate.low <= 500.0 <= estimate.high and estimate.n == 3
+
+
+def _messages(src: str, dst: str, latency: float, bps: float) -> list[dict]:
+    rows = []
+    for seq, size in enumerate([100, 1000, 10_000, 100_000] * 3):
+        rows.append({"kind": "sent", "src": src, "dst": dst, "seq": seq, "size": size})
+        delay = latency + 8 * size / bps + (seq % 3 - 1) * 1e-4
+        rows.append(
+            {
+                "kind": "link",
+                "src": src,
+                "dst": dst,
+                "seq": seq,
+                "t_send": 100.0,
+                "t_recv": 100.0 + delay,
+            }
+        )
+    return rows
+
+
+def test_link_latencies_are_solved_from_the_paths_that_cross_them() -> None:
+    """Paths through the broker on cloud-1: fog -> cloud crosses fog|dc once and
+    field -> fog crosses field|fog once and fog|dc twice."""
+    infra = parse_infrastructure(lab(services={"mqtt_broker": "cloud-1"}))
+    rows = _messages("fog-1", "cloud-1", 0.071, 9.5e6)
+    rows += _messages("field-pi-1", "fog-1", 0.011 + 2 * 0.071, 9.5e6 / 2)
+    rows += _messages("cloud-1", "cloud-1", 0.0005, 1e9)
+    links, transport, notes = calibrate._links(
+        infra, "cloud-1", calibrate.link_rows(rows), seed=0
+    )
+    assert links["fog|dc"].latency.value == pytest.approx(0.071, abs=2e-4)
+    assert links["field|fog"].latency.value == pytest.approx(0.011, abs=4e-4)
+    assert links["fog|dc"].bandwidth_up.value == pytest.approx(
+        1e7 * (0.95 + 0.475) / 2, rel=0.02
+    )  # the bottleneck of both paths: the mean ratio
+    assert links["field|fog"].derived == ["bandwidth_up", "bandwidth_down"]
+    assert links["fog|dc"].loss.value == 0.0
+    assert transport["loopback_latency_s"].value == pytest.approx(5e-4, abs=2e-4)
+    assert notes
+
+
+def test_the_cli_has_the_three_steps() -> None:
+    p = parser()
+    assert p.parse_args(["calibrate", "measure", "s.yaml", "--out", "x"]).step == (
+        "measure"
+    )
+    assert p.parse_args(["calibrate", "fit", "x"]).out == "calibrations"
+    args = p.parse_args(["calibrate", "check", "x", "--infrastructure", "i.yaml"])
+    assert args.calibrations == "calibrations"
+
+
+def test_the_spec_of_the_emulated_lab_loads() -> None:
+    spec = calibrate.load_spec("calibrations/emulated_lab.yaml")
+    assert spec.infrastructure == "emulated_lab" and len(spec.workloads) == 2
+
+
+def _session(folder: Path, infra_path: Path, jitter: float) -> Path:
+    """A session as ``measure`` writes it, with timing rows for two devices,
+    one fog and two paths."""
+    import yaml
+
+    rows = []
+    for h, host in enumerate(["field-pi-1", "field-pi-2"]):
+        for j in range(8):
+            wall = 1.5 + jitter * ((j + h) % 3 - 1)
+            rows.append(_train(host, j, 10.0 + 1.5 * j + 0.1 * h, wall))
+    for r in range(8):
+        rows.append(
+            {
+                "kind": "aggregate",
+                "host": "fog-1",
+                "profile": "vm",
+                "updates": 10,
+                "repeat": r,
+                "bytes": 1e5,
+                "wall_s": 0.01 + jitter * 0.001 * (r % 2),
+                "t0": 50.0 + 0.01 * r,
+                "t1": 50.01 + 0.01 * r,
+            }
+        )
+    rows += _messages("fog-1", "cloud-1", 0.071, 9.5e6)
+    rows += _messages("field-pi-1", "fog-1", 0.011 + 2 * 0.071, 9.5e6 / 2)
+    infra = parse_infrastructure(yaml.safe_load(infra_path.read_text("utf-8")))
+    small = _workload({"w": [4, 8], "b": [8]}, SMALL[1])
+    meta = {
+        "spec": {
+            "name": "lab",
+            "infrastructure": str(infra_path),
+            "data": {"datasets": {"demo": {}}},
+            "workloads": [{"model": "m", "trainer": "t"}],
+        },
+        "infrastructure_id": infra.infrastructure_id,
+        "hosts": {"field-pi-1": "pi", "field-pi-2": "pi", "fog-1": "vm"},
+        "broker": "cloud-1",
+        "workloads": {SMALL[0]: small.model_dump()},
+        "clients": {},
+        "environment": {},
+        "code": {"commit": "abc", "dirty": False},
+        "started_at": "2026-11-06T00:00:00+00:00",
+    }
+    folder.mkdir(parents=True)
+    (folder / "session.json").write_text(json.dumps(meta), encoding="utf-8")
+    (folder / "measurements.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
+    )
+    return folder
+
+
+def test_a_calibration_is_fitted_on_one_session_and_checked_on_another(
+    tmp_path: Path,
+) -> None:
+    import yaml
+
+    infra_path = tmp_path / "lab.yaml"
+    infra_path.write_text(
+        yaml.safe_dump(lab(services={"mqtt_broker": "cloud-1"})), encoding="utf-8"
+    )
+    fit_on = _session(tmp_path / "fit", infra_path, jitter=0.1)
+    folder = calibrate.fit(fit_on, tmp_path / "calibrations")
+    measured = load_calibration(folder.parent, folder.name)
+    rate = measured.profiles["pi"].train[SMALL[0]]
+    assert rate.value == pytest.approx(600 / 1.5, rel=0.02) and rate.covers(400)
+    calibrated = tmp_path / "calibrated.yaml"
+    calibrated.write_text(
+        yaml.safe_dump(calibrate.calibrated_infrastructure(infra_path, measured)),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="fitted on"):
+        calibrate.check(fit_on, calibrated, folder.parent)
+
+    other = _session(tmp_path / "other", infra_path, jitter=0.12)
+    result = calibrate.check(other, calibrated, folder.parent)
+    assert result["calibrations"] == [folder.name]
+    (train,) = result["train"]
+    assert train["inside"] and not train["estimated"]
+    assert result["aggregate"][0]["inside"]
+    assert {(p["src"], p["dst"]) for p in result["paths"]} == {
+        ("fog-1", "cloud-1"),
+        ("field-pi-1", "fog-1"),
+    }
