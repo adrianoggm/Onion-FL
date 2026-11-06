@@ -200,8 +200,10 @@ def edge_statistics(
     name: str, scenario: Scenario, placement: Placement, initial: Mapping[str, Any]
 ) -> dict[str, float]:
     """Each training edge's ``samples``, ``label_divergence`` (KL divergence of its
-    labels from those of all the training edges of its dataset) or
-    ``initial_loss`` (cross-entropy of the initial model on its training data)."""
+    labels from those of all the training edges of its dataset), ``initial_loss``
+    (cross-entropy of the initial model on its training data) or
+    ``gradient_norm`` (L2 norm of the gradient of that loss over every parameter
+    of the initial model, one full-batch pass)."""
     clients = _placed(placement)
     if name == "samples":
         return {c.id: float(c.train.n_samples) for c in clients}
@@ -224,11 +226,27 @@ def edge_statistics(
     for c in clients:
         model = family.build([c.train.shape], seed=scenario.seed)
         load_arrays(model, initial)
+        if name == "gradient_norm":
+            out[c.id] = _gradient_norm(model, c.train)
+            continue
         y = np.asarray(c.train.y, np.int64)
         logits = predict(model, c.train.X)
         loss = compute(logits, y, c.train.n_classes, ["loss"]) if len(y) else {}
         out[c.id] = loss.get("loss", 0.0)
     return out
+
+
+def _gradient_norm(model: Any, data: Any) -> float:
+    import torch
+    import torch.nn.functional as F
+
+    if not len(data.y):
+        return 0.0
+    model.eval()  # no dropout: the same model every edge sees
+    X = torch.from_numpy(np.asarray(data.X, np.float32))
+    F.cross_entropy(model(X), torch.from_numpy(np.asarray(data.y, np.int64))).backward()
+    grads = [p.grad for p in model.parameters() if p.grad is not None]
+    return float(torch.sqrt(sum((g**2).sum() for g in grads))) if grads else 0.0
 
 
 def load_data(config: ExperimentConfig) -> tuple[list[Any], dict[str, str]]:
