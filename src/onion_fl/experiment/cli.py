@@ -240,7 +240,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
     print(
         f"Onion-FL Studio on http://{args.host}:{args.port}  (root {Path(args.root).resolve()})"
     )
-    uvicorn.run(create_app(args.root), host=args.host, port=args.port)
+    uvicorn.run(
+        create_app(args.root, operators=args.operators), host=args.host, port=args.port
+    )
     return 0
 
 
@@ -368,6 +370,11 @@ def parser() -> argparse.ArgumentParser:
     )
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
+    serve.add_argument(
+        "--operators",
+        help="YAML of operator ids and tokens that may give orders "
+        "(default: the file ONIONFL_OPERATORS names; none: no orders)",
+    )
     serve.set_defaults(func=cmd_serve)
 
     schema = sub.add_parser(
