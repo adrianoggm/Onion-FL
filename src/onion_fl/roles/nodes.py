@@ -24,6 +24,7 @@ from typing import Any
 
 import numpy as np
 
+from onion_fl.continuum.control import refusal
 from onion_fl.continuum.drift import Reference, detectors, window
 from onion_fl.continuum.memory import Memory
 from onion_fl.continuum.pace import View
@@ -761,13 +762,20 @@ class Coordinator(_Collector):
         promotion: Any = None,
         validators: Iterable[str] = (),
         operators: Iterable[str] = ("operator",),
+        operator_keys: Mapping[str, str] | None = None,
+        audience: str = "",
         **kw: Any,
     ) -> None:
         super().__init__(node_id, children, **kw)
         # Who validates and who may give orders come from the federation's
-        # build, never from what a child says of itself in its hello.
+        # build, never from what a child says of itself in its hello. With
+        # ``operator_keys`` (id -> token), the operators are their ids and every
+        # order must be signed for ``audience`` (continuum.control, #203).
         self._validators = frozenset(validators)
-        self.operators = frozenset(operators)
+        self._keys = None if operator_keys is None else dict(operator_keys)
+        self.operators = frozenset(operators if self._keys is None else self._keys)
+        self.audience = audience
+        self._nonces: set[str] = set()  # each signed order counts once
         stray = sorted(self._validators - self.children)
         if stray:
             raise ValueError(f"validators {stray} are not children of {node_id}")
@@ -839,7 +847,9 @@ class Coordinator(_Collector):
             if wait > 1e-9:
                 ctx.set_timer(wait, "round")
                 return
-        ctx.emit("round.started", self.round + 1, round=self.round + 1)
+        ctx.emit(
+            "round.started", self.round + 1, round=self.round + 1, **self._served()
+        )
         self._open(self.round + 1, self.state, ctx, bootstrap=self.round == 0)
 
     def _heard_all(self, heard: dict[str, float], now: float, ctx: Context) -> None:
@@ -884,8 +894,18 @@ class Coordinator(_Collector):
             drift=dict(self._drift),
         )
         self._volume, self._drift, self._opened_at = 0.0, {}, now
-        ctx.emit("round.started", self.round + 1, round=self.round + 1, at=now)
+        ctx.emit(
+            "round.started",
+            self.round + 1,
+            round=self.round + 1,
+            at=now,
+            **self._served(),
+        )
         self._open(self.round + 1, self.state, ctx, bootstrap=self.round == 0)
+
+    def _served(self) -> dict[str, int]:
+        """With versions, the one the round serves (continuum C7)."""
+        return {} if self.promotion is None else {"version": self.champion}
 
     def _finish(self, ctx: Context) -> None:
         if not self.finished:
@@ -1035,19 +1055,36 @@ class Coordinator(_Collector):
     def _other(self, msg: Message, ctx: Context) -> None:
         """An operator's order: ``{"rollback": v}`` (``None``: to the champion the
         current one replaced) or ``{"promote": v}``, as a control message from a
-        configured operator. Who that sender really is, the transport has to
-        authenticate (#203); here the id is checked."""
+        configured operator. With operator keys, it must also be signed by that
+        operator for this run, and each signature counts once, whatever the
+        transport that carried it (#203)."""
         orders = ("rollback", "promote")
         if msg.kind != "control" or not any(k in msg.meta for k in orders):
             super()._other(msg, ctx)
         elif msg.src not in self.operators:
             _reject(ctx, msg, f"{msg.src} is not an operator")
+        elif (why := self._unauthentic(msg)) is not None:
+            _reject(ctx, msg, why)
         elif self.promotion is None:
             _reject(ctx, msg, "no versions: the run has no promotion policy")
         elif self._deciding is not None:
             self._orders.append(msg)  # after the decision, on what it decided
         else:
             self._order(msg, ctx)
+
+    def _unauthentic(self, msg: Message) -> str | None:
+        """Why a signed order is refused; None when it is good (or no keys)."""
+        if self._keys is None:
+            return None
+        why = refusal(
+            msg.meta, operator=msg.src, operators=self._keys, audience=self.audience
+        )
+        if why is None:
+            nonce = msg.meta["auth"]["nonce"]
+            if nonce in self._nonces:
+                return "replayed order"
+            self._nonces.add(nonce)
+        return why
 
     def _order(self, msg: Message, ctx: Context) -> None:
         current = self.versions[self.champion]
