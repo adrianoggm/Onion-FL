@@ -1246,12 +1246,11 @@ class Edge(_Greeter, Node):
                     "unlabelled objective; they need warm"
                 )
         # How a stream edge updates (the baselines of continuum C8): warm goes on
-        # from the model received; frozen trains v0 on the history and is idle
-        # from then on; scratch starts every training from the initial weights,
+        # from the model received; frozen trains v0 on the history, with the
+        # first model it gets, and is idle from then on; scratch starts every training from the initial weights,
         # on every trainable row it has.
         self.update = update
         self._initial: State | None = None  # the first model received, whole
-        self._trainings = 0  # that finished with finite weights
         if validates and (train or stream is None):
             raise ValueError(f"{node_id}: a validator is an evaluator with a stream")
         # A validator scores the champion and a challenger on its stream (C7).
@@ -1625,7 +1624,7 @@ class Edge(_Greeter, Node):
             self._served = state_arrays(self.model)
             # Nothing to train on, or no update wanted yet: idle, with its scores.
             first = bool(msg.meta.get("bootstrap"))
-            frozen = self.update == "frozen" and self._trainings > 0
+            frozen = self.update == "frozen" and not first  # v0 only
             if own is None or frozen or not self._wants_update(msg.round, ctx, first):
                 _send_idle(self, msg.round, metrics, ctx)
                 return
@@ -1688,7 +1687,6 @@ class Edge(_Greeter, Node):
             return
         if self.stream is not None:  # trained with finite weights: now used
             self._consumed_by[self._pending] = msg.round
-            self._trainings += 1
             if self.continuum is not None:  # what the local trigger counts from
                 self._updated_at, self._local_drift = self._clock, {}
             if self.replay is not None:  # and only now eligible for replay

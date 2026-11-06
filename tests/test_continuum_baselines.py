@@ -44,13 +44,13 @@ class Starts(Recording):
         return super().train(model, data, received, ctx)
 
 
-def updating(update: str, rounds: int = 6, **kw):
+def updating(update: str, rounds: int = 6, stream=None, **kw):
     trainer = Starts()
     spec = EdgeSpec(
         "a1",
         ModularMLP(CONFIG, [A], seed=0),
         trainer=trainer,
-        stream=stream_of("a-1"),
+        stream=stream_of("a-1") if stream is None else stream,
         update=update,
         **kw,
     )
@@ -89,6 +89,16 @@ def test_frozen_trains_v0_only_and_is_idle_from_then_on() -> None:
     # it still predicts and scores what arrives, with v0
     scored = events(federation, "eval.accuracy", "a1")
     assert {e["tags"]["model"] for e in scored} >= {"prequential"}
+
+
+def test_frozen_without_labels_in_its_history_never_trains() -> None:
+    # labels 10 minutes late: none of the history's is there for v0
+    late = stream_of("a-1", delay=600.0)
+    federation, trainer = updating("frozen", stream=late)
+    _, warm = updating("warm", stream=late)
+
+    assert not trainer.calls
+    assert warm.calls  # warm trains once the labels come
 
 
 def test_scratch_starts_every_training_from_the_initial_weights() -> None:
