@@ -1160,6 +1160,17 @@ def run_scenario(
     )
 
 
+def _diagnostic(federation: Any, scenario: Scenario, placement: Placement) -> dict:
+    """The ex ante diagnostic of the deadline bias (N8); a run goes on without it
+    when it cannot be computed, with the reason."""
+    from onion_fl.experiment.diagnostic import diagnose_scenario
+
+    try:
+        return diagnose_scenario(federation, scenario, placement)
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
 def simulate(scenario: Scenario, evaluate: Callable[..., Any] | None = None) -> Path:
     """Run one scenario in the simulator (the ``sim`` backend) and sign it."""
     config = scenario.config
@@ -1191,6 +1202,7 @@ def simulate(scenario: Scenario, evaluate: Callable[..., Any] | None = None) -> 
             scenario, topology, split, placement, evaluate=evaluate, parent=parent
         )
         run.attach(federation)
+        run.meta["diagnostic"] = _diagnostic(federation, scenario, placement)
         if config.stream is not None:
             streams = {k: e.stream for k, e in federation.edges.items() if e.train}
             summary = _stream_summary(config, streams)
