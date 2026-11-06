@@ -1,0 +1,26 @@
+scenario,seed,run_id,rerun_id,identical_model,identical_events
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'memory': 'none'},none,0.1,10",0,20261106T012403Z-aef8bc8526f9,20261106T012645Z-5baf2a5d476f,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'memory': 'none'},none,0.1,10",1,20261106T012404Z-fd6e76e91b92,20261106T012645Z-c8e41b5f7659,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'memory': 'none'},none,0.1,10",2,20261106T012414Z-78613b37b3ab,20261106T012654Z-a0e0a1cb3da7,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'memory': 'none'},none,0.1,10",3,20261106T012426Z-98bab30db439,20261106T012705Z-91c9ca4d01cf,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'memory': 'none'},none,0.1,10",4,20261106T012426Z-63e9f00e3ba3,20261106T012705Z-fa2f3dc96600,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'memory': {'name': 'reservoir', 'capacity': 512}, 'replay_ratio': 0.25},consistency(noise=0.1),0.1,10",0,20261106T012458Z-2c31986026ec,20261106T012732Z-6966f7e8e05f,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'memory': {'name': 'reservoir', 'capacity': 512}, 'replay_ratio': 0.25},consistency(noise=0.1),0.1,10",1,20261106T012509Z-ea79c21c270d,20261106T012741Z-8e8dd22417f9,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'memory': {'name': 'reservoir', 'capacity': 512}, 'replay_ratio': 0.25},consistency(noise=0.1),0.1,10",2,20261106T012510Z-ea2ee389fa3b,20261106T012742Z-79f5398ef1f9,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'memory': {'name': 'reservoir', 'capacity': 512}, 'replay_ratio': 0.25},consistency(noise=0.1),0.1,10",3,20261106T012511Z-acc269f7e2b1,20261106T012742Z-3d612cf57d16,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'memory': {'name': 'reservoir', 'capacity': 512}, 'replay_ratio': 0.25},consistency(noise=0.1),0.1,10",4,20261106T012527Z-8f63459daab0,20261106T012755Z-43c22a82e72f,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'memory': {'name': 'reservoir', 'capacity': 512}, 'replay_ratio': 0.25},none,0.1,10",0,20261106T012429Z-9bb751ff56ef,20261106T012706Z-3e2f45d01c18,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'memory': {'name': 'reservoir', 'capacity': 512}, 'replay_ratio': 0.25},none,0.1,10",1,20261106T012435Z-9866a5968133,20261106T012713Z-8619aa966a2d,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'memory': {'name': 'reservoir', 'capacity': 512}, 'replay_ratio': 0.25},none,0.1,10",2,20261106T012446Z-380fd7538954,20261106T012722Z-3f0a9c513dd3,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'memory': {'name': 'reservoir', 'capacity': 512}, 'replay_ratio': 0.25},none,0.1,10",3,20261106T012446Z-2c1361f3633f,20261106T012723Z-a8b54e993595,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'memory': {'name': 'reservoir', 'capacity': 512}, 'replay_ratio': 0.25},none,0.1,10",4,20261106T012449Z-bfffd4644c0c,20261106T012724Z-0ec29e7c8578,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'update': 'frozen', 'memory': 'none'},none,0.01,1",0,20261106T012319Z-00d92a260d68,20261106T012607Z-158d9b051531,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'update': 'frozen', 'memory': 'none'},none,0.01,1",1,20261106T012319Z-6b06a45e413a,20261106T012607Z-4070d8917b99,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'update': 'frozen', 'memory': 'none'},none,0.01,1",2,20261106T012319Z-4819c7e80df3,20261106T012608Z-ce406f14fb62,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'update': 'frozen', 'memory': 'none'},none,0.01,1",3,20261106T012319Z-87bc38d20e78,20261106T012608Z-2ceb013eae39,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'update': 'frozen', 'memory': 'none'},none,0.01,1",4,20261106T012334Z-97259035b40e,20261106T012621Z-5508e2b989d3,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'update': 'scratch', 'memory': 'none'},none,0.1,10",0,20261106T012335Z-8534494b94fb,20261106T012621Z-02130c38a51a,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'update': 'scratch', 'memory': 'none'},none,0.1,10",1,20261106T012335Z-1e30798e2bc0,20261106T012621Z-0ffa33034e20,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'update': 'scratch', 'memory': 'none'},none,0.1,10",2,20261106T012335Z-38eec0a71a43,20261106T012621Z-45f79e85088a,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'update': 'scratch', 'memory': 'none'},none,0.1,10",3,20261106T012349Z-c649b15290a9,20261106T012632Z-9fabf2570cc4,True,True
+"continual,unlabelled,learning.trainer.lr,learning.trainer.local_epochs={'update': 'scratch', 'memory': 'none'},none,0.1,10",4,20261106T012403Z-d2c026f44ec7,20261106T012644Z-45bb1a873c5e,True,True
