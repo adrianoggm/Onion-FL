@@ -152,8 +152,18 @@ def test_the_ssh_command_never_prompts_and_names_the_key_and_the_known_hosts() -
     options = " ".join(command)
     assert "BatchMode=yes" in options and "StrictHostKeyChecking=yes" in options
     assert "-p 2201" in options and "-i /keys/id" in options
-    assert 'UserKnownHostsFile="/tmp/known"' in options and "-n" in command
+    assert "UserKnownHostsFile=/tmp/known" in command and "-n" in command
     assert command.index("--") == len(command) - 3  # every option comes before
+
+
+def test_a_known_hosts_path_with_a_space_is_quoted_for_ssh() -> None:
+    inv = parse_inventory(
+        {"machines": {"a": {"address": "a"}}, "known_hosts": "/tmp/my keys/known"}
+    )
+
+    command = ssh_command("ssh", inv, inv.machine("a"), "true")
+
+    assert 'UserKnownHostsFile="/tmp/my keys/known"' in command
 
 
 def test_the_remote_line_quotes_everything_and_runs_in_the_root() -> None:

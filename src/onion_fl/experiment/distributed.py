@@ -101,7 +101,12 @@ def ssh_command(
     ]
     if inventory.known_hosts is not None:
         known = known_hosts_path(inventory.known_hosts)
-        command += ["-o", f'UserKnownHostsFile="{known}"']
+        # ssh splits this option's value on whitespace, so a path with a space
+        # is quoted; any other is passed bare, since Python's quoting of '"'
+        # for Windows reaches an MSYS ssh (Git's) as "invalid quotes".
+        if any(c.isspace() for c in known):
+            known = f'"{known}"'
+        command += ["-o", f"UserKnownHostsFile={known}"]
     key = machine.key_path()
     if key is not None:
         command += ["-i", key, "-o", "IdentitiesOnly=yes"]
@@ -115,7 +120,7 @@ def ssh_command(
 
 
 def known_hosts_path(path: str) -> str:
-    """The known_hosts file, expanded; quoted by the caller for ssh's -o."""
+    """The known_hosts file, expanded; quoted by the caller if it has spaces."""
     known = expand(path)
     if '"' in known or CONTROL.search(known) or known.startswith("-"):
         raise ConfigError(f"known_hosts {path!r}: not a usable path for ssh")
