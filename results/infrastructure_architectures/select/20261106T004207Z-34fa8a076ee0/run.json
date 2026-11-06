@@ -1,0 +1,129 @@
+{
+  "run_id": "20261106T004207Z-34fa8a076ee0",
+  "topology_id": "2a33649e5785c6bf467c30d51ca2ed6015706a3df6b17a6b1268584c7532352f",
+  "config_id": "a1949a4f67c7730c8e146e2353b07d674690a3b02cec99742aa923667788b97e",
+  "backend": "sim",
+  "infrastructure_id": "90b27e16e12f55272c878d2a409f184f74b7164c83db4067cb720fb1dedc5558",
+  "data_id": "9fd573754157d68b111f037ecd891bdb62abcbff1d5e5e818da789dde470257c",
+  "code_version": {
+    "commit": "5790d02334b8d5cae028352bbcfa94ff16a061b1",
+    "dirty": false
+  },
+  "seed": 0,
+  "scenario": "learning.trainer.lr=0.03",
+  "host": "2INNDESLP100930",
+  "pid": 124772,
+  "started_at": "2026-11-06T00:42:08.211708+00:00",
+  "status": "finished",
+  "config": {
+    "name": "infrastructure_architectures_select",
+    "description": "Selecci\u00f3n del lr de los edges sobre los sujetos de validaci\u00f3n, en la arquitectura Edge\u2013Fog\u2013Cloud.",
+    "topology": "four_fogs_swell_wesad_physical",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        },
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.2,
+        "local_val_split": "class_tail",
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.03
+      },
+      "init": "random"
+    },
+    "rounds": 20,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": 20,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": 20,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 20,
+        "subjects": "val"
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    },
+    "infrastructure": {
+      "name": "architectures_lab",
+      "assignment": {
+        "root": "cloud-1",
+        "aggregators": {
+          "fog_a1": "fog-1",
+          "fog_a2": "fog-1",
+          "fog_b1": "fog-2",
+          "fog_b2": "fog-2"
+        },
+        "edges": {
+          "name": "profile_mix",
+          "mix": {
+            "raspberry_pi": 1.0
+          }
+        },
+        "services": {}
+      }
+    }
+  },
+  "finished_at": "2026-11-06T00:50:32.712078+00:00",
+  "run_hash": "5fca24a77808a51eb2ff8ba5272b470d0b92cb6dfdb89be23298d3dd2eb93691"
+}

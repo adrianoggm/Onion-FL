@@ -65,6 +65,7 @@ from onion_fl.data.stream import (
 from onion_fl.experiment.backends import backend_name
 from onion_fl.infrastructure.assignment import assignments
 from onion_fl.infrastructure.backends import backends
+from onion_fl.infrastructure.failover import failovers
 from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.attacks import attacks
 from onion_fl.learning.metrics import metrics
@@ -113,6 +114,7 @@ REGISTRIES: dict[str, Registry] = {
     "trigger": triggers,
     "detector": detectors,
     "assignment": assignments,
+    "failover": failovers,
     "backend": backends,
 }
 
@@ -330,6 +332,16 @@ class InfrastructureConfig(Strict):
         description="infrastructures/<nombre>.yaml, una ruta, o en línea"
     )
     assignment: AssignmentConfig
+    failover: PluginRef | None = Field(
+        None,
+        description="Adónde va un edge cuyo agregador cae (none, por defecto, "
+        "nearest_alive, explicit)",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+
+    _failover = field_validator("failover")(
+        lambda v: v if v is None else _plugin(failovers, v)
+    )
 
 
 class Range(Strict):

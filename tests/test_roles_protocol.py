@@ -147,6 +147,19 @@ def test_hierarchical_weights_equal_a_flat_fedavg() -> None:
     assert_global(federation, "trunk.0.weight", (1 * 1 + 3 * 3 + 0 * 4) / 8)
 
 
+def test_in_two_levels_the_edges_train_under_the_root_itself() -> None:
+    flat = parse_topology(
+        {"name": "f", "levels": ["global", "edge"], "root": {"id": "cloud"}}
+    )
+    edges = [edge("e1", shift=1, examples=1), edge("e2", shift=3, examples=3)]
+
+    federation = run(flat, {"cloud": edges})
+
+    assert_global(federation, "trunk.0.weight", (1 * 1 + 3 * 3) / 4)
+    with pytest.raises(ValueError, match="takes evaluators only"):
+        run(tree(), {"cloud": [edge("e1")], "fog_0": [edge("e2")]})
+
+
 def test_rounds_accumulate() -> None:
     federation = run(tree(1), {"fog_0": [edge("e1"), edge("e2")]}, rounds=3)
 
