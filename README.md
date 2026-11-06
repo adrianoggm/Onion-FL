@@ -41,7 +41,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Observability | ✅ | `runs/<run_id>/` with signed events, summary and final model. Diagnostics at every aggregator; analysis API with mean ± CI over seeds; HTML report; Prometheus and OpenTelemetry sinks; Grafana dashboard |
 | CLI | ✅ | `onion_fl data · topology · plan · run · node · ceiling · fidelity · report · baseline · schema · serve` |
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
-| Continuum | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, and a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`). Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. Semi-supervision and versions are next (C5 and C7, [#160](https://github.com/adrianoggm/Onion-FL/issues/160), [#162](https://github.com/adrianoggm/Onion-FL/issues/162)) |
+| Continuum | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, and a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`). Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. A promotion policy keeps each round's model as a challenger until the validation streams promote it, with rollback. Semi-supervision is next (C5, [#160](https://github.com/adrianoggm/Onion-FL/issues/160)); the Studio's view and controls of the versions are [#203](https://github.com/adrianoggm/Onion-FL/issues/203) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
 | Tests | ✅ | 1178 tests. With SWELL, WESAD and a local broker, 1174 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
@@ -208,6 +208,16 @@ sweep: {data.placement.alpha: [0.0, 0.5, 1.0]}
   - Drift (`data`, `prior` or `performance`) is detected per edge, per zone and for the federation, and reported as `drift.detected`. `trigger.fired` names what opened each round.
   - A schedule must be a multiple of `status_every`. One whose `every` and `status_every` equal the old `round_every` gives C3's model, as long as each round closes within its period.
   - `run.finished` says whether the last label (`horizon`) or the `rounds` cap ended the run.
+- **Champion and challenger.** `promotion` keeps each round's model as a challenger until the validation streams decide on it:
+
+  ```yaml
+  promotion: {name: champion_challenger, metric: macro_f1, min_delta: -0.01, max_forgetting: 0.03, min_samples: 500}
+  ```
+
+  - The edges serve the champion only. A validator per validation subject, under the root, scores both on the labels that came since the champion was promoted (or within `window`), and on every earlier one, the history included.
+  - The challenger is promoted unless it loses more than `min_delta` on the recent window, forgets more than `max_forgetting` on the earlier labels, or has fewer than `min_samples` recent labels to be judged. A rejection leaves the champion and its server state as they were. The test subjects never decide.
+  - `version.candidate`, `version.promoted`, `version.rejected` and `version.rollback` carry the decision's scores. An operator's control message to the coordinator (`{rollback: v}`, `null` for the previous champion, or `{promote: v}`) changes the champion. Only the configured operator ids may send it, and only the configured validators decide; a missing or non-finite score never promotes. Authenticating the operator on the transport, the Studio and the API are [#203](https://github.com/adrianoggm/Onion-FL/issues/203).
+  - The bundle's model is the champion, and its lineage lists every version.
 - **Edge validation.** `data.roles.local_val_split: class_tail` holds out the last rows of each class instead of the last rows of the recording, which are usually a single condition.
 - **Downloadable data.** `experiments/mix_swell_wesad.yaml` runs the same sweep with SWELL and WESAD, the two datasets that can be downloaded. It trains for 10 local epochs: with one, the model only learns the majority class ([§7](#7-results)).
 

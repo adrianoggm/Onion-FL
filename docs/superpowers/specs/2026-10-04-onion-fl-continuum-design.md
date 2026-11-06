@@ -136,6 +136,14 @@ promotion:
   - **Referencia e historia (retención):** una muestra fija de los periodos anteriores del mismo stream.
 - **El test nunca decide.** Los sujetos de test solo se usan para informar.
 - **Dónde se sirve cada versión.** Los edges sirven el champion. El challenger no llega a producción antes de promoverse.
+- **Decisiones de C7** (#162; el Studio, la API y las series de Prometheus pasan a #203):
+  - **Quién valida.** Con `promotion`, cada sujeto de validación tiene además un validador bajo la raíz, sobre su stream de evaluación. El coordinador le envía champion y challenger juntos y no abre la ronda siguiente hasta decidir.
+  - **Qué etiquetas.** Solo las llegadas, como en un despliegue. La ventana reciente son las llegadas desde que se promovió el champion, o en los últimos `window` de tiempo de datos; la referencia, todas las anteriores, histórico incluido.
+  - **Sin bastantes etiquetas recientes** (`min_samples`), el challenger se rechaza: no hay con qué decidir, y el champion sigue.
+  - **Un rechazo no deja rastro:** el estado del optimizador de servidor vuelve al del champion. La promoción y el rollback restauran el modelo y el estado de servidor de la versión.
+  - **Falla cerrado.** Solo deciden los validadores que construye la federación, no un hijo que diga serlo. Un informe con valores no finitos o muestras negativas se descarta, y una puntuación que falta o no es finita no promueve nunca. Champion y challenger necesitan ambos `min_samples`.
+  - **Rollback y promoción manual** son órdenes del operador, un mensaje `control` al coordinador, aceptado solo de los `operators` configurados (nunca de un hijo); autenticar al emisor en el transporte es de #203. La versión restaurada llega a los edges en la ronda siguiente. El rollback por política queda para cuando C8 mida cuándo hace falta.
+  - **Alcance.** Se rechazan los grupos que guarda un agregador intermedio, porque los del challenger llegarían a los edges sin validar. El estado de los edges no se versiona.
 
 ## 6. `ModelBundle` (C2)
 

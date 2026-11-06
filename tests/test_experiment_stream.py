@@ -396,3 +396,53 @@ def test_a_schedule_must_fall_on_the_status_ticks(
 
     with pytest.raises(ConfigError, match="status_every"):
         parse_experiment(raw)
+
+
+# --- champion and challenger (continuum C7) ----------------------------------------
+
+PROMOTION = {"name": "champion_challenger", "metric": "accuracy", "min_samples": 1}
+
+
+def test_a_promotion_run_serves_and_saves_the_champion(workspace: Path) -> None:
+    path = run(workspace, promotion=PROMOTION)
+
+    candidates = events(path, "version.candidate")
+    decided = events(path, "version.promoted") + events(path, "version.rejected")
+    assert candidates and len(decided) == len(candidates)
+    lineage = json.loads((path / "bundle" / "lineage.json").read_text("utf-8"))
+    champion = lineage["champion"]
+    assert [v["v"] for v in lineage["versions"]] == list(range(len(candidates) + 1))
+    assert lineage["versions"][champion]["status"] == "active"
+    promoted = [e["value"] for e in events(path, "version.promoted")]
+    assert champion == (promoted[-1] if promoted else 0)
+    registered = events(path, "node.registered")
+    validators = [e for e in registered if e["tags"]["role"] == "validator"]
+    assert validators and all(e["node"] == "cloud" for e in validators)
+
+
+@pytest.mark.parametrize(
+    "change, message",
+    [
+        ({"stream": None, "labels": None}, "stream"),
+        ({"evaluation": {"metrics": ["loss"]}}, "accuracy"),
+    ],
+)
+def test_a_promotion_that_cannot_decide_is_refused(
+    workspace: Path, change: dict, message: str
+) -> None:
+    raw = experiment(workspace, promotion=PROMOTION) | change
+    raw = {k: v for k, v in raw.items() if v is not None}
+    with pytest.raises(ConfigError, match=message):
+        parse_experiment(raw)
+
+
+def test_a_promotion_needs_validation_subjects(workspace: Path) -> None:
+    raw = experiment(workspace, promotion=PROMOTION)
+    raw["data"] = raw["data"] | {"roles": {"test": 0.25, "val": 0.0, "seed": 0}}
+    (scenario,) = scenarios(parse_experiment(raw))
+    with pytest.raises(ValueError, match="data.roles.val"):
+        run_scenario(scenario, evaluate=stub_score)
+
+
+def test_a_run_without_promotion_keeps_its_config_id(workspace: Path) -> None:
+    assert "promotion" not in parse_experiment(experiment(workspace)).dump()
