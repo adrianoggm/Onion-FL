@@ -42,7 +42,7 @@ evaluation:
 seeds: [0, 1, 2, 3, 4]
 sweep:
   continual, unlabelled, learning.trainer.lr, learning.trainer.local_epochs:
-    - [{update: frozen, memory: none}, none, 0.003, 1]
+    - [{update: frozen, memory: none}, none, 0.01, 1]
     - [{update: scratch, memory: none}, none, 0.1, 10]
     - [{memory: none}, none, 0.1, 10]
     - [{memory: {name: reservoir, capacity: 512}, replay_ratio: 0.25}, none, 0.1, 10]
