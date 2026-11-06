@@ -1,0 +1,49 @@
+# The continual benchmark (issue #163, continuum C8): five baselines on the
+# SWELL + WESAD streams, scored on the test subjects. Each baseline's settings
+# were chosen on the validation streams before this was run:
+# - continuum_benchmark_select: the learning rate and local epochs of frozen,
+#   scratch and warm;
+# - continuum_benchmark_select_replay: the memory and its share for warm +
+#   replay (and its learning rate, which stayed 0.1);
+# - continuum_benchmark_select_unlabelled: the objective of warm + replay +
+#   semi-supervised (consistency, noise 0.1).
+# The streams are those of the selection: a 20-minute bootstrap, a tenth of
+# the rows labelled, 10 minutes late, a round every 10 minutes of data.
+#
+#   onion_fl run experiments/continuum_benchmark.yaml --workers 4   # twice: the second is the determinism check
+name: continuum_benchmark
+description: Benchmark continuo con datos reales - congelado, desde cero, warm start, con replay y con semisupervisado.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+rounds: 60                 # an upper bound: the run ends at the last label
+stream:
+  bootstrap: 20m
+  batch_size: 1
+  speed: 60
+labels: {fraction: 0.1, delay: 10m}
+continual: {memory: none}
+unlabelled: none
+continuum:
+  trigger: {name: schedule, every: 10m}
+  status_every: 10m
+evaluation:
+  metrics: [loss, accuracy, macro_f1, confusion_matrix]
+  aggregators: {every: 1}
+  global: {every: 1}
+seeds: [0, 1, 2, 3, 4]
+sweep:
+  continual, unlabelled, learning.trainer.lr, learning.trainer.local_epochs:
+    - [{update: frozen, memory: none}, none, 0.003, 1]
+    - [{update: scratch, memory: none}, none, 0.1, 10]
+    - [{memory: none}, none, 0.1, 10]
+    - [{memory: {name: reservoir, capacity: 512}, replay_ratio: 0.25}, none, 0.1, 10]
+    - [{memory: {name: reservoir, capacity: 512}, replay_ratio: 0.25}, {name: consistency, noise: 0.1}, 0.1, 10]
