@@ -439,6 +439,34 @@ def with_infrastructure(workspace: Path, **changes) -> dict:  # noqa: F811
     )
 
 
+def test_a_profile_with_a_dispersion_computes_at_a_lognormal_rate(
+    workspace: Path,  # noqa: F811
+) -> None:
+    from onion_fl.experiment.predictor import plan_of
+    from onion_fl.runtime.devices import LognormalRate
+
+    def computes(profiles: dict) -> dict:
+        raw = with_infrastructure(workspace)
+        raw["infrastructure"]["name"] = lab(profiles=profiles)
+        config = parse_experiment(raw).dump()
+        return plan_of(config, 0).compute
+
+    fixed = {"vm": {"train_rate": 100}, "pi": {"train_rate": 10}}
+    plain = computes(fixed)
+    edges = [n for n, m in plain.items() if getattr(m, "samples_per_second", 0) == 10]
+    assert edges and not any(isinstance(m, LognormalRate) for m in plain.values())
+    sigma = fixed | {"pi": {"train_rate": 10, "train_sigma": 0.5}}
+    lognormal = computes(sigma)
+    for edge in edges:
+        model = lognormal[edge]
+        assert isinstance(model, LognormalRate)
+        assert (model.samples_per_second, model.sigma) == (10, 0.5)
+    # without it, an infrastructure keeps the id it had before the field existed
+    before = "0e638cde197329d8f7a62be114370a84a2244509a1e4143c7fc7c00bd5041519"
+    assert parse_infrastructure(lab()).infrastructure_id == before
+    assert parse_infrastructure(lab(profiles=sigma)).infrastructure_id != before
+
+
 def test_without_an_infrastructure_the_config_and_its_id_do_not_change(
     workspace: Path,  # noqa: F811
 ) -> None:

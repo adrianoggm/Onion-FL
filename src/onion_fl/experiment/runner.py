@@ -1014,7 +1014,9 @@ def _on_hosts(
     out = {
         leaf: [
             replace(
-                s, host=resolved.hosts[s.id], compute=_rate(resolved.train_rate(s.id))
+                s,
+                host=resolved.hosts[s.id],
+                compute=_rate(resolved.train_rate(s.id), resolved.train_sigma(s.id)),
             )
             if s.train
             else replace(s, host=resolved.hosts[leaf])
@@ -1031,12 +1033,15 @@ def _on_hosts(
     return out, profiles
 
 
-def _rate(rate: float | None) -> Any:
-    return (
-        None
-        if rate is None
-        else compute_models.create("samples_per_second", {"samples_per_second": rate})
-    )
+def _rate(rate: float | None, sigma: float | None = None) -> Any:
+    """A compute model at ``rate``, lognormal around it when ``sigma`` is given."""
+    if rate is None:
+        return None
+    if sigma:
+        return compute_models.create(
+            "lognormal_rate", {"samples_per_second": rate, "sigma": sigma}
+        )
+    return compute_models.create("samples_per_second", {"samples_per_second": rate})
 
 
 def _paths(resolved: Resolved) -> tuple[PhysicalNetwork, dict[str, Any] | None]:

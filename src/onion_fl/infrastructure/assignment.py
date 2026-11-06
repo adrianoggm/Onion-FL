@@ -385,6 +385,9 @@ class Resolved:
     def train_rate(self, node: str) -> float | None:
         return self.infrastructure.profile_of(self.hosts[node]).train_rate
 
+    def train_sigma(self, node: str) -> float | None:
+        return self.infrastructure.profile_of(self.hosts[node]).train_sigma
+
     def load(self) -> dict[str, list[str]]:
         """The logical nodes each host runs."""
         out: dict[str, list[str]] = {}
