@@ -10,7 +10,11 @@ both backends pair. Each backend's runs go to their own folder,
 ``runs/fidelity_validation_<backend>`` by default, which is what ``onion_fl
 fidelity`` compares. Emulated runs go one at a time, since a run's wall clock
 must not include another's work; sim runs, on a virtual clock, may take
-``--workers``.
+``--workers``. They go seed by seed, every configuration once per seed, so
+that a drift of the machine during the session falls on seeds, which the
+analysis pairs, and not on configurations. A run already finished in the
+folder (same ``config_id`` and seed) is not run again, so an interrupted
+session resumes.
 
 Before running, it checks what the pre-registration fixes
 (results/fidelity_sim_emulated/PREREGISTRATION.md): every profile and
@@ -22,10 +26,12 @@ calibrated link of the infrastructure cites one calibration, the one
 """
 
 import argparse
+import json
 from pathlib import Path
 
 from onion_fl.experiment.config import load_experiment, parse_experiment
-from onion_fl.experiment.runner import run_experiment
+from onion_fl.experiment.runner import run_scenarios
+from onion_fl.experiment.sweep import scenarios
 from onion_fl.infrastructure.calibration import cited
 from onion_fl.infrastructure.model import load_infrastructure
 
@@ -40,6 +46,16 @@ def calibration_of(raw: dict) -> str:
     if len(ids) != 1:
         raise SystemExit(f"the infrastructure cites {ids}; the validation needs one")
     return ids[0]
+
+
+def finished(runs: Path) -> set[tuple[str, int]]:
+    """``(config_id, seed)`` of the runs in ``runs`` that finished."""
+    done = set()
+    for meta in runs.glob("*/run.json"):
+        run = json.loads(meta.read_text(encoding="utf-8"))
+        if run.get("status") == "finished":
+            done.add((run.get("config_id"), run.get("seed")))
+    return done
 
 
 def main() -> None:
@@ -73,7 +89,21 @@ def main() -> None:
     runs = args.runs or f"runs/fidelity_validation_{args.backend}"
     raw["paths"] = raw["paths"] | {"runs": runs}
     config = parse_experiment(raw)
-    for path in run_experiment(config, workers=args.workers, only=args.scenario):
+    every = scenarios(config)
+    order = {name: i for i, name in enumerate(dict.fromkeys(s.name for s in every))}
+    if args.scenario is not None and args.scenario not in order:
+        raise SystemExit(f"no scenario named {args.scenario!r}; they are {list(order)}")
+    done = finished(Path(runs))
+    todo = sorted(
+        (
+            s
+            for s in every
+            if args.scenario in (None, s.name) and (s.config_id, s.seed) not in done
+        ),
+        key=lambda s: (s.seed, order[s.name]),
+    )
+    print(f"{len(todo)} run(s) to go, {len(done)} already finished", flush=True)
+    for path in run_scenarios(todo, workers=args.workers) if todo else []:
         print(path, flush=True)
 
 
