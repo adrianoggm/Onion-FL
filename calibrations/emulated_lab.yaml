@@ -2,10 +2,12 @@
 # emulated backend (issue #197, I1 §13). They are not FL experiments:
 #
 #   onion_fl calibrate measure calibrations/emulated_lab.yaml --out <session>
-#   onion_fl calibrate fit <session> --infrastructure-out <calibrated.yaml>
+#   onion_fl calibrate fit <session> <session> <session> #       --infrastructure-out <calibrated.yaml>
 #   onion_fl calibrate check <other session> --infrastructure <calibrated.yaml>
 #
-# The fit and the check use two sessions, each in its own emulation.
+# Every session runs in its own emulation. The fit takes several, so that the
+# interval of each value covers the variation between sessions; the check
+# takes sessions the fit never saw.
 name: emulated_lab
 description: Training, aggregation and MQTT paths of the small emulated lab.
 infrastructure: emulated_lab

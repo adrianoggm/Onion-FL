@@ -16,41 +16,52 @@ the measurements it was fitted on:
      with the other hosts idle, through the MQTT broker of the
      infrastructure, as the nodes talk.
 
-2. ``onion_fl calibrate fit <session>`` turns one session into a signed
-   calibration ``calibrations/<calibration_id>/``, and writes the
+2. ``onion_fl calibrate fit <session>...`` turns one or more sessions into a
+   signed calibration ``calibrations/<calibration_id>/``, and writes the
    infrastructure that cites it.
 3. ``onion_fl calibrate check <session> --infrastructure <calibrated.yaml>``
    predicts, with the simulator's own code, what another session measured,
-   and says whether each prediction is inside the 95 % interval of that
-   measurement.
+   and says whether that session's values fall inside the calibration's
+   intervals (refusing a session the calibration was fitted on).
 
 How each value is fitted:
 
 - **Training rate** of a (profile, workload): the samples charged over the
   wall time, summed over the trainings of every host of the profile. A
-  host's first training is a warm-up and is left out, and so is any training
-  outside the window in which every host of the phase was training.
+  host's first ``train.warmup`` trainings warm it up and are left out, and so
+  is any training outside the window in which every host of the phase was
+  training.
 - **Aggregation rate** of a profile: bytes combined over wall time, the same
   way (the first combination of each size is the warm-up).
-- **Path** between two hosts: a least-squares line ``delay = a + 8·size/b``
-  over its one-way delays up to ``links.fit_up_to`` bytes (the sizes the
-  experiments send: past the first TCP window, slow start bends the line);
-  ``a`` is its latency, ``b`` its goodput. The first message of each pair is
-  a warm-up and is left out.
+- **Path** between two hosts: a least-squares line ``delay = a + c·size``
+  over its one-way delays up to ``links.fit_up_to`` bytes; ``a`` is its
+  latency and ``c`` its seconds per byte. The first message of each pair is
+  a warm-up and is left out. Past the first TCP window (about 14.6 kB) slow
+  start after an idle connection adds round trips that no line describes, so
+  the path model holds up to ``fit_up_to`` only (``valid_up_to``).
 - **Link latency**: least squares of the paths' ``a`` over the links they
   cross (the broker makes a path cross some links twice), so the links absorb
   the transport's own overhead.
-- **Link bandwidth**: the nominal rate of each link direction times the mean
-  ratio of goodput to nominal bottleneck of the paths it is the bottleneck
-  of; a direction that bottlenecks no path takes the mean ratio of all
-  (listed in ``derived``).
+- **Link bandwidth**: through the broker, a message is sent once per leg
+  (``paths.legs``), each leg at the rate of its narrowest segment, so
+  ``c = Σ 8·xₕ / Bₕ`` over the legs, ``Bₕ`` the nominal rate of the leg's
+  bottleneck ``h`` and ``xₕ`` the nominal over the goodput. The ``xₕ`` are
+  solved by least squares over the paths; a link direction that bottlenecks
+  no leg takes their mean (listed in ``derived``).
 - **Link loss**: the lowest loss of the paths that cross it (a link loses at
   most what its least lossy path does).
 
-Every interval is a 95 % percentile bootstrap over the measurements.
+Within a session every interval is a 95 % percentile bootstrap over its
+measurements. Fitted on k ≥ 2 sessions, each value is the geometric mean of
+the sessions' values and its interval the 95 % prediction interval of the
+value of one more session, ``exp(m ± t₀.₉₇₅,ₖ₋₁ · s · √(1 + 1/k))`` with ``m``
+and ``s`` the mean and standard deviation of the logs (``between``): the
+variation between sessions, not the noise within one, decides whether a
+calibration holds on another day. A link's loss pools the sessions' messages.
 """
 
 import json
+import math
 import pickle
 import platform
 import subprocess
@@ -90,7 +101,7 @@ from onion_fl.infrastructure.model import (
     InfrastructureError,
     load_infrastructure,
 )
-from onion_fl.infrastructure.paths import effective, route, segment
+from onion_fl.infrastructure.paths import effective, legs, route, segment
 
 ROOT = "/onionfl"
 SESSION = f"{ROOT}/session"  # where the containers see the session folder
@@ -778,33 +789,51 @@ def _links(
             for p in order
         ]
     )
+    # Each leg is sent at its narrowest segment: (hop, nominal rate) per leg.
+    narrowest: dict[tuple[str, str], list[tuple[tuple[str, bool], float]]] = {}
+    for p in order:
+        narrowest[p] = []
+        for leg in legs(crossings[p]):
+            nominal = {}
+            for k, forward in leg:
+                s = segment(infra, k)  # nominal: nothing cites a calibration yet
+                rate = s.bandwidth_up if forward else s.bandwidth_down
+                if rate is not None:
+                    nominal[(k, forward)] = rate
+            if nominal:
+                hop = min(nominal, key=lambda h, n=nominal: (n[h], h))
+                narrowest[p].append((hop, nominal[hop]))
+    unknown = sorted(
+        {hop for p in order for hop, _ in narrowest[p] if hop[0][:5] == "link:"}
+    )
+    slope_design = np.array(
+        [
+            [sum(8 / r for h, r in narrowest[p] if h == u) for u in unknown]
+            for p in order
+        ]
+    ).reshape(len(order), len(unknown))
+    slope_fixed = np.array(  # a LAN bottleneck keeps its nominal rate
+        [sum(8 / r for h, r in narrowest[p] if h not in unknown) for p in order]
+    )
+    if unknown and np.linalg.matrix_rank(slope_design) < len(unknown):
+        raise ConfigError(
+            f"links: the pairs measured cannot tell apart the bandwidths of "
+            f"{unknown}; measure pairs whose legs they bottleneck in different "
+            "combinations"
+        )
 
     def fit(lines: Mapping[tuple[str, str], tuple[float, float]]) -> dict[str, Any]:
         a = np.array([lines[p][0] for p in order]) - fixed
         latency = np.linalg.lstsq(design, a, rcond=None)[0]
-        ratios: dict[tuple[str, bool], list[float]] = {}
-        every = []
-        for p in order:
-            nominal = {}
-            for k, forward in crossings[p]:
-                s = segment(infra, k)
-                rate = s.bandwidth_up if forward else s.bandwidth_down
-                if rate is not None:
-                    nominal[(k, forward)] = rate
-            if not nominal:
-                continue
-            bottleneck = min(nominal.values())
-            goodput = 8.0 / lines[p][1] if lines[p][1] > 0 else np.inf
-            eta = goodput / bottleneck
-            every.append(eta)
-            for hop, rate in nominal.items():
-                if rate == bottleneck:
-                    ratios.setdefault(hop, []).append(eta)
-        overall = float(np.mean(every)) if every else 1.0
+        x: dict[tuple[str, bool], float] = {}
+        if unknown:
+            c = np.array([lines[p][1] for p in order]) - slope_fixed
+            solved = np.linalg.lstsq(slope_design, c, rcond=None)[0]
+            x = {h: float(v) for h, v in zip(unknown, solved, strict=True) if v > 0}
         return {
             "latency": dict(zip(keys, latency, strict=True)),
-            "eta": {hop: float(np.mean(v)) for hop, v in ratios.items()},
-            "overall": overall,
+            "x": x,
+            "overall": float(np.mean(list(x.values()))) if x else 1.0,
         }
 
     rng = np.random.default_rng(seed)
@@ -816,6 +845,9 @@ def _links(
             for p in order
         }
     )
+    for hop in unknown:
+        if hop not in point["x"]:
+            notes.append(f"{hop}: no positive fit of its bandwidth; it takes the mean")
     draws = []
     for _ in range(BOOTSTRAP // 4):
         lines = {}
@@ -856,14 +888,14 @@ def _links(
             if nominal is None:
                 continue
             hop = (key, forward)
-            if hop not in point["eta"]:
+            if hop not in point["x"]:
                 derived.append(side)
 
-            def eta(d: Mapping[str, Any], hop: tuple[str, bool] = hop) -> float:
-                return d["eta"].get(hop, d["overall"])
+            def x(d: Mapping[str, Any], hop: tuple[str, bool] = hop) -> float:
+                return d["x"].get(hop, d["overall"])
 
-            low, high = _percentiles(nominal * eta(d) for d in draws)
-            fitted[side] = Estimate(value=nominal * eta(point), low=low, high=high, n=n)
+            low, high = _percentiles(nominal / x(d) for d in draws)
+            fitted[side] = Estimate(value=nominal / x(point), low=low, high=high, n=n)
         losses = []
         for p in order:
             if any(k == key for k, _ in crossings[p]):
@@ -899,49 +931,178 @@ def _boot_line(data: Mapping[str, Any], seed: int) -> tuple[Estimate, Estimate]:
     return latency, goodput
 
 
-def fit(session: str | Path, out: str | Path = "calibrations") -> Path:
-    """The signed calibration of one session (module doc)."""
-    folder = Path(session)
-    meta, rows = read_session(folder)
-    spec = CalibrationSpec.model_validate(meta["spec"])
-    infra = _infrastructure(spec)
-    if infra.infrastructure_id != meta["infrastructure_id"]:
-        raise ConfigError(
-            f"{spec.infrastructure} changed since the session measured it"
-        )
-    profiles: dict[str, dict[str, Any]] = {}
-    for name in meta["hosts"].values():
-        p = infra.profiles[name]
-        profiles.setdefault(name, {"cpus": p.cpus, "memory": p.memory, "train": {}})
-    train = [r for r in rows if r["kind"] == "train"]
+def session_values(
+    meta: Mapping[str, Any],
+    rows: Sequence[Mapping[str, Any]],
+    infra: Infrastructure,
+    spec: CalibrationSpec,
+) -> dict[str, Any]:
+    """What one session measured of every calibrated quantity, each with its
+    interval within the session; ``infra`` as the session measured it."""
+    out: dict[str, Any] = {"train": {}, "aggregate": {}, "paths": {}, "loopback": {}}
     warmup = spec.train.warmup if spec.train else 1
+    train = [r for r in rows if r["kind"] == "train"]
     for wid in meta["workloads"]:
         mine = concurrent([r for r in train if r["workload"] == wid], "job", warmup)
         for name in sorted({r["profile"] for r in mine}):
             these = [r for r in mine if r["profile"] == name]
-            profiles[name]["train"][wid] = ratio(
-                [r["samples"] for r in these], [r["wall_s"] for r in these], spec.seed
-            )
+            samples = [r["samples"] for r in these]
+            walls = [r["wall_s"] for r in these]
+            out["train"][(name, wid)] = {
+                "rate": ratio(samples, walls, spec.seed),
+                "host": these[0]["host"],
+                "samples": samples,
+                "walls": walls,
+            }
     combined = concurrent([r for r in rows if r["kind"] == "aggregate"], "repeat")
     for name in sorted({r["profile"] for r in combined}):
         these = [r for r in combined if r["profile"] == name]
-        profiles[name]["aggregate"] = ratio(
-            [r["bytes"] for r in these], [r["wall_s"] for r in these], spec.seed
-        )
+        sizes = [r["bytes"] for r in these]
+        walls = [r["wall_s"] for r in these]
+        out["aggregate"][name] = {
+            "rate": ratio(sizes, walls, spec.seed),
+            "host": these[0]["host"],
+            "samples": sizes,
+            "walls": walls,
+        }
     up_to = spec.links.fit_up_to if spec.links else None
-    links, transport, notes = _links(
+    out["links"], out["transport"], out["notes"] = _links(
         infra, meta["broker"], link_rows(rows, up_to), spec.seed
     )
-    raw = (folder / MEASUREMENTS).read_bytes()
+    for (src, dst), data in sorted(link_rows(rows).items()):
+        sizes, delays = np.array(data["sizes"], float), np.array(data["delays"], float)
+        where = "loopback" if src == dst else "paths"
+        for size in sorted(set(sizes.tolist())):
+            out[where][(src, dst, int(size))] = mean(
+                delays[sizes == size].tolist(), spec.seed
+            )
+    return out
+
+
+def between(estimates: Sequence[Estimate]) -> Estimate:
+    """One value from the values of k sessions: their geometric mean and the
+    95 % prediction interval of one more session's value (module doc); a
+    single session keeps its own interval. Values that are not all positive
+    are taken on their own scale."""
+    if len(estimates) == 1:
+        return estimates[0]
+    from scipy import stats
+
+    values = np.array([e.value for e in estimates], float)
+    k = len(values)
+    logs = bool(np.all(values > 0))
+    v = np.log(values) if logs else values
+    m, sd = float(v.mean()), float(v.std(ddof=1))
+    half = float(stats.t.ppf(0.975, k - 1)) * sd * math.sqrt(1 + 1 / k)
+
+    def back(x: float) -> float:
+        return float(np.exp(x)) if logs else float(x)
+
+    return Estimate(
+        value=back(m),
+        low=back(m - half),
+        high=back(m + half),
+        n=sum(e.n for e in estimates),
+        sessions=values.tolist(),
+    )
+
+
+def path_key(src: str, dst: str, size: int) -> str:
+    return f"{src}>{dst}@{size}"
+
+
+def fit(
+    sessions: str | Path | Sequence[str | Path], out: str | Path = "calibrations"
+) -> Path:
+    """The signed calibration of one or more sessions of one spec (module doc)."""
+    if isinstance(sessions, str | Path):
+        sessions = [sessions]
+    folders = [Path(f) for f in sessions]
+    read = [read_session(f) for f in folders]
+    first = read[0][0]
+    for folder, (meta, _) in zip(folders, read, strict=True):
+        for field in ("spec", "infrastructure_id", "hosts", "workloads", "broker"):
+            if meta[field] != first[field]:
+                raise ConfigError(
+                    f"{folder}: its {field} differs from that of {folders[0]}; a "
+                    "calibration fits sessions of one spec"
+                )
+    spec = CalibrationSpec.model_validate(first["spec"])
+    infra = _infrastructure(spec)
+    if infra.infrastructure_id != first["infrastructure_id"]:
+        raise ConfigError(
+            f"{spec.infrastructure} changed since the session measured it"
+        )
+    raws = [(f / MEASUREMENTS).read_bytes() for f in folders]
+    digests = [measurements_digest(raw) for raw in raws]
+    if len(set(digests)) < len(digests):
+        raise ConfigError("fit: the same session is given twice")
+    values = [session_values(meta, rows, infra, spec) for meta, rows in read]
+
+    def every(kind: str, key: Any) -> list[Any]:
+        found = [v[kind].get(key) for v in values]
+        if any(x is None for x in found):
+            raise ConfigError(f"fit: {kind} {key} was not measured in every session")
+        return found
+
+    profiles: dict[str, dict[str, Any]] = {}
+    for name in first["hosts"].values():
+        p = infra.profiles[name]
+        profiles.setdefault(name, {"cpus": p.cpus, "memory": p.memory, "train": {}})
+    for name, wid in values[0]["train"]:
+        rates = [x["rate"] for x in every("train", (name, wid))]
+        profiles[name]["train"][wid] = between(rates)
+    for name in values[0]["aggregate"]:
+        rates = [x["rate"] for x in every("aggregate", name)]
+        profiles[name]["aggregate"] = between(rates)
+    links = {}
+    for key, link in values[0]["links"].items():
+        mine = every("links", key)
+        fitted: dict[str, Any] = {
+            "latency": between([x.latency for x in mine]),
+            "pairs": link.pairs,
+            "derived": link.derived,
+        }
+        for side in ("bandwidth_up", "bandwidth_down"):
+            if getattr(link, side) is not None:
+                fitted[side] = between([getattr(x, side) for x in mine])
+        if len(mine) == 1:
+            fitted["loss"] = link.loss
+        else:  # the sessions' messages pooled
+            lost = sum(round(x.loss.value * x.loss.n) for x in mine)
+            fitted["loss"] = _wilson(lost, sum(x.loss.n for x in mine))
+        links[key] = LinkCalibration(**fitted)
+    transport = {
+        key: between(every("transport", key)) for key in values[0]["transport"]
+    }
+    up_to = spec.links.fit_up_to if spec.links else None
+    paths = {
+        path_key(*key): between(every("paths", key))
+        for key in values[0]["paths"]
+        if up_to is None or key[2] <= up_to
+    }
+    notes = [
+        note if len(values) == 1 else f"session {i}: {note}"
+        for i, v in enumerate(values)
+        for note in v["notes"]
+    ]
+    if len(raws) == 1:
+        raw = raws[0]
+    else:  # every row says which session it comes from
+        raw = "".join(
+            json.dumps({**row, "session": i}, sort_keys=True) + "\n"
+            for i, (_, rows) in enumerate(read)
+            for row in rows
+        ).encode("utf-8")
     calibration = Calibration(
         backend="emulated",
-        infrastructure_id=meta["infrastructure_id"],
-        created_at=meta["started_at"],
-        code=meta["code"],
-        environment=meta["environment"],
-        spec=meta["spec"] | {"hosts": meta["hosts"], "clients": meta["clients"]},
+        infrastructure_id=first["infrastructure_id"],
+        created_at=first["started_at"],
+        code=first["code"],
+        environment=first["environment"],
+        spec=first["spec"] | {"hosts": first["hosts"], "clients": first["clients"]},
         measurements_sha256=measurements_digest(raw),
-        workloads=meta["workloads"],
+        workloads=first["workloads"],
         profiles={
             name: ProfileCalibration(**p)
             for name, p in profiles.items()
@@ -950,6 +1111,19 @@ def fit(session: str | Path, out: str | Path = "calibrations") -> Path:
         links=links,
         transport=transport,
         notes=notes,
+        sessions=[
+            {
+                "started_at": meta["started_at"],
+                "duration_s": meta.get("duration_s"),
+                "code": meta["code"],
+                "measurements_sha256": digest,
+                "cpusets": meta.get("cpusets", {}),
+                "load": meta.get("load", []),
+            }
+            for (meta, _), digest in zip(read, digests, strict=True)
+        ],
+        paths=paths,
+        valid_up_to=up_to,
     )
     return write_calibration(out, calibration, raw)
 
@@ -975,74 +1149,119 @@ def calibrated_infrastructure(
 # --- check ---------------------------------------------------------------------------
 
 
+def _profile_estimate(
+    infra: Infrastructure, host: str, kind: str, workload: str | None = None
+) -> Estimate | None:
+    """The calibrated estimate of a host's rate, with its interval."""
+    profile = infra.profile_of(host)
+    if not profile.calibration:
+        return None
+    name = infra.hosts()[host][1]
+    measured = infra._calibrations[profile.calibration].profiles.get(name)
+    if measured is None:
+        return None
+    return measured.aggregate if kind == "aggregate" else measured.train.get(workload)
+
+
+def _tally(entries: Sequence[Mapping[str, Any]], *fields: str) -> dict[str, int]:
+    return {"quantities": len(entries)} | {
+        f: sum(1 for e in entries if e[f]) for f in fields
+    }
+
+
 def check(
     session: str | Path, infrastructure: str | Path, calibrations: str | Path
 ) -> dict[str, Any]:
     """What the simulator predicts for the measurements of ``session`` with the
-    calibrated ``infrastructure``, against their 95 % intervals."""
+    calibrated ``infrastructure``, and whether the session's values fall inside
+    the calibration's intervals.
+
+    A quantity passes when the value this session measured is inside the
+    calibrated interval (``inside``); a path also needs the simulator's
+    prediction inside it (``predicted_inside``), since its prediction is not
+    a calibrated value but the sum of the links'. ``inside_session_ci`` says
+    whether the prediction is inside this session's own interval, the
+    criterion of a calibration fitted on one session.
+    """
     from onion_fl.runtime.devices import compute_models
     from onion_fl.runtime.network import LinkProfile
 
     meta, rows = read_session(session)
     spec = CalibrationSpec.model_validate(meta["spec"])
+    nominal = _infrastructure(spec)
+    if nominal.infrastructure_id != meta["infrastructure_id"]:
+        raise ConfigError(
+            f"{spec.infrastructure} changed since the session measured it"
+        )
     infra = load_infrastructure(infrastructure, calibrations)
     cids = cited(infra)
+    loaded = {cid: load_calibration(calibrations, cid) for cid in cids}
     digest = measurements_digest((Path(session) / MEASUREMENTS).read_bytes())
-    for cid in cids:  # never judge a calibration on what it was fitted on
-        if load_calibration(calibrations, cid).measurements_sha256 == digest:
+    for cid, calibration in loaded.items():  # never judge on what it was fitted on
+        if digest in calibration.digests():
             raise ConfigError(
-                f"{session} is the session calibration {cid[:12]} was fitted on; "
+                f"{session} is a session calibration {cid[:12]} was fitted on; "
                 "check it on another session"
             )
+    mine = session_values(meta, rows, nominal, spec)
     out: dict[str, Any] = {
         "session": {
             "started_at": meta["started_at"],
             "code": meta["code"],
             "infrastructure_id": meta["infrastructure_id"],
+            "measurements_sha256": digest,
+            "load": meta.get("load", []),
         },
         "calibrations": cids,
         "infrastructure_id": infra.infrastructure_id,
         "train": [],
         "aggregate": [],
+        "links": [],
         "paths": [],
+        "loopback": [],
         "flops_estimates": [],
     }
-    train = [r for r in rows if r["kind"] == "train"]
-    warmup = spec.train.warmup if spec.train else 1
-    by_profile = {}
-    for wid in meta["workloads"]:
-        mine = concurrent([r for r in train if r["workload"] == wid], "job", warmup)
-        for name in sorted({r["profile"] for r in mine}):
-            these = [r for r in mine if r["profile"] == name]
-            host = these[0]["host"]
+
+    def compute(kind: str, name: str, wid: str | None, x: Mapping[str, Any]) -> dict:
+        host = x["host"]
+        if kind == "train":
             flops = meta["workloads"][wid]["flops_per_sample"]
             rate, note = train_rate(infra, host, (wid, flops))
-            model = compute_models.create(
-                "samples_per_second", {"samples_per_second": rate}
-            )
-            predicted = sum(model.duration(r["samples"], 0.0) for r in these)
-            walls = [r["wall_s"] for r in these]
-            measured = ratio([r["samples"] for r in these], walls, spec.seed)
-            by_profile.setdefault(name, {})[wid] = (measured, flops, host)
-            out["train"].append(
-                {
-                    "profile": name,
-                    "workload": wid,
-                    "trainings": len(these),
-                    "predicted_rate": rate,
-                    "estimated": note is not None,
-                    "measured_rate": measured.model_dump(),
-                    "predicted_s": predicted / len(these),
-                    "measured_s": mean(walls, spec.seed).model_dump(),
-                    "inside": mean(walls, spec.seed).covers(predicted / len(walls)),
-                    "relative_error": predicted / sum(walls) - 1,
-                }
-            )
+        else:
+            rate, note = aggregate_rate(infra, host), None
+        model = compute_models.create(
+            "samples_per_second", {"samples_per_second": rate}
+        )
+        predicted = sum(model.duration(n, 0.0) for n in x["samples"])
+        measured = x["rate"]
+        calibrated = _profile_estimate(infra, host, kind, wid)
+        return {
+            "profile": name,
+            **({"workload": wid} if wid else {}),
+            "measured_n": len(x["walls"]),
+            "predicted_rate": rate,
+            "estimated": note is not None,
+            "calibrated_rate": None if calibrated is None else calibrated.model_dump(),
+            "measured_rate": measured.model_dump(),
+            "inside": calibrated is not None and calibrated.covers(measured.value),
+            "inside_session_ci": measured.covers(rate),
+            "relative_error": predicted / sum(x["walls"]) - 1,
+        }
+
+    for (name, wid), x in mine["train"].items():
+        out["train"].append(compute("train", name, wid, x))
+    for name, x in mine["aggregate"].items():
+        out["aggregate"].append(compute("aggregate", name, None, x))
+    by_profile: dict[str, dict[str, Any]] = {}
+    for (name, wid), x in mine["train"].items():
+        by_profile.setdefault(name, {})[wid] = x["rate"]
     for name, measured in by_profile.items():
-        for wid, (m, flops, _) in measured.items():
-            for other, (m2, flops2, _) in measured.items():
+        for wid, m in measured.items():
+            flops = meta["workloads"][wid]["flops_per_sample"]
+            for other, m2 in measured.items():
                 if other == wid:
                     continue
+                flops2 = meta["workloads"][other]["flops_per_sample"]
                 estimate = m2.value * flops2 / flops
                 out["flops_estimates"].append(
                     {
@@ -1055,49 +1274,76 @@ def check(
                         "relative_error": estimate / m.value - 1,
                     }
                 )
-    combined = concurrent([r for r in rows if r["kind"] == "aggregate"], "repeat")
-    for name in sorted({r["profile"] for r in combined}):
-        these = [r for r in combined if r["profile"] == name]
-        rate = aggregate_rate(infra, these[0]["host"])
-        model = compute_models.create(
-            "samples_per_second", {"samples_per_second": rate}
-        )
-        predicted = sum(model.duration(r["bytes"], 0.0) for r in these)
-        walls = [r["wall_s"] for r in these]
-        out["aggregate"].append(
-            {
-                "profile": name,
-                "combinations": len(these),
-                "predicted_rate": rate,
-                "measured_rate": ratio(
-                    [r["bytes"] for r in these], walls, spec.seed
-                ).model_dump(),
-                "predicted_s": predicted / len(these),
-                "measured_s": mean(walls, spec.seed).model_dump(),
-                "inside": mean(walls, spec.seed).covers(predicted / len(walls)),
-                "relative_error": predicted / sum(walls) - 1,
-            }
-        )
-    up_to = spec.links.fit_up_to if spec.links else None
-    for (src, dst), data in sorted(link_rows(rows).items()):
-        _, profile = effective(infra, src, dst, meta["broker"])
-        link = LinkProfile(**profile)
-        sizes = np.array(data["sizes"], float)
-        delays = np.array(data["delays"], float)
-        for size in sorted(set(sizes.tolist())):
-            measured = mean(delays[sizes == size].tolist(), spec.seed)
-            predicted = link.latency_s + link.transmission_s(int(size), "up")
-            out["paths"].append(
+    cited_links = {
+        link_key(x.between): loaded[x.calibration].links.get(link_key(x.between))
+        for x in infra.network.links
+        if x.calibration
+    }
+    for key, measured in sorted(mine["links"].items()):
+        calibrated = cited_links.get(key)
+        if calibrated is None:
+            continue
+        for field in ("latency", "bandwidth_up", "bandwidth_down", "loss"):
+            c, m = getattr(calibrated, field), getattr(measured, field)
+            if c is None or m is None or field in calibrated.derived:
+                continue
+            out["links"].append(
                 {
-                    "src": src,
-                    "dst": dst,
-                    "size": int(size),
-                    "sent": data["n"],
-                    "predicted_s": predicted,
-                    "measured_s": measured.model_dump(),
-                    "inside": measured.covers(predicted),
-                    "fitted_range": up_to is None or size <= up_to,
-                    "relative_error": predicted / measured.value - 1,
+                    "link": key,
+                    "field": field,
+                    "calibrated": c.model_dump(),
+                    "measured": m.model_dump(),
+                    "inside": c.covers(m.value),
                 }
             )
+    valid = min(
+        (c.valid_up_to for c in loaded.values() if c.valid_up_to is not None),
+        default=spec.links.fit_up_to if spec.links else None,
+    )
+    for (src, dst, size), measured in sorted(mine["paths"].items()):
+        _, profile = effective(infra, src, dst, meta["broker"])
+        link = LinkProfile(**profile)
+        predicted = link.latency_s + link.transmission_s(size, "up")
+        calibrated = next(
+            (
+                c.paths[path_key(src, dst, size)]
+                for c in loaded.values()
+                if c.paths and path_key(src, dst, size) in c.paths
+            ),
+            None,
+        )
+        out["paths"].append(
+            {
+                "src": src,
+                "dst": dst,
+                "size": size,
+                "fitted_range": valid is None or size <= valid,
+                "predicted_s": predicted,
+                "calibrated_s": None if calibrated is None else calibrated.model_dump(),
+                "measured_s": measured.model_dump(),
+                "inside": calibrated is not None and calibrated.covers(measured.value),
+                "predicted_inside": calibrated is not None
+                and calibrated.covers(predicted),
+                "inside_session_ci": measured.covers(predicted),
+                "relative_error": predicted / measured.value - 1,
+            }
+        )
+    for (src, _, size), measured in sorted(mine["loopback"].items()):
+        out["loopback"].append(
+            {"host": src, "size": size, "measured_s": measured.model_dump()}
+        )
+    in_range = [p for p in out["paths"] if p["fitted_range"]]
+    for p in in_range:
+        p["passed"] = p["inside"] and p["predicted_inside"]
+    out["acceptance"] = {
+        "train": _tally(out["train"], "inside", "inside_session_ci"),
+        "aggregate": _tally(out["aggregate"], "inside", "inside_session_ci"),
+        "links": _tally(out["links"], "inside"),
+        "paths": _tally(
+            in_range, "inside", "predicted_inside", "passed", "inside_session_ci"
+        ),
+    }
+    out["acceptance"]["passed"] = all(
+        e["inside"] for kind in ("train", "aggregate", "links") for e in out[kind]
+    ) and all(p["passed"] for p in in_range)
     return out

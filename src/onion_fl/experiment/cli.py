@@ -16,7 +16,7 @@ from __future__ import annotations
                       [--ceiling FILE] [--csv FILE] [--html FILE]
     onion_fl calibrate measure <spec.yaml> --out <session> [--image IMAGE]
                        [--project NAME] [--subnet CIDR]
-    onion_fl calibrate fit <session> [--out calibrations] [--infrastructure-out FILE]
+    onion_fl calibrate fit <session>... [--out calibrations] [--infrastructure-out FILE]
     onion_fl calibrate check <session> --infrastructure FILE [--calibrations DIR]
                        [--out FILE]
     onion_fl report <experiment.yaml | runs_dir>... [--out FILE] [--metric NAME]... [--by TAG]...
@@ -242,9 +242,9 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
     if args.step == "fit":
         from onion_fl.infrastructure.calibration import load_calibration
 
-        folder = calibrate.fit(args.session, args.out)
+        folder = calibrate.fit(args.sessions, args.out)
         if args.infrastructure_out:
-            meta, _ = calibrate.read_session(args.session)
+            meta, _ = calibrate.read_session(args.sessions[0])
             spec = calibrate.CalibrationSpec.model_validate(meta["spec"])
             source = Path(spec.infrastructure)
             if source.suffix not in (".yaml", ".yml"):
@@ -454,8 +454,8 @@ def parser() -> argparse.ArgumentParser:
     measure.add_argument("--image")
     measure.add_argument("--project", help="prefix of the containers and networks")
     measure.add_argument("--subnet")
-    fit = steps.add_parser("fit", help="sign the calibration of a session")
-    fit.add_argument("session")
+    fit = steps.add_parser("fit", help="sign the calibration of sessions of a spec")
+    fit.add_argument("sessions", nargs="+", help="sessions of one spec (3 or more)")
     fit.add_argument("--out", default="calibrations")
     fit.add_argument(
         "--infrastructure-out", help="write the infrastructure citing the calibration"

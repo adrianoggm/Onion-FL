@@ -319,9 +319,10 @@ def test_link_latencies_are_solved_from_the_paths_that_cross_them() -> None:
     )
     assert links["fog|dc"].latency.value == pytest.approx(0.071, abs=2e-4)
     assert links["field|fog"].latency.value == pytest.approx(0.011, abs=4e-4)
-    assert links["fog|dc"].bandwidth_up.value == pytest.approx(
-        1e7 * (0.95 + 0.475) / 2, rel=0.02
-    )  # the bottleneck of both paths: the mean ratio
+    # through the broker, field -> fog is sent twice over fog|dc, once each
+    # way, at 9.5 Mbit/s: the two directions are told apart by the two paths
+    assert links["fog|dc"].bandwidth_up.value == pytest.approx(9.5e6, rel=0.02)
+    assert links["fog|dc"].bandwidth_down.value == pytest.approx(9.5e6, rel=0.02)
     assert links["field|fog"].derived == ["bandwidth_up", "bandwidth_down"]
     assert links["fog|dc"].loss.value == 0.0
     assert transport["loopback_latency_s"].value == pytest.approx(5e-4, abs=2e-4)
@@ -343,15 +344,17 @@ def test_the_spec_of_the_emulated_lab_loads() -> None:
     assert spec.infrastructure == "emulated_lab" and len(spec.workloads) == 2
 
 
-def _session(folder: Path, infra_path: Path, jitter: float) -> Path:
+def _session(
+    folder: Path, infra_path: Path, jitter: float, slower: float = 1.0
+) -> Path:
     """A session as ``measure`` writes it, with timing rows for two devices,
-    one fog and two paths."""
+    one fog and two paths; ``slower`` scales the devices' training times."""
     import yaml
 
     rows = []
     for h, host in enumerate(["field-pi-1", "field-pi-2"]):
         for j in range(8):
-            wall = 1.5 + jitter * ((j + h) % 3 - 1)
+            wall = slower * (1.5 + jitter * ((j + h) % 3 - 1))
             rows.append(_train(host, j, 10.0 + 1.5 * j + 0.1 * h, wall))
     for r in range(8):
         rows.append(
@@ -456,3 +459,67 @@ def test_pinning_gives_each_host_its_own_cpus_and_the_rest_one_set(
     calibrate.broker_nodelay(emulation, tmp_path)
     assert "set_tcp_nodelay true" in (tmp_path / "mosquitto.conf").read_text("utf-8")
     assert services["broker"]["command"][-1].endswith("/mosquitto.conf")
+
+
+def test_a_calibration_of_several_sessions_covers_the_variation_between_them(
+    tmp_path: Path,
+) -> None:
+    import yaml
+
+    infra_path = tmp_path / "lab.yaml"
+    infra_path.write_text(
+        yaml.safe_dump(lab(services={"mqtt_broker": "cloud-1"})), encoding="utf-8"
+    )
+    fit_on = [
+        _session(tmp_path / f"fit{i}", infra_path, jitter=0.1, slower=slower)
+        for i, slower in enumerate([0.9, 1.0, 1.1])
+    ]
+    folder = calibrate.fit(fit_on, tmp_path / "calibrations")
+    measured = load_calibration(folder.parent, folder.name)
+    rate = measured.profiles["pi"].train[SMALL[0]]
+    # the geometric mean of the three sessions, and a prediction interval
+    # (t with 2 degrees of freedom) far wider than any one session's
+    assert len(rate.sessions) == 3
+    assert rate.value == pytest.approx(400 / (0.9 * 1.0 * 1.1) ** (1 / 3), rel=0.02)
+    assert rate.low < 400 / 1.1 * 0.9 and rate.high > 400 / 0.9 * 1.1
+    assert len(measured.sessions) == 3 and measured.valid_up_to is None
+    assert "fog-1>cloud-1@100" in measured.paths
+    rows = (folder / "measurements.jsonl").read_text("utf-8").splitlines()
+    assert {json.loads(r)["session"] for r in rows} == {0, 1, 2}
+    with pytest.raises(ValueError, match="twice"):
+        calibrate.fit([fit_on[0], fit_on[0]], tmp_path / "again")
+
+    calibrated = tmp_path / "calibrated.yaml"
+    calibrated.write_text(
+        yaml.safe_dump(calibrate.calibrated_infrastructure(infra_path, measured)),
+        encoding="utf-8",
+    )
+    for session in fit_on:  # none of the sessions it was fitted on
+        with pytest.raises(ValueError, match="fitted on"):
+            calibrate.check(session, calibrated, folder.parent)
+    other = _session(tmp_path / "other", infra_path, jitter=0.12, slower=1.05)
+    result = calibrate.check(other, calibrated, folder.parent)
+    (train,) = result["train"]
+    assert train["inside"] and not train["inside_session_ci"]
+    assert result["acceptance"]["train"] == {
+        "quantities": 1,
+        "inside": 1,
+        "inside_session_ci": 0,
+    }
+    # both links' latencies, fog|dc's bandwidths (field|fog's are derived)
+    assert {(e["link"], e["field"]) for e in result["links"]} >= {
+        ("fog|dc", "latency"),
+        ("fog|dc", "bandwidth_up"),
+        ("field|fog", "latency"),
+    }
+    assert ("field|fog", "bandwidth_up") not in {
+        (e["link"], e["field"]) for e in result["links"]
+    }
+    assert all(p["fitted_range"] for p in result["paths"])
+
+
+def test_a_calibration_written_before_its_newer_fields_keeps_its_id() -> None:
+    """The emulated lab's first calibration, fitted on one session."""
+    cid = "5d7d0e7011bf1fd693725bcb85ac61c5abae3d460867169f8909954c1b937cde"
+    calibration = load_calibration("calibrations", cid)
+    assert calibration.sessions is None and calibration.calibration_id == cid

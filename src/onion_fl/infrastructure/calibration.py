@@ -7,11 +7,13 @@ A calibration is a signed folder ``calibrations/<calibration_id>/``:
 - ``calibration.json``: what was fitted, with a 95 % interval for each value,
   the environment, the code version, the specification of the
   microbenchmarks and the SHA-256 of the raw measurements;
-- ``measurements.jsonl``: every measurement, one per line.
+- ``measurements.jsonl``: every measurement, one per line (with the
+  ``session`` it comes from, when it was fitted on several).
 
 ``calibration_id`` is the SHA-256 of the canonical ``calibration.json``
-without the id itself, so it signs the measurements too. A profile or a link
-cites one by id::
+without the id itself, so it signs the measurements too. The JSON holds the
+fields that were given, so that a calibration written before a field existed
+keeps its id. A profile or a link cites one by id::
 
     profiles:
       edge_device: {cpus: 1, memory: 2GB, calibration: 3f2a…}   # rates measured
@@ -56,12 +58,19 @@ MEASUREMENTS = "measurements.jsonl"
 
 
 class Estimate(Strict):
-    """A fitted value and its 95 % interval, from ``n`` measurements."""
+    """A fitted value and its 95 % interval, from ``n`` measurements.
+
+    With ``sessions``, the value each session it was fitted on gave, the
+    interval is the 95 % prediction interval of what one more session
+    measures (``between sessions``, see ``onion_fl.experiment.calibrate``);
+    without, it is a bootstrap within one session.
+    """
 
     value: float
     low: float
     high: float
     n: int = Field(ge=1)
+    sessions: list[float] | None = None
 
     def covers(self, x: float) -> bool:
         return self.low <= x <= self.high
@@ -110,10 +119,25 @@ class Calibration(Strict):
     links: dict[str, LinkCalibration] = Field(default_factory=dict)  # "a|b"
     transport: dict[str, Estimate] = Field(default_factory=dict)  # reported only
     notes: list[str] = Field(default_factory=list)
+    # fitted on several sessions: each one's start, code, load and digest
+    sessions: list[dict[str, Any]] | None = None
+    # "src>dst@size": the one-way delay of a measured path, as the fit
+    # sessions measured it; the path model holds up to ``valid_up_to`` bytes
+    paths: dict[str, Estimate] | None = None
+    valid_up_to: int | None = None
+
+    def document(self) -> dict[str, Any]:
+        """The JSON of the calibration: the fields that were given."""
+        return self.model_dump(mode="json", exclude_unset=True)
 
     @property
     def calibration_id(self) -> str:
-        return calibration_id(self.model_dump(mode="json"))
+        return calibration_id(self.document())
+
+    def digests(self) -> set[str]:
+        """The SHA-256 of every session's measurements it was fitted on."""
+        out = {self.measurements_sha256}
+        return out | {x["measurements_sha256"] for x in self.sessions or []}
 
 
 def calibration_id(document: Mapping[str, Any]) -> str:
@@ -156,7 +180,7 @@ def write_calibration(
     digest = measurements_digest(measurements)
     if digest != calibration.measurements_sha256:
         raise InfrastructureError("calibration: the measurements are not those signed")
-    document = calibration.model_dump(mode="json")
+    document = calibration.document()
     cid = calibration_id(document)
     out = Path(folder) / cid
     out.mkdir(parents=True, exist_ok=True)
