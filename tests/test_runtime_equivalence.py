@@ -10,8 +10,10 @@ The dataset is a CSV format fixture (docs/RULES.md).
 
 from __future__ import annotations
 
+import json
 import os
 import socket
+import subprocess
 import textwrap
 from pathlib import Path
 
@@ -217,3 +219,97 @@ def test_a_real_run_feeds_its_sinks_and_labels_its_traffic(
     ]
     assert traffic and all(e["level"] and e["role"] for e in traffic)
     assert {"run.finished", "diagnostic.communication"} <= set(seen)
+
+
+# --- the emulated backend (issue #195) -------------------------------------------
+
+EMULATED = {
+    "name": "emulated",
+    "image": os.environ.get("ONIONFL_EMULATED_IMAGE", "onionfl-emulated:latest"),
+    "project": os.environ.get("ONIONFL_EMULATED_PROJECT", "onionfl-test"),
+    "subnet": os.environ.get("ONIONFL_EMULATED_SUBNET", "10.195.0.0/16"),
+}
+
+
+def _emulator_up() -> bool:
+    """Docker answers and has the host image: the emulator is there."""
+    try:
+        found = subprocess.run(
+            ["docker", "image", "inspect", EMULATED["image"]],
+            capture_output=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return found.returncode == 0
+
+
+LAB = {
+    "name": "emulated_lab",
+    "profiles": {
+        "cloud": {"cpus": 2, "memory": "2GB"},
+        "fog": {"cpus": 1, "memory": "1GB"},
+        "device": {"cpus": 1, "memory": "1GB"},
+    },
+    "sites": {
+        "dc": {"hosts": {"cloud-1": "cloud"}},
+        "fog_a": {"hosts": {"fog-a": "fog"}},
+        "fog_b": {"hosts": {"fog-b": "fog"}},
+        "field": {"pool": {"device": 4}},
+    },
+    "network": {
+        "links": [
+            {"between": ["field", "fog_a"], "latency": "5ms", "bandwidth": "50Mbps"},
+            {"between": ["field", "fog_b"], "latency": "10ms", "bandwidth": "20Mbps"},
+            {"between": ["fog_a", "dc"], "latency": "20ms", "bandwidth": "10Mbps"},
+            {"between": ["fog_b", "dc"], "latency": "30ms", "bandwidth": "10Mbps"},
+        ]
+    },
+    "services": {"mqtt_broker": "cloud-1"},
+}
+
+
+def on_the_lab(config, backend, runs: Path):
+    """``config`` on ``LAB``, two edges per device, run by ``backend``."""
+    raw = config.dump() | {
+        "backend": backend,
+        "infrastructure": {
+            "name": LAB,
+            "assignment": {
+                "root": "cloud-1",
+                "aggregators": {"fog_a": "fog-a", "fog_b": "fog-b"},
+                "edges": {"name": "colocated", "per_host": 2},
+            },
+        },
+    }
+    raw["paths"] = raw["paths"] | {"runs": str(runs)}
+    return parse_experiment(raw)
+
+
+@pytest.mark.skipif(not _emulator_up(), reason="no Docker or no emulated host image")
+def test_the_emulated_backend_matches_the_simulation(tmp_path: Path) -> None:
+    from onion_fl.experiment.fidelity import fidelity
+    from onion_fl.observability.events import read_events
+
+    mqtt = {"name": "mqtt", "broker": BROKER}  # the emulation brings its own broker
+    base = experiment(tmp_path, mqtt)
+    sim = on_the_lab(base, "sim", tmp_path / "runs_sim")
+    emulated = on_the_lab(base, EMULATED, tmp_path / "runs_emulated")
+
+    (sim_path,) = run_experiment(sim)
+    (path,) = run_experiment(emulated)
+
+    meta = json.loads((path / "run.json").read_text(encoding="utf-8"))
+    assert meta["status"] == "finished", meta.get("processes")
+    assert meta["backend"] == "emulated" and meta["infrastructure_id"]
+    assert meta["emulation"]["containers"] == 12  # 7 hosts, 4 routers, the broker
+    with np.load(path / "model.npz", allow_pickle=False) as saved:
+        assert_same_model(simulated(sim), {k: saved[k] for k in saved.files})
+    expected = _round_bytes(read_events(sim_path / "events.jsonl"))
+    assert expected and _round_bytes(read_events(path / "events.jsonl")) == expected
+    result = fidelity(
+        tmp_path / "runs_emulated", tmp_path / "runs_sim", metrics=["time"]
+    )
+    functional = result["pairs"][0]["functional"]
+    assert result["functional"]["complete"], functional
+    assert functional["model"]["bitwise"], functional["model"]

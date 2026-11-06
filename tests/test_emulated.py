@@ -1,11 +1,27 @@
 """Tests for the emulated backend (issue #195, spec I1 §10–§11).
 
 Nothing here needs Docker: the Compose project, its setup scripts and the tc
-commands are checked as text.
+commands are checked as text. The run in containers, against the simulation,
+is in ``test_runtime_equivalence``. Edges use the stub trainer on a CSV format
+fixture, so nothing is trained for real (docs/RULES.md).
 """
 
 from __future__ import annotations
 
+import json
+import re
+import tomllib
+from pathlib import Path
+
+import pytest
+import yaml
+
+from onion_fl.experiment.backends import EmulatedBackend
+from onion_fl.experiment.config import ConfigError, experiment_schema, parse_experiment
+from onion_fl.experiment.emulated import NUMERIC, pins
+from onion_fl.experiment.runner import plan
+from onion_fl.experiment.sweep import scenarios
+from onion_fl.infrastructure.backends import Backend, backends
 from onion_fl.infrastructure.emulators import (
     compose_project,
     layout,
@@ -14,9 +30,12 @@ from onion_fl.infrastructure.emulators import (
     refusals,
 )
 from onion_fl.infrastructure.model import LinkFields, parse_infrastructure
+from onion_fl.runtime.real import RealRuntime
+from tests.test_experiment import experiment, workspace  # noqa: F401
 from tests.test_infrastructure import lab
 
 HOSTS = ["cloud-1", "fog-1", "fog-2", "field-pi-1", "field-pi-2"]
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def lab_infra(**changes):
@@ -159,3 +178,109 @@ def test_what_netem_cannot_reproduce_is_refused() -> None:
     assert "network.schedule" in reasons and "dedicated" in reasons
     assert "network.links[0]: netem has no lognormal delay" in reasons
     assert refusals(lab_infra()) == []
+
+
+# --- the backend -----------------------------------------------------------------------
+
+
+def on_lab(workspace: Path, **backend) -> dict:  # noqa: F811
+    return experiment(
+        workspace,
+        backend={"name": "emulated", "project": "onionfl-test", **backend},
+        infrastructure={
+            "name": lab(),
+            "assignment": {
+                "root": "cloud-1",
+                "aggregators": {"fog_a": "fog-1", "fog_b": "fog-2"},
+                "edges": {"name": "colocated", "per_host": 3},
+                "services": {"mqtt_broker": "cloud-1"},
+            },
+        },
+    )
+
+
+def test_the_emulated_backend_is_registered_and_exported() -> None:
+    assert "emulated" in backends.names()
+    names = {p["name"] for p in experiment_schema()["plugins"]["backend"]}
+    assert "emulated" in names
+    assert isinstance(EmulatedBackend(), Backend)
+
+
+def test_the_emulated_backend_needs_an_infrastructure(
+    workspace: Path,  # noqa: F811
+) -> None:
+    with pytest.raises(ConfigError, match="give the experiment an infrastructure"):
+        parse_experiment(experiment(workspace, backend="emulated"))
+
+
+def test_plan_shows_the_containers_and_checks_their_cap(
+    workspace: Path,  # noqa: F811
+) -> None:
+    (preview,) = plan(parse_experiment(on_lab(workspace)))
+
+    shown = preview["backend"]
+    assert shown["name"] == "emulated" and shown["max_containers"] == 64
+    assert shown["containers"] == shown["hosts"] + shown["routers"] + 1
+    with pytest.raises(ConfigError, match="exceed max_containers 3"):
+        plan(parse_experiment(on_lab(workspace, max_containers=3)))
+
+
+def test_prepare_writes_the_project_and_the_paths_the_containers_see(
+    workspace: Path,  # noqa: F811
+) -> None:
+    config = parse_experiment(on_lab(workspace))
+    (scenario,) = scenarios(config)
+
+    prepared = EmulatedBackend(project="onionfl-test").prepare(scenario)
+
+    folder = prepared.folder
+    compose = yaml.safe_load((folder / "compose.yaml").read_text(encoding="utf-8"))
+    assert compose == prepared.emulation.compose
+    for script in folder.glob("*.sh"):  # run by sh in Linux: LF only
+        assert b"\r" not in script.read_bytes()
+    document = json.loads((prepared.run.path / "scenario.json").read_text("utf-8"))
+    groups = document["groups"]
+    assert sorted(groups) == prepared.groups
+    assert "cloud" in groups["cloud-1"] and "fog_a" in groups["fog-1"]
+    nodes = [n for members in groups.values() for n in members]
+    assert len(nodes) == len(set(nodes))  # every node in one place
+    assert any(n.startswith("test-") for n in groups["cloud-1"])  # root evaluators
+    assert document["broker"] == prepared.emulation.broker
+    assert (prepared.run.path / document["initial"]).is_file()  # the launcher's bits
+    assert all(
+        p.startswith("/onionfl/paths/") for p in document["config"]["paths"].values()
+    )
+    volumes = compose["services"]["host-cloud-1"]["volumes"]
+    writable = [v["target"] for v in volumes if not v["read_only"]]
+    assert writable == ["/onionfl/paths/runs"]
+    assert prepared.command("cloud-1")[:3] == [
+        "docker",
+        "exec",
+        "onionfl-test-" + prepared.run.run_id.rsplit("-", 1)[-1] + "-host-cloud-1",
+    ]
+    meta = prepared.run.meta
+    assert meta["backend"] == "emulated" and meta["infrastructure_id"]
+    assert meta["emulation"]["containers"] == prepared.emulation.layout.containers
+    prepared.run.finish(status="failed")  # nothing ran
+
+
+def test_the_image_takes_the_ranges_of_pyproject() -> None:
+    dockerfile = (
+        ROOT / "src" / "onion_fl" / "infrastructure" / "emulated.Dockerfile"
+    ).read_text(encoding="utf-8")
+    ranges = set(re.findall(r'"([a-z][a-z0-9-]*[<>=][^"]*)"', dockerfile))
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    wanted = {
+        d.split("  ")[0].replace(" ", "") for d in project["project"]["dependencies"]
+    }
+    assert wanted <= ranges | {r.replace(" ", "") for r in ranges}
+    assert set(pins()) == set(NUMERIC)
+
+
+def test_a_real_runtime_can_point_every_mqtt_link_at_one_broker() -> None:
+    runtime = RealRuntime("r", broker="10.195.0.3:1883", heartbeat_s=None)
+    runtime.add_link("a", "b", transport={"name": "mqtt", "broker": "localhost:1883"})
+    runtime.add_link("b", "c", transport="mqtt")
+
+    (carrier,) = runtime._transports.values()
+    assert (carrier.host, carrier.port) == ("10.195.0.3", 1883)
