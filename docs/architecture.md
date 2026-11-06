@@ -34,10 +34,10 @@ flowchart LR
 | `learning` | `model`, `sharing`, `aggregators`, `trainers`, `metrics` | What is trained, what travels, how it is combined and scored |
 | `roles` | `nodes`, `policies`, `federation` | The round protocol and the assembly of a federation on a runtime |
 | `runtime` | `sim`, `real`, `network`, `devices` | Virtual-clock and wall-clock hosts for the nodes |
-| `infrastructure` | `model`, `paths`, `assignment`, `network`, `failover` | The physical infrastructure, its paths, the assignment of the logical nodes to its hosts, its changes over time and the failover policies; depends on `core` only |
+| `infrastructure` | `model`, `paths`, `assignment`, `network`, `failover`, `backends` | The physical infrastructure, its paths, the assignment of the logical nodes to its hosts, its changes over time, the failover policies and the execution backends; depends on `core` only |
 | `transports` | `memory`, `mqtt` | Bytes between processes for the real runtime |
 | `observability` | `events`, `run`, `diagnostics`, `analysis`, `sinks` | Event schema, run records, diagnostics, analysis and live sinks |
-| `experiment` | `config`, `sweep`, `runner`, `real`, `ceiling`, `cli` | From an experiment YAML to signed runs |
+| `experiment` | `config`, `sweep`, `runner`, `backends`, `real`, `ceiling`, `fidelity`, `cli` | From an experiment YAML to signed runs, and their fidelity |
 
 ## 3. Topology
 
@@ -143,16 +143,22 @@ sequenceDiagram
 **RealRuntime.**
 - The same `Context` on the wall clock, with one loop thread.
 - A process hosts its group of nodes and knows the others only to declare links.
-- Messages carry `msg_id` and `sent_at` in `meta`, so the receiver records the same id and the end-to-end latency.
+- Messages travel in a frame `codec \0 header \0 message`. The JSON header carries `msg_id` and `sent_at`, which the receiver puts in `meta`, so it records the same id and the end-to-end latency. The message is encoded as in simulation: `message.sent` counts its bytes, and the frame's go in the `frame` tag.
 - Every node emits `node.heartbeat`.
 
 **Transports.** `mqtt` gives each node an inbox at `onionfl/<run_id>/<node>/inbox`, with QoS and broker per link; it reconnects and resubscribes after a broker restart. `memory` is an in-process bus for tests.
 
-**Real runs.**
-1. `onion_fl run --mode real` checks the brokers.
-2. It writes `scenario.json` and starts one `onion_fl node` process per group: the root with the test evaluators, and each aggregator with its edges.
+**Backends** (I1 §10). Every scenario runs on a backend from the `backends` registry (`infrastructure.backends`), chosen by the experiment's `backend:` or, without it, by `runtime.mode` (`real` is an alias of `local`; unset, the `config_id` does not change). The contract is `supports(infrastructure)` (the reasons it cannot reproduce it; the config refuses any), `prepare(scenario, infrastructure, assignment)` (an execution plan), `run(plan)` and `collect(plan)` (the signed run). `execute` chains them. The backends live in `experiment.backends`, since they build federations:
+- `sim`: the simulator in one process (`runner.simulate`);
+- `local`: the real runs below, on this machine; it refuses an infrastructure.
+
+`onion_fl run --backend NAME` overrides the experiment's; `--mode real` still works.
+
+**Real runs** (the `local` backend).
+1. `prepare` checks the links and the brokers and writes `scenario.json`.
+2. `run` starts one `onion_fl node` process per group: the root with the test evaluators, and each aggregator with its edges.
 3. Each process rebuilds the same scenario and writes its own event file.
-4. When the run finishes, a stop travels down the tree, the processes exit, and the launcher merges and signs the run.
+4. When the run finishes, a stop travels down the tree and the processes exit; `collect` merges and signs the run.
 
 With full quorum and the same seed, simulation and MQTT give the same final model. `tests/test_runtime_equivalence.py` checks it.
 
@@ -177,8 +183,8 @@ infrastructure:
 - **Resources.** Nodes on a host with `cpus` share it: at most `cpus` jobs at once, the others wait in FIFO order (`host.queued`, valued by the wait). Combining a round costs the aggregator's host the bytes combined / `aggregate_rate`, so an overloaded fog closes later; without `aggregate_rate` it is free, as before. `plan` refuses a host whose nodes' models and data do not fit in its `memory` (every node counted with the whole initial model, an upper bound); swapping is not simulated.
 - **Dynamic continuum.** A `network.schedule` entry with `host:` takes a host `down: true` with every logical node on it, and `down: false` brings it back (`host.down`, `host.up` of the node `network`; `SimRuntime.host_offline`): what reaches its nodes meanwhile is dropped and their timers wait, as with a node's own availability. `infrastructure.failover` (registry `failovers`: `none`, the default and today's behaviour, `nearest_alive`, `explicit`) moves the training edges of a leaf aggregator whose host is still down `after` seconds later: the policy picks among the leaves whose host is up and that have room (`max_children`, a leaf setting), the old parent releases the edge, the new one adopts it and a link is compiled between their hosts, and the edge says hello to it (`edge.reparented`; `edge.unparented` when no candidate is left). The same way, at the start, a leaf with more edges than its `max_children` sends the rest on; without a failover, `plan` refuses it. Protocol rules: the update an edge had in flight goes to its old parent and is lost, or dropped as from a stranger if that parent comes back; the old parent's quorum counts the children it has left; the edge enters only rounds its new parent opens after its hello, and answers idle to a round it already took, so no edge contributes twice to a round. Its first model from the new parent is whole, with that zone's groups; its data do not move. The control plane is the simulator's: it knows when a host is down, so no heartbeat is modelled.
 - **One source of truth.** With an infrastructure, a `link_up.profile` or an edge `device` in the topology is refused. Without one, nothing changes: the ids are the same and the topology's links are the implicit infrastructure (`tests/test_infrastructure.py` checks that an infrastructure reproducing it gives the same events).
-- **Not yet.** Real runs refuse an infrastructure (I7, I14). Mobility (a host changing site) comes later; so do a down broker cutting the links through it, failover of aggregators that are not leaves, and edges moving back when their parent returns.
-- `plan` shows each node's host, each host's load, the services and each link's path and profile; `run.json` records `backend` (`sim` or `real`) and `infrastructure_id`.
+- **Not yet.** The `local` backend refuses an infrastructure (I10, I14). Mobility (a host changing site) comes later; so do a down broker cutting the links through it, failover of aggregators that are not leaves, and edges moving back when their parent returns.
+- `plan` shows each node's host, each host's load, the services and each link's path and profile; `run.json` records `backend` (`sim` or `local`; runs from before the backends say `real`) and `infrastructure_id`.
 
 ## 7b. Continuing a run (continuum)
 
@@ -279,6 +285,13 @@ infrastructure:
 
 **Noise ceiling.** `experiment.ceiling` reruns every swept scenario in R replicas (new seeds and, optionally, a redrawn `search`) and scores each from the root's last score in `summary.json`, the best trial of a search winning its cell. Over every ordered pair of replicas `(a, b)` it reports whether they pick the same winner (top-1) and the selection regret: the best score of `b` minus `b`'s score of `a`'s winner. A decision metric (I1 §12) only counts above this ceiling.
 
+**Fidelity** (I1 §12). `onion_fl fidelity <runs A> <runs B>` (`experiment.fidelity`) compares a backend under test, B, with a reference, A. A run of each is a pair when they share `design_id` (the `config_id` of the config without `backend`, `paths` and `runtime.mode`, `timeout` and `heartbeat`) and seed; only finished runs count, the newest of a cell wins, and every run's `run_hash` is verified.
+- **Functional**, per pair: the final model (within the tolerance of `test_runtime_equivalence`, and bit for bit), the protocol events of each node in order (`round.started`, `round.closed`, `round.quorum_failed`, `round.idle`, `round.abandoned`, `run.finished`) and the bytes per link and round. Traffic outside rounds (`hello`, acknowledgements, `stop`) is reported, not judged: a real child repeats its `hello` until answered.
+- **Performance**: the relative error (B − A) / A of the round durations at the root, the compute time of each edge per round (the model's arrival to its update's departure), the latency of each link (send to delivery by `msg_id`), the run's duration and, with `--target metric=value`, the time to target; the mean per pair, then over pairs with a seeded 95% bootstrap interval.
+- **Decision**, per `--metric` (a root score from `summary.json`, `time`, `bytes` or `time_to_target`; lower is better for loss and the system ones): over the configurations complete in every seed, Kendall's τ-b, top-1 agreement (ties to the first, as in the ceiling) and the selection regret (A's best minus A's score of B's winner, in units and relative) of the means over seeds, with 95% intervals and the probability of top-1 agreement from a bootstrap that resamples the same seeds in A and B. Each top-1 and regret is shown next to the noise ceiling (`--ceiling` with the output of `onion_fl ceiling`, or else the seeds of A as paired replicas) and a slot for the factorised predictor (A7). It warns when every configuration ties on a metric (constant predictors), when fewer than 5 seeds are complete, and when runs have no pair.
+
+The result is JSON on stdout, flat rows with `--csv` and a page with `--html`.
+
 **Sinks.**
 - `jsonl` is always on.
 - `prometheus` serves the `onionfl_*` series that the Grafana dashboard queries; a test keeps the dashboard and the series in sync.
@@ -350,3 +363,4 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | step | `subject`, `label`, `features`, `replace`, `join`, `window`, `select`, `time` |
 | memory | `none`, `fifo`, `reservoir`, `class_balanced` |
 | baseline | `lr`, `rf`, `xgboost` |
+| backend | `sim`, `local` |

@@ -48,6 +48,7 @@ from onion_fl.infrastructure.assignment import (
     assignments,
     resolve,
 )
+from onion_fl.infrastructure.backends import backends, execute
 from onion_fl.infrastructure.failover import NoFailover, failovers
 from onion_fl.infrastructure.model import (
     Infrastructure,
@@ -337,7 +338,7 @@ def _parent(config: ExperimentConfig, seed: int) -> tuple[Path, Bundle, Any] | N
     """
     if _name(config.learning.init) != "run":
         return None
-    if config.runtime.mode == "real":
+    if not config.simulated:
         raise ConfigError(
             "learning.init: run continues only in simulation for now; real runs "
             "write no bundle until the distributed continuum (C9)"
@@ -1259,14 +1260,21 @@ def build_scenario(
 def run_scenario(
     scenario: Scenario, evaluate: Callable[..., Any] | None = None
 ) -> Path:
-    """Run one scenario and return its ``runs/<run_id>/`` folder."""
+    """Run one scenario on its backend and return its ``runs/<run_id>/`` folder."""
     config = scenario.config
-    if config.runtime.mode == "real":
-        if evaluate is not None:
-            raise ValueError("a custom evaluate cannot be sent to the node processes")
-        from onion_fl.experiment.real import run_real
+    infra = config.infrastructure
+    return execute(
+        create(backends, config.backend_ref),
+        scenario,
+        infra,
+        None if infra is None else infra.assignment,
+        evaluate=evaluate,
+    )
 
-        return run_real(scenario)
+
+def simulate(scenario: Scenario, evaluate: Callable[..., Any] | None = None) -> Path:
+    """Run one scenario in the simulator (the ``sim`` backend) and sign it."""
+    config = scenario.config
     parent = _parent(config, scenario.seed)  # resolved once for the whole run
     topology, split, placement, digests = _scenario_data(scenario, parent)
     infra = resolve_infrastructure(config)
