@@ -981,14 +981,20 @@ def edge_specs(
             )
             for client in clients
         ] + [evaluator("val", data) for data in placement.zone_evaluators.get(leaf, [])]
+    # In a two-level topology the root is the leaf: it keeps its training edges,
+    # and its zone evaluators give way to the global ones (no zone model there).
+    root = topology.root.id
+    trainers_at_root = [s for s in edges.get(root, []) if s.train]
     if config.evaluation.global_.subjects == "val":  # selection runs: no test
-        edges[topology.root.id] = [
+        edges[root] = trainers_at_root + [
             evaluator("gval", data)
             for leaf in sorted(placement.zone_evaluators)
             for data in placement.zone_evaluators[leaf]
         ]
     else:
-        edges[topology.root.id] = [evaluator("test", data) for data in placement.test]
+        edges[root] = trainers_at_root + [
+            evaluator("test", data) for data in placement.test
+        ]
     return edges, initial
 
 
