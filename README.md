@@ -41,7 +41,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Observability | ✅ | `runs/<run_id>/` with signed events, summary and final model. Diagnostics at every aggregator; analysis API with mean ± CI over seeds; HTML report; Prometheus and OpenTelemetry sinks; Grafana dashboard |
 | CLI | ✅ | `onion_fl data · topology · plan · run · node · ceiling · report · baseline · schema · serve` |
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
-| Continuum | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`), and objectives on the rows still waiting for their label (`pseudo_label`, `consistency`), with an audit of every pseudo-label. Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. A promotion policy keeps each round's model as a challenger until the validation streams promote it, with rollback. Each stream edge updates `warm`, `frozen` or `scratch`, the baselines of the continual benchmark, and `scripts/continuum_benchmark.py` measures it. The Studio's view and controls of the versions are [#203](https://github.com/adrianoggm/Onion-FL/issues/203) |
+| Continual learning | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`), and objectives on the rows still waiting for their label (`pseudo_label`, `consistency`), with an audit of every pseudo-label. Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. A promotion policy keeps each round's model as a challenger until the validation streams promote it, with rollback. Each stream edge updates `warm`, `frozen` or `scratch`, the baselines of the continual benchmark, and `scripts/continuum_benchmark.py` measures it. The Studio's view and controls of the versions are [#203](https://github.com/adrianoggm/Onion-FL/issues/203) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
 | Tests | ✅ | 1385 tests. With SWELL, WESAD and a local broker, 1381 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
@@ -187,7 +187,7 @@ sweep: {data.placement.alpha: [0.0, 0.5, 1.0]}
   - A seeded fraction of the rows is labelled, each label arriving after the delay.
   - Every arrival is scored by the model the edge was serving before it can train (`prequential` and `prequential_labelled`), and each round trains on what became trainable since the edge's previous round.
   - Validation subjects stream for evaluation only; test subjects never reach an edge.
-  - Rounds come every `round_every` of data time until the streams end, or when a continuum trigger fires (below), and `data.arrived` and `data.labelled` record the volume.
+  - Rounds come every `round_every` of data time until the streams end, or when a trigger fires (below), and `data.arrived` and `data.labelled` record the volume.
   - Real mode, `init: run`, `local_val`, a local scaler and participation other than `all` are refused with a stream for now.
 - **Replay.** `continual: {memory: {name: reservoir, capacity: 512}, replay_ratio: 0.5}` gives every streaming edge a memory of rows it already trained on.
   - Each training adds a sample from the memory to its new rows, so that a fraction `replay_ratio` of it is replayed.
@@ -196,10 +196,10 @@ sweep: {data.placement.alpha: [0.0, 0.5, 1.0]}
   - The objective sees their features only, with the model as received, and adds a weighted term to each labelled batch. An edge with no new labelled rows stays idle.
   - `diagnostic.unlabelled` reports the rows seen and accepted, the confidence and, in simulation, the accuracy of the pseudo-labels; the bundle keeps each one's class, confidence and the round whose model generated it.
   - Ditto, APFL and FedRep are refused (their own loops add no term), and so is `unlabelled` without a stream.
-- **Triggers.** A `continuum` block replaces `stream.round_every`:
+- **Triggers.** `continual.trigger` replaces `stream.round_every`:
 
   ```yaml
-  continuum:
+  continual:
     trigger: {name: any, of: [{name: schedule, every: 30m}, {name: drift, kind: prior}]}
     edge_trigger: {name: volume, samples: 64}   # an edge trains once it has 64 new rows
     status_every: 5m
@@ -210,6 +210,7 @@ sweep: {data.placement.alpha: [0.0, 0.5, 1.0]}
   - Drift (`data`, `prior` or `performance`) is detected per edge, per zone and for the federation, and reported as `drift.detected`. `trigger.fired` names what opened each round.
   - A schedule must be a multiple of `status_every`. One whose `every` and `status_every` equal the old `round_every` gives C3's model, as long as each round closes within its period.
   - `run.finished` says whether the last label (`horizon`) or the `rounds` cap ended the run.
+  - Before M1 ([#193](https://github.com/adrianoggm/Onion-FL/issues/193)) the triggers were a `continuum` block of their own. It still loads for one version, with a deprecation warning, and gives the same `config_id`: the committed experiments keep it, so their scenarios keep their names. The package `onion_fl.continuum` is now `onion_fl.continual`, with the old name as an alias.
 - **Champion and challenger.** `promotion` keeps each round's model as a challenger until the validation streams decide on it:
 
   ```yaml

@@ -179,9 +179,9 @@ infrastructure:
 - **Not yet.** Real runs refuse an infrastructure (I7, I14). Mobility (a host changing site) comes later.
 - `plan` shows each node's host, each host's load, the services and each link's path and profile; `run.json` records `backend` (`sim` or `real`) and `infrastructure_id`.
 
-## 7b. Continuing a run (continuum)
+## 7b. Continuing a run (continual)
 
-- **Bundle.** Every simulated run writes `runs/<run_id>/bundle/` (`onion_fl.continuum.bundle`), which `run_hash` covers. It holds the state `snapshot_federation` captures, with `.npz` and JSON only:
+- **Bundle.** Every simulated run writes `runs/<run_id>/bundle/` (`onion_fl.continual.bundle`), which `run_hash` covers. It holds the state `snapshot_federation` captures, with `.npz` and JSON only:
   - the global model, round and server optimizer;
   - each aggregator's zone, previous aggregate and own state (the central DP budget);
   - each edge's model, trainer memory (`export_memory`), local DP budget, replay memory and what its stream consumed (`stream/consumed_by`), saved together so a row is either kept or unconsumed, and, with an unlabelled objective, the rows it used unlabelled and the audit of each pseudo-label (`unlabelled/*`);
@@ -202,7 +202,7 @@ infrastructure:
   - The bundle carries the nodes a run lacks, as the run kept them, so a node that skips a generation keeps its budget.
 - **Changes allowed.** New datasets get a fitted preprocessing and fresh adapters. `group_lr` can scale the steps of the groups a continuation keeps.
 
-## 7c. Streams (continuum)
+## 7c. Streams (continual)
 
 - **Time per row.** `SubjectData.t` holds each row's seconds since the subject's first observation. It is metadata, never a feature, and comes from the `time` ingest step: a parsed column, or the row position at a rate. A window is timed at its last row.
 - **The schedule.** `data.stream.edge_stream` turns one edge's rows plus `stream` and `labels` into an `EdgeStream` in continuum time (data time since the stream started). It is a pure function of the rows, the config and the seed. For each row it gives:
@@ -220,12 +220,12 @@ infrastructure:
   - An edge with nothing to train on answers idle, with its scores.
   - Collectors leave idle children out of the quorum, and a round where every child is idle closes as `round.idle` without changing the model.
 - **Pacing.**
-  - Without `continuum`, the coordinator opens a round every `round_every` of data time (`round_every` / `speed` virtual seconds).
-  - The observations end with the last row. The run then drains: it lasts until one round after the last chosen label arrives, bounded by `rounds`. With a continuum, triggers pace it instead (below).
-- **Participation.** An edge handles its stream when a round reaches it, so streams require participation `all`. `close_at_quorum` and time-based availability stay outside the temporal guarantee. With a continuum, an edge without an update answers idle instead of being left out.
+  - Without `continual.trigger`, the coordinator opens a round every `round_every` of data time (`round_every` / `speed` virtual seconds).
+  - The observations end with the last row. The run then drains: it lasts until one round after the last chosen label arrives, bounded by `rounds`. With `continual.trigger`, triggers pace it instead (below).
+- **Participation.** An edge handles its stream when a round reaches it, so streams require participation `all`. `close_at_quorum` and time-based availability stay outside the temporal guarantee. With a trigger, an edge without an update answers idle instead of being left out.
 - **Evaluation.** Validation evaluators with a stream score what arrived since their previous request. Test evaluators score whole test subjects, so the final test score stays comparable.
 - **The bootstrap fit.** `split_subjects(fit_rows=...)` fits the preprocessing on the rows before t₀ only.
-- **Replay memory** (`continual: {memory, replay_ratio}`, `onion_fl.continuum.memory`).
+- **Replay memory** (`continual: {memory, replay_ratio}`, `onion_fl.continual.memory`).
   - **Plugins.** `none`, `fifo`, `reservoir` and `class_balanced`, each keeping indices into its edge's own stream on a stream seeded per edge. An external one follows the `Memory` protocol, which the edge checks when it is built, together with `replay_ratio` in [0, 1) and the stream a memory needs.
   - **What enters.** The rows of a training that ended with finite weights, offered in time order: nothing enters on a failed training, even if its round then fails for other reasons.
   - **Replay.** Each training adds r·n / (1 − r) rows sampled from the memory to its n recent ones. An edge with nothing new stays idle.
@@ -237,7 +237,7 @@ infrastructure:
   - `scratch` serves the model received, but starts every training from the initial weights (the first model it got) and trains on every trainable row it has, used or not, weighted by all of them. It trains only in the rounds where `warm` would, when new rows arrived.
   - `frozen` and `scratch` take no replay memory and no unlabelled objective, at the config and when the edge is built.
   - `scripts/continuum_benchmark.py` measures the benchmark from run folders: prequential, the area under the per-round held-out curve, the final model, forgetting, recovery after the first change of the arriving class, costs and promotions.
-- **Unlabelled rows** (`unlabelled: <objective>`, `onion_fl.continuum.unlabelled`).
+- **Unlabelled rows** (`unlabelled: <objective>`, `onion_fl.continual.unlabelled`).
   - **Plugins.** `none` (the default: C3/C4 unchanged), `pseudo_label` (`threshold`, `weight`) and `consistency` (`noise`, `weight`). An external one follows the `Objective` protocol (`size`, `fit`, `term`), which the edge checks when it is built, together with the stream it needs.
   - **The pool.** Rows that arrived (history included, capped by `window`), whose label is not there yet, and that no successful training has used unlabelled. A row whose label arrives later still trains as labelled. Each row is looked at once: a pool row counts as used, with its round, once the training ends with finite weights, even when `pseudo_label` rejected it.
   - **No labels leak.** The edge hands the objective the pool's features only. `fit` sees them once with the model as received (`pseudo_label` keeps the class of each row whose max probability reaches `threshold`); the trainer then adds `term` over a chunk of the pool to each labelled batch, each epoch splitting a fresh permutation of the pool into as many chunks as batches. The reported loss stays the supervised one.
@@ -245,7 +245,10 @@ infrastructure:
   - **No labels, no training.** An edge without new labelled rows stays idle, and its pool waits.
   - **Weight and memory.** The aggregation weight stays the new labelled rows. Pseudo-labelled rows do not enter the replay memory, which replays with the stream's labels: for those rows that would be the hidden label.
   - **Records.** After each training that worked, `diagnostic.unlabelled` gives the rows seen, with `pseudo_labels_accepted`, `acceptance_rate`, `confidence` (the mean max probability) and, when rows were accepted, `pseudo_label_accuracy` against the hidden label (simulation only). The edge keeps each accepted pseudo-label's class, confidence and `generated_by_version` (the round whose received model generated it), saved in the bundle and not restored yet.
-- **Triggers** (`continuum: {trigger, edge_trigger, status_every}`, `onion_fl.continuum.triggers`). A stream gives either `round_every` or a continuum, never both.
+- **Triggers** (`continual: {trigger, edge_trigger, status_every}`, `onion_fl.continual.triggers`). A stream gives either `round_every` or `continual.trigger`, never both.
+  - **The old form** (before M1, #193). The triggers were a `continuum` section of their own, and the package was `onion_fl.continuum`. Both still load for one version, with a `DeprecationWarning` (one per config read; the old package name is an alias of the new one).
+    - **Identity.** A config is signed in the old layout (`config.to_continuum`, which `run.json` records): the triggers under `continuum`, and a `continual` section only with its replay part (`memory`, `replay_ratio`, `update`). That part counts as given when one of its keys is, or when there is no trigger; an old `continual: {}` next to `continuum` becomes `memory: none`. So a config gives the same `config_id` in either form, and the committed results keep theirs (`tests/test_experiment_continual.py`).
+    - **Sweeps.** `continuum.<key>` is `continual.<key>`. A whole-section value replaces the parts it names: under `continuum`, the triggers; under `continual`, the replay part unless it names a trigger. Scenario names keep the paths as written, so the committed sweeps keep theirs.
   - **Plugins.** `schedule` (data time since the last round), `volume` (new trainable rows), `drift` (a kind and its detector) and `any`. Durations are data time. A federated schedule must be a multiple of `status_every`, since the root checks its trigger at each tick.
   - **Two levels.**
     - The federated trigger, at the coordinator, sees the rows that became trainable and the drift detected anywhere, as reported after the current round reached each node: rows and detections from before were taken by that round, or opened it.
@@ -254,13 +257,13 @@ infrastructure:
     - Every `status_every`, each streaming edge predicts what arrived with the model it serves, then sends a `status` message: the round it last got, the rows that became trainable since its last one and, per kind of drift, the window's statistic, never data.
     - Each collector pools its children's statuses on its own tick, by sample counts, and passes them up with its own round. The counts of a status sent before the collector's current round reached its sender are left out, and a round's opening clears what was pooled for the one before. The root ticks from round 1, so a schedule keeps C3's grid.
     - Every node ticks until the last label, the tick after it included, so a stop lost on its way down does not keep the run alive.
-  - **Drift** (`onion_fl.continuum.drift`).
+  - **Drift** (`onion_fl.continual.drift`).
     - `data` is the shift of the window's features from a reference window, in history standard deviations; `prior` is the total variation between the classes of the labels that arrived and the reference's; `performance` is the error rate of the stored predictions.
     - The reference is the edge's first window with rows, held until a drift of that kind is detected, when the window that showed it becomes the reference. A switch of condition and a gradual drift both rise; the history is not the reference, because on recordings in blocks of conditions its distance stays high from the first window and the detector would never see a rise.
     - Each edge, fog and the root runs its own detector (`page_hinkley`) on its statistic, so drift is detected per edge, per zone and for the federation.
   - **Rounds.** Round 1 opens at registration. Later ones open when the federated trigger fires, one at a time, checked at each root tick and when a round closes. After the last label, one final round opens, at the next tick or when the round then open closes, and the run finishes. `rounds` stays an upper bound, and `run.finished` says which ended the run (`reason`: `horizon` or `rounds`).
-  - **Events.** `trigger.fired` (at the root, and at an edge whose local trigger fired), `drift.detected` and, with a continuum, `round.started` carry `at`, the data time: the cursor of the run.
-- **Versions** (`promotion`, `onion_fl.continuum.versions` and `onion_fl.continuum.promotion`). Champion and challenger.
+  - **Events.** `trigger.fired` (at the root, and at an edge whose local trigger fired), `drift.detected` and, with a trigger, `round.started` carry `at`, the data time: the cursor of the run.
+- **Versions** (`promotion`, `onion_fl.continual.versions` and `onion_fl.continual.promotion`). Champion and challenger.
   - **Champion.** The coordinator's `state` is always the champion, version 0 being the initial model, so the edges serve it and the bundle saves it. Each round that aggregates makes a challenger: a `Version` with its number, its parent champion, its round, its state and the server optimizer's state after it.
   - **Validators.** With a promotion policy, every validation subject also gets a validator under the root (`validate-<dataset>-<subject>`, role `validator`), on its evaluation stream. The coordinator sends each one champion and challenger in one `eval_request` and holds the next round until the decision. A validator scores both on the labels that came by now, split into the recent window (those since the champion was promoted, or within the policy's `window`) and the reference (every earlier one, the history included).
   - **Decision.** The `promotions` plugin gets the reports, combined by samples. `champion_challenger` promotes unless there are fewer than `min_samples` recent labels, the challenger loses more than `min_delta` on the recent window, or it forgets more than `max_forgetting` on the reference (the loss is better lower). A rejection restores the champion's server state, so a rejected challenger leaves no trace. The test subjects never decide.
@@ -313,7 +316,7 @@ infrastructure:
 |---|---|
 | Topologies | The library with graphs and `topology_id` (the plan draws each leaf with its number of edges, which the placement decides), and an editor that validates through `POST /api/topologies/validate` |
 | Experiments | Scenarios with their `config_id`, the dry-run plan with its warnings (and, for a stream, its rows, horizon, drain and rounds or trigger), and a launch that starts `onion_fl run` in a child process |
-| Runs | Status, identity, summary, the rounds a continuum trigger opened and the drift detected (`trigger.fired`, `drift.detected`), metric series per level, and events polled every two seconds while a run is `running`, which redraw the figures and the triggers when a round, a trigger or the end arrives. The runs list refreshes every three seconds |
+| Runs | Status, identity, summary, the rounds a trigger opened and the drift detected (`trigger.fired`, `drift.detected`), metric series per level, and events polled every two seconds while a run is `running`, which redraw the figures and the triggers when a round, a trigger or the end arrives. The runs list refreshes every three seconds |
 | Compare | `Runs.compare` by any tags, with the 95% CI band |
 | Tutorial | Every registry's plugins with their explanation and parameters, and dry-run previews (`studio.previews`) |
 
