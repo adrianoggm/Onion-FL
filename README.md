@@ -213,7 +213,7 @@ Each run writes `runs/<run_id>/`:
 
 | File | Content |
 |---|---|
-| `run.json` | Identifiers (`topology_id`, `config_id`, `data_id`, `code_version`), resolved config, host, start and end, status (`running`, `finished`, `incomplete`, `failed`) and `run_hash` |
+| `run.json` | Identifiers (`topology_id`, `config_id`, `data_id`, `code_version`), resolved config, host, start and end, status (`running`, `finished`, `incomplete`, `failed`), the ex ante diagnostic of the deadline bias (`diagnostic`, in `sim`) and `run_hash` |
 | `events.jsonl` | Every event: messages, rounds, training, evaluation, diagnostics, data composition |
 | `summary.json` | Rounds, traffic, failures and the last scores at the root |
 | `model.npz` | The final global model, loadable as a `checkpoint` init |
