@@ -158,6 +158,12 @@ AXES: list[tuple[str, str, str, str | None]] = [
         None,
     ),
     (
+        "assignment",
+        "Asignación",
+        "En qué host de la infraestructura física se ejecuta cada edge.",
+        None,
+    ),
+    (
         "availability_model",
         "Disponibilidad",
         "Cuándo está un nodo encendido en simulación.",
@@ -182,6 +188,7 @@ AXES: list[tuple[str, str, str, str | None]] = [
 def rooted(config: ExperimentConfig, root: Path) -> ExperimentConfig:
     """The config with its relative paths resolved against the Studio root."""
     raw = config.dump()
+    raw["paths"].setdefault("infrastructures", config.paths.infrastructures)
     for key, value in raw["paths"].items():
         if not Path(value).is_absolute():
             raw["paths"][key] = str(root / value)
@@ -191,6 +198,14 @@ def rooted(config: ExperimentConfig, root: Path) -> ExperimentConfig:
     if isinstance(raw["topology"], str) and raw["topology"].endswith((".yaml", ".yml")):
         if not Path(raw["topology"]).is_absolute():
             raw["topology"] = str(root / raw["topology"])
+    infra = raw.get("infrastructure")
+    if (
+        infra
+        and isinstance(infra["name"], str)
+        and infra["name"].endswith((".yaml", ".yml"))
+    ):
+        if not Path(infra["name"]).is_absolute():
+            infra["name"] = str(root / infra["name"])
     return parse_experiment(raw)
 
 

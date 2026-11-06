@@ -314,3 +314,36 @@ def test_topology_show_draws_mermaid(capsys, workspace: Path) -> None:
     assert '    cloud["cloud<br/>global · coordinator"]' in lines
     assert "    fog_a -->|mqtt/json/wifi| cloud" in lines
     assert any(line.strip().startswith("edges_fog_a") for line in lines)
+
+
+def test_ceiling_forwards_its_options(capsys, monkeypatch, workspace: Path) -> None:
+    from onion_fl.experiment import ceiling
+
+    seen = {}
+    monkeypatch.setattr(
+        ceiling, "run_ceiling", lambda config, **kw: seen.update(kw) or {"top1": 1.0}
+    )
+
+    code, out, _ = run(
+        capsys,
+        "ceiling",
+        str(workspace / "exp.yaml"),
+        "--replicas",
+        "5",
+        "--metric",
+        "loss",
+        "--resample",
+        "--no-minimize",
+    )
+
+    assert code == 0 and json.loads(out) == {"top1": 1.0}
+    assert seen["n"] == 5 and seen["metric"] == "loss" and seen["resample"]
+    assert seen["minimize"] is False and not seen["paired"]
+
+
+def test_ceiling_needs_two_replicas(capsys, workspace: Path) -> None:
+    code, _, err = run(
+        capsys, "ceiling", str(workspace / "exp.yaml"), "--replicas", "1"
+    )
+
+    assert code == 2 and "at least 2 replicas" in err

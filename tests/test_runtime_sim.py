@@ -257,6 +257,34 @@ def test_messages_wait_while_the_node_is_busy() -> None:
     assert [t for t, _ in pinger.replies] == pytest.approx([2.2, 4.2])
 
 
+def test_a_stochastic_compute_model_draws_from_the_node_compute_stream() -> None:
+    lognormal = {"samples_per_second": 500, "sigma": 0.5}
+    compute = compute_models.create("lognormal_rate", lognormal)
+    pinger = Pinger("edge_1", "fog_0", rounds=(0, 1))
+    rt, _, echo = pair(echo=Echo("fog_0", work=1000), pinger=pinger, compute=compute)
+    rt.run()
+
+    rng = node_rng(0, "fog_0/compute")
+    first, second = (compute.duration(samples=1000, wall_s=0, rng=rng) for _ in "ab")
+    assert [t for t, _ in pinger.replies] == pytest.approx(
+        [0.1 + first + 0.1, 0.1 + first + second + 0.1]
+    )
+
+
+def test_compute_times_repeat_with_the_seed_and_change_with_it() -> None:
+    def replies(seed: int) -> list[float]:
+        trace = compute_models.create("trace", {"durations": [1.0, 2.0, 3.0, 4.0]})
+        pinger = Pinger("edge_1", "fog_0", rounds=range(6))
+        rt, _, _ = pair(
+            echo=Echo("fog_0", work=1), pinger=pinger, compute=trace, seed=seed
+        )
+        rt.run()
+        return [t for t, _ in pinger.replies]
+
+    assert replies(0) == replies(0)
+    assert replies(0) != replies(1)
+
+
 def test_measured_compute_uses_the_wall_time() -> None:
     compute = compute_models.create("measured", {"factor": 1e6})
     rt, pinger, _ = pair(compute=compute)
@@ -573,3 +601,47 @@ def test_each_message_gets_an_id_seen_at_both_ends() -> None:
     ]
     assert len(set(sent)) == len(sent) == 4
     assert sorted(delivered) == sorted(sent)
+
+
+# --- hosts ------------------------------------------------------------------------
+
+
+def shared_host(cpus: int | None, place: bool = True) -> list[float]:
+    """Two echoes of 2 s of work each, reached at t = 0.1, on one host."""
+    rt = SimRuntime(seed=0)
+    compute = compute_models.create("samples_per_second", {"samples_per_second": 500})
+    pingers = [Pinger("edge_1", "fog_0"), Pinger("edge_2", "fog_1")]
+    for pinger in pingers:
+        rt.add_node(pinger)
+    for fog in ("fog_0", "fog_1"):
+        rt.add_node(Echo(fog, work=1000), compute=compute)
+    rt.add_link("edge_1", "fog_0", FIXED)
+    rt.add_link("edge_2", "fog_1", FIXED)
+    rt.add_host("h", cpus)
+    if place:
+        rt.place("fog_0", "h")
+        rt.place("fog_1", "h")
+    rt.run()
+    queued = [e["value"] for e in rt.events if e["name"] == "host.queued"]
+    assert queued == ([pytest.approx(2.0)] if cpus == 1 and place else [])
+    return sorted(t for p in pingers for t, _ in p.replies)
+
+
+def test_two_jobs_on_one_cpu_end_at_t_and_2t() -> None:
+    assert shared_host(cpus=1) == [pytest.approx(2.2), pytest.approx(4.2)]
+
+
+def test_enough_cpus_or_no_host_means_no_waiting() -> None:
+    alone = [pytest.approx(2.2)] * 2
+    assert shared_host(cpus=2) == alone
+    assert shared_host(cpus=None) == alone
+    assert shared_host(cpus=1, place=False) == alone
+
+
+def test_placing_on_an_unknown_host_is_refused() -> None:
+    rt, _, _ = pair()
+    with pytest.raises(SimulationError, match="unknown host"):
+        rt.place("fog_0", "nowhere")
+    rt.add_host("h")
+    with pytest.raises(SimulationError, match="already in the simulation"):
+        rt.add_host("h")

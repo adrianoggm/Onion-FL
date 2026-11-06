@@ -63,6 +63,7 @@ class EdgeSpec:
     replay: Any = None  # a replay memory of the stream's rows (continuum C4)
     replay_ratio: float = 0.25  # the share of each training that comes from it
     unlabelled: Any = None  # an objective on rows not labelled yet (continuum C5)
+    host: str | None = None  # where an infrastructure runs it; runtimes ignore it
 
 
 @dataclass
@@ -123,11 +124,19 @@ def build_federation(
     server_optimizer: Any = None,
     round_every: float | None = None,
     continuum: Any = None,
+    link_profiles: Mapping[str, Any] | None = None,
+    link_channels: Mapping[str, Any] | None = None,
 ) -> Federation:
     """Coordinator, aggregators and edges of ``topology`` on ``runtime`` (a new SimRuntime).
 
     ``evaluate(model, data) -> (scores, samples)`` defaults to the ``metrics`` plugins.
+    ``link_profiles`` (child -> profile) replaces the topology's link profiles,
+    as an infrastructure compiles them; ``link_channels`` (child -> a factory of
+    channels, see ``SimRuntime.add_link``) replaces them with paths over a
+    physical network.
     """
+    profiles = link_profiles or {}
+    channels = link_channels or {}
     policy = _sharing(sharing)
     policy.validate_for(topology)
     runtime = runtime or SimRuntime(seed=seed)
@@ -225,7 +234,8 @@ def build_federation(
             runtime.add_link(
                 node.id,
                 node.parent,
-                profile=link.profile,
+                profile=profiles.get(node.id, link.profile),
+                **({"channel": channels[node.id]} if node.id in channels else {}),
                 codec=link.codec,
                 transport=link.transport,
             )
@@ -235,7 +245,8 @@ def build_federation(
             runtime.add_link(
                 spec.id,
                 leaf,
-                profile=edge_link.profile,
+                profile=profiles.get(spec.id, edge_link.profile),
+                **({"channel": channels[spec.id]} if spec.id in channels else {}),
                 codec=edge_link.codec,
                 transport=edge_link.transport,
             )

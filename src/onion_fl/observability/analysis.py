@@ -11,6 +11,11 @@ from __future__ import annotations
 ``compare`` first combines the nodes of the level inside each run (mean, min,
 max and spread), then the runs of each group over ``over`` (the seed): the
 mean with a 95 % t interval, per round.
+
+With ``target``, ``compare`` summarises the time to target instead (spec N5):
+``time_to_target`` gives, per run, the first backend-clock instant at which the
+level's metric reaches the threshold, or the run's duration, flagged as
+censored, when it never does.
 """
 
 import html
@@ -42,6 +47,7 @@ class RunRecord:
 
 
 SERIES = ("model", "source", "dataset")  # what tells series of a level apart
+BOOTSTRAP = 2000  # resamples of the time-to-target interval
 
 
 class Runs:
@@ -96,6 +102,8 @@ class Runs:
         metric: str,
         by: Sequence[str] = ("topology_id",),
         over: str = "seed",
+        target: float | None = None,
+        lower: bool = False,
         **tags: Any,
     ) -> pd.DataFrame:
         """Mean ± 95 % CI over ``over`` per group and round, plus the spread across nodes.
@@ -103,7 +111,16 @@ class Runs:
         The runs of a group are pooled as repetitions: grouped only by
         ``topology_id``, the scenarios of a sweep over one topology are averaged
         together. Add ``scenario`` or ``config_id`` to ``by`` to keep them apart.
+
+        With ``target``, one row per group summarises ``time_to_target`` instead:
+        how many runs reached it and how many are censored, and the mean time
+        with a 95 % bootstrap interval over the runs. Censored runs count at
+        their duration, so with any of them the mean is a lower bound.
         """
+        if target is not None:
+            return self._compare_time_to_target(
+                level, metric, target, by, over, lower, tags
+            )
         df = self.metrics(level=level, name=metric, **tags)
         columns = [
             *by,
@@ -118,18 +135,7 @@ class Runs:
         ]
         if df.empty:
             return pd.DataFrame(columns=columns)
-        by = list(by)
-        for key in by:
-            if key not in df.columns:
-                df[key] = None
-        # Rows of a level are nodes of one series only when they share model,
-        # source and dataset: different ones are kept apart, never averaged.
-        extra = [
-            k
-            for k in SERIES
-            if k in df.columns and k not in by and df[k].nunique(dropna=False) > 1
-        ]
-        by += extra
+        by, extra = _split_series(df, by)
         columns = [*by, *columns[len(by) - len(extra) :]]
         per_run = (
             df.groupby([*by, "run_id", over, "round"], dropna=False)["value"]
@@ -166,6 +172,87 @@ class Runs:
         out.attrs["by"] = by  # the keys the series were split by
         return out
 
+    def time_to_target(
+        self,
+        level: str,
+        metric: str,
+        target: float,
+        by: Sequence[str] = ("topology_id",),
+        over: str = "seed",
+        lower: bool = False,
+        **tags: Any,
+    ) -> pd.DataFrame:
+        """Per run, the first instant the level's metric reaches ``target``.
+
+        ``target`` must be fixed before the runs (for example from a separate
+        pilot run), or the measure is biased towards the runs it was read from.
+        The nodes of the level are averaged per round inside each run, as in
+        ``compare``; a round's instant is its last ``t_virtual``. The metric
+        reaches the target when it is ``>=`` it, or ``<=`` with ``lower``
+        (losses). A run that never does is censored at its duration, the last
+        ``t_virtual`` of any of its events, with ``round`` NaN.
+        """
+        df = self.metrics(level=level, name=metric, **tags)
+        columns = ["reached", "censored", "time", "round"]
+        if df.empty:
+            return pd.DataFrame(columns=[*_ids(by, over), *columns])
+        by, _ = _split_series(df, by)
+        ids = _ids(by, over)
+        duration = self.events().groupby("run_id")["t_virtual"].max()
+        per_round = (
+            df.groupby([*ids, "round"], dropna=False)
+            .agg(value=("value", "mean"), time=("t_virtual", "max"))
+            .reset_index()
+            .sort_values("round")
+        )
+        rows = []
+        for key, group in per_round.groupby(ids, dropna=False):
+            hit = group["value"] <= target if lower else group["value"] >= target
+            row = dict(zip(ids, key, strict=True))
+            if hit.any():
+                first = group[hit].iloc[0]
+                found = {"time": float(first["time"]), "round": first["round"]}
+            else:
+                found = {"time": float(duration[row["run_id"]]), "round": None}
+            rows.append(row | {"reached": bool(hit.any())} | found)
+        out = pd.DataFrame(rows, columns=[*ids, *columns])
+        out["censored"] = ~out["reached"].astype(bool)
+        out.attrs["by"] = by
+        return out
+
+    def _compare_time_to_target(
+        self,
+        level: str,
+        metric: str,
+        target: float,
+        by: Sequence[str],
+        over: str,
+        lower: bool,
+        tags: dict[str, Any],
+    ) -> pd.DataFrame:
+        per_run = self.time_to_target(level, metric, target, by, over, lower, **tags)
+        by = per_run.attrs.get("by", list(by))
+        columns = [*by, "n", "reached", "censored", "mean", "ci_low", "ci_high"]
+        rows = []
+        if not per_run.empty:
+            for key, group in per_run.groupby(by, dropna=False):
+                times = group.sort_values("run_id")["time"].to_numpy(float)
+                low, high = _bootstrap_ci(times)
+                rows.append(
+                    dict(zip(by, key, strict=True))
+                    | {
+                        "n": len(times),
+                        "reached": int(group["reached"].sum()),
+                        "censored": int(group["censored"].sum()),
+                        "mean": float(times.mean()),
+                        "ci_low": low,
+                        "ci_high": high,
+                    }
+                )
+        out = pd.DataFrame(rows, columns=columns)
+        out.attrs["by"] = by
+        return out
+
     def report(
         self,
         path: str | Path,
@@ -174,6 +261,37 @@ class Runs:
     ) -> Path:
         """Static HTML comparing the groups at every level, built on ``compare``."""
         return write_report(self, Path(path), metrics, by)
+
+
+def _split_series(df: pd.DataFrame, by: Sequence[str]) -> tuple[list[str], list[str]]:
+    """``by`` plus the series keys that vary, adding the missing columns empty."""
+    by = list(by)
+    for key in by:
+        if key not in df.columns:
+            df[key] = None
+    # Rows of a level are nodes of one series only when they share model,
+    # source and dataset: different ones are kept apart, never averaged.
+    extra = [
+        k
+        for k in SERIES
+        if k in df.columns and k not in by and df[k].nunique(dropna=False) > 1
+    ]
+    return by + extra, extra
+
+
+def _ids(by: Sequence[str], over: str) -> list[str]:
+    """The columns that identify one run of a group, each once."""
+    return list(dict.fromkeys([*by, "run_id", over]))
+
+
+def _bootstrap_ci(values: np.ndarray, seed: int = 0) -> tuple[float, float]:
+    """95 % percentile bootstrap interval of the mean, seeded; none for one value."""
+    if len(values) < 2:
+        return float("nan"), float("nan")
+    rng = np.random.default_rng(seed)
+    samples = rng.choice(values, size=(BOOTSTRAP, len(values)), replace=True)
+    low, high = np.percentile(samples.mean(axis=1), [2.5, 97.5])
+    return float(low), float(high)
 
 
 def load_runs(path: str | Path, experiment: str | None = None) -> Runs:
