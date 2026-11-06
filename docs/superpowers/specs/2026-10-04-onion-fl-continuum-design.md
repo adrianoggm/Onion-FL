@@ -357,6 +357,23 @@ continuum:
 
 Líneas base: congelado, reentrenar desde cero, warm start, warm start + replay, y warm start + replay + semisupervisado. Los hiperparámetros se eligen sobre validación y los resultados se confirman con su identidad.
 
+- **Decisiones de C8** (#163; los resultados, `results/continuum_benchmark/INDEX.md`):
+  - **Líneas base** (`continual.update`):
+    - `warm`, la de siempre: sigue desde el modelo recibido con sus filas nuevas;
+    - `frozen`: entrena v0 con el histórico, con el primer modelo que recibe, y desde entonces responde ocioso. Un edge sin etiquetas en su histórico no entra en v0;
+    - `scratch`: sirve el modelo recibido, pero cada entrenamiento parte de los pesos iniciales y usa todas sus filas entrenables, usadas o no, con todas ellas como peso. Entrena en las mismas rondas que `warm`.
+    - `frozen` y `scratch` no aceptan memoria ni objetivo sin etiquetar.
+  - **Métricas** (`scripts/continuum_benchmark.py`):
+    - prequential: las predicciones guardadas de los edges, agregadas en la ejecución;
+    - área bajo la curva: el macro-F1 de cada ronda en los sujetos reservados, ponderado por el tiempo de datos que estuvo activo;
+    - macro-F1 final: el `model.npz` puntuado fuera de línea;
+    - olvido: el mejor macro-F1 de una ronda anterior menos el de la última, en los mismos sujetos;
+    - recuperación: desde la primera ronda cuyas llegadas cambian de clase mayoritaria hasta la primera cuya exactitud prequential vuelve a 0,1 del nivel anterior. Sin ronda anterior (WESAD, que cambia en t₀) no se define;
+    - coste: rondas, bytes y filas·épocas entrenadas (las del pool sin etiquetar no cuentan).
+  - **Selección.** En los streams de validación: la puntuación agregada de lo que llegó en cada ronda, media de SWELL y WESAD. Por pasos: tasa y épocas de cada línea base, después la memoria y su proporción, después el objetivo. Los barridos se ejecutan en test y no eligen nada.
+  - **Promoción.** Para medir el proceso, las cuatro líneas base que se actualizan se ejecutan también detrás de `champion_challenger`. La versión 0 son los pesos iniciales, y el challenger de la ronda 1 se rechaza siempre por `min_samples`: con estos streams de validación casi nada se promueve.
+  - **Lo que muestran.** Ningún modelo final separa las clases en los sujetos de test: los que se actualizan acaban prediciendo una sola clase. Las líneas base se diferencian en lo rápido que siguen la clase que llega, y la memoria y lo no etiquetado no aportan nada medible con una décima de etiquetas.
+
 ## 13. Qué implementa cada issue
 
 **Orden de implementación:** C2 → C3 → C4 → C6 → C5 → C7 → C8. Primero un continuum supervisado completo y medible (bundle, streams, memoria y federación continua); el semisupervisado (C5) es una extensión encima de esa base.
