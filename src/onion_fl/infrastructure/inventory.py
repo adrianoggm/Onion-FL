@@ -22,6 +22,7 @@ and there is no field for a password. Hosts that the assignment does not use
 may be left out; a host that runs nodes and has no machine is refused.
 """
 
+import ipaddress
 import os
 import re
 from collections.abc import Mapping
@@ -34,6 +35,42 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from onion_fl.infrastructure.model import HOST_ID, InfrastructureError
 
 SECRET = re.compile(r"-----BEGIN|PRIVATE KEY|ssh-(rsa|ed25519) AAAA")
+# Every value below reaches a command line (ssh's destination or options, the
+# remote shell line, a probe's request): nothing may read as an option or
+# break a line. Labels may hold "_" for container names on a Docker network.
+LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9_-]{0,61}[A-Za-z0-9])?"
+HOSTNAME = re.compile(rf"{LABEL}(?:\.{LABEL})*")
+USER = re.compile(r"[A-Za-z_][A-Za-z0-9._-]{0,31}")
+CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def check_address(value: str) -> str:
+    """A hostname, an IPv4 address or a bracketed IPv6 one; nothing else."""
+    if value.startswith("[") and value.endswith("]"):
+        try:
+            ipaddress.IPv6Address(value[1:-1])
+        except ValueError:
+            raise ValueError(f"{value!r} is not a bracketed IPv6 address") from None
+        return value
+    try:
+        ipaddress.IPv4Address(value)
+        return value
+    except ValueError:
+        pass
+    if len(value) > 253 or not HOSTNAME.fullmatch(value):
+        raise ValueError(
+            f"{value!r} is not a hostname, an IPv4 address or a bracketed IPv6 one"
+        )
+    return value
+
+
+def check_text(value: str, what: str, *, option_like: bool = True) -> str:
+    """No control characters, and (``option_like``) no leading ``-``."""
+    if CONTROL.search(value):
+        raise ValueError(f"{what}: control characters are not allowed")
+    if option_like and value.startswith("-"):
+        raise ValueError(f"{what} {value!r} may not start with '-'")
+    return value
 
 
 class Strict(BaseModel):
@@ -62,19 +99,42 @@ class Machine(Strict):
         default_factory=dict, description="Variables de entorno de sus procesos"
     )
 
+    @field_validator("address", "advertise")
+    @classmethod
+    def _address(cls, value: str | None) -> str | None:
+        return None if value is None else check_address(value)
+
+    @field_validator("listen")
+    @classmethod
+    def _listen(cls, value: str) -> str:
+        return check_address(value)
+
+    @field_validator("user")
+    @classmethod
+    def _user(cls, value: str | None) -> str | None:
+        if value is not None and not USER.fullmatch(value):
+            raise ValueError(f"{value!r} is not a POSIX user name")
+        return value
+
     @field_validator("key")
     @classmethod
     def _key_is_a_path(cls, value: str | None) -> str | None:
         if value is not None and (SECRET.search(value) or "\n" in value):
             raise ValueError("give the path of the private key, never the key itself")
-        return value
+        return None if value is None else check_text(value, "key")
+
+    @field_validator("python", "root")
+    @classmethod
+    def _command_parts(cls, value: str, info: Any) -> str:
+        return check_text(value, info.field_name)
 
     @field_validator("env")
     @classmethod
     def _env_names(cls, value: dict[str, str]) -> dict[str, str]:
-        for name in value:
+        for name, text in value.items():
             if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
                 raise ValueError(f"{name!r} is not an environment variable name")
+            check_text(text, f"env.{name}", option_like=False)
         return value
 
     @property
@@ -91,7 +151,10 @@ class Machine(Strict):
             raise InfrastructureError(
                 f"key {self.key!r}: an environment variable in it is not set"
             )
-        return expanded
+        try:  # what the variables brought in is checked too
+            return check_text(expanded, "key")
+        except ValueError as exc:
+            raise InfrastructureError(str(exc)) from None
 
 
 class Clock(Strict):
@@ -102,6 +165,17 @@ class Clock(Strict):
         description="Contra qué se mide el desfase: el reloj del lanzador o NTP",
     )
     server: str = Field("pool.ntp.org", description="Servidor NTP")
+
+    @field_validator("server")
+    @classmethod
+    def _server(cls, value: str) -> str:
+        host, colon, port = value.rpartition(":")
+        if colon and port.isdigit() and not value.endswith("]"):
+            check_address(host)
+        else:
+            check_address(value)
+        return value
+
     max_offset: float = Field(
         0.05, gt=0, description="Desfase máximo admitido de cada reloj (s)"
     )
@@ -117,6 +191,13 @@ class Inventory(Strict):
         "accept-new", description="StrictHostKeyChecking de SSH"
     )
     connect_timeout: float = Field(10.0, gt=0, description="Plazo de conexión (s)")
+
+    @field_validator("known_hosts")
+    @classmethod
+    def _known_hosts(cls, value: str | None) -> str | None:
+        if value is not None and '"' in value:
+            raise ValueError("known_hosts may not hold '\"'")
+        return None if value is None else check_text(value, "known_hosts")
 
     @field_validator("machines")
     @classmethod

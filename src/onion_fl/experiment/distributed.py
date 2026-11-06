@@ -34,7 +34,6 @@ import hashlib
 import io
 import json
 import os
-import re
 import shlex
 import subprocess
 import sys
@@ -54,13 +53,20 @@ from onion_fl.experiment.sweep import Scenario
 from onion_fl.infrastructure import probe
 from onion_fl.infrastructure.assignment import Resolved
 from onion_fl.infrastructure.emulators import slug
-from onion_fl.infrastructure.inventory import Inventory, Machine, load_inventory
+from onion_fl.infrastructure.inventory import (
+    CONTROL,
+    Inventory,
+    Machine,
+    load_inventory,
+)
 from onion_fl.infrastructure.model import InfrastructureError
 from onion_fl.observability.run import Run
 
 NUMERIC = ("torch", "numpy", "scipy", "pandas", "scikit-learn")
 MIN_PYTHON = (3, 11)
-PULLED = re.compile(r"events\.[A-Za-z0-9_.-]+\.jsonl|model\.npz")
+MODEL = "model.npz"
+MAX_MEMBER = 1 << 30  # bytes of one file a machine sends back
+MAX_ARCHIVE = 2 << 30  # bytes of all it sends back
 PATHS = ("topologies", "infrastructures", "datasets", "runs", "cache")
 
 
@@ -94,7 +100,8 @@ def ssh_command(
         str(machine.port),
     ]
     if inventory.known_hosts is not None:
-        command += ["-o", f"UserKnownHostsFile={expand(inventory.known_hosts)}"]
+        known = known_hosts_path(inventory.known_hosts)
+        command += ["-o", f'UserKnownHostsFile="{known}"']
     key = machine.key_path()
     if key is not None:
         command += ["-i", key, "-o", "IdentitiesOnly=yes"]
@@ -103,7 +110,16 @@ def ssh_command(
     target = (
         machine.address if machine.user is None else f"{machine.user}@{machine.address}"
     )
-    return [*command, target, line]
+    # "--": whatever the destination says, ssh never reads it as an option.
+    return [*command, "--", target, line]
+
+
+def known_hosts_path(path: str) -> str:
+    """The known_hosts file, expanded; quoted by the caller for ssh's -o."""
+    known = expand(path)
+    if '"' in known or CONTROL.search(known) or known.startswith("-"):
+        raise ConfigError(f"known_hosts {path!r}: not a usable path for ssh")
+    return known
 
 
 def expand(path: str) -> str:
@@ -420,35 +436,76 @@ def push(
         )
 
 
-def pull_line(run_id: str) -> str:
-    """Archive a run's event files and model, if any, to stdout."""
+def expected_files(host: str, root: bool) -> list[str]:
+    """What ``host`` may send back: its own event file, and the model if it
+    hosts the root."""
+    return [f"events.{host}.jsonl", *([MODEL] if root else [])]
+
+
+def pull_line(run_id: str, host: str, root: bool) -> str:
+    """Archive, to stdout, the files of ``expected_files`` that exist."""
     folder = shlex.quote(f"runs/{run_id}")
+    names = " ".join(shlex.quote(n) for n in expected_files(host, root))
     return (
-        f"cd {folder} 2>/dev/null || exit 0; for f in events.*.jsonl model.npz; "
+        f"cd {folder} 2>/dev/null || exit 0; for f in {names}; "
         'do [ -f "$f" ] && echo "$f"; done | tar cf - -T -'
     )
 
 
-def unpack(data: bytes, into: Path) -> list[str]:
-    """Write the event files and the model in ``data`` (a tar) into ``into``.
+class SpoofError(RuntimeError):
+    """A machine sent back something it may not: the run is not signed."""
 
-    Anything else in the archive, and any path in a name, is ignored: what a
-    machine sends back is data, never where to write it.
+
+def unpack(
+    data: bytes,
+    into: Path,
+    host: str,
+    *,
+    root: bool,
+    max_member: int = MAX_MEMBER,
+    max_archive: int = MAX_ARCHIVE,
+) -> list[str]:
+    """Write what ``host`` sent back (a tar in ``data``) into ``into``.
+
+    Only ``events.<host>.jsonl`` and, from the root's host, ``model.npz``
+    are taken, each once and never over a file already there. Anything else
+    (another host's events, a link, a folder, a path, an oversized member or
+    archive) refuses the whole archive before anything is written: what a
+    machine sends is data, never where to write it or whose it is.
     """
-    written = []
     if not data:
-        return written
-    with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as tar:
+        return []
+    if len(data) > max_archive:
+        raise SpoofError(f"{host}: sent {len(data)} bytes, over {max_archive}")
+    allowed = set(expected_files(host, root))
+    taken: dict[str, bytes] = {}
+    try:
+        tar = tarfile.open(fileobj=io.BytesIO(data), mode="r:")
+    except tarfile.TarError as exc:
+        raise SpoofError(f"{host}: not a tar archive: {exc}") from None
+    with tar:
         for member in tar.getmembers():
-            name = Path(member.name).name
-            if not member.isfile() or not PULLED.fullmatch(name):
-                continue
+            name = member.name
+            if not member.isreg():
+                raise SpoofError(f"{host}: {name!r} is not a regular file")
+            if name not in allowed:  # also any "/", "..", or absolute name
+                raise SpoofError(
+                    f"{host}: may send back only {sorted(allowed)}, not {name!r}"
+                )
+            if name in taken or (into / name).exists():
+                raise SpoofError(f"{host}: {name!r} sent twice")
+            if member.size > max_member:
+                raise SpoofError(
+                    f"{host}: {name!r} has {member.size} bytes, over {max_member}"
+                )
             extracted = tar.extractfile(member)
             if extracted is None:
-                continue
-            (into / name).write_bytes(extracted.read())
-            written.append(name)
-    return sorted(written)
+                raise SpoofError(f"{host}: {name!r} cannot be read")
+            taken[name] = extracted.read(max_member + 1)
+    for name, content in taken.items():
+        with open(into / name, "xb") as out:  # never overwrite
+            out.write(content)
+    return sorted(taken)
 
 
 # --- the plan -------------------------------------------------------------------------------
@@ -468,6 +525,7 @@ class DistributedPlan:
     stale: dict[str, list[str]]  # host -> caches to send
     codes: list[int] = field(default_factory=list)
     grace: float = 60.0  # seconds a process may take to start, on top of the timeout
+    root_host: str | None = None  # the host of the coordinator: it sends the model
 
     def machine(self, host: str) -> Machine:
         return self.inventory.machine(host)
@@ -783,6 +841,7 @@ def prepare_distributed(
         caches,
         stale,
         grace=params.grace,
+        root_host=resolved.hosts[topology.root.id],
     )
 
 
@@ -833,19 +892,30 @@ def launch_distributed(
     finally:
         for host in plan.groups:
             subprocess.run(plan.stop_command(host), capture_output=True, timeout=60)
-        pulled = {}
+        pulled, refused = {}, []
+        root_host = plan.root_host
         for host in plan.groups:
             machine = plan.machine(host)
+            line = pull_line(rid, host, host == root_host)
             fetched = subprocess.run(
                 ssh_command(
                     plan.params.ssh,
                     plan.inventory,
                     machine,
-                    f"cd {shlex.quote(root_of(machine))} && {pull_line(rid)}",
+                    f"cd {shlex.quote(root_of(machine))} && {line}",
                     no_stdin=True,
                 ),
                 capture_output=True,
                 timeout=600,
             )
-            pulled[host] = unpack(fetched.stdout, plan.run.path)
+            try:
+                pulled[host] = unpack(
+                    fetched.stdout, plan.run.path, host, root=host == root_host
+                )
+            except SpoofError as exc:
+                refused.append(str(exc))
         plan.run.meta["distributed"]["pulled"] = pulled
+        if refused:
+            plan.run.meta["distributed"]["refused"] = refused
+            plan.run.finish(status="failed")
+            raise SpoofError("; ".join(refused))

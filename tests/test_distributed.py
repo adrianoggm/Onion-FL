@@ -35,6 +35,7 @@ from onion_fl.experiment.distributed import (
     DistributedPlan,
     Expected,
     PreflightError,
+    SpoofError,
     clock_offset,
     judge,
     numeric_pins,
@@ -147,11 +148,12 @@ def test_the_ssh_command_never_prompts_and_names_the_key_and_the_known_hosts() -
 
     command = ssh_command("ssh", inv, machine, "true", no_stdin=True)
 
-    assert command[0] == "ssh" and command[-2:] == ["pi@10.0.0.5", "true"]
+    assert command[0] == "ssh" and command[-3:] == ["--", "pi@10.0.0.5", "true"]
     options = " ".join(command)
     assert "BatchMode=yes" in options and "StrictHostKeyChecking=yes" in options
     assert "-p 2201" in options and "-i /keys/id" in options
-    assert "UserKnownHostsFile=/tmp/known" in options and "-n" in command
+    assert 'UserKnownHostsFile="/tmp/known"' in options and "-n" in command
+    assert command.index("--") == len(command) - 3  # every option comes before
 
 
 def test_the_remote_line_quotes_everything_and_runs_in_the_root() -> None:
@@ -188,7 +190,7 @@ def test_a_node_runs_on_its_machine_with_its_pid_recorded(tmp_path: Path) -> Non
 
     command = plan_.command("fog-a")
 
-    assert command[-2] == "onion@machine-fog-a" and "-n" in command
+    assert command[-3:-1] == ["--", "onion@machine-fog-a"] and "-n" in command
     tokens = shlex.split(command[-1])
     assert tokens[-8:] == [
         "onion_fl",
@@ -496,25 +498,74 @@ def test_push_sends_one_tar_stream_with_the_remote_paths(tmp_path: Path) -> None
     ]
 
 
-def test_unpack_takes_only_event_files_and_the_model(tmp_path: Path) -> None:
+def archive(*members) -> bytes:
+    """A tar of ``(name, data)`` files, or ``(name, tarfile type)`` entries."""
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w") as tar:
-        for name, data in (
-            ("events.fog-a.jsonl", b"{}\n"),
-            ("../../evil.jsonl", b"x"),
-            ("model.npz", b"npz"),
-            ("events.x.jsonl/../../../escape", b"x"),
-            ("node.fog-a.pid", b"1"),
-        ):
+        for name, data in members:
             info = tarfile.TarInfo(name)
-            info.size = len(data)
-            tar.addfile(info, io.BytesIO(data))
+            if data not in (tarfile.SYMTYPE, tarfile.LNKTYPE, tarfile.DIRTYPE):
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+            else:
+                info.type = data
+                info.linkname = "/etc/passwd"
+                tar.addfile(info)
+    return buffer.getvalue()
 
-    written = unpack(buffer.getvalue(), tmp_path)
 
-    assert written == ["events.fog-a.jsonl", "model.npz"]
-    assert sorted(p.name for p in tmp_path.iterdir()) == written
-    assert "tar cf - -T -" in pull_line("r-1") and "runs/r-1" in pull_line("r-1")
+def test_unpack_takes_a_hosts_own_events_and_the_roots_model(tmp_path: Path) -> None:
+    sent = archive(("events.cloud-1.jsonl", b"{}\n"), ("model.npz", b"npz"))
+
+    written = unpack(sent, tmp_path, "cloud-1", root=True)
+
+    assert written == ["events.cloud-1.jsonl", "model.npz"]
+    assert (tmp_path / "model.npz").read_bytes() == b"npz"
+    assert unpack(b"", tmp_path, "fog-a", root=False) == []  # nothing ran there
+    line = pull_line("r-1", "fog-a", root=False)
+    assert "runs/r-1" in line and "events.fog-a.jsonl" in line
+    assert "model.npz" not in line and "tar cf - -T -" in line
+
+
+@pytest.mark.parametrize(
+    "members, root, reason",
+    [
+        ([("events.fog-b.jsonl", b"{}")], False, "only"),  # another host's events
+        ([("model.npz", b"npz")], False, "only"),  # a model from a non-root host
+        ([("../events.fog-a.jsonl", b"x")], False, "only"),
+        ([("/tmp/events.fog-a.jsonl", b"x")], False, "only"),
+        ([("sub/events.fog-a.jsonl", b"x")], False, "only"),
+        ([("node.fog-a.pid", b"123")], False, "only"),
+        ([("events.fog-a.jsonl", tarfile.SYMTYPE)], False, "not a regular file"),
+        ([("events.fog-a.jsonl", tarfile.LNKTYPE)], False, "not a regular file"),
+        ([("events.fog-a.jsonl", tarfile.DIRTYPE)], False, "not a regular file"),
+        (
+            [("events.fog-a.jsonl", b"one"), ("events.fog-a.jsonl", b"two")],
+            False,
+            "sent twice",
+        ),
+        ([("events.fog-a.jsonl", b"x" * 2000)], False, "over 1000"),
+    ],
+)
+def test_unpack_refuses_what_a_host_may_not_send_and_writes_nothing(
+    tmp_path: Path, members, root, reason
+) -> None:
+    with pytest.raises(SpoofError, match=reason):
+        unpack(archive(*members), tmp_path, "fog-a", root=root, max_member=1000)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_unpack_never_overwrites_and_caps_the_archive(tmp_path: Path) -> None:
+    (tmp_path / "model.npz").write_bytes(b"the root's")
+    with pytest.raises(SpoofError, match="sent twice"):
+        unpack(archive(("model.npz", b"other")), tmp_path, "cloud-1", root=True)
+    assert (tmp_path / "model.npz").read_bytes() == b"the root's"
+    big = archive(("events.fog-a.jsonl", b"x" * 4000))
+    with pytest.raises(SpoofError, match="bytes, over"):
+        unpack(big, tmp_path, "fog-a", root=False, max_archive=1000)
+    with pytest.raises(SpoofError, match="not a tar"):
+        unpack(b"garbage" * 200, tmp_path, "fog-a", root=False)
 
 
 def test_numeric_pins_cover_the_libraries_that_decide_the_bits() -> None:

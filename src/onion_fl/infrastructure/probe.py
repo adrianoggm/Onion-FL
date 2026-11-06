@@ -75,6 +75,7 @@ def _ntp_time(raw: bytes) -> float:
 
 def _reachable(target: str, timeout: float = 2.0) -> bool:
     host, _, port = target.rpartition(":")
+    host = host.removeprefix("[").removesuffix("]")  # a bracketed IPv6
     try:
         socket.create_connection((host, int(port)), timeout).close()
     except OSError:

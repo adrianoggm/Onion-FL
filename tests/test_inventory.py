@@ -83,6 +83,69 @@ def test_an_inventory_holds_no_secrets_and_says_what_is_wrong(machine, where) ->
         parse_inventory({"machines": {"cloud-1": machine}})
 
 
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("address", "-oProxyCommand=touch /tmp/pwned"),
+        ("address", "host name"),
+        ("address", "pi@10.0.0.2"),
+        ("address", "host\nname"),
+        ("address", "[not-ipv6]"),
+        ("address", "10.0.0.1;rm"),
+        ("advertise", "-oProxyCommand=x"),
+        ("advertise", "a b"),
+        ("listen", "-1"),
+        ("user", "-oProxyCommand=x"),
+        ("user", "pi user"),
+        ("user", "root@x"),
+        ("user", "pi\t"),
+        ("key", "-oProxyCommand=x"),
+        ("key", "/keys/id\x00"),
+        ("python", "-c"),
+        ("python", "python\nrm -rf"),
+        ("root", "-rf"),
+    ],
+)
+def test_values_that_reach_a_command_line_are_refused(field, value) -> None:
+    machine = {"address": "10.0.0.1", field: value}
+
+    with pytest.raises(InfrastructureError, match=field):
+        parse_inventory({"machines": {"a": machine}})
+
+
+@pytest.mark.parametrize(
+    "address", ["10.0.0.1", "pi.lan", "onionfl-a199-cloud-1", "[::1]", "[fe80::1]"]
+)
+def test_hostnames_and_ip_addresses_are_accepted(address) -> None:
+    inv = parse_inventory({"machines": {"a": {"address": address, "user": "pi"}}})
+
+    assert inv.machine("a").address == address
+
+
+def test_the_rest_of_the_inventory_cannot_inject_either() -> None:
+    for raw, where in (
+        ({"known_hosts": "-oProxyCommand=x"}, "known_hosts"),
+        ({"known_hosts": 'a" -oProxyCommand="x'}, "known_hosts"),
+        ({"clock": {"server": "-oX"}}, "server"),
+    ):
+        with pytest.raises(InfrastructureError, match=where):
+            parse_inventory({"machines": {"a": {"address": "a"}}} | raw)
+    bad_env = {"address": "a", "env": {"X": "1\nrm"}}
+    with pytest.raises(InfrastructureError, match="env.X"):
+        parse_inventory({"machines": {"a": bad_env}})
+
+
+def test_a_key_path_brought_by_a_variable_is_checked_too(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ONIONFL_TEST_BAD_KEY", "-oProxyCommand=x")
+    inv = parse_inventory(
+        {"machines": {"a": {"address": "a", "key": "$ONIONFL_TEST_BAD_KEY"}}}
+    )
+    with pytest.raises(InfrastructureError, match="may not start with '-'"):
+        inv.machine("a").key_path()
+
+
 def test_a_key_path_with_an_unset_variable_is_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
