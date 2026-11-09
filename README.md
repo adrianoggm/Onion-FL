@@ -47,7 +47,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 
 ### What the results can and can't support today
 
-- **Twelve experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, and a FedAvg reference on 200 FEMNIST writers. Each has three seeds, so many intervals overlap.
+- **Twelve experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, and a FedAvg reference on 200 FEMNIST writers. Each has three seeds, so many intervals overlap. A pre-registered pilot on FEMNIST (`sim`, 390 runs) tests whether the factorised predictor picks the wrong federation when a deadline couples participation and data weight.
   - The reference run and the mixing sweep have no strong result. On SWELL, no model beats always predicting "stress" on the held-out subjects. On WESAD, the federated model reaches 0.77 accuracy where centralised logistic regression reaches 0.91.
   - In the technique comparisons, the clearest effects are on WESAD: FedDyn and SCAFFOLD beat FedAvg under drift, the adaptive server optimizers beat it too, and a strong sign-flip attack collapses FedAvg while norm clipping holds.
 - **Checking the data found real problems,** now fixed. 999 means "missing" in the SWELL physiology file, for 53% of the heart-rate values, and both the old and the new loaders read it as a value. The facial and physiology joins and the WESAD chest signals `Resp` and `Temp` failed to load. The SWELL posture file has every date a month early, so posture is left out.
@@ -461,6 +461,15 @@ Source: [results/femnist_reference/](results/femnist_reference/INDEX.md), `confi
 | Always "1" (majority class) | 0.060 | 0.002 |
 
 The federated model clearly beats the majority class, so it is not a constant predictor; it was still improving at round 30 and stays below centralised logistic regression. [results/sim_scale/](results/sim_scale/INDEX.md) measures the simulator from 100 to 4,000 edges.
+
+### New framework: the deadline-coupling pilot
+
+Source: [results/pilot_deadline_coupling/](results/pilot_deadline_coupling/INDEX.md), pre-registered at commit `b7f0f2f`, runs at `b7f0f2f` and `a0af5e3`, 66 `config_id`s (each run's identity is in `analysis.json`). It is `experiments/pilot_deadline_coupling.yaml` in `sim`: FEMNIST's 160 training writers on 160 devices of three speeds, six configurations (flat, 2 fogs, 4 fogs × FedAvg, FedAdam), a 1 s deadline or FedBuff-style buffering, and five data-device couplings; time to 0.35 test accuracy.
+
+- **The noise gate passed** in both regimes (split-half top-1 0.92 and 1.00), with a ceiling regret of practically zero.
+- **With the deadline, the factorised predictor and its FLOSS variant pick the true winner in all five cells** (4 fogs, FedAdam), with or without coupling.
+- **In the FedBuff-style regime, both predictors pick wrongly in all five cells** (regret 2.1–3.1 times the best time), `rho = 0` included. The pre-registered count over the coupled cells (4 of 8) says "the gap exists", but the failure comes from the regime, not from the coupling: the predictors do not see the quorum, and FedAdam collapses under buffering.
+- **The ex ante diagnostic does not separate the cells** (AUC 0.50 for every score). The scores cannot see the regime that decides the outcome.
 
 ### Before the redesign
 
