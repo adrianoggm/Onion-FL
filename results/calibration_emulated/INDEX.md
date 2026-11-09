@@ -1,5 +1,7 @@
 # Calibration of the emulated lab, and its check (issue #197)
 
+> **Superseded** by [`../calibration_emulated_pinned/`](../calibration_emulated_pinned/INDEX.md): calibration `b55104b3…`, fitted on four pinned sessions with intervals between sessions. This one stays as the record of why the first method failed.
+
 `calibrations/emulated_lab.yaml` was measured three times on 2026-11-06, each time in a fresh emulation of `infrastructures/emulated_lab.yaml` (Docker Compose + netem, the `emulated` backend). One session was fitted; the other two only check it. No FL experiment was run for this calibration, and no measurement of a check session went into the fit (`onion_fl calibrate check` refuses the session a calibration was fitted on).
 
 ```bash
