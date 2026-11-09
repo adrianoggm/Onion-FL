@@ -829,6 +829,12 @@ class Coordinator(_Collector):
             if not self.pending_eval:
                 self._finish(ctx)
             return
+        paced = self.continuum is not None or self.round_every is not None
+        if paced and self.round == 0 and ctx.now() < 0:
+            # A real run's clock may start after every node is up (C9): a
+            # stream's first round waits for its zero, as in the simulation.
+            ctx.set_timer(-ctx.now(), "round")
+            return
         if self.continuum is not None:  # rounds wait for a trigger (spec §10)
             if self.round == 0:
                 self._start("start", ctx.now() * self.continuum.speed, ctx)
