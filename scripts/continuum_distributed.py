@@ -21,7 +21,9 @@ reaches them only through SSH, as it would real machines.
   launch so every node is up before the streams start;
 - ``faults``: the same with real failures: ``field-1``'s process killed at
   60 s and started again 15 s later with ``--resume``, and ``field-3``'s
-  edges joining at 90 s.
+  edges joining at 90 s;
+- ``sim-faults``: the simulation of the same start and failures, with the
+  same keys on the ``sim`` backend (no inventory needed).
 
 ``times`` writes, per run, its identity and what the simulation is compared
 on besides the benchmark's metrics: rounds, messages and bytes, the clock
@@ -146,7 +148,10 @@ def run(experiment: Path, inventory: Path, runs: Path, seed: int, mode: str) -> 
     raw = yaml.safe_load(experiment.read_text(encoding="utf-8"))
     raw["seeds"] = [seed]
     raw["paths"] = raw.get("paths", {}) | {"runs": str(runs)}
-    if mode != "sim":
+    if mode == "sim-faults":
+        raw["backend"] = {"name": "sim", "start_in": START_IN, "checkpoints": True}
+        raw["backend"] |= FAULTS
+    elif mode != "sim":
         backend = {
             "name": "distributed",
             "inventory": str(inventory),
@@ -156,6 +161,11 @@ def run(experiment: Path, inventory: Path, runs: Path, seed: int, mode: str) -> 
         raw["backend"] = backend | (FAULTS if mode == "faults" else {})
     (path,) = run_experiment(parse_experiment(raw))
     return path
+
+
+def faults_of(meta: dict) -> list:
+    """What failed in a run: the launcher's record, or the simulation's."""
+    return (meta.get("distributed") or meta.get("sim") or {}).get("faults") or []
 
 
 def resumed(paths: list[Path]) -> None:
@@ -168,7 +178,7 @@ def resumed(paths: list[Path]) -> None:
     )  # fmt: skip
     for path in paths:
         meta = json.loads((path / "run.json").read_text(encoding="utf-8"))
-        faults = bool(meta.get("distributed", {}).get("faults"))
+        faults = bool(faults_of(meta))
         scenario = path / "scenario.json"
         groups = (
             json.loads(scenario.read_text(encoding="utf-8")).get("groups", {})
@@ -227,7 +237,7 @@ def times(paths: list[Path]) -> None:
         out.writerow(
             [meta["run_id"], meta["config_id"], meta["topology_id"], meta["run_hash"],
              meta.get("code_version"), meta["seed"], meta.get("backend"),
-             bool(meta.get("distributed", {}).get("faults")), meta["status"],
+             bool(faults_of(meta)), meta["status"],
              summary["rounds"], summary["messages"]["sent"], summary["messages"]["bytes"],
              summary.get("quorum_failed"), late, round(first or 0.0, 3),
              round(summary["t_virtual_end"], 3), round(summary["wall_seconds"], 1),
@@ -251,7 +261,9 @@ def main() -> None:
     r.add_argument("--inventory", type=Path)
     r.add_argument("--runs", type=Path, default=Path("runs"))
     r.add_argument("--seed", type=int, required=True)
-    r.add_argument("--mode", choices=["sim", "distributed", "faults"], required=True)
+    r.add_argument(
+        "--mode", choices=["sim", "distributed", "faults", "sim-faults"], required=True
+    )
     for name in ("resumed", "times"):
         sub.add_parser(name).add_argument("runs", nargs="+", type=Path)
     args = parser.parse_args()
