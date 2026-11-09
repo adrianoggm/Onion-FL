@@ -43,7 +43,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
 | Continuum | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`), and objectives on the rows still waiting for their label (`pseudo_label`, `consistency`), with an audit of every pseudo-label. Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. A promotion policy keeps each round's model as a challenger until the validation streams promote it, with rollback. Each stream edge updates `warm`, `frozen` or `scratch`, the baselines of the continual benchmark, and `scripts/continuum_benchmark.py` measures it. Streams and continuums also run on real processes; on the `distributed` backend each edge keeps its state on its machine and resumes it when its host restarts, and hosts may join late (C9, so far on containers acting as machines). The Studio's view and controls of the versions are [#203](https://github.com/adrianoggm/Onion-FL/issues/203) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
-| Tests | ✅ | 1531 tests. With SWELL, WESAD, a local broker and Docker (the emulated and distributed backends), 1527 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
+| Tests | ✅ | 1540 tests. With SWELL and WESAD but no broker and no Docker, 1526 pass and 14 skip: SWEET (2), the optional Excel and Parquet readers, and 10 that need a broker or Docker (with them, before the last 9 tests, 1527 passed and 4 skipped). The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
 
@@ -507,10 +507,12 @@ Source: [results/continuum_distributed/](results/continuum_distributed/INDEX.md)
 | simulation | 18 | 0.372 | 193 | 214.5 | 0 |
 | distributed | 18 | 0.352 | 186 | 208.5 | 15 |
 | distributed, with failures | 18 | 0.341 | 134 | 162.2 | 26 |
+| simulation, with the same failures | 18 | 0.327 | 146 | 180.9 | 0 |
 
 - Every edge of every run trains exactly the labelled rows it trains in the simulation; the 39 restarted edges came back with their state, and no row was lost or trained twice.
 - Without failures, the runs differ in round 1, where 14–16 edges miss the fogs' 6 s deadline with their first training. The failures cost the rounds without the down edges.
-- The final model is the initial one in every mode (no challenger is promoted, as in C8), so it says nothing about fidelity.
+- The `sim` backend reproduces the failures with the same keys (`start_in`, `checkpoints`, `restarts`, `joins`). Every edge trains the same rows as on the machines, but a simulated process restarts at once, while a real one took 12–16 s to rebuild its scenario, so the simulation misses fewer rounds and sends more bytes.
+- The final model is the initial one in every mode (no challenger is promoted, as in C8), except the simulation with failures in seed 2, which promoted one; so it says little about fidelity.
 
 ### Before the redesign
 
