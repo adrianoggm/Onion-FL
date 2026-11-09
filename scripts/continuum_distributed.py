@@ -23,6 +23,11 @@ reaches them only through SSH, as it would real machines.
   60 s and started again 15 s later with ``--resume``, and ``field-3``'s
   edges joining at 90 s.
 
+``times`` writes, per run, its identity and what the simulation is compared
+on besides the benchmark's metrics: rounds, messages and bytes, the clock
+(when round 1 opened, the end, the wall seconds), the root's round
+durations, failed quorums and late updates.
+
 ``resumed`` writes, per run and edge, what each edge trained and consumed and,
 for the restarted ones, what they came back with (``node.resumed``).
 """
@@ -197,6 +202,41 @@ def resumed(paths: list[Path]) -> None:
             )  # fmt: skip
 
 
+def times(paths: list[Path]) -> None:
+    out = csv.writer(sys.stdout, lineterminator="\n")
+    out.writerow(
+        ["run_id", "config_id", "topology_id", "run_hash", "code_version", "seed",
+         "backend", "faults", "status", "rounds", "messages", "bytes", "quorum_failed",
+         "late_updates", "round1_at", "t_end", "wall_seconds", "root_round_mean",
+         "root_round_max", "max_clock_offset"]
+    )  # fmt: skip
+    for path in paths:
+        meta = json.loads((path / "run.json").read_text(encoding="utf-8"))
+        summary = json.loads((path / "summary.json").read_text(encoding="utf-8"))
+        first, closed, late = None, [], 0
+        for line in (path / "events.jsonl").read_text(encoding="utf-8").splitlines():
+            e = json.loads(line)
+            if e["node"] == "cloud" and e["name"] == "round.started" and first is None:
+                first = e["t_virtual"]
+            elif e["node"] == "cloud" and e["name"] == "round.closed":
+                closed.append(e["value"])
+            elif e["name"] == "update.late":
+                late += 1
+        machines = meta.get("distributed", {}).get("machines", {})
+        offsets = [abs(m.get("offset") or 0) for m in machines.values()]
+        out.writerow(
+            [meta["run_id"], meta["config_id"], meta["topology_id"], meta["run_hash"],
+             meta.get("code_version"), meta["seed"], meta.get("backend"),
+             bool(meta.get("distributed", {}).get("faults")), meta["status"],
+             summary["rounds"], summary["messages"]["sent"], summary["messages"]["bytes"],
+             summary.get("quorum_failed"), late, round(first or 0.0, 3),
+             round(summary["t_virtual_end"], 3), round(summary["wall_seconds"], 1),
+             round(sum(closed) / len(closed), 3) if closed else "",
+             round(max(closed), 3) if closed else "",
+             round(max(offsets), 3) if offsets else ""]
+        )  # fmt: skip
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -212,8 +252,8 @@ def main() -> None:
     r.add_argument("--runs", type=Path, default=Path("runs"))
     r.add_argument("--seed", type=int, required=True)
     r.add_argument("--mode", choices=["sim", "distributed", "faults"], required=True)
-    s = sub.add_parser("resumed")
-    s.add_argument("runs", nargs="+", type=Path)
+    for name in ("resumed", "times"):
+        sub.add_parser(name).add_argument("runs", nargs="+", type=Path)
     args = parser.parse_args()
     if args.command == "up":
         print(up(args.prefix, args.image, args.into))
@@ -221,6 +261,8 @@ def main() -> None:
         down(args.prefix)
     elif args.command == "run":
         print(run(args.experiment, args.inventory, args.runs, args.seed, args.mode))
+    elif args.command == "times":
+        times(args.runs)
     else:
         resumed(args.runs)
 
