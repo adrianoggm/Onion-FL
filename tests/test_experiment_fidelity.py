@@ -142,6 +142,23 @@ def test_the_design_id_ignores_the_transport_of_the_links() -> None:
     assert design_id(mqtt) != design_id(config("grpc", profile="wan"))
 
 
+def test_the_design_id_keeps_the_failures_of_either_backend() -> None:
+    faults = {"restarts": [{"host": "h", "at": 5, "down": 1}], "joins": {"g": 9}}
+    sim = {"name": "x", "backend": {"name": "sim", "checkpoints": True} | faults}
+    machines = {
+        "name": "x",
+        "backend": {"name": "distributed", "inventory": "i.yaml", "start_in": 60}
+        | {"checkpoints": True}
+        | faults,
+    }
+    calm = {"name": "x", "backend": {"name": "distributed", "inventory": "i.yaml"}}
+
+    assert design_id(sim) == design_id(machines)
+    assert design_id(calm) == design_id({"name": "x"}) != design_id(sim)
+    empty = {"name": "x", "backend": {"name": "sim", "restarts": [], "joins": {}}}
+    assert design_id(empty) == design_id(calm)
+
+
 def test_a_backend_against_itself_has_complete_fidelity(
     workspace: Path,  # noqa: F811
 ) -> None:
