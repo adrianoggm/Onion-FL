@@ -99,6 +99,9 @@ class RealRuntime:
         self.grpc = None if grpc is None else dict(grpc)
         self.hosted = None if hosted is None else set(hosted)
         self.listeners = list(listeners or [])
+        # Called with a hosted node's id after each of its handlers, before what
+        # it sent leaves: where a real run saves the node's state (C9).
+        self.after_handle: list[Callable[[str], None]] = []
         self.heartbeat_s = heartbeat_s
         self.epoch = time.time() if epoch is None else epoch
         self.events: list[dict[str, Any]] = []
@@ -366,6 +369,16 @@ class RealRuntime:
                 {"handler": handler, "error": f"{type(exc).__name__}: {exc}"},
             )
             return
+        for hook in self.after_handle:  # saved first: what it sent is then kept
+            try:
+                hook(node_id)
+            except Exception as exc:  # noqa: BLE001 - a full disk keeps the run going
+                self._record(
+                    node_id,
+                    "node.error",
+                    None,
+                    {"handler": "after", "error": f"{type(exc).__name__}: {exc}"},
+                )
         for msg in ctx.outbox:
             self._transmit(msg)
 
