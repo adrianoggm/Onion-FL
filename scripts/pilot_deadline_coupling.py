@@ -15,7 +15,8 @@ them and nothing else.
 ``run`` skips the runs already finished in ``runs/`` (same ``config_id`` and
 seed), so an interrupted batch resumes. ``analyse`` needs the runs' events and
 the data (the predictor builds each federation); ``export`` copies each run's
-``run.json`` (without ``host`` and ``pid``) and ``summary.json`` to the results.
+``run.json`` (without ``host``, ``pid`` and the per-edge inputs of the diagnostic)
+and ``summary.json`` to the results.
 """
 
 import argparse
@@ -490,6 +491,10 @@ def export(runs: Path) -> None:
         target = out / cell.path.name
         target.mkdir(parents=True, exist_ok=True)
         meta = {k: v for k, v in cell.meta.items() if k not in ("host", "pid")}
+        if isinstance(meta.get("diagnostic"), dict):  # per-edge inputs: ~70 % of it
+            meta["diagnostic"] = {
+                k: v for k, v in meta["diagnostic"].items() if k != "edges"
+            }
         (target / "run.json").write_text(
             json.dumps(meta, indent=1) + "\n", encoding="utf-8"
         )
