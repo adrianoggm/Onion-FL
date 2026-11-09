@@ -41,9 +41,9 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Observability | ✅ | `runs/<run_id>/` with signed events, summary and final model. Diagnostics at every aggregator; analysis API with mean ± CI over seeds; HTML report; Prometheus and OpenTelemetry sinks; Grafana dashboard |
 | CLI | ✅ | `onion_fl data · topology · plan · run · node · ceiling · fidelity · report · baseline · schema · serve` |
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
-| Continuum | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`), and objectives on the rows still waiting for their label (`pseudo_label`, `consistency`), with an audit of every pseudo-label. Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. A promotion policy keeps each round's model as a challenger until the validation streams promote it, with rollback. Each stream edge updates `warm`, `frozen` or `scratch`, the baselines of the continual benchmark, and `scripts/continuum_benchmark.py` measures it. The Studio's view and controls of the versions are [#203](https://github.com/adrianoggm/Onion-FL/issues/203) |
+| Continuum | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`), and objectives on the rows still waiting for their label (`pseudo_label`, `consistency`), with an audit of every pseudo-label. Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. A promotion policy keeps each round's model as a challenger until the validation streams promote it, with rollback. Each stream edge updates `warm`, `frozen` or `scratch`, the baselines of the continual benchmark, and `scripts/continuum_benchmark.py` measures it. Streams and continuums also run on real processes; on the `distributed` backend each edge keeps its state on its machine and resumes it when its host restarts, and hosts may join late (C9, so far on containers acting as machines). The Studio's view and controls of the versions are [#203](https://github.com/adrianoggm/Onion-FL/issues/203) |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
-| Tests | ✅ | 1385 tests. With SWELL, WESAD and a local broker, 1381 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
+| Tests | ✅ | 1531 tests. With SWELL, WESAD, a local broker and Docker (the emulated and distributed backends), 1527 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
 
@@ -497,6 +497,20 @@ Source: [results/continuum_benchmark/](results/continuum_benchmark/INDEX.md), co
 - **Memory and unlabelled rows add nothing measurable here.** At a tenth of the labels a replay memory has at most a row to replay per training, so the memory type and capacity cannot be told apart.
 - **Sweeps.** More labels do not raise either score, while a longer label delay lowers the prequential one. A prior-drift trigger keeps most of the schedule's prequential score at 38% of its bytes.
 - **Champion and challenger almost never promote** with these validation streams, so the served model stays the initial weights. In every run, the first trained model was rejected because no validation label had arrived yet.
+
+### Distributed continuum on containers acting as machines (C9)
+
+Source: [results/continuum_distributed/](results/continuum_distributed/INDEX.md), commit `ab5e66f`. C8's warm start behind champion/challenger, on five Docker containers reached over SSH (**not real hardware**: the acceptance on real machines is pending), against its simulation; means over 3 seeds. A third mode kills the process of the host of 13 SWELL edges at 60 s, starts it again 15 s later from its edges' saved state, and starts the host of 5 more edges at 90 s.
+
+| Mode | Rounds | Prequential SWELL | Trainings | MB sent | Late updates |
+|---|---|---|---|---|---|
+| simulation | 18 | 0.372 | 193 | 214.5 | 0 |
+| distributed | 18 | 0.352 | 186 | 208.5 | 15 |
+| distributed, with failures | 18 | 0.341 | 134 | 162.2 | 26 |
+
+- Every edge of every run trains exactly the labelled rows it trains in the simulation; the 39 restarted edges came back with their state, and no row was lost or trained twice.
+- Without failures, the runs differ in round 1, where 14–16 edges miss the fogs' 6 s deadline with their first training. The failures cost the rounds without the down edges.
+- The final model is the initial one in every mode (no challenger is promoted, as in C8), so it says nothing about fidelity.
 
 ### Before the redesign
 
