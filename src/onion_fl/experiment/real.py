@@ -379,23 +379,12 @@ def keep_edges(federation: Any, runtime: Any, bundle: Path, resume: bool) -> Non
     """Save each hosted edge's state after every handler; with ``resume``,
     first bring each one back to what it saved, and say so in ``node.resumed``."""
     from onion_fl.continuum.bundle import load_node, save_node
-    from onion_fl.roles.snapshot import checkpoint_edge, resume_edge
+    from onion_fl.roles.snapshot import checkpoint_edge
 
     edges = {n: e for n, e in federation.edges.items() if runtime.is_hosted(n)}
     if resume:
         for node_id, edge in sorted(edges.items()):
-            saved = load_node(bundle, node_id)
-            if saved is None:  # it never saved: it starts afresh, as a new edge
-                runtime._record(node_id, "node.resumed", None, {"state": "none"})
-                continue
-            resume_edge(edge, saved, runtime._rng(node_id))
-            tags: dict[str, Any] = {"state": "restored", "round": saved.meta["round"]}
-            if getattr(edge, "stream", None) is not None:
-                tags["consumed"] = int((edge._consumed_by >= 0).sum())
-                tags["predicted"] = int(edge._predicted.sum())
-                tags["clock"] = float(edge._clock)
-            tags["fresh"] = saved.meta.get("fresh", [])
-            runtime._record(node_id, "node.resumed", float(saved.meta["round"]), tags)
+            resume_from(edge, load_node(bundle, node_id), runtime)
 
     def save(node_id: str) -> None:
         if node_id in edges:
@@ -403,6 +392,26 @@ def keep_edges(federation: Any, runtime: Any, bundle: Path, resume: bool) -> Non
             save_node(bundle, node_id, state)
 
     runtime.after_handle.append(save)
+
+
+def resume_from(edge: Any, saved: Any, runtime: Any) -> None:
+    """Bring an edge rebuilt from its specs back to ``saved`` (``None``: it never
+    saved, so it starts afresh, as a new edge) and say so in ``node.resumed``.
+    The node processes of a real run and the simulation's restarts share it."""
+    from onion_fl.roles.snapshot import resume_edge
+
+    node_id = edge.id
+    if saved is None:
+        runtime._record(node_id, "node.resumed", None, {"state": "none"})
+        return
+    resume_edge(edge, saved, runtime._rng(node_id))
+    tags: dict[str, Any] = {"state": "restored", "round": saved.meta["round"]}
+    if getattr(edge, "stream", None) is not None:
+        tags["consumed"] = int((edge._consumed_by >= 0).sum())
+        tags["predicted"] = int(edge._predicted.sum())
+        tags["clock"] = float(edge._clock)
+    tags["fresh"] = saved.meta.get("fresh", [])
+    runtime._record(node_id, "node.resumed", float(saved.meta["round"]), tags)
 
 
 def take_initial(federation: Any, path: str | Path) -> None:
