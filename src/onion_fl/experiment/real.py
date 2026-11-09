@@ -73,14 +73,20 @@ def check_brokers(topology: Topology, timeout: float = 2.0) -> None:
 
 
 def _root_evaluators(config: Any, placement: Any) -> list[str]:
-    """The evaluators under the root, as edge_specs names them."""
+    """The evaluators under the root, as edge_specs names them: the test (or
+    global validation) evaluators, and the validators of a promotion (C7)."""
+    zone = [
+        e
+        for leaf in sorted(placement.zone_evaluators)
+        for e in placement.zone_evaluators[leaf]
+    ]
     if config.evaluation.global_.subjects == "val":
-        return [
-            f"gval-{e.dataset}-{e.subject}"
-            for leaf in sorted(placement.zone_evaluators)
-            for e in placement.zone_evaluators[leaf]
-        ]
-    return [f"test-{e.dataset}-{e.subject}" for e in placement.test]
+        out = [f"gval-{e.dataset}-{e.subject}" for e in zone]
+    else:
+        out = [f"test-{e.dataset}-{e.subject}" for e in placement.test]
+    if config.promotion is not None:
+        out += [f"validate-{e.dataset}-{e.subject}" for e in zone]
+    return out
 
 
 CROSS_PROCESS = ("mqtt", "grpc")
