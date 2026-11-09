@@ -295,8 +295,15 @@ def run_node(
     config: str | Path,
     scenario: str | None = None,
     seed: int | None = None,
+    resume: bool = False,
 ) -> int:
-    """Host one group of nodes of a real run until the tree says stop. Exit code 0 when it did."""
+    """Host one group of nodes of a real run until the tree says stop. Exit code 0 when it did.
+
+    With ``checkpoints`` in ``scenario.json`` (continuum C9), every hosted edge
+    saves its part of the bundle, ``runs/<run_id>/bundle/nodes/<id>``, on this
+    machine after each event it handles; ``resume`` starts each edge from it,
+    so a process that died goes on with its edges' state.
+    """
     from onion_fl.experiment.runner import _scenario_data, build_scenario
 
     chosen, epoch = load_scenario(config, scenario, seed)
@@ -326,7 +333,8 @@ def run_node(
     if "initial" in launcher:
         take_initial(federation, Path(config).parent / launcher["initial"])
     roles = node_roles(federation, topology)
-    (Path(chosen.config.paths.runs) / run_id).mkdir(parents=True, exist_ok=True)
+    run_path = Path(chosen.config.paths.runs) / run_id
+    run_path.mkdir(parents=True, exist_ok=True)
     part = JsonlSink(
         Path(chosen.config.paths.runs) / run_id / PART.format(group=group), flush=True
     )
@@ -344,6 +352,8 @@ def run_node(
         )
 
     runtime.listeners.append(write)
+    if launcher.get("checkpoints") or resume:
+        keep_edges(federation, runtime, run_path / "bundle", resume)
     try:
         runtime.run(timeout=chosen.config.runtime.timeout)
     finally:
@@ -361,7 +371,38 @@ def _launcher(config: str | Path) -> dict[str, Any]:
     if path.suffix != ".json":
         return {}
     doc = json.loads(path.read_text(encoding="utf-8"))
-    return {k: doc[k] for k in ("groups", "broker", "grpc", "initial") if k in doc}
+    keys = ("groups", "broker", "grpc", "initial", "checkpoints")
+    return {k: doc[k] for k in keys if k in doc}
+
+
+def keep_edges(federation: Any, runtime: Any, bundle: Path, resume: bool) -> None:
+    """Save each hosted edge's state after every handler; with ``resume``,
+    first bring each one back to what it saved, and say so in ``node.resumed``."""
+    from onion_fl.continuum.bundle import load_node, save_node
+    from onion_fl.roles.snapshot import checkpoint_edge, resume_edge
+
+    edges = {n: e for n, e in federation.edges.items() if runtime.is_hosted(n)}
+    if resume:
+        for node_id, edge in sorted(edges.items()):
+            saved = load_node(bundle, node_id)
+            if saved is None:  # it never saved: it starts afresh, as a new edge
+                runtime._record(node_id, "node.resumed", None, {"state": "none"})
+                continue
+            resume_edge(edge, saved, runtime._rng(node_id))
+            tags: dict[str, Any] = {"state": "restored", "round": saved.meta["round"]}
+            if getattr(edge, "stream", None) is not None:
+                tags["consumed"] = int((edge._consumed_by >= 0).sum())
+                tags["predicted"] = int(edge._predicted.sum())
+                tags["clock"] = float(edge._clock)
+            tags["fresh"] = saved.meta.get("fresh", [])
+            runtime._record(node_id, "node.resumed", float(saved.meta["round"]), tags)
+
+    def save(node_id: str) -> None:
+        if node_id in edges:
+            state = checkpoint_edge(edges[node_id], runtime._rng(node_id))
+            save_node(bundle, node_id, state)
+
+    runtime.after_handle.append(save)
 
 
 def take_initial(federation: Any, path: str | Path) -> None:
