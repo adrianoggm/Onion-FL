@@ -42,7 +42,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | CLI | ✅ | `onion_fl data · topology · plan · run · node · ceiling · report · baseline · schema · serve` |
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
 | Continuum | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, and a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`). Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. Semi-supervision and versions are next (C5 and C7, [#160](https://github.com/adrianoggm/Onion-FL/issues/160), [#162](https://github.com/adrianoggm/Onion-FL/issues/162)) |
-| gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
+| gRPC and Flower transports, distributed deployment | ❌ | Planned: gRPC [#196](https://github.com/adrianoggm/Onion-FL/issues/196), Flower [#204](https://github.com/adrianoggm/Onion-FL/issues/204), distributed backend [#199](https://github.com/adrianoggm/Onion-FL/issues/199) (they replace E5 #104 and E6 #105) |
 | Tests | ✅ | 1178 tests. With SWELL, WESAD and a local broker, 1174 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
@@ -548,7 +548,7 @@ The workflows run only on release PRs into `main`, to save CI minutes; task PRs 
 - **Global evaluation with personal or zone heads.** With `fedper` or `zone` sharing, the global model has no trained heads. Use the edge and zone scores.
 - **Lossy links need deadlines.** The simulator drops messages on lossy profiles (`wifi`, `4g`, `lora`) without retransmitting them. An aggregator without a `deadline` then waits for a lost update for ever, and the run ends `incomplete`. `onion_fl plan` and the Studio warn about it.
 - **The Studio is local.** It listens on `127.0.0.1` with no authentication; don't expose it.
-- **Security.** MQTT runs without TLS or authentication, the broker sees every update, and there is no secure aggregation or differential privacy.
+- **Security.** MQTT runs without TLS or authentication, the broker sees every update, and there is no secure aggregation ([#227](https://github.com/adrianoggm/Onion-FL/issues/227)). Differential privacy exists as plugins (`dp_fedavg`, `local_dp`), with the caveats of the privacy results above.
 - **Real-run latency** across machines needs NTP-synchronised clocks.
 - **Manual deployments** across machines need the same data and cache on each machine, because every process rebuilds the scenario.
 - **Compute in simulation** is modelled as samples per second (or the measured wall time), not as a device profile.
@@ -567,7 +567,7 @@ The workflows run only on release PRs into `main`, to save CI minutes; task PRs 
 | v0.3.0 | ✅ Onion-FL Studio: topology library and editor, run monitor, comparisons between topologies and scenarios, tutorial with dry-run previews, `onion_fl serve` ([#103](https://github.com/adrianoggm/Onion-FL/issues/103)) |
 | v0.4.0 | ✅ Federated learning techniques as plugins, with comparisons on real data: personalisation ([#147](https://github.com/adrianoggm/Onion-FL/issues/147)), non-IID drift ([#148](https://github.com/adrianoggm/Onion-FL/issues/148)), robustness, attacks and privacy ([#149](https://github.com/adrianoggm/Onion-FL/issues/149)), server optimizers and buffering ([#150](https://github.com/adrianoggm/Onion-FL/issues/150)) |
 | v0.7.0 | In progress: continual federated learning in simulation ([spec](docs/superpowers/specs/2026-10-04-onion-fl-continuum-design.md)). Model bundle and continuation ([#157](https://github.com/adrianoggm/Onion-FL/issues/157)) ✅, streams with delayed labels ([#158](https://github.com/adrianoggm/Onion-FL/issues/158)) ✅, replay memory ([#159](https://github.com/adrianoggm/Onion-FL/issues/159)) ✅, triggers and continuous federation ([#161](https://github.com/adrianoggm/Onion-FL/issues/161)) ✅, then semi-supervision, versions and the benchmark ([#160](https://github.com/adrianoggm/Onion-FL/issues/160), [#162](https://github.com/adrianoggm/Onion-FL/issues/162), [#163](https://github.com/adrianoggm/Onion-FL/issues/163)) |
-| Later | gRPC and Flower transports and richer network emulation (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104)); real distributed deployment (E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)); secure aggregation and TLS |
+| Later | gRPC ([#196](https://github.com/adrianoggm/Onion-FL/issues/196)) and Flower ([#204](https://github.com/adrianoggm/Onion-FL/issues/204)) transports, network emulation ([#195](https://github.com/adrianoggm/Onion-FL/issues/195)), real distributed deployment ([#199](https://github.com/adrianoggm/Onion-FL/issues/199)); secure aggregation and TLS ([#227](https://github.com/adrianoggm/Onion-FL/issues/227)) |
 
 ---
 
