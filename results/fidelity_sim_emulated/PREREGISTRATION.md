@@ -14,9 +14,9 @@ The three levels are those of I1 §12. The rule is `docs/RULES.md` §3: the vali
 
 | | |
 |---|---|
-| `calibration_id` | **PROVISIONAL**: `5d7d0e7011bf1fd693725bcb85ac61c5abae3d460867169f8909954c1b937cde` |
+| `calibration_id` | `b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc` (swapped in on 2026-11-09 by steps 1–4 below; it was **PROVISIONAL**: `5d7d0e7011bf1fd693725bcb85ac61c5abae3d460867169f8909954c1b937cde`) |
 | spec | `calibrations/emulated_lab.yaml` |
-| image of its sessions | `onionfl-a197-emulated:latest` (`calibration.json`, `environment.image`) |
+| image of its sessions | `onionfl-a197b-emulated:latest`, `sha256:a826e66e…` (`calibration.json`, `environment.image`; it was `onionfl-a197-emulated:latest`) |
 
 The id above is the one-session calibration of #197. Its own check failed: the compute rates moved by −23 % to +54 % between sessions (`results/calibration_emulated/INDEX.md`). It is being refitted on several sessions, with pinned CPUs and a prediction interval between sessions. **No run of this validation starts before that refit is closed.** Then, in one commit, before any run:
 
@@ -80,7 +80,7 @@ H1 holds if all three hold in 30 of 30 pairs.
 
 ### H2. Performance fidelity (relative error (B − A) / A, mean over pairs, with its 95 % CI)
 
-Let r̂ be the calibrated training rate of `edge_device` for workload `0ed95108ec44feea`, and [r_lo, r_hi] its 95 % interval in the calibration. For the refit, that is the prediction interval of one more session. Simulated compute time goes as 1/r̂ and emulated as 1/r, so an emulated rate r inside that interval gives an error inside the **calibration band** [r_lo / r̂ − 1, r_hi / r̂ − 1]. With the provisional calibration the band is [−0.103, +0.126]; the refit's band replaces it in step 4.
+Let r̂ be the calibrated training rate of `edge_device` for workload `0ed95108ec44feea`, and [r_lo, r_hi] its 95 % interval in the calibration. For the refit, that is the prediction interval of one more session. Simulated compute time goes as 1/r̂ and emulated as 1/r, so an emulated rate r inside that interval gives an error inside the **calibration band** [r_lo / r̂ − 1, r_hi / r̂ − 1]. With the provisional calibration the band was [−0.103, +0.126]; with the refit (r̂ = 16 993 samples/s, prediction interval [3 348, 86 256]) it is [−0.803, +4.076] (step 4).
 
 - **H2a, compute time of an edge per round.** The point estimate of the mean relative error lies inside the calibration band.
 - **H2b, round duration at the root.** |mean relative error| ≤ 0.25, and its 95 % CI lies within [−0.40, +0.40].

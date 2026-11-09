@@ -51,10 +51,9 @@ infrastructure:
     edges: {name: colocated, per_host: 4}
 backend:
   name: emulated
-  # CALIBRATION (provisional): the image and the project of the sessions of
-  # calibration 5d7d0e70...; swap them with the refit's (calibration.json,
-  # environment.image) together with the id in the infrastructure.
-  image: onionfl-a197-emulated:latest
+  # The image of the sessions of calibration b55104b3... (calibration.json,
+  # environment.image: sha256:a826e66e...).
+  image: onionfl-a197b-emulated:latest
   project: onionfl-a198
   subnet: 10.198.0.0/16
   # The CPUs calibrations/emulated_lab.yaml pins each host to (pin.cpus, in
