@@ -1,0 +1,2220 @@
+{
+  "session": {
+    "started_at": "2026-11-09T15:56:33.530852+00:00",
+    "code": {
+      "commit": "d3d050e95e06f6b390630184cda88b4c9a1d9d1f",
+      "dirty": false
+    },
+    "infrastructure_id": "da875674ad22d77f7aabcc6d9ac2fe642e9e8be204889668bb4adc5f238df43e",
+    "measurements_sha256": "3ccc809b81ae0880cf12a60ceec8339dd3dda8949abc9820b0584d633f4bcbe6",
+    "load": [
+      {
+        "phase": "train 0ed95108ec44feea before",
+        "at": 1794239799.0195873,
+        "machine": {
+          "busy_percent": 21.0,
+          "performance_percent": 128.0,
+          "frequency_mhz": 1909.0
+        },
+        "vm_loadavg": [
+          0.25,
+          0.37,
+          0.41
+        ]
+      },
+      {
+        "phase": "train 0ed95108ec44feea after",
+        "at": 1794239836.8435018,
+        "machine": {
+          "busy_percent": 12.0,
+          "performance_percent": 166.0,
+          "frequency_mhz": 1999.0
+        },
+        "vm_loadavg": [
+          0.45,
+          0.42,
+          0.42
+        ]
+      },
+      {
+        "phase": "train f81f0235a3520d08 before",
+        "at": 1794239837.8066325,
+        "machine": {
+          "busy_percent": 38.0,
+          "performance_percent": 104.0,
+          "frequency_mhz": 1878.0
+        },
+        "vm_loadavg": [
+          0.45,
+          0.42,
+          0.42
+        ]
+      },
+      {
+        "phase": "train f81f0235a3520d08 after",
+        "at": 1794239860.6773427,
+        "machine": {
+          "busy_percent": 18.0,
+          "performance_percent": 137.0,
+          "frequency_mhz": 2114.0
+        },
+        "vm_loadavg": [
+          0.4,
+          0.41,
+          0.42
+        ]
+      },
+      {
+        "phase": "aggregate before",
+        "at": 1794239861.5751321,
+        "machine": {
+          "busy_percent": 34.0,
+          "performance_percent": 189.0,
+          "frequency_mhz": 2028.0
+        },
+        "vm_loadavg": [
+          0.37,
+          0.4,
+          0.41
+        ]
+      },
+      {
+        "phase": "aggregate after",
+        "at": 1794239892.7887316,
+        "machine": {
+          "busy_percent": 27.0,
+          "performance_percent": 133.0,
+          "frequency_mhz": 2054.0
+        },
+        "vm_loadavg": [
+          0.76,
+          0.48,
+          0.44
+        ]
+      },
+      {
+        "phase": "links before",
+        "at": 1794239893.7225914,
+        "machine": {
+          "busy_percent": 10.0,
+          "performance_percent": 147.0,
+          "frequency_mhz": 2026.0
+        },
+        "vm_loadavg": [
+          0.76,
+          0.48,
+          0.44
+        ]
+      },
+      {
+        "phase": "links after",
+        "at": 1794240623.1411772,
+        "machine": {
+          "busy_percent": 0.0,
+          "performance_percent": 97.0,
+          "frequency_mhz": 2085.0
+        },
+        "vm_loadavg": [
+          0.2,
+          0.27,
+          0.37
+        ]
+      }
+    ]
+  },
+  "calibrations": [
+    "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+  ],
+  "infrastructure_id": "607f32090edd3603590b2d97e5648e95c0a199e33d3e97f368c268f1a7311e69",
+  "train": [
+    {
+      "profile": "edge_device",
+      "workload": "0ed95108ec44feea",
+      "measured_n": 55,
+      "predicted_rate": 16992.90329034771,
+      "estimated": false,
+      "calibrated_rate": {
+        "value": 16992.90329034771,
+        "low": 3347.6962382643346,
+        "high": 86255.96281245083,
+        "n": 201,
+        "sessions": [
+          12863.829252449763,
+          20398.134590570415,
+          29535.879384601165,
+          10758.698012173722
+        ]
+      },
+      "measured_rate": {
+        "value": 34133.80405828369,
+        "low": 32638.478053318868,
+        "high": 35715.422323005405,
+        "n": 55,
+        "sessions": null
+      },
+      "inside": true,
+      "inside_session_ci": false,
+      "relative_error": 1.0087093697327374
+    },
+    {
+      "profile": "edge_device",
+      "workload": "f81f0235a3520d08",
+      "measured_n": 48,
+      "predicted_rate": 16020.308592314286,
+      "estimated": false,
+      "calibrated_rate": {
+        "value": 16020.308592314286,
+        "low": 7953.431223819359,
+        "high": 32269.127646989517,
+        "n": 214,
+        "sessions": [
+          14715.813803666902,
+          13131.337669467084,
+          20832.740449363857,
+          16362.281244701917
+        ]
+      },
+      "measured_rate": {
+        "value": 27135.675586151378,
+        "low": 26439.137573683558,
+        "high": 27814.906597915262,
+        "n": 48,
+        "sessions": null
+      },
+      "inside": true,
+      "inside_session_ci": false,
+      "relative_error": 0.6938297679964587
+    }
+  ],
+  "aggregate": [
+    {
+      "profile": "cloud_vm",
+      "measured_n": 585,
+      "predicted_rate": 149017701.4832357,
+      "estimated": false,
+      "calibrated_rate": {
+        "value": 149017701.4832357,
+        "low": 92291150.22669937,
+        "high": 240611101.93989733,
+        "n": 1538,
+        "sessions": [
+          131485962.08201556,
+          159175916.1853647,
+          174408743.02005997,
+          135091008.1195461
+        ]
+      },
+      "measured_rate": {
+        "value": 233206850.709873,
+        "low": 229616532.55425492,
+        "high": 236696895.8599212,
+        "n": 585,
+        "sessions": null
+      },
+      "inside": true,
+      "inside_session_ci": false,
+      "relative_error": 0.5649607287501015
+    },
+    {
+      "profile": "fog_small",
+      "measured_n": 1167,
+      "predicted_rate": 149104872.2338146,
+      "estimated": false,
+      "calibrated_rate": {
+        "value": 149104872.2338146,
+        "low": 92230355.25031278,
+        "high": 241051472.30024123,
+        "n": 3076,
+        "sessions": [
+          131151498.57710946,
+          160109775.36892593,
+          173943467.73210156,
+          135321907.27891114
+        ]
+      },
+      "measured_rate": {
+        "value": 232911126.5398339,
+        "low": 230375588.12561938,
+        "high": 235507601.6407051,
+        "n": 1167,
+        "sessions": null
+      },
+      "inside": true,
+      "inside_session_ci": false,
+      "relative_error": 0.5620624802561822
+    }
+  ],
+  "links": [
+    {
+      "link": "field|fog_a",
+      "field": "latency",
+      "calibrated": {
+        "value": 0.010165948275619867,
+        "low": 0.009373546754923296,
+        "high": 0.011025336198200278,
+        "n": 1416,
+        "sessions": [
+          0.010511717958301968,
+          0.009986246642010414,
+          0.01009685656050846,
+          0.010076957067862904
+        ]
+      },
+      "measured": {
+        "value": 0.010066508946918289,
+        "low": 0.009945621776603046,
+        "high": 0.010193822680466083,
+        "n": 354,
+        "sessions": null
+      },
+      "inside": true
+    },
+    {
+      "link": "field|fog_a",
+      "field": "loss",
+      "calibrated": {
+        "value": 0.0,
+        "low": 0.0,
+        "high": 0.016016659084771664,
+        "n": 236,
+        "sessions": null
+      },
+      "measured": {
+        "value": 0.0,
+        "low": 0.0,
+        "high": 0.06112937143219893,
+        "n": 59,
+        "sessions": null
+      },
+      "inside": true
+    },
+    {
+      "link": "fog_a|dc",
+      "field": "latency",
+      "calibrated": {
+        "value": 0.04062870069982044,
+        "low": 0.04044880537630059,
+        "high": 0.04080939610450766,
+        "n": 1888,
+        "sessions": [
+          0.04063615969369443,
+          0.040691828226720864,
+          0.04061773054934053,
+          0.04056917912997873
+        ]
+      },
+      "measured": {
+        "value": 0.04072314646021738,
+        "low": 0.0405891451458878,
+        "high": 0.04093356011530913,
+        "n": 472,
+        "sessions": null
+      },
+      "inside": true
+    },
+    {
+      "link": "fog_a|dc",
+      "field": "bandwidth_up",
+      "calibrated": {
+        "value": 9482111.922934385,
+        "low": 8694749.919667458,
+        "high": 10340774.300555538,
+        "n": 1888,
+        "sessions": [
+          9834253.416513942,
+          9365683.94580801,
+          9387032.14906114,
+          9349989.22522168
+        ]
+      },
+      "measured": {
+        "value": 9382921.650783366,
+        "low": 9210474.991552366,
+        "high": 9657917.653280033,
+        "n": 472,
+        "sessions": null
+      },
+      "inside": true
+    },
+    {
+      "link": "fog_a|dc",
+      "field": "bandwidth_down",
+      "calibrated": {
+        "value": 9573511.005890455,
+        "low": 9258749.596921723,
+        "high": 9898973.076275596,
+        "n": 1888,
+        "sessions": [
+          9471093.091378685,
+          9526751.3813824,
+          9659930.391309176,
+          9637536.363509541
+        ]
+      },
+      "measured": {
+        "value": 9749430.821429174,
+        "low": 9578636.387594067,
+        "high": 9982329.307660718,
+        "n": 472,
+        "sessions": null
+      },
+      "inside": true
+    },
+    {
+      "link": "fog_a|dc",
+      "field": "loss",
+      "calibrated": {
+        "value": 0.0,
+        "low": 0.0,
+        "high": 0.016016659084771664,
+        "n": 236,
+        "sessions": null
+      },
+      "measured": {
+        "value": 0.0,
+        "low": 0.0,
+        "high": 0.06112937143219893,
+        "n": 59,
+        "sessions": null
+      },
+      "inside": true
+    },
+    {
+      "link": "fog_b|dc",
+      "field": "latency",
+      "calibrated": {
+        "value": 0.06068185639498921,
+        "low": 0.06050108774558847,
+        "high": 0.060863165155416434,
+        "n": 944,
+        "sessions": [
+          0.06075139872010345,
+          0.060684817131879905,
+          0.06063336056685907,
+          0.060657913164901364
+        ]
+      },
+      "measured": {
+        "value": 0.06070357585523982,
+        "low": 0.06059099190354031,
+        "high": 0.060824550346959584,
+        "n": 236,
+        "sessions": null
+      },
+      "inside": true
+    },
+    {
+      "link": "fog_b|dc",
+      "field": "bandwidth_up",
+      "calibrated": {
+        "value": 9732860.076857628,
+        "low": 9326322.638987727,
+        "high": 10157118.613898914,
+        "n": 944,
+        "sessions": [
+          9874951.54282589,
+          9591153.330962889,
+          9716575.218568921,
+          9750859.420493374
+        ]
+      },
+      "measured": {
+        "value": 9699830.147245113,
+        "low": 9542996.714176951,
+        "high": 9829320.314152602,
+        "n": 236,
+        "sessions": null
+      },
+      "inside": true
+    },
+    {
+      "link": "fog_b|dc",
+      "field": "bandwidth_down",
+      "calibrated": {
+        "value": 9584751.378886923,
+        "low": 9302532.275480859,
+        "high": 9875532.41145041,
+        "n": 944,
+        "sessions": [
+          9519181.363304319,
+          9582957.668780912,
+          9538568.082124995,
+          9699314.76793588
+        ]
+      },
+      "measured": {
+        "value": 9555350.900903314,
+        "low": 9249084.06301096,
+        "high": 9853741.98038633,
+        "n": 236,
+        "sessions": null
+      },
+      "inside": true
+    },
+    {
+      "link": "fog_b|dc",
+      "field": "loss",
+      "calibrated": {
+        "value": 0.0,
+        "low": 0.0,
+        "high": 0.016016659084771664,
+        "n": 236,
+        "sessions": null
+      },
+      "measured": {
+        "value": 0.0,
+        "low": 0.0,
+        "high": 0.06112937143219893,
+        "n": 59,
+        "sessions": null
+      },
+      "inside": true
+    }
+  ],
+  "paths": [
+    {
+      "src": "cloud-1",
+      "dst": "field-edge_device-1",
+      "size": 100,
+      "fitted_range": true,
+      "predicted_s": 0.05087821288417847,
+      "calibrated_s": {
+        "value": 0.051073447717886196,
+        "low": 0.05045205114192291,
+        "high": 0.0517024977726651,
+        "n": 56,
+        "sessions": [
+          0.05133180958884103,
+          0.051031061581202915,
+          0.05099071775163923,
+          0.0509411096572876
+        ]
+      },
+      "measured_s": {
+        "value": 0.05110750879560198,
+        "low": 0.051008769018309454,
+        "high": 0.05121407125677381,
+        "n": 14,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": -0.004486540565703412,
+      "passed": true
+    },
+    {
+      "src": "cloud-1",
+      "dst": "field-edge_device-1",
+      "size": 1000,
+      "fitted_range": true,
+      "predicted_s": 0.05163028806282191,
+      "calibrated_s": {
+        "value": 0.05199760225465814,
+        "low": 0.050989137273705736,
+        "high": 0.05302601269207803,
+        "n": 60,
+        "sessions": [
+          0.05242427190144857,
+          0.05186888376871745,
+          0.05189844767252604,
+          0.051801172892252605
+        ]
+      },
+      "measured_s": {
+        "value": 0.051856279373168945,
+        "low": 0.05175153295199076,
+        "high": 0.05195671677589416,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": -0.004358031719182032,
+      "passed": true
+    },
+    {
+      "src": "cloud-1",
+      "dst": "field-edge_device-1",
+      "size": 5000,
+      "fitted_range": true,
+      "predicted_s": 0.05497284441234831,
+      "calibrated_s": {
+        "value": 0.05541655355276425,
+        "low": 0.054611067025724214,
+        "high": 0.05623392061209525,
+        "n": 60,
+        "sessions": [
+          0.05575175285339355,
+          0.055254618326822914,
+          0.0553707758585612,
+          0.055290476481119795
+        ]
+      },
+      "measured_s": {
+        "value": 0.055327590306599936,
+        "low": 0.05524144013722738,
+        "high": 0.05543990174929301,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": -0.006411735849795597,
+      "passed": true
+    },
+    {
+      "src": "cloud-1",
+      "dst": "field-edge_device-1",
+      "size": 10000,
+      "fitted_range": true,
+      "predicted_s": 0.05915103984925631,
+      "calibrated_s": {
+        "value": 0.059454677470910905,
+        "low": 0.058753039278456674,
+        "high": 0.06016469473888457,
+        "n": 60,
+        "sessions": [
+          0.05942692756652832,
+          0.059737205505371094,
+          0.059380356470743814,
+          0.059275213877360025
+        ]
+      },
+      "measured_s": {
+        "value": 0.059388049443562824,
+        "low": 0.05929308176040649,
+        "high": 0.05949385682741801,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": -0.003990863423318003,
+      "passed": true
+    },
+    {
+      "src": "cloud-1",
+      "dst": "field-edge_device-1",
+      "size": 30000,
+      "fitted_range": false,
+      "predicted_s": 0.0758638215968883,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.15704158147176106,
+        "low": 0.15575257539749146,
+        "high": 0.15888785839080813,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.5169188893418653
+    },
+    {
+      "src": "cloud-1",
+      "dst": "field-edge_device-1",
+      "size": 100000,
+      "fitted_range": false,
+      "predicted_s": 0.13435855771360028,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.1664242108662923,
+        "low": 0.15614594260851544,
+        "high": 0.1835949679215749,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.19267420879317887
+    },
+    {
+      "src": "cloud-1",
+      "dst": "fog-a",
+      "size": 100,
+      "fitted_range": true,
+      "predicted_s": 0.040712264608558604,
+      "calibrated_s": {
+        "value": 0.041041921141563235,
+        "low": 0.040148413840385165,
+        "high": 0.04195531354456457,
+        "n": 56,
+        "sessions": [
+          0.041399904659816196,
+          0.04104741982051304,
+          0.04084123883928571,
+          0.040881480489458354
+        ]
+      },
+      "measured_s": {
+        "value": 0.04098268917628697,
+        "low": 0.04085919303553445,
+        "high": 0.04113130101135799,
+        "n": 14,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": -0.006598507154206734,
+      "passed": true
+    },
+    {
+      "src": "cloud-1",
+      "dst": "fog-a",
+      "size": 1000,
+      "fitted_range": true,
+      "predicted_s": 0.04146433978720204,
+      "calibrated_s": {
+        "value": 0.041633340505221474,
+        "low": 0.04115869880879043,
+        "high": 0.04211345576487271,
+        "n": 60,
+        "sessions": [
+          0.0417181650797526,
+          0.041775782903035484,
+          0.04154057502746582,
+          0.04149948755900065
+        ]
+      },
+      "measured_s": {
+        "value": 0.04160855611165364,
+        "low": 0.04149355848630269,
+        "high": 0.04174510836601258,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": -0.0034660256910767906,
+      "passed": true
+    },
+    {
+      "src": "cloud-1",
+      "dst": "fog-a",
+      "size": 5000,
+      "fitted_range": true,
+      "predicted_s": 0.04480689613672844,
+      "calibrated_s": {
+        "value": 0.0450028027381654,
+        "low": 0.044301495119873566,
+        "high": 0.045715212292726945,
+        "n": 60,
+        "sessions": [
+          0.045297463734944664,
+          0.044902960459391274,
+          0.04494702021280925,
+          0.044865083694458005
+        ]
+      },
+      "measured_s": {
+        "value": 0.044872188568115236,
+        "low": 0.0447964084148407,
+        "high": 0.04495169520378113,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": true,
+      "relative_error": -0.0014550757043571005,
+      "passed": true
+    },
+    {
+      "src": "cloud-1",
+      "dst": "fog-a",
+      "size": 10000,
+      "fitted_range": true,
+      "predicted_s": 0.04898509157363644,
+      "calibrated_s": {
+        "value": 0.04923535579146491,
+        "low": 0.04791229166066293,
+        "high": 0.05059495540478174,
+        "n": 60,
+        "sessions": [
+          0.0498021920522054,
+          0.049048360188802084,
+          0.0490843137105306,
+          0.04901089668273926
+        ]
+      },
+      "measured_s": {
+        "value": 0.049062951405843096,
+        "low": 0.04899044156074524,
+        "high": 0.049138883352279665,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": -0.0015869373931993724,
+      "passed": true
+    },
+    {
+      "src": "cloud-1",
+      "dst": "fog-a",
+      "size": 30000,
+      "fitted_range": false,
+      "predicted_s": 0.06569787332126843,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.1366482416788737,
+        "low": 0.1365298048655192,
+        "high": 0.13677064855893453,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.5192190363073984
+    },
+    {
+      "src": "cloud-1",
+      "dst": "fog-a",
+      "size": 100000,
+      "fitted_range": false,
+      "predicted_s": 0.12419260943798041,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.1429116090138753,
+        "low": 0.12698413411776224,
+        "high": 0.16359369556109107,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.13098305802489052
+    },
+    {
+      "src": "cloud-1",
+      "dst": "fog-b",
+      "size": 100,
+      "fitted_range": true,
+      "predicted_s": 0.060765322305410444,
+      "calibrated_s": {
+        "value": 0.06101387660435298,
+        "low": 0.060218355738722466,
+        "high": 0.061819906781303766,
+        "n": 56,
+        "sessions": [
+          0.061336943081447055,
+          0.06100126675197056,
+          0.0608635459627424,
+          0.06085499695369175
+        ]
+      },
+      "measured_s": {
+        "value": 0.06099603857312884,
+        "low": 0.060678496105330326,
+        "high": 0.06158308003629957,
+        "n": 14,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": true,
+      "relative_error": -0.0037824795366306896,
+      "passed": true
+    },
+    {
+      "src": "cloud-1",
+      "dst": "fog-b",
+      "size": 1000,
+      "fitted_range": true,
+      "predicted_s": 0.06151651549920158,
+      "calibrated_s": {
+        "value": 0.061794039073335624,
+        "low": 0.06078558165086519,
+        "high": 0.06281922721294844,
+        "n": 60,
+        "sessions": [
+          0.062215264638264975,
+          0.061734549204508465,
+          0.06162665685017903,
+          0.06160167058308919
+        ]
+      },
+      "measured_s": {
+        "value": 0.06151086489359538,
+        "low": 0.0614610493183136,
+        "high": 0.06156083782513937,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": true,
+      "relative_error": 9.186353688850346e-05,
+      "passed": true
+    },
+    {
+      "src": "cloud-1",
+      "dst": "fog-b",
+      "size": 5000,
+      "fitted_range": true,
+      "predicted_s": 0.06485515191605104,
+      "calibrated_s": {
+        "value": 0.06502175840585417,
+        "low": 0.06414358002525435,
+        "high": 0.06591195977094985,
+        "n": 60,
+        "sessions": [
+          0.06538483301798502,
+          0.06497591336568197,
+          0.06483182907104493,
+          0.06489588419596354
+        ]
+      },
+      "measured_s": {
+        "value": 0.06480396588643392,
+        "low": 0.06475092450777689,
+        "high": 0.06487069845199585,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": true,
+      "relative_error": 0.000789859523517844,
+      "passed": true
+    },
+    {
+      "src": "cloud-1",
+      "dst": "fog-b",
+      "size": 10000,
+      "fitted_range": true,
+      "predicted_s": 0.06902844743711287,
+      "calibrated_s": {
+        "value": 0.06914507333456017,
+        "low": 0.06829722589386973,
+        "high": 0.07000344602387201,
+        "n": 60,
+        "sessions": [
+          0.06949938138326009,
+          0.06908995310465495,
+          0.06899158159891765,
+          0.06900062561035156
+        ]
+      },
+      "measured_s": {
+        "value": 0.06899836858113607,
+        "low": 0.06894442439079285,
+        "high": 0.06905269781748453,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": true,
+      "relative_error": 0.00043593575609568447,
+      "passed": true
+    },
+    {
+      "src": "cloud-1",
+      "dst": "fog-b",
+      "size": 30000,
+      "fitted_range": false,
+      "predicted_s": 0.0857216295213602,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.18589657147725422,
+        "low": 0.18461745301882426,
+        "high": 0.18772468050320942,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.5388746073143751
+    },
+    {
+      "src": "cloud-1",
+      "dst": "fog-b",
+      "size": 100000,
+      "fitted_range": false,
+      "predicted_s": 0.14414776681622582,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.19638635317484537,
+        "low": 0.18494271516799926,
+        "high": 0.21590781807899473,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.26599906518000693
+    },
+    {
+      "src": "field-edge_device-1",
+      "dst": "cloud-1",
+      "size": 100,
+      "fitted_range": true,
+      "predicted_s": 0.05087901836556162,
+      "calibrated_s": {
+        "value": 0.0511853417006659,
+        "low": 0.05054429412213467,
+        "high": 0.05183451961329475,
+        "n": 56,
+        "sessions": [
+          0.051348720278058736,
+          0.05128470488956997,
+          0.05117189884185791,
+          0.05093700545174735
+        ]
+      },
+      "measured_s": {
+        "value": 0.050907560757228305,
+        "low": 0.050759225658008035,
+        "high": 0.05115209860461099,
+        "n": 14,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": true,
+      "relative_error": -0.0005606709738618099,
+      "passed": true
+    },
+    {
+      "src": "field-edge_device-1",
+      "dst": "cloud-1",
+      "size": 1000,
+      "fitted_range": true,
+      "predicted_s": 0.051638342876653434,
+      "calibrated_s": {
+        "value": 0.05250535548474492,
+        "low": 0.047507849307437414,
+        "high": 0.0580285656953082,
+        "n": 60,
+        "sessions": [
+          0.05476646423339844,
+          0.05179352760314941,
+          0.05174978574117025,
+          0.05177447001139323
+        ]
+      },
+      "measured_s": {
+        "value": 0.051696221033732094,
+        "low": 0.05166041016578674,
+        "high": 0.051738105217615765,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": -0.001119581971782746,
+      "passed": true
+    },
+    {
+      "src": "field-edge_device-1",
+      "dst": "cloud-1",
+      "size": 5000,
+      "fitted_range": true,
+      "predicted_s": 0.05501311848150593,
+      "calibrated_s": {
+        "value": 0.055530320307346684,
+        "low": 0.05474852769341324,
+        "high": 0.05632327668616936,
+        "n": 60,
+        "sessions": [
+          0.05586160024007161,
+          0.05539517402648926,
+          0.055417346954345706,
+          0.055448484420776364
+        ]
+      },
+      "measured_s": {
+        "value": 0.055302365620930986,
+        "low": 0.05525919278462728,
+        "high": 0.05535313606262207,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": -0.005230285109459776,
+      "passed": true
+    },
+    {
+      "src": "field-edge_device-1",
+      "dst": "cloud-1",
+      "size": 10000,
+      "fitted_range": true,
+      "predicted_s": 0.05923158798757156,
+      "calibrated_s": {
+        "value": 0.05980351082134672,
+        "low": 0.05910989788915068,
+        "high": 0.0605052628117528,
+        "n": 60,
+        "sessions": [
+          0.060085360209147134,
+          0.059703731536865236,
+          0.05978307723999023,
+          0.0596428394317627
+        ]
+      },
+      "measured_s": {
+        "value": 0.059508498509724936,
+        "low": 0.05945530454317728,
+        "high": 0.059565259615580235,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": -0.004653293715823126,
+      "passed": true
+    },
+    {
+      "src": "field-edge_device-1",
+      "dst": "cloud-1",
+      "size": 30000,
+      "fitted_range": false,
+      "predicted_s": 0.07610546601183407,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.15669627189636232,
+        "low": 0.155299467643102,
+        "high": 0.15871256589889526,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.5143122099154367
+    },
+    {
+      "src": "field-edge_device-1",
+      "dst": "cloud-1",
+      "size": 100000,
+      "fitted_range": false,
+      "predicted_s": 0.13516403909675284,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.16641672452290854,
+        "low": 0.15616047104199726,
+        "high": 0.1833309499422709,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.1877977439812759
+    },
+    {
+      "src": "field-edge_device-1",
+      "dst": "fog-a",
+      "size": 100,
+      "fitted_range": true,
+      "predicted_s": 0.09159128297412023,
+      "calibrated_s": {
+        "value": 0.09126078498768929,
+        "low": 0.09074532506708619,
+        "high": 0.0917791728710227,
+        "n": 56,
+        "sessions": [
+          0.09137375014168876,
+          0.09114292689732142,
+          0.09139878409249443,
+          0.09112802573612758
+        ]
+      },
+      "measured_s": {
+        "value": 0.09136247634887695,
+        "low": 0.0912471809557506,
+        "high": 0.09147042972700938,
+        "n": 14,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": 0.002504382919411574,
+      "passed": true
+    },
+    {
+      "src": "field-edge_device-1",
+      "dst": "fog-a",
+      "size": 1000,
+      "fitted_range": true,
+      "predicted_s": 0.09310268266385548,
+      "calibrated_s": {
+        "value": 0.09281509160320453,
+        "low": 0.0924736200155649,
+        "high": 0.09315782412174689,
+        "n": 60,
+        "sessions": [
+          0.09281241099039714,
+          0.0927603562672933,
+          0.09295132954915365,
+          0.0927364190419515
+        ]
+      },
+      "measured_s": {
+        "value": 0.09275382359822591,
+        "low": 0.09269313295682272,
+        "high": 0.09281535267829895,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": 0.003761128674766967,
+      "passed": true
+    },
+    {
+      "src": "field-edge_device-1",
+      "dst": "fog-a",
+      "size": 5000,
+      "fitted_range": true,
+      "predicted_s": 0.09982001461823438,
+      "calibrated_s": {
+        "value": 0.09978100966030756,
+        "low": 0.09942094763434603,
+        "high": 0.1001423756837226,
+        "n": 60,
+        "sessions": [
+          0.09993089040120443,
+          0.09971516927083333,
+          0.09972257614135742,
+          0.09975555737813314
+        ]
+      },
+      "measured_s": {
+        "value": 0.09978092511494954,
+        "low": 0.09969527045885722,
+        "high": 0.09986593047777811,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": true,
+      "relative_error": 0.00039175326586526893,
+      "passed": true
+    },
+    {
+      "src": "field-edge_device-1",
+      "dst": "fog-a",
+      "size": 10000,
+      "fitted_range": true,
+      "predicted_s": 0.108216679561208,
+      "calibrated_s": {
+        "value": 0.10803504922421195,
+        "low": 0.10768149583593975,
+        "high": 0.10838976344329716,
+        "n": 60,
+        "sessions": [
+          0.10815684000651042,
+          0.10807509422302246,
+          0.10794382095336914,
+          0.10796457926432292
+        ]
+      },
+      "measured_s": {
+        "value": 0.10821962356567383,
+        "low": 0.10811137954394022,
+        "high": 0.10833036303520203,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": true,
+      "relative_error": -2.7203979914403043e-05,
+      "passed": true
+    },
+    {
+      "src": "field-edge_device-1",
+      "dst": "fog-a",
+      "size": 30000,
+      "fitted_range": false,
+      "predicted_s": 0.1418033393331025,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.30340754191080727,
+        "low": 0.30322139978408813,
+        "high": 0.30361340602238973,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.5326308026489717
+    },
+    {
+      "src": "field-edge_device-1",
+      "dst": "fog-a",
+      "size": 100000,
+      "fitted_range": false,
+      "predicted_s": 0.2593566485347333,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.5199535687764486,
+        "low": 0.5135724167029063,
+        "high": 0.5285080742835998,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.501192675443983
+    },
+    {
+      "src": "field-edge_device-1",
+      "dst": "fog-b",
+      "size": 100,
+      "fitted_range": true,
+      "predicted_s": 0.11164434067097208,
+      "calibrated_s": {
+        "value": 0.11132737819038467,
+        "low": 0.11081608836338054,
+        "high": 0.11184102703665268,
+        "n": 56,
+        "sessions": [
+          0.11148289271763392,
+          0.11128003256661552,
+          0.11115101405552455,
+          0.11139585290636335
+        ]
+      },
+      "measured_s": {
+        "value": 0.11148616245814733,
+        "low": 0.11136795835835593,
+        "high": 0.11161232505525862,
+        "n": 14,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": 0.0014188147599405454,
+      "passed": true
+    },
+    {
+      "src": "field-edge_device-1",
+      "dst": "fog-b",
+      "size": 1000,
+      "fitted_range": true,
+      "predicted_s": 0.11315485837585501,
+      "calibrated_s": {
+        "value": 0.11290300582069074,
+        "low": 0.11247286983411221,
+        "high": 0.1133347867992324,
+        "n": 60,
+        "sessions": [
+          0.11306845347086589,
+          0.11286768913269044,
+          0.11277899742126465,
+          0.11289707819620769
+        ]
+      },
+      "measured_s": {
+        "value": 0.11289167404174805,
+        "low": 0.1127529235680898,
+        "high": 0.11303429206212362,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": 0.0023312997733528906,
+      "passed": true
+    },
+    {
+      "src": "field-edge_device-1",
+      "dst": "fog-b",
+      "size": 5000,
+      "fitted_range": true,
+      "predicted_s": 0.11986827039755699,
+      "calibrated_s": {
+        "value": 0.11987037828671242,
+        "low": 0.11926950361301286,
+        "high": 0.12047428014139754,
+        "n": 60,
+        "sessions": [
+          0.11988415718078613,
+          0.11973969141642253,
+          0.11975305875142415,
+          0.12010496457417806
+        ]
+      },
+      "measured_s": {
+        "value": 0.12067718505859375,
+        "low": 0.11974607427914938,
+        "high": 0.12244600137074789,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": true,
+      "inside_session_ci": true,
+      "relative_error": -0.006703128355571075,
+      "passed": false
+    },
+    {
+      "src": "field-edge_device-1",
+      "dst": "fog-b",
+      "size": 10000,
+      "fitted_range": true,
+      "predicted_s": 0.12826003542468445,
+      "calibrated_s": {
+        "value": 0.12809023524238397,
+        "low": 0.12777389961148602,
+        "high": 0.12840735403973202,
+        "n": 60,
+        "sessions": [
+          0.12809370358784994,
+          0.12819259961446125,
+          0.1280993620554606,
+          0.12797536849975585
+        ]
+      },
+      "measured_s": {
+        "value": 0.12822179794311522,
+        "low": 0.12807977795600892,
+        "high": 0.12838829000790913,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": true,
+      "relative_error": 0.00029821358133030884,
+      "passed": true
+    },
+    {
+      "src": "field-edge_device-1",
+      "dst": "fog-b",
+      "size": 30000,
+      "fitted_range": false,
+      "predicted_s": 0.16182709553319427,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.363698673248291,
+        "low": 0.3635857180754344,
+        "high": 0.363801193634669,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.5550517298073353
+    },
+    {
+      "src": "field-edge_device-1",
+      "dst": "fog-b",
+      "size": 100000,
+      "fitted_range": false,
+      "predicted_s": 0.27931180591297866,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.616533358891805,
+        "low": 0.6116357080141703,
+        "high": 0.6241032842795055,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.546964001404513
+    },
+    {
+      "src": "fog-a",
+      "dst": "cloud-1",
+      "size": 100,
+      "fitted_range": true,
+      "predicted_s": 0.04071307008994175,
+      "calibrated_s": {
+        "value": 0.04083022986581856,
+        "low": 0.04028812491261922,
+        "high": 0.04137962922105127,
+        "n": 56,
+        "sessions": [
+          0.04105167729513986,
+          0.040813956941877096,
+          0.04071063654763358,
+          0.040745513779776435
+        ]
+      },
+      "measured_s": {
+        "value": 0.04081324168613979,
+        "low": 0.04076391543660845,
+        "high": 0.04088626674243382,
+        "n": 14,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": -0.0024543896064020965,
+      "passed": true
+    },
+    {
+      "src": "fog-a",
+      "dst": "cloud-1",
+      "size": 1000,
+      "fitted_range": true,
+      "predicted_s": 0.041472394601033566,
+      "calibrated_s": {
+        "value": 0.0416283977752732,
+        "low": 0.04114317142149358,
+        "high": 0.04211934669749534,
+        "n": 60,
+        "sessions": [
+          0.04181445439656575,
+          0.04154871304829915,
+          0.04164624214172363,
+          0.041504859924316406
+        ]
+      },
+      "measured_s": {
+        "value": 0.041535838445027666,
+        "low": 0.04145642558733622,
+        "high": 0.0416231656074524,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": true,
+      "relative_error": -0.001527448255993824,
+      "passed": true
+    },
+    {
+      "src": "fog-a",
+      "dst": "cloud-1",
+      "size": 5000,
+      "fitted_range": true,
+      "predicted_s": 0.044847170205886064,
+      "calibrated_s": {
+        "value": 0.04496291216703265,
+        "low": 0.04460301049727597,
+        "high": 0.045325717883185526,
+        "n": 60,
+        "sessions": [
+          0.045107094446818034,
+          0.044870758056640626,
+          0.04492341677347819,
+          0.04495072364807129
+        ]
+      },
+      "measured_s": {
+        "value": 0.04493163426717122,
+        "low": 0.044835182030995686,
+        "high": 0.04504120310147604,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": true,
+      "relative_error": -0.0018798350574769085,
+      "passed": true
+    },
+    {
+      "src": "fog-a",
+      "dst": "cloud-1",
+      "size": 10000,
+      "fitted_range": true,
+      "predicted_s": 0.04906563971195169,
+      "calibrated_s": {
+        "value": 0.04907557851296304,
+        "low": 0.04867748297141945,
+        "high": 0.0494769297705076,
+        "n": 60,
+        "sessions": [
+          0.049238936106363936,
+          0.04906117121378581,
+          0.048999818166097005,
+          0.04900277455647786
+        ]
+      },
+      "measured_s": {
+        "value": 0.04907801946004232,
+        "low": 0.048991174300511676,
+        "high": 0.04918447534243266,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": true,
+      "relative_error": -0.0002522462851358709,
+      "passed": true
+    },
+    {
+      "src": "fog-a",
+      "dst": "cloud-1",
+      "size": 30000,
+      "fitted_range": false,
+      "predicted_s": 0.0659395177362142,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.13659440676371257,
+        "low": 0.13647968729337057,
+        "high": 0.1367263968785604,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.5172604845359482
+    },
+    {
+      "src": "fog-a",
+      "dst": "cloud-1",
+      "size": 100000,
+      "fitted_range": false,
+      "predicted_s": 0.12499809082113296,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.14290887514750164,
+        "low": 0.12690558433532714,
+        "high": 0.16369747479756672,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.12533010499090613
+    },
+    {
+      "src": "fog-a",
+      "dst": "field-edge_device-1",
+      "size": 100,
+      "fitted_range": true,
+      "predicted_s": 0.09159128297412023,
+      "calibrated_s": {
+        "value": 0.09140442770167476,
+        "low": 0.09015057422147045,
+        "high": 0.09267572032259888,
+        "n": 56,
+        "sessions": [
+          0.09144086497170585,
+          0.0918940646307809,
+          0.0911534343447004,
+          0.09113141468593053
+        ]
+      },
+      "measured_s": {
+        "value": 0.09134650230407715,
+        "low": 0.09121336936950683,
+        "high": 0.09148873559066227,
+        "n": 14,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": 0.002679693955092377,
+      "passed": true
+    },
+    {
+      "src": "fog-a",
+      "dst": "field-edge_device-1",
+      "size": 1000,
+      "fitted_range": true,
+      "predicted_s": 0.09310268266385548,
+      "calibrated_s": {
+        "value": 0.09297515698983713,
+        "low": 0.09191279269979072,
+        "high": 0.09404980050513191,
+        "n": 60,
+        "sessions": [
+          0.09342417716979981,
+          0.0928126335144043,
+          0.09286955197652182,
+          0.09279572168986003
+        ]
+      },
+      "measured_s": {
+        "value": 0.09406089782714844,
+        "low": 0.09290272275606791,
+        "high": 0.09623783191045125,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": true,
+      "inside_session_ci": true,
+      "relative_error": -0.010187178577157896,
+      "passed": false
+    },
+    {
+      "src": "fog-a",
+      "dst": "field-edge_device-1",
+      "size": 5000,
+      "fitted_range": true,
+      "predicted_s": 0.09982001461823438,
+      "calibrated_s": {
+        "value": 0.09974236748593923,
+        "low": 0.09903817370317784,
+        "high": 0.10045156831664122,
+        "n": 60,
+        "sessions": [
+          0.10003298123677572,
+          0.09968636830647787,
+          0.0996675968170166,
+          0.09958311716715494
+        ]
+      },
+      "measured_s": {
+        "value": 0.09973961512247721,
+        "low": 0.09963270306587219,
+        "high": 0.09985542138417561,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": true,
+      "relative_error": 0.0008060939041967252,
+      "passed": true
+    },
+    {
+      "src": "fog-a",
+      "dst": "field-edge_device-1",
+      "size": 10000,
+      "fitted_range": true,
+      "predicted_s": 0.108216679561208,
+      "calibrated_s": {
+        "value": 0.10785259935338215,
+        "low": 0.10695114595395715,
+        "high": 0.1087616507848253,
+        "n": 60,
+        "sessions": [
+          0.10786029497782389,
+          0.10820910135904947,
+          0.1076968510945638,
+          0.107645050684611
+        ]
+      },
+      "measured_s": {
+        "value": 0.10789980888366699,
+        "low": 0.10780968109766642,
+        "high": 0.10798712054888407,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": 0.0029367121297003695,
+      "passed": true
+    },
+    {
+      "src": "fog-a",
+      "dst": "field-edge_device-1",
+      "size": 30000,
+      "fitted_range": false,
+      "predicted_s": 0.1418033393331025,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.3042996565500895,
+        "low": 0.303117702404658,
+        "high": 0.3065098444620768,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.5340009879052859
+    },
+    {
+      "src": "fog-a",
+      "dst": "field-edge_device-1",
+      "size": 100000,
+      "fitted_range": false,
+      "predicted_s": 0.2593566485347333,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.5200279394785563,
+        "low": 0.513640703757604,
+        "high": 0.5285845788319906,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.5012640113244762
+    },
+    {
+      "src": "fog-b",
+      "dst": "cloud-1",
+      "size": 100,
+      "fitted_range": true,
+      "predicted_s": 0.06076405217235399,
+      "calibrated_s": {
+        "value": 0.06108905497547256,
+        "low": 0.06046941041800256,
+        "high": 0.0617150491793993,
+        "n": 56,
+        "sessions": [
+          0.061344657625470846,
+          0.06106001990182059,
+          0.060960854802812846,
+          0.06099144050053188
+        ]
+      },
+      "measured_s": {
+        "value": 0.06092257159096854,
+        "low": 0.060822059001241414,
+        "high": 0.06101888801370348,
+        "n": 14,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": -0.0026019817364053566,
+      "passed": true
+    },
+    {
+      "src": "fog-b",
+      "dst": "cloud-1",
+      "size": 1000,
+      "fitted_range": true,
+      "predicted_s": 0.061503814168637067,
+      "calibrated_s": {
+        "value": 0.061627998675856006,
+        "low": 0.06101920889345073,
+        "high": 0.06224286236524701,
+        "n": 60,
+        "sessions": [
+          0.061886103947957356,
+          0.06153055826822917,
+          0.06155269940694173,
+          0.06154335339864095
+        ]
+      },
+      "measured_s": {
+        "value": 0.06163954734802246,
+        "low": 0.061555532217025755,
+        "high": 0.06173311948776245,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": -0.0022020469848526014,
+      "passed": true
+    },
+    {
+      "src": "fog-b",
+      "dst": "cloud-1",
+      "size": 5000,
+      "fitted_range": true,
+      "predicted_s": 0.06479164526322849,
+      "calibrated_s": {
+        "value": 0.06500366165124434,
+        "low": 0.06468216897448363,
+        "high": 0.06532675225743212,
+        "n": 60,
+        "sessions": [
+          0.06513249079386393,
+          0.06497648557027182,
+          0.06498575210571289,
+          0.06492010752360027
+        ]
+      },
+      "measured_s": {
+        "value": 0.06493643124898275,
+        "low": 0.06484776536623636,
+        "high": 0.06503983894983928,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": -0.0022296572658746516,
+      "passed": true
+    },
+    {
+      "src": "fog-b",
+      "dst": "cloud-1",
+      "size": 10000,
+      "fitted_range": true,
+      "predicted_s": 0.06890143413146776,
+      "calibrated_s": {
+        "value": 0.06915494538716706,
+        "low": 0.06850384647307561,
+        "high": 0.06981223270990644,
+        "n": 60,
+        "sessions": [
+          0.06941148440043131,
+          0.06916550000508627,
+          0.06901206970214843,
+          0.06903146107991537
+        ]
+      },
+      "measured_s": {
+        "value": 0.06902928352355957,
+        "low": 0.06896286646525066,
+        "high": 0.06909494717915853,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": -0.0018521037096983495,
+      "passed": true
+    },
+    {
+      "src": "fog-b",
+      "dst": "cloud-1",
+      "size": 30000,
+      "fitted_range": false,
+      "predicted_s": 0.0853405896044249,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.18593554496765136,
+        "low": 0.18462196032206218,
+        "high": 0.18787317951520285,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.5410205745261227
+    },
+    {
+      "src": "fog-b",
+      "dst": "cloud-1",
+      "size": 100000,
+      "fitted_range": false,
+      "predicted_s": 0.14287763375977483,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.19654289881388345,
+        "low": 0.18511176427205403,
+        "high": 0.21616022785504654,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.27304606464020365
+    },
+    {
+      "src": "fog-b",
+      "dst": "field-edge_device-1",
+      "size": 100,
+      "fitted_range": true,
+      "predicted_s": 0.11164226505653246,
+      "calibrated_s": {
+        "value": 0.11127389331371931,
+        "low": 0.11083684937962549,
+        "high": 0.11171266056818356,
+        "n": 56,
+        "sessions": [
+          0.1114570243018014,
+          0.11121187891278948,
+          0.11119348662240165,
+          0.11123338767460414
+        ]
+      },
+      "measured_s": {
+        "value": 0.11154307637895856,
+        "low": 0.11138994949204581,
+        "high": 0.1116930284670421,
+        "n": 14,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": true,
+      "relative_error": 0.0008892410070968637,
+      "passed": true
+    },
+    {
+      "src": "fog-b",
+      "dst": "field-edge_device-1",
+      "size": 1000,
+      "fitted_range": true,
+      "predicted_s": 0.11313410223145898,
+      "calibrated_s": {
+        "value": 0.11301741964745583,
+        "low": 0.11223093877856068,
+        "high": 0.11380941193917138,
+        "n": 60,
+        "sessions": [
+          0.11325182914733886,
+          0.11290369033813477,
+          0.11314779917399088,
+          0.11276701291402182
+        ]
+      },
+      "measured_s": {
+        "value": 0.11287843386332194,
+        "low": 0.11278680960337321,
+        "high": 0.11297489841779072,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": 0.002264988619939734,
+      "passed": true
+    },
+    {
+      "src": "fog-b",
+      "dst": "field-edge_device-1",
+      "size": 5000,
+      "fitted_range": true,
+      "predicted_s": 0.1197644896755768,
+      "calibrated_s": {
+        "value": 0.11954835816916456,
+        "low": 0.11812013592448602,
+        "high": 0.1209938494320696,
+        "n": 60,
+        "sessions": [
+          0.11973093350728353,
+          0.11980924606323243,
+          0.11970764795939128,
+          0.11894764900207519
+        ]
+      },
+      "measured_s": {
+        "value": 0.11970740954081217,
+        "low": 0.11959685365358988,
+        "high": 0.11983243624369304,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": true,
+      "relative_error": 0.00047683042330959324,
+      "passed": true
+    },
+    {
+      "src": "fog-b",
+      "dst": "field-edge_device-1",
+      "size": 10000,
+      "fitted_range": true,
+      "predicted_s": 0.12805247398072409,
+      "calibrated_s": {
+        "value": 0.1277773943764383,
+        "low": 0.12743593825130428,
+        "high": 0.12811976541056103,
+        "n": 60,
+        "sessions": [
+          0.127857240041097,
+          0.12785086631774903,
+          0.1277465343475342,
+          0.12765504519144694
+        ]
+      },
+      "measured_s": {
+        "value": 0.12778925895690918,
+        "low": 0.1277162790298462,
+        "high": 0.12787068883577982,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": true,
+      "predicted_inside": true,
+      "inside_session_ci": false,
+      "relative_error": 0.002059758589754823,
+      "passed": true
+    },
+    {
+      "src": "fog-b",
+      "dst": "field-edge_device-1",
+      "size": 30000,
+      "fitted_range": false,
+      "predicted_s": 0.1612044112013132,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.36312093734741213,
+        "low": 0.36299677213033044,
+        "high": 0.3632424068450928,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.5560586167823129
+    },
+    {
+      "src": "fog-b",
+      "dst": "field-edge_device-1",
+      "size": 100000,
+      "fitted_range": false,
+      "predicted_s": 0.27723619147337514,
+      "calibrated_s": null,
+      "measured_s": {
+        "value": 0.6164336999257406,
+        "low": 0.6117584407329559,
+        "high": 0.6236665825049083,
+        "n": 15,
+        "sessions": null
+      },
+      "inside": false,
+      "predicted_inside": false,
+      "inside_session_ci": false,
+      "relative_error": -0.550257892281404
+    }
+  ],
+  "loopback": [
+    {
+      "host": "cloud-1",
+      "size": 100,
+      "measured_s": {
+        "value": 0.0005283526011875697,
+        "low": 0.0004390967743737357,
+        "high": 0.0006563237735203334,
+        "n": 14,
+        "sessions": null
+      }
+    },
+    {
+      "host": "cloud-1",
+      "size": 1000,
+      "measured_s": {
+        "value": 0.0006001790364583334,
+        "low": 0.0005117551485697428,
+        "high": 0.0006965529918670653,
+        "n": 15,
+        "sessions": null
+      }
+    },
+    {
+      "host": "cloud-1",
+      "size": 5000,
+      "measured_s": {
+        "value": 0.0006685574849446614,
+        "low": 0.0005756386121114095,
+        "high": 0.0007616607348124185,
+        "n": 15,
+        "sessions": null
+      }
+    },
+    {
+      "host": "cloud-1",
+      "size": 10000,
+      "measured_s": {
+        "value": 0.0007485548655192057,
+        "low": 0.0006218866507212321,
+        "high": 0.0008781858285268147,
+        "n": 15,
+        "sessions": null
+      }
+    },
+    {
+      "host": "cloud-1",
+      "size": 30000,
+      "measured_s": {
+        "value": 0.0006609757741292318,
+        "low": 0.0005711929003397624,
+        "high": 0.0007544374465942383,
+        "n": 15,
+        "sessions": null
+      }
+    },
+    {
+      "host": "cloud-1",
+      "size": 100000,
+      "measured_s": {
+        "value": 0.0008553187052408854,
+        "low": 0.0007386044661204021,
+        "high": 0.0009869547684987386,
+        "n": 15,
+        "sessions": null
+      }
+    }
+  ],
+  "flops_estimates": [
+    {
+      "profile": "edge_device",
+      "workload": "0ed95108ec44feea",
+      "from_workload": "f81f0235a3520d08",
+      "estimated_rate": 258064.20753090628,
+      "measured_rate": {
+        "value": 34133.80405828369,
+        "low": 32638.478053318868,
+        "high": 35715.422323005405,
+        "n": 55,
+        "sessions": null
+      },
+      "inside": false,
+      "relative_error": 6.560370566675193
+    },
+    {
+      "profile": "edge_device",
+      "workload": "f81f0235a3520d08",
+      "from_workload": "0ed95108ec44feea",
+      "estimated_rate": 3589.199146634524,
+      "measured_rate": {
+        "value": 27135.675586151378,
+        "low": 26439.137573683558,
+        "high": 27814.906597915262,
+        "n": 48,
+        "sessions": null
+      },
+      "inside": false,
+      "relative_error": -0.8677313511049541
+    }
+  ],
+  "acceptance": {
+    "train": {
+      "quantities": 2,
+      "inside": 2,
+      "inside_session_ci": 0
+    },
+    "aggregate": {
+      "quantities": 2,
+      "inside": 2,
+      "inside_session_ci": 0
+    },
+    "links": {
+      "quantities": 10,
+      "inside": 10
+    },
+    "paths": {
+      "quantities": 40,
+      "inside": 38,
+      "predicted_inside": 40,
+      "passed": 38,
+      "inside_session_ci": 17
+    },
+    "passed": false
+  }
+}
