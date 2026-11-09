@@ -325,3 +325,112 @@ def test_real_processes_host_the_validators_of_a_promotion(
     hosted = {node for members in groups.values() for node in members}
     assert any(n.startswith("validate-") for n in built)
     assert built == hosted
+
+
+# --- the same failures in the simulation ---------------------------------------------
+
+
+def with_deadlines():
+    """``federation`` with a fog that closes its rounds without a down edge
+    and starts without a late one, as on the machines."""
+    fed = federation()
+    fog = fed.aggregators["fog_0"]
+    fog.deadline, fog.register_timeout = 1.0, 1.0
+    return fed
+
+
+def events(fed, node: str, name: str) -> list[dict]:
+    return [e for e in fed.runtime.events if e["node"] == node and e["name"] == name]
+
+
+def trained(fed, node: str) -> list[tuple[float, int]]:
+    return [(e["t"], e["tags"]["examples"]) for e in events(fed, node, "edge.trained")]
+
+
+def test_a_sim_restart_without_downtime_goes_on_as_if_it_never_stopped() -> None:
+    from onion_fl.experiment.runner import fail_nodes
+
+    whole = with_deadlines()
+    whole.run()
+    cut = with_deadlines()
+    fail_nodes(cut, restarts={"a1": (3.5 * EVERY / SPEED, 0.0)}, joins={})
+    cut.run()
+
+    (resumed,) = events(cut, "a1", "node.resumed")
+    assert resumed["tags"]["state"] == "restored"
+    assert cut.edges["a1"] is not whole.edges["a1"]  # rebuilt, as by a new process
+    model, consumed, steps = trace(cut)
+    want_model, want_consumed, want_steps = trace(whole)
+    assert steps == want_steps
+    np.testing.assert_array_equal(consumed, want_consumed)
+    for key, value in want_model.items():
+        np.testing.assert_array_equal(model[key], value, err_msg=key)
+
+
+def test_a_sim_restart_comes_back_with_the_state_saved_before_it_died() -> None:
+    from onion_fl.experiment.runner import fail_nodes
+
+    at, down = 3.5 * EVERY / SPEED, 7.0  # down through the round at 20 s
+    whole = with_deadlines()
+    whole.run()
+    before = with_deadlines()
+    before.run(until=at)
+    saved = checkpoint_edge(before.edges["a2"], before.runtime._rng("a2"))
+    cut = with_deadlines()
+    fail_nodes(cut, restarts={"a2": (at, down)}, joins={})
+    cut.run()
+
+    (resumed,) = events(cut, "a2", "node.resumed")
+    edge = before.edges["a2"]
+    assert resumed["t"] == at + down
+    assert resumed["tags"] == {
+        "state": "restored",
+        "round": saved.meta["round"],
+        "consumed": int((edge._consumed_by >= 0).sum()),
+        "predicted": int(edge._predicted.sum()),
+        "clock": float(edge._clock),
+        "fresh": [],
+    }
+    # Nothing while it was down; then its backlog, each row trained once.
+    steps, want = trained(cut, "a2"), trained(whole, "a2")
+    assert not [t for t, _ in steps if at <= t < at + down]
+    assert steps[:-1] == want[:-1] and steps[-1][0] > at + down > want[-1][0]
+    assert sum(n for _, n in steps) == sum(n for _, n in want)
+    np.testing.assert_array_equal(
+        cut.edges["a2"]._consumed_by >= 0, whole.edges["a2"]._consumed_by >= 0
+    )
+    assert cut.coordinator.finished
+
+
+def test_a_late_edge_first_takes_part_after_it_joins() -> None:
+    from onion_fl.experiment.runner import fail_nodes
+
+    at = 2.2 * EVERY / SPEED
+    whole = with_deadlines()
+    whole.run()
+    late = with_deadlines()
+    fail_nodes(late, restarts={}, joins={"a2": at})
+    late.run()
+
+    assert min(e["t"] for e in late.runtime.events if e["node"] == "a2") == at
+    steps = trained(late, "a2")
+    assert steps and steps[0][0] > at
+    # Its first training takes the rows that came before it joined, and in the
+    # end it trained every row it trains when it is there from the start.
+    consumed = late.edges["a2"]._consumed_by
+    first = consumed[late.edges["a2"].stream.available_at < at * SPEED]
+    assert len(first) and (first == first[0]).all() and first[0] >= 0
+    np.testing.assert_array_equal(consumed >= 0, whole.edges["a2"]._consumed_by >= 0)
+    assert late.coordinator.finished
+
+
+def test_the_sim_backend_takes_the_failures_of_distributed() -> None:
+    from onion_fl.experiment.backends import SimBackend
+
+    restart = [{"host": "h", "at": 5, "down": 1}]
+    with pytest.raises(ValueError, match="checkpoints: true"):
+        SimBackend(restarts=restart)
+    backend = SimBackend(checkpoints=True, restarts=restart, joins={"g": 9})
+    assert backend.params.restarts[0].down == 1 and backend.params.joins == {"g": 9}
+    with pytest.raises(ValueError, match="need.*infrastructure|an infrastructure"):
+        backend.prepare(scenario=None)

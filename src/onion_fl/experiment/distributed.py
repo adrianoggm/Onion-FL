@@ -919,7 +919,11 @@ def launch_with_faults(
 
 
 def check_faults(
-    params: Any, topology: Any, resolved: Resolved, load: Mapping[str, Sequence[str]]
+    params: Any,
+    topology: Any,
+    resolved: Resolved,
+    load: Mapping[str, Sequence[str]],
+    backend: str = "distributed",
 ) -> None:
     """A host that restarts or joins late hosts only edges and evaluators: an
     aggregator keeps no state to come back with. A late edge's parent needs a
@@ -945,7 +949,7 @@ def check_faults(
                     "register_timeout, so it would wait for it before round 1"
                 )
     if problems:
-        raise ConfigError("backend distributed: " + "; ".join(problems))
+        raise ConfigError(f"backend {backend}: " + "; ".join(problems))
 
 
 def numeric_pins() -> dict[str, str | None]:
