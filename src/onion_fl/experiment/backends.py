@@ -20,7 +20,7 @@ from ipaddress import IPv4Network
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from onion_fl.infrastructure.backends import backends
 
@@ -208,6 +208,12 @@ class EmulatedBackend:
         return merge(plan)
 
 
+class Restart(BaseModel):
+    host: str = Field(description="Host cuyo proceso se mata (kill -9)")
+    at: float = Field(gt=0, description="Segundo del reloj de la ejecución en que cae")
+    down: float = Field(ge=0, description="Segundos caído antes de volver con --resume")
+
+
 class DistributedParams(BaseModel):
     inventory: str | dict[str, Any] = Field(
         description=(
@@ -237,6 +243,44 @@ class DistributedParams(BaseModel):
     grace: float = Field(
         60.0, ge=0, description="Margen de arranque de los procesos (s)"
     )
+    start_in: float = Field(
+        0.0,
+        ge=0,
+        description=(
+            "Segundos entre el lanzamiento y el cero del reloj de la ejecución, "
+            "para que un stream no empiece antes de que arranquen los nodos"
+        ),
+    )
+    checkpoints: bool = Field(
+        False,
+        description=(
+            "Cada edge guarda su estado (su parte del bundle) en su máquina "
+            "tras cada evento, para reanudar si su proceso cae"
+        ),
+    )
+    restarts: list[Restart] = Field(
+        default_factory=list,
+        description="Fallos reales: el proceso de un host cae y vuelve con su estado",
+    )
+    joins: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "host -> segundo del reloj de la ejecución en que arranca: sus edges "
+            "se incorporan a mitad"
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _faults(self) -> DistributedParams:
+        if self.restarts and not self.checkpoints:
+            raise ValueError(
+                "restarts: a host comes back with its state only if its edges "
+                "save it; set checkpoints: true"
+            )
+        both = {r.host for r in self.restarts} & set(self.joins)
+        if both:
+            raise ValueError(f"joins: {sorted(both)} also restart; pick one")
+        return self
 
 
 @backends.register(

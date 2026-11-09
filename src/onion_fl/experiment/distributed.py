@@ -535,8 +535,9 @@ class DistributedPlan:
     def machine(self, host: str) -> Machine:
         return self.inventory.machine(host)
 
-    def command(self, group: str) -> list[str]:
-        """The node process of host ``group``, on its machine."""
+    def command(self, group: str, resume: bool = False) -> list[str]:
+        """The node process of host ``group``, on its machine; ``resume``
+        restarts it from what its edges saved."""
         machine = self.machine(group)
         rid = self.run.run_id
         argv = [
@@ -550,18 +551,23 @@ class DistributedPlan:
             rid,
             "--config",
             f"runs/{rid}/scenario.json",
+            *(["--resume"] if resume else []),
         ]
         line = remote_line(machine, argv, pidfile=f"runs/{rid}/node.{group}.pid")
         return ssh_command(
             self.params.ssh, self.inventory, machine, line, no_stdin=True
         )
 
-    def stop_command(self, group: str) -> list[str]:
-        """Stop the node of ``group`` if it is still running."""
+    def stop_command(self, group: str, signal: str = "TERM") -> list[str]:
+        """Stop the node of ``group`` if it is still running; ``KILL`` is a
+        crash: the process cannot save or say anything more."""
         machine = self.machine(group)
         pid = shlex.quote(f"runs/{self.run.run_id}/node.{group}.pid")
         root = shlex.quote(root_of(machine))
-        line = f"cd {root} && [ -f {pid} ] && kill $(cat {pid}) 2>/dev/null; true"
+        line = (
+            f"cd {root} && [ -f {pid} ] && kill -{signal} $(cat {pid}) "
+            "2>/dev/null; true"
+        )
         return ssh_command(
             self.params.ssh, self.inventory, machine, line, no_stdin=True
         )
@@ -761,6 +767,7 @@ def prepare_distributed(
         raise ConfigError("backend distributed: " + "; ".join(problems))
     inventory = _inventory(params)
     load = host_load(resolved, edge_groups(config, topology, placement))
+    check_faults(params, topology, resolved, load)
     machines = machines_of(inventory, sorted(load))
     names = {_transport_name(link.transport) for link in _links(topology)}
     broker, grpc = wiring(params, resolved, machines, load, names, inventory)
@@ -793,6 +800,8 @@ def prepare_distributed(
     try:
         np.savez(run.path / "initial.npz", **state)
         launcher: dict[str, Any] = {"groups": load, "initial": "initial.npz"}
+        if params.checkpoints:
+            launcher["checkpoints"] = True
         if broker is not None:
             launcher["broker"] = broker
         if grpc is not None:
@@ -850,6 +859,95 @@ def prepare_distributed(
     )
 
 
+def launch_with_faults(
+    plan: DistributedPlan,
+    epoch: float,
+    popen: Callable[..., Any] = subprocess.Popen,
+    run: Callable[..., Any] = subprocess.run,
+    clock: Callable[[], float] = time.time,
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    """``launch``, with the backend's real failures on the run's clock.
+
+    A host of ``joins`` starts at its second; a host of ``restarts`` is killed
+    (``kill -KILL``) at ``at`` and started again ``down`` seconds later with
+    ``--resume``. What happened, on the run's clock, goes to ``run.json``.
+    Each host's exit code is its last process's.
+    """
+    params = plan.params
+    steps: list[tuple[float, str, str]] = [
+        (at, "join", host) for host, at in params.joins.items()
+    ]
+    for r in params.restarts:
+        steps += [(r.at, "kill", r.host), (r.at + r.down, "resume", r.host)]
+    steps.sort()
+    done: list[dict[str, Any]] = []
+    processes = {
+        host: popen(plan.command(host))
+        for host in plan.groups
+        if host not in params.joins
+    }
+    limit = clock() + plan.scenario.config.runtime.timeout + plan.grace
+    try:
+        for at, action, host in steps:
+            wait = epoch + at - clock()
+            if wait > 0:
+                sleep(wait)
+            record = {"host": host, "action": action, "at": round(clock() - epoch, 3)}
+            if action == "kill":
+                run(plan.stop_command(host, "KILL"), capture_output=True, timeout=60)
+                try:
+                    record["code"] = processes[host].wait(timeout=30)
+                except subprocess.TimeoutExpired:
+                    processes[host].kill()
+                    record["code"] = processes[host].wait()
+            else:
+                processes[host] = popen(plan.command(host, resume=action == "resume"))
+            done.append(record)
+        for host in plan.groups:
+            try:
+                wait = max(0.0, limit - clock())
+                plan.codes.append(processes[host].wait(timeout=wait))
+            except subprocess.TimeoutExpired:
+                processes[host].kill()
+                plan.codes.append(processes[host].wait())
+    except BaseException:  # never leave a run that looks still running
+        plan.run.finish(status="failed")
+        raise
+    finally:
+        plan.run.meta["distributed"]["faults"] = done
+
+
+def check_faults(
+    params: Any, topology: Any, resolved: Resolved, load: Mapping[str, Sequence[str]]
+) -> None:
+    """A host that restarts or joins late hosts only edges and evaluators: an
+    aggregator keeps no state to come back with. A late edge's parent needs a
+    ``register_timeout``, or its round 1 would wait for it."""
+    named = [r.host for r in params.restarts] + list(params.joins)
+    aggregators = {n.id for n in topology.nodes}
+    problems = []
+    for host in named:
+        if host not in load:
+            problems.append(f"{host} runs no node; hosts {sorted(load)}")
+            continue
+        kept = sorted(set(load[host]) & aggregators)
+        if kept:
+            problems.append(
+                f"{host} hosts {kept}; only a host of edges can restart or join late"
+            )
+    for host in params.joins:
+        parents = {resolved.parents.get(n) for n in load.get(host, [])} - {None}
+        for parent in sorted(parents & aggregators):
+            if topology.node(parent).settings.get("register_timeout") is None:
+                problems.append(
+                    f"{host} joins late, but its parent {parent} has no "
+                    "register_timeout, so it would wait for it before round 1"
+                )
+    if problems:
+        raise ConfigError("backend distributed: " + "; ".join(problems))
+
+
 def numeric_pins() -> dict[str, str | None]:
     """The launcher's versions of the libraries that decide the bits."""
     from importlib.metadata import PackageNotFoundError, version
@@ -881,7 +979,8 @@ def launch_distributed(
             push(plan.params.ssh, plan.inventory, plan.machine(host), entries, popen)
         path = plan.run.path / "scenario.json"
         document = json.loads(path.read_text(encoding="utf-8"))
-        document["epoch"] = time.time()  # the run's clock starts now
+        # the run's clock starts now, or start_in seconds later
+        document["epoch"] = time.time() + plan.params.start_in
         path.write_text(json.dumps(document, indent=2), encoding="utf-8")
         own = {
             f"runs/{rid}/scenario.json": path,
@@ -893,7 +992,10 @@ def launch_distributed(
         plan.run.finish(status="failed")
         raise
     try:
-        launch(plan)
+        if plan.params.restarts or plan.params.joins:
+            launch_with_faults(plan, document["epoch"])
+        else:
+            launch(plan)
     finally:
         for host in plan.groups:
             subprocess.run(plan.stop_command(host), capture_output=True, timeout=60)
