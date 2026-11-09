@@ -15,7 +15,7 @@ The pre-registration handles drift within a session (seed-by-seed order, pairing
 - The four fit sessions ran on 2026-11-06, with Docker Desktop's Kubernetes active.
 - The calibration's checks on 2026-11-09 ran on a quieter machine (Kubernetes scaled to 0). It trained 1.6–2 times faster than the fit, and one check session's aggregation came out 8 % above the interval.
 - The validation runs on 2026-11-09 on that quieter machine. No other agent is running and Kubernetes is scaled to 0. Three idle containers of other projects remain (`fg-obs-grafana-1`, `redsaras-api`, `postgres`) and are left alone.
-- **So the emulated compute may be faster than the calibration predicts.** The compute errors (H2a) and the round times (H2b) may then be negative, by about −0.4 to −0.5, for a reason that is the machine's and not the simulator's.
+- **So the emulated compute may be faster than the calibration predicts.** The simulation would then be the slower one. The compute errors (H2a) and the round-time errors (H2b), (B − A) / A, may then be positive, by about +0.6 to +1.0 if the whole 1.6–2× shows up, for a reason that is the machine's and not the simulator's.
   - H2a's band, from the refit's prediction interval, is wide: [−0.803, +4.076]. A miss of that size still falls inside it.
 ## Setup
 
