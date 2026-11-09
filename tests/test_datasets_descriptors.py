@@ -20,7 +20,7 @@ def descriptor(name: str):
     return load_spec(DESCRIPTORS / f"{name}.yaml")
 
 
-@pytest.mark.parametrize("name", ["swell", "sweet", "wesad"])
+@pytest.mark.parametrize("name", ["swell", "sweet", "wesad", "femnist"])
 def test_descriptors_are_valid(name: str) -> None:
     spec = descriptor(name)
 
@@ -124,6 +124,32 @@ def test_wesad_chest_reads_like_the_previous_loader() -> None:
     assert new.feature_names == names
     np.testing.assert_array_equal(new.y, y)
     np.testing.assert_allclose(new.X, X, rtol=1e-5)
+
+
+def test_femnist_declares_a_fixed_subsample_of_hundreds_of_writers() -> None:
+    writers = descriptor("femnist").source.reader_params()["writers"]
+
+    assert len(writers) == len(set(writers)) == 200
+    assert writers == sorted(writers)
+
+
+@pytest.mark.skipif(
+    not Path("data/FEMNIST/all_data").exists(), reason="data/FEMNIST not available"
+)
+def test_femnist_reads_one_subject_per_declared_writer() -> None:
+    spec = descriptor("femnist")
+    subjects = ingest(spec)
+
+    assert [s.subject for s in subjects] == spec.source.reader_params()["writers"]
+    assert sum(s.n_samples for s in subjects) == 44451  # flwrlabs/femnist, 2026-11-05
+    labels = np.concatenate([s.y for s in subjects])
+    assert set(np.unique(labels)) == set(range(62))
+    for data in subjects:
+        assert data.n_classes == 62 and data.task == "character"
+        assert data.feature_names == [f"x_{i}" for i in range(784)]  # no writer id
+        assert data.X.min() >= 0 and data.X.max() <= 1, data.subject
+    # No class is a near-constant answer: the majority is '1' with under 6%.
+    assert np.bincount(labels.astype(int)).max() / len(labels) < 0.06
 
 
 # --- per-row time on the real recordings (continuum C3) ----------------------------
