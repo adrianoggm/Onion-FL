@@ -1,0 +1,4274 @@
+{
+  "a": "runs/fidelity_validation_emulated",
+  "b": "runs/fidelity_validation_sim",
+  "calibration": "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc",
+  "backends": {
+    "a": [
+      "emulated"
+    ],
+    "b": [
+      "sim"
+    ]
+  },
+  "configurations": [
+    {
+      "design_id": "56ff74c2fb13c359ec274448b3d3e64403ff2d2d4a4b4475b77afe4ea7b6726e",
+      "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_cloud_npz,{'root': 'cloud-1', 'edges': {'name': 'colocated', 'per_host': 4}}"
+    },
+    {
+      "design_id": "63a14ce57bd7545a985ffeb762076e9910619d65e35e74b390bdca7c3a252fa4",
+      "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-a'}, 'edges': {'name': 'colocated', 'per_host': 4}}"
+    },
+    {
+      "design_id": "76b3f6ca1a70647e6f1d65477a34a01acda6bbc2e4f445c78b535b6736b777b5",
+      "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-a'}, 'edges': {'name': 'colocated', 'per_host': 4}}"
+    },
+    {
+      "design_id": "7d9354de76173648a1110c6d39467098d340708cda4f37485f2464455d5876eb",
+      "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-b'}, 'edges': {'name': 'colocated', 'per_host': 4}}"
+    },
+    {
+      "design_id": "8831739c186d192ea720de8be91f32b28abd9d0378a4a9859ad70ad9c9aa4223",
+      "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_cloud_npz,{'root': 'cloud-1', 'edges': {'name': 'colocated', 'per_host': 4}}"
+    },
+    {
+      "design_id": "b1c5da984520aa04f09bafef6a58b3089965cc44ddfb1ef93c02a8db7f856c70",
+      "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-b'}, 'edges': {'name': 'colocated', 'per_host': 4}}"
+    }
+  ],
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "functional": {
+    "pairs": 30,
+    "complete": false,
+    "model": false,
+    "protocol": true,
+    "bytes": false
+  },
+  "performance": {
+    "compute_time": {
+      "pairs": 30,
+      "values": 6000,
+      "a_mean": 0.06863947661717733,
+      "b_mean": 0.036929736393112415,
+      "relative_error": -0.09520826455548535,
+      "relative_error_ci": [
+        -0.33434701579584364,
+        0.15114942816022398
+      ],
+      "absolute_relative_error": 0.7280340893701014,
+      "absolute_relative_error_ci": [
+        0.7013864674920858,
+        0.7534346447885188
+      ]
+    },
+    "duration": {
+      "pairs": 30,
+      "values": 30,
+      "a_mean": 13.218960324923197,
+      "b_mean": 4.101815079986801,
+      "relative_error": -0.6939586880179645,
+      "relative_error_ci": [
+        -0.7178955252984658,
+        -0.6707374037590861
+      ],
+      "absolute_relative_error": 0.6939586880179645,
+      "absolute_relative_error_ci": [
+        0.6707374037590861,
+        0.7178955252984658
+      ]
+    },
+    "link_latency": {
+      "pairs": 30,
+      "values": 1540,
+      "a_mean": 0.1494344305609119,
+      "b_mean": 0.08458677592245997,
+      "relative_error": -0.48336442291226744,
+      "relative_error_ci": [
+        -0.4937989728189767,
+        -0.47350881672885736
+      ],
+      "absolute_relative_error": 0.483444928329708,
+      "absolute_relative_error_ci": [
+        0.47354626915528564,
+        0.4938460429547928
+      ]
+    },
+    "round_time": {
+      "pairs": 30,
+      "values": 300,
+      "a_mean": 0.7175822774569194,
+      "b_mean": 0.38489953559598455,
+      "relative_error": -0.3949342119872775,
+      "relative_error_ci": [
+        -0.4209888887509599,
+        -0.3683970026009011
+      ],
+      "absolute_relative_error": 0.3949342119872775,
+      "absolute_relative_error_ci": [
+        0.3683970026009011,
+        0.42098888875095986
+      ]
+    }
+  },
+  "decision": {
+    "time": {
+      "tau_b": 0.8666666666666666,
+      "top1": true,
+      "regret": 0.0,
+      "regret_relative": 0.0,
+      "seeds": 5,
+      "configurations": 6,
+      "ci": {
+        "tau_b": [
+          0.3333333333333333,
+          0.8666666666666666
+        ],
+        "regret": [
+          0.0,
+          0.0
+        ],
+        "regret_relative": [
+          0.0,
+          0.0
+        ]
+      },
+      "p_top1": 0.9995,
+      "minimize": true,
+      "scores": {
+        "a": [
+          10.545604372024536,
+          14.027108669281006,
+          14.361620616912841,
+          15.802834701538085,
+          10.064954471588134,
+          14.51163911819458
+        ],
+        "b": [
+          2.9096122751665274,
+          4.057836800392154,
+          4.865022863121032,
+          4.934395344397695,
+          2.1008636928628164,
+          5.743159503980581
+        ]
+      },
+      "ceiling": {
+        "source": "seeds of A",
+        "top1": 0.6,
+        "top1_chance": 0.16666666666666666,
+        "regret": 0.12148760557174683,
+        "regret_relative": 0.012203642796734413
+      },
+      "top1_below_ceiling": false,
+      "regret_above_ceiling": false,
+      "predictor": null
+    },
+    "bytes": {
+      "tau_b": 0.6445033866354897,
+      "top1": true,
+      "regret": 0.0,
+      "regret_relative": 0.0,
+      "seeds": 5,
+      "configurations": 6,
+      "ci": {
+        "tau_b": [
+          0.3706246583305506,
+          0.9636241116594316
+        ],
+        "regret": [
+          0.0,
+          0.0
+        ],
+        "regret_relative": [
+          0.0,
+          0.0
+        ]
+      },
+      "p_top1": 1.0,
+      "minimize": true,
+      "scores": {
+        "a": [
+          2241424.4,
+          2340486.8,
+          2342088.8,
+          2341271.6,
+          2241205.6,
+          2340322.6
+        ],
+        "b": [
+          2241428.6,
+          2340094.6,
+          2340326.8,
+          2340094.6,
+          2241205.4,
+          2340326.8
+        ]
+      },
+      "ceiling": {
+        "source": "seeds of A",
+        "top1": 1.0,
+        "top1_chance": 0.16666666666666666,
+        "regret": 0.0,
+        "regret_relative": 0.0
+      },
+      "top1_below_ceiling": false,
+      "regret_above_ceiling": false,
+      "predictor": null
+    },
+    "macro_f1": {
+      "tau_b": 1.0,
+      "top1": true,
+      "regret": 0.0,
+      "regret_relative": 0.0,
+      "seeds": 5,
+      "configurations": 6,
+      "ci": {
+        "tau_b": [
+          1.0,
+          1.0
+        ],
+        "regret": [
+          0.0,
+          0.0
+        ],
+        "regret_relative": [
+          0.0,
+          0.0
+        ]
+      },
+      "p_top1": 1.0,
+      "minimize": false,
+      "scores": {
+        "a": [
+          0.47303921073919797,
+          0.46246081912385656,
+          0.47303921073919797,
+          0.46246081912385656,
+          0.46246081912385656,
+          0.47303921073919797
+        ],
+        "b": [
+          0.47303921073919797,
+          0.46246081912385656,
+          0.47303921073919797,
+          0.46246081912385656,
+          0.46246081912385656,
+          0.47303921073919797
+        ]
+      },
+      "ceiling": {
+        "source": "seeds of A",
+        "top1": 0.6,
+        "top1_chance": 0.16666666666666666,
+        "regret": 0.029989951624207246,
+        "regret_relative": 0.05467670274146963
+      },
+      "top1_below_ceiling": false,
+      "regret_above_ceiling": false,
+      "predictor": null
+    },
+    "loss": {
+      "tau_b": 1.0,
+      "top1": true,
+      "regret": 0.0,
+      "regret_relative": 0.0,
+      "seeds": 5,
+      "configurations": 6,
+      "ci": {
+        "tau_b": [
+          1.0,
+          1.0
+        ],
+        "regret": [
+          0.0,
+          0.0
+        ],
+        "regret_relative": [
+          0.0,
+          0.0
+        ]
+      },
+      "p_top1": 1.0,
+      "minimize": true,
+      "scores": {
+        "a": [
+          0.6849391693601918,
+          0.5811140336548383,
+          0.6849391693601918,
+          0.5811140336548383,
+          0.5811140336548383,
+          0.6849391693601918
+        ],
+        "b": [
+          0.6849392020472146,
+          0.58111403114663,
+          0.6849392020472146,
+          0.58111403114663,
+          0.58111403114663,
+          0.6849392020472146
+        ]
+      },
+      "ceiling": {
+        "source": "seeds of A",
+        "top1": 1.0,
+        "top1_chance": 0.16666666666666666,
+        "regret": 0.0,
+        "regret_relative": 0.0
+      },
+      "top1_below_ceiling": false,
+      "regret_above_ceiling": false,
+      "predictor": null
+    }
+  },
+  "warnings": [],
+  "pairs": [
+    {
+      "design_id": "56ff74c2fb13c359ec274448b3d3e64403ff2d2d4a4b4475b77afe4ea7b6726e",
+      "seed": 0,
+      "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_cloud_npz,{'root': 'cloud-1', 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164118Z-5e4044a897dd",
+        "run_hash": "2f22940e762f373c9220dd45e75c5a3c893f6b4ba87bc0173df809af9c7a89b5",
+        "backend": "emulated",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "abe817dfb0d42c00a2d40c4e13f1d1cec5d8ece5506b075b50d129522109eb75"
+      },
+      "b": {
+        "run_id": "20261109T165320Z-498a623f1ef5",
+        "run_hash": "ab79498d9af349b065a67afc9b08c0e58a8c5bb50bfe519531add0bf6d5ca28f",
+        "backend": "sim",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "4dc91667ab169de94e6974a3e1b1dad8e89e949008d99521d0948f3e4dbb4a04",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": false,
+          "max_abs_diff": 1.341104507446289e-07
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2209819,
+          "b": 2209808,
+          "links_differing": [
+            [
+              "swell-10",
+              "cloud"
+            ],
+            [
+              "swell-13",
+              "cloud"
+            ],
+            [
+              "swell-14",
+              "cloud"
+            ],
+            [
+              "swell-15",
+              "cloud"
+            ],
+            [
+              "swell-16",
+              "cloud"
+            ],
+            [
+              "swell-17",
+              "cloud"
+            ],
+            [
+              "swell-20",
+              "cloud"
+            ],
+            [
+              "swell-21",
+              "cloud"
+            ],
+            [
+              "swell-22",
+              "cloud"
+            ],
+            [
+              "swell-23",
+              "cloud"
+            ],
+            [
+              "swell-25",
+              "cloud"
+            ],
+            [
+              "swell-3",
+              "cloud"
+            ],
+            [
+              "swell-4",
+              "cloud"
+            ],
+            [
+              "swell-6",
+              "cloud"
+            ],
+            [
+              "swell-7",
+              "cloud"
+            ],
+            [
+              "swell-8",
+              "cloud"
+            ],
+            [
+              "swell-9",
+              "cloud"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 31633,
+            "b": 31633
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "56ff74c2fb13c359ec274448b3d3e64403ff2d2d4a4b4475b77afe4ea7b6726e",
+      "seed": 1,
+      "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_cloud_npz,{'root': 'cloud-1', 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164348Z-37b0108fe68e",
+        "run_hash": "d30fcb0a17c2a373310b77b2c9e0fe23f4861bc1c3805acc4a0238aa9a1219d7",
+        "backend": "emulated",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "abe817dfb0d42c00a2d40c4e13f1d1cec5d8ece5506b075b50d129522109eb75"
+      },
+      "b": {
+        "run_id": "20261109T165335Z-fe57a7698d9e",
+        "run_hash": "9a522a86ffcf120abfafdfd8fb55e184996f676c85f630eeb3948ffef3bf8096",
+        "backend": "sim",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "4dc91667ab169de94e6974a3e1b1dad8e89e949008d99521d0948f3e4dbb4a04",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": false,
+          "bitwise": false,
+          "max_abs_diff": 7.003545761108398e-07
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2209796,
+          "b": 2209794,
+          "links_differing": [
+            [
+              "swell-10",
+              "cloud"
+            ],
+            [
+              "swell-13",
+              "cloud"
+            ],
+            [
+              "swell-14",
+              "cloud"
+            ],
+            [
+              "swell-15",
+              "cloud"
+            ],
+            [
+              "swell-16",
+              "cloud"
+            ],
+            [
+              "swell-17",
+              "cloud"
+            ],
+            [
+              "swell-20",
+              "cloud"
+            ],
+            [
+              "swell-22",
+              "cloud"
+            ],
+            [
+              "swell-23",
+              "cloud"
+            ],
+            [
+              "swell-24",
+              "cloud"
+            ],
+            [
+              "swell-25",
+              "cloud"
+            ],
+            [
+              "swell-3",
+              "cloud"
+            ],
+            [
+              "swell-4",
+              "cloud"
+            ],
+            [
+              "swell-5",
+              "cloud"
+            ],
+            [
+              "swell-6",
+              "cloud"
+            ],
+            [
+              "swell-7",
+              "cloud"
+            ],
+            [
+              "swell-8",
+              "cloud"
+            ],
+            [
+              "swell-9",
+              "cloud"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 31633,
+            "b": 31633
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "56ff74c2fb13c359ec274448b3d3e64403ff2d2d4a4b4475b77afe4ea7b6726e",
+      "seed": 2,
+      "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_cloud_npz,{'root': 'cloud-1', 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164618Z-dced98b1c5b6",
+        "run_hash": "b503b9c8c5c394f56fb459ef2edd0eee1edada77b3eae15b9e07d88c7c8c5576",
+        "backend": "emulated",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "abe817dfb0d42c00a2d40c4e13f1d1cec5d8ece5506b075b50d129522109eb75"
+      },
+      "b": {
+        "run_id": "20261109T165349Z-05f18346a349",
+        "run_hash": "8cd8d957d77a29f86e4f59b9f7a924100927b1ed027d03972ae48ac3f6bea599",
+        "backend": "sim",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "4dc91667ab169de94e6974a3e1b1dad8e89e949008d99521d0948f3e4dbb4a04",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": false,
+          "max_abs_diff": 2.682209014892578e-07
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2209782,
+          "b": 2209795,
+          "links_differing": [
+            [
+              "swell-10",
+              "cloud"
+            ],
+            [
+              "swell-11",
+              "cloud"
+            ],
+            [
+              "swell-13",
+              "cloud"
+            ],
+            [
+              "swell-14",
+              "cloud"
+            ],
+            [
+              "swell-15",
+              "cloud"
+            ],
+            [
+              "swell-16",
+              "cloud"
+            ],
+            [
+              "swell-17",
+              "cloud"
+            ],
+            [
+              "swell-21",
+              "cloud"
+            ],
+            [
+              "swell-22",
+              "cloud"
+            ],
+            [
+              "swell-23",
+              "cloud"
+            ],
+            [
+              "swell-24",
+              "cloud"
+            ],
+            [
+              "swell-25",
+              "cloud"
+            ],
+            [
+              "swell-3",
+              "cloud"
+            ],
+            [
+              "swell-4",
+              "cloud"
+            ],
+            [
+              "swell-5",
+              "cloud"
+            ],
+            [
+              "swell-6",
+              "cloud"
+            ],
+            [
+              "swell-7",
+              "cloud"
+            ],
+            [
+              "swell-8",
+              "cloud"
+            ],
+            [
+              "swell-9",
+              "cloud"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 31633,
+            "b": 31633
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "56ff74c2fb13c359ec274448b3d3e64403ff2d2d4a4b4475b77afe4ea7b6726e",
+      "seed": 3,
+      "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_cloud_npz,{'root': 'cloud-1', 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164851Z-3b3438441723",
+        "run_hash": "a013219e8109856e5f37e61ff3c7c01e3ff6f7d9f2bfa0ca190a49c87d0cecc0",
+        "backend": "emulated",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "abe817dfb0d42c00a2d40c4e13f1d1cec5d8ece5506b075b50d129522109eb75"
+      },
+      "b": {
+        "run_id": "20261109T165403Z-d36ebdbbaead",
+        "run_hash": "52ff123b2b547cea32c42c6d6e684579dd50b41f457c12a8a9a438a1c2e9ceae",
+        "backend": "sim",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "4dc91667ab169de94e6974a3e1b1dad8e89e949008d99521d0948f3e4dbb4a04",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": false,
+          "bitwise": false,
+          "max_abs_diff": 1.0654330253601074e-06
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2209755,
+          "b": 2209780,
+          "links_differing": [
+            [
+              "swell-10",
+              "cloud"
+            ],
+            [
+              "swell-11",
+              "cloud"
+            ],
+            [
+              "swell-13",
+              "cloud"
+            ],
+            [
+              "swell-14",
+              "cloud"
+            ],
+            [
+              "swell-15",
+              "cloud"
+            ],
+            [
+              "swell-16",
+              "cloud"
+            ],
+            [
+              "swell-17",
+              "cloud"
+            ],
+            [
+              "swell-20",
+              "cloud"
+            ],
+            [
+              "swell-21",
+              "cloud"
+            ],
+            [
+              "swell-22",
+              "cloud"
+            ],
+            [
+              "swell-23",
+              "cloud"
+            ],
+            [
+              "swell-24",
+              "cloud"
+            ],
+            [
+              "swell-25",
+              "cloud"
+            ],
+            [
+              "swell-3",
+              "cloud"
+            ],
+            [
+              "swell-4",
+              "cloud"
+            ],
+            [
+              "swell-5",
+              "cloud"
+            ],
+            [
+              "swell-6",
+              "cloud"
+            ],
+            [
+              "swell-7",
+              "cloud"
+            ],
+            [
+              "swell-9",
+              "cloud"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 31633,
+            "b": 31633
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "56ff74c2fb13c359ec274448b3d3e64403ff2d2d4a4b4475b77afe4ea7b6726e",
+      "seed": 4,
+      "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_cloud_npz,{'root': 'cloud-1', 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T165126Z-2e1d9c32ca39",
+        "run_hash": "302b453f8e11a1140377e690c49ac8dbe74a61f4bec2c08794a175b8f3710889",
+        "backend": "emulated",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "abe817dfb0d42c00a2d40c4e13f1d1cec5d8ece5506b075b50d129522109eb75"
+      },
+      "b": {
+        "run_id": "20261109T165418Z-17b10a1295c7",
+        "run_hash": "0c41fba4dfb915133e4d1242107d4ae11da6d114b927b3026ecb294276673341",
+        "backend": "sim",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "4dc91667ab169de94e6974a3e1b1dad8e89e949008d99521d0948f3e4dbb4a04",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": false,
+          "bitwise": false,
+          "max_abs_diff": 3.510713577270508e-05
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2209805,
+          "b": 2209801,
+          "links_differing": [
+            [
+              "swell-10",
+              "cloud"
+            ],
+            [
+              "swell-13",
+              "cloud"
+            ],
+            [
+              "swell-14",
+              "cloud"
+            ],
+            [
+              "swell-15",
+              "cloud"
+            ],
+            [
+              "swell-17",
+              "cloud"
+            ],
+            [
+              "swell-20",
+              "cloud"
+            ],
+            [
+              "swell-21",
+              "cloud"
+            ],
+            [
+              "swell-22",
+              "cloud"
+            ],
+            [
+              "swell-23",
+              "cloud"
+            ],
+            [
+              "swell-24",
+              "cloud"
+            ],
+            [
+              "swell-25",
+              "cloud"
+            ],
+            [
+              "swell-3",
+              "cloud"
+            ],
+            [
+              "swell-4",
+              "cloud"
+            ],
+            [
+              "swell-5",
+              "cloud"
+            ],
+            [
+              "swell-6",
+              "cloud"
+            ],
+            [
+              "swell-7",
+              "cloud"
+            ],
+            [
+              "swell-8",
+              "cloud"
+            ],
+            [
+              "swell-9",
+              "cloud"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 31633,
+            "b": 31633
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "63a14ce57bd7545a985ffeb762076e9910619d65e35e74b390bdca7c3a252fa4",
+      "seed": 0,
+      "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-a'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164021Z-bf2f046e8d30",
+        "run_hash": "43b1c4d030eafaf636188d7a4a92fbc73091724e6b40118fddd2121f8b7fdf7d",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "a638a5db82f4a28cbd4ad7110983a8b2c6fe873b5cee0c5a8c9a9868abcdeeaf"
+      },
+      "b": {
+        "run_id": "20261109T165314Z-61ffd2759407",
+        "run_hash": "dd9da31f0af3aebb42dd827a7907365403ff9b353b1aa221ba8d8e03c3e4d404",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "1342b43586322e162af3406d4e02b04f46bcb3b4056de71e46663bcab681d4df",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": false,
+          "max_abs_diff": 1.1920928955078125e-07
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307210,
+          "b": 2307218,
+          "links_differing": [
+            [
+              "swell-13",
+              "fog_1"
+            ],
+            [
+              "swell-14",
+              "fog_1"
+            ],
+            [
+              "swell-15",
+              "fog_1"
+            ],
+            [
+              "swell-17",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-24",
+              "fog_1"
+            ],
+            [
+              "swell-25",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-5",
+              "fog_1"
+            ],
+            [
+              "swell-6",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-8",
+              "fog_1"
+            ],
+            [
+              "swell-9",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 32882,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "63a14ce57bd7545a985ffeb762076e9910619d65e35e74b390bdca7c3a252fa4",
+      "seed": 1,
+      "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-a'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164254Z-042f3d641e9b",
+        "run_hash": "95efb55cec97f60a497f82cf628798cba6162f0ac4eeac502e290780a5daafec",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "a638a5db82f4a28cbd4ad7110983a8b2c6fe873b5cee0c5a8c9a9868abcdeeaf"
+      },
+      "b": {
+        "run_id": "20261109T165331Z-318ca8714dc2",
+        "run_hash": "df7ab619b9be462f6ad83c1be86f05a799ee0c6ca7f508ef1b8c0ae93d78a6c4",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "1342b43586322e162af3406d4e02b04f46bcb3b4056de71e46663bcab681d4df",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": false,
+          "bitwise": false,
+          "max_abs_diff": 3.3080577850341797e-06
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307214,
+          "b": 2307216,
+          "links_differing": [
+            [
+              "fog_1",
+              "cloud"
+            ],
+            [
+              "swell-10",
+              "fog_1"
+            ],
+            [
+              "swell-15",
+              "fog_1"
+            ],
+            [
+              "swell-17",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-25",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-4",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-9",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 32882,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "63a14ce57bd7545a985ffeb762076e9910619d65e35e74b390bdca7c3a252fa4",
+      "seed": 2,
+      "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-a'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164525Z-129a2bdc42f6",
+        "run_hash": "6604243be471cf0ce1ee315f598dc52ef1e5021397ebf3c3f4231caf1826b094",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "a638a5db82f4a28cbd4ad7110983a8b2c6fe873b5cee0c5a8c9a9868abcdeeaf"
+      },
+      "b": {
+        "run_id": "20261109T165345Z-81bd085a5a6c",
+        "run_hash": "f9ce7e4bfcc5b74726343675527144575d6f914d97d6ddefb6a84759ce27ebac",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "1342b43586322e162af3406d4e02b04f46bcb3b4056de71e46663bcab681d4df",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": false,
+          "bitwise": false,
+          "max_abs_diff": 1.449882984161377e-05
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307220,
+          "b": 2307214,
+          "links_differing": [
+            [
+              "fog_1",
+              "cloud"
+            ],
+            [
+              "swell-10",
+              "fog_1"
+            ],
+            [
+              "swell-11",
+              "fog_1"
+            ],
+            [
+              "swell-13",
+              "fog_1"
+            ],
+            [
+              "swell-15",
+              "fog_1"
+            ],
+            [
+              "swell-17",
+              "fog_1"
+            ],
+            [
+              "swell-21",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-24",
+              "fog_1"
+            ],
+            [
+              "swell-25",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-8",
+              "fog_1"
+            ],
+            [
+              "swell-9",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 32882,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "63a14ce57bd7545a985ffeb762076e9910619d65e35e74b390bdca7c3a252fa4",
+      "seed": 3,
+      "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-a'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164759Z-452e26a935e1",
+        "run_hash": "d3c4263464574c04856b5209829bc2d894e261448c51bd2f2aff16dc60f5bca1",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "a638a5db82f4a28cbd4ad7110983a8b2c6fe873b5cee0c5a8c9a9868abcdeeaf"
+      },
+      "b": {
+        "run_id": "20261109T165400Z-40b085600125",
+        "run_hash": "83f2c6189858965ba4b824416777cf62e44bc16fef207369e8432d38318d4de4",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "1342b43586322e162af3406d4e02b04f46bcb3b4056de71e46663bcab681d4df",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": false,
+          "max_abs_diff": 1.1920928955078125e-07
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307215,
+          "b": 2307212,
+          "links_differing": [
+            [
+              "fog_1",
+              "cloud"
+            ],
+            [
+              "swell-10",
+              "fog_1"
+            ],
+            [
+              "swell-13",
+              "fog_1"
+            ],
+            [
+              "swell-14",
+              "fog_1"
+            ],
+            [
+              "swell-16",
+              "fog_1"
+            ],
+            [
+              "swell-17",
+              "fog_1"
+            ],
+            [
+              "swell-20",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-24",
+              "fog_1"
+            ],
+            [
+              "swell-25",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-4",
+              "fog_1"
+            ],
+            [
+              "swell-6",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-8",
+              "fog_1"
+            ],
+            [
+              "swell-9",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 32882,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "63a14ce57bd7545a985ffeb762076e9910619d65e35e74b390bdca7c3a252fa4",
+      "seed": 4,
+      "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-a'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T165028Z-d43710de9b43",
+        "run_hash": "ae7faebe9a50945449cf2aa00b8ecb0ab1504574ad767f5d3d0c1030bd771ce3",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "a638a5db82f4a28cbd4ad7110983a8b2c6fe873b5cee0c5a8c9a9868abcdeeaf"
+      },
+      "b": {
+        "run_id": "20261109T165414Z-5eddc5d12c54",
+        "run_hash": "50c3c54c67f0275a3f2fdcdb1ab0f8689cf12337e3c63bd0e8ec15b79ff56932",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "1342b43586322e162af3406d4e02b04f46bcb3b4056de71e46663bcab681d4df",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": false,
+          "bitwise": false,
+          "max_abs_diff": 1.7285346984863281e-06
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307203,
+          "b": 2307203,
+          "links_differing": [
+            [
+              "fog_1",
+              "cloud"
+            ],
+            [
+              "swell-10",
+              "fog_1"
+            ],
+            [
+              "swell-14",
+              "fog_1"
+            ],
+            [
+              "swell-15",
+              "fog_1"
+            ],
+            [
+              "swell-16",
+              "fog_1"
+            ],
+            [
+              "swell-21",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-4",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-8",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 34844,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "76b3f6ca1a70647e6f1d65477a34a01acda6bbc2e4f445c78b535b6736b777b5",
+      "seed": 0,
+      "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-a'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164140Z-3a40d6ff3765",
+        "run_hash": "d269f92a25ab76176fd3d8d1bcebc140ab08649a8ecbdf7cecd4c0fc5919d936",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "ccefe624c6db9c6c52718a966ee07a3431491501d371602799845a6822ab1290"
+      },
+      "b": {
+        "run_id": "20261109T165320Z-d7b1c767e8f4",
+        "run_hash": "36f91cf5d483af99d539fc68d9d777c0ffb34dd586c34ac5f5e72c62aee134d5",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "082b07684bec0b373b2efbcaad21f0c63010edbaa4e48c1b9e270c2bcbf03b5e",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": false,
+          "max_abs_diff": 1.341104507446289e-07
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307469,
+          "b": 2307457,
+          "links_differing": [
+            [
+              "fog_1",
+              "cloud"
+            ],
+            [
+              "swell-10",
+              "fog_1"
+            ],
+            [
+              "swell-13",
+              "fog_1"
+            ],
+            [
+              "swell-14",
+              "fog_1"
+            ],
+            [
+              "swell-15",
+              "fog_1"
+            ],
+            [
+              "swell-16",
+              "fog_1"
+            ],
+            [
+              "swell-17",
+              "fog_1"
+            ],
+            [
+              "swell-20",
+              "fog_1"
+            ],
+            [
+              "swell-21",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-25",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-4",
+              "fog_1"
+            ],
+            [
+              "swell-6",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-8",
+              "fog_1"
+            ],
+            [
+              "swell-9",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 32882,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "76b3f6ca1a70647e6f1d65477a34a01acda6bbc2e4f445c78b535b6736b777b5",
+      "seed": 1,
+      "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-a'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164411Z-bf880b912701",
+        "run_hash": "9bd8e36df7c98fde16aba8cd02cc67d58fc34f10763b828a2844dd70324f2e73",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "ccefe624c6db9c6c52718a966ee07a3431491501d371602799845a6822ab1290"
+      },
+      "b": {
+        "run_id": "20261109T165335Z-664c332ef5b0",
+        "run_hash": "c0f396d16b133c678186b30084ba28dcadeec30cf5cd689ae75080420c450652",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "082b07684bec0b373b2efbcaad21f0c63010edbaa4e48c1b9e270c2bcbf03b5e",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": false,
+          "bitwise": false,
+          "max_abs_diff": 7.003545761108398e-07
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307446,
+          "b": 2307443,
+          "links_differing": [
+            [
+              "fog_1",
+              "cloud"
+            ],
+            [
+              "swell-10",
+              "fog_1"
+            ],
+            [
+              "swell-13",
+              "fog_1"
+            ],
+            [
+              "swell-14",
+              "fog_1"
+            ],
+            [
+              "swell-15",
+              "fog_1"
+            ],
+            [
+              "swell-16",
+              "fog_1"
+            ],
+            [
+              "swell-17",
+              "fog_1"
+            ],
+            [
+              "swell-20",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-24",
+              "fog_1"
+            ],
+            [
+              "swell-25",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-4",
+              "fog_1"
+            ],
+            [
+              "swell-5",
+              "fog_1"
+            ],
+            [
+              "swell-6",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-8",
+              "fog_1"
+            ],
+            [
+              "swell-9",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 32882,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "76b3f6ca1a70647e6f1d65477a34a01acda6bbc2e4f445c78b535b6736b777b5",
+      "seed": 2,
+      "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-a'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164639Z-0257107e8f3f",
+        "run_hash": "9275d4ae8c363d29c35ff373d80d825a2d14ecb026a4fc02387e57906aec7096",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "ccefe624c6db9c6c52718a966ee07a3431491501d371602799845a6822ab1290"
+      },
+      "b": {
+        "run_id": "20261109T165350Z-738cb3d0ab54",
+        "run_hash": "f0a3b58f1c98d8249d4f005efb71d055a279842bdff10ca25838573b039e738e",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "082b07684bec0b373b2efbcaad21f0c63010edbaa4e48c1b9e270c2bcbf03b5e",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": false,
+          "max_abs_diff": 2.682209014892578e-07
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307431,
+          "b": 2307445,
+          "links_differing": [
+            [
+              "fog_1",
+              "cloud"
+            ],
+            [
+              "swell-10",
+              "fog_1"
+            ],
+            [
+              "swell-11",
+              "fog_1"
+            ],
+            [
+              "swell-13",
+              "fog_1"
+            ],
+            [
+              "swell-14",
+              "fog_1"
+            ],
+            [
+              "swell-15",
+              "fog_1"
+            ],
+            [
+              "swell-16",
+              "fog_1"
+            ],
+            [
+              "swell-17",
+              "fog_1"
+            ],
+            [
+              "swell-21",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-24",
+              "fog_1"
+            ],
+            [
+              "swell-25",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-4",
+              "fog_1"
+            ],
+            [
+              "swell-5",
+              "fog_1"
+            ],
+            [
+              "swell-6",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-8",
+              "fog_1"
+            ],
+            [
+              "swell-9",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 41713,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "76b3f6ca1a70647e6f1d65477a34a01acda6bbc2e4f445c78b535b6736b777b5",
+      "seed": 3,
+      "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-a'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164913Z-fae7ba7c50ee",
+        "run_hash": "c17c4e91636fe129d9f90a46decdec22017ba72f93fbb44754878c18a78f2247",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "ccefe624c6db9c6c52718a966ee07a3431491501d371602799845a6822ab1290"
+      },
+      "b": {
+        "run_id": "20261109T165404Z-ccf7efb788e1",
+        "run_hash": "eb889a42b5a9782994afa28d400606ef65f7324842bbbd9ac61159df30f4098a",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "082b07684bec0b373b2efbcaad21f0c63010edbaa4e48c1b9e270c2bcbf03b5e",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": false,
+          "bitwise": false,
+          "max_abs_diff": 1.0654330253601074e-06
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307406,
+          "b": 2307429,
+          "links_differing": [
+            [
+              "fog_1",
+              "cloud"
+            ],
+            [
+              "swell-10",
+              "fog_1"
+            ],
+            [
+              "swell-11",
+              "fog_1"
+            ],
+            [
+              "swell-13",
+              "fog_1"
+            ],
+            [
+              "swell-14",
+              "fog_1"
+            ],
+            [
+              "swell-15",
+              "fog_1"
+            ],
+            [
+              "swell-16",
+              "fog_1"
+            ],
+            [
+              "swell-17",
+              "fog_1"
+            ],
+            [
+              "swell-20",
+              "fog_1"
+            ],
+            [
+              "swell-21",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-24",
+              "fog_1"
+            ],
+            [
+              "swell-25",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-4",
+              "fog_1"
+            ],
+            [
+              "swell-5",
+              "fog_1"
+            ],
+            [
+              "swell-6",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-9",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 32882,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "76b3f6ca1a70647e6f1d65477a34a01acda6bbc2e4f445c78b535b6736b777b5",
+      "seed": 4,
+      "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-a'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T165149Z-7a107230cb70",
+        "run_hash": "ccf2b5cb4abc2814395d114af3ff35aa51c507935b9ca255d2bc38356f5e1310",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "ccefe624c6db9c6c52718a966ee07a3431491501d371602799845a6822ab1290"
+      },
+      "b": {
+        "run_id": "20261109T165419Z-e2b16c782e51",
+        "run_hash": "9dae5815bd48de57f85db0c2a3dfca5dd1eac7d3d6e1b3432aedb83d2e993946",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "082b07684bec0b373b2efbcaad21f0c63010edbaa4e48c1b9e270c2bcbf03b5e",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": false,
+          "bitwise": false,
+          "max_abs_diff": 3.510713577270508e-05
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307451,
+          "b": 2307450,
+          "links_differing": [
+            [
+              "fog_1",
+              "cloud"
+            ],
+            [
+              "swell-10",
+              "fog_1"
+            ],
+            [
+              "swell-13",
+              "fog_1"
+            ],
+            [
+              "swell-14",
+              "fog_1"
+            ],
+            [
+              "swell-15",
+              "fog_1"
+            ],
+            [
+              "swell-17",
+              "fog_1"
+            ],
+            [
+              "swell-20",
+              "fog_1"
+            ],
+            [
+              "swell-21",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-24",
+              "fog_1"
+            ],
+            [
+              "swell-25",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-4",
+              "fog_1"
+            ],
+            [
+              "swell-5",
+              "fog_1"
+            ],
+            [
+              "swell-6",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-8",
+              "fog_1"
+            ],
+            [
+              "swell-9",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 32882,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "7d9354de76173648a1110c6d39467098d340708cda4f37485f2464455d5876eb",
+      "seed": 0,
+      "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-b'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164045Z-4ad66287d0ca",
+        "run_hash": "c161718754f0d9c85b6160114dc116753b910bf856e249a2a5ad65e1d1427392",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "fa64d2ac81aeb5a05711fab1d04c10cc8f40b5ceefd064b18126cfaaeb4b1921"
+      },
+      "b": {
+        "run_id": "20261109T165314Z-43754c03ef62",
+        "run_hash": "5254a86ae73348d374bb39faeb63b87eee04539eece077cd13bc50ad2b65eb79",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "923754b55522b6f89a3e24c22cb0240fc8702c80d96fd40197a28dec61fc5749",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": false,
+          "max_abs_diff": 1.1920928955078125e-07
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307210,
+          "b": 2307218,
+          "links_differing": [
+            [
+              "swell-13",
+              "fog_1"
+            ],
+            [
+              "swell-14",
+              "fog_1"
+            ],
+            [
+              "swell-15",
+              "fog_1"
+            ],
+            [
+              "swell-17",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-24",
+              "fog_1"
+            ],
+            [
+              "swell-25",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-5",
+              "fog_1"
+            ],
+            [
+              "swell-6",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-8",
+              "fog_1"
+            ],
+            [
+              "swell-9",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 38768,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "7d9354de76173648a1110c6d39467098d340708cda4f37485f2464455d5876eb",
+      "seed": 1,
+      "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-b'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164320Z-2a27289be91c",
+        "run_hash": "ab73f810d7650528845afb36664d97c7862d9973d6fba81e465b5f9014680a2f",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "fa64d2ac81aeb5a05711fab1d04c10cc8f40b5ceefd064b18126cfaaeb4b1921"
+      },
+      "b": {
+        "run_id": "20261109T165331Z-d14a58cef72c",
+        "run_hash": "9cd6cff7c3146b1132777a439f3079f61a3bca930826bf3fefac68088d1a4a20",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "923754b55522b6f89a3e24c22cb0240fc8702c80d96fd40197a28dec61fc5749",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": false,
+          "bitwise": false,
+          "max_abs_diff": 3.3080577850341797e-06
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307214,
+          "b": 2307216,
+          "links_differing": [
+            [
+              "fog_1",
+              "cloud"
+            ],
+            [
+              "swell-10",
+              "fog_1"
+            ],
+            [
+              "swell-15",
+              "fog_1"
+            ],
+            [
+              "swell-17",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-25",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-4",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-9",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 32882,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "7d9354de76173648a1110c6d39467098d340708cda4f37485f2464455d5876eb",
+      "seed": 2,
+      "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-b'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164550Z-ea4aaf93df49",
+        "run_hash": "2e29fa56d8b6c23a24b4d0c0f0273c52cb660fdde59986f01fcbda5d5d141b12",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "fa64d2ac81aeb5a05711fab1d04c10cc8f40b5ceefd064b18126cfaaeb4b1921"
+      },
+      "b": {
+        "run_id": "20261109T165345Z-7f3300653aa7",
+        "run_hash": "dcbd2c91f857fd8e1256cac1fcf208e022aec59d9a2dc3736bccde80c3645adf",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "923754b55522b6f89a3e24c22cb0240fc8702c80d96fd40197a28dec61fc5749",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": false,
+          "bitwise": false,
+          "max_abs_diff": 1.449882984161377e-05
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307220,
+          "b": 2307214,
+          "links_differing": [
+            [
+              "fog_1",
+              "cloud"
+            ],
+            [
+              "swell-10",
+              "fog_1"
+            ],
+            [
+              "swell-11",
+              "fog_1"
+            ],
+            [
+              "swell-13",
+              "fog_1"
+            ],
+            [
+              "swell-15",
+              "fog_1"
+            ],
+            [
+              "swell-17",
+              "fog_1"
+            ],
+            [
+              "swell-21",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-24",
+              "fog_1"
+            ],
+            [
+              "swell-25",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-8",
+              "fog_1"
+            ],
+            [
+              "swell-9",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 32882,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "7d9354de76173648a1110c6d39467098d340708cda4f37485f2464455d5876eb",
+      "seed": 3,
+      "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-b'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164823Z-16c9c12932f3",
+        "run_hash": "d4a8aa85daedbd46addc2be4b313568b85e488c54714a16fc6dac221b37c230f",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "fa64d2ac81aeb5a05711fab1d04c10cc8f40b5ceefd064b18126cfaaeb4b1921"
+      },
+      "b": {
+        "run_id": "20261109T165400Z-779f867a4b9f",
+        "run_hash": "bf63adb62e08e1dbffbf41af57a99cdc5a3757b03694cf2327ce84eff4189a2f",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "923754b55522b6f89a3e24c22cb0240fc8702c80d96fd40197a28dec61fc5749",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": false,
+          "max_abs_diff": 1.1920928955078125e-07
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307215,
+          "b": 2307212,
+          "links_differing": [
+            [
+              "fog_1",
+              "cloud"
+            ],
+            [
+              "swell-10",
+              "fog_1"
+            ],
+            [
+              "swell-13",
+              "fog_1"
+            ],
+            [
+              "swell-14",
+              "fog_1"
+            ],
+            [
+              "swell-16",
+              "fog_1"
+            ],
+            [
+              "swell-17",
+              "fog_1"
+            ],
+            [
+              "swell-20",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-24",
+              "fog_1"
+            ],
+            [
+              "swell-25",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-4",
+              "fog_1"
+            ],
+            [
+              "swell-6",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-8",
+              "fog_1"
+            ],
+            [
+              "swell-9",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 32882,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "7d9354de76173648a1110c6d39467098d340708cda4f37485f2464455d5876eb",
+      "seed": 4,
+      "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-b'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T165058Z-4954d674d4a0",
+        "run_hash": "e8f73a487ed0a8e35749059886ccb13b05a750f4ff6f3b4d50041318d3d3c83e",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "fa64d2ac81aeb5a05711fab1d04c10cc8f40b5ceefd064b18126cfaaeb4b1921"
+      },
+      "b": {
+        "run_id": "20261109T165414Z-739ccde2d744",
+        "run_hash": "f1ffd53872a9c171d6be52b5f3957d6e630f7a0e67c658dd19d01b3e0afc6aaa",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "923754b55522b6f89a3e24c22cb0240fc8702c80d96fd40197a28dec61fc5749",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": false,
+          "bitwise": false,
+          "max_abs_diff": 1.7285346984863281e-06
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307203,
+          "b": 2307203,
+          "links_differing": [
+            [
+              "fog_1",
+              "cloud"
+            ],
+            [
+              "swell-10",
+              "fog_1"
+            ],
+            [
+              "swell-14",
+              "fog_1"
+            ],
+            [
+              "swell-15",
+              "fog_1"
+            ],
+            [
+              "swell-16",
+              "fog_1"
+            ],
+            [
+              "swell-21",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-4",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-8",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 32882,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "8831739c186d192ea720de8be91f32b28abd9d0378a4a9859ad70ad9c9aa4223",
+      "seed": 0,
+      "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_cloud_npz,{'root': 'cloud-1', 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164000Z-8e1ba34f7dd8",
+        "run_hash": "24093c1154ecc9d9ea6d8113f911c5421ee5b1bf8f41612b38bb43de764cd6a5",
+        "backend": "emulated",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "073cc75fa1ab4f7e7b9fb97a982ee1211353d9fcb0e8b4d0b185141e8d463510"
+      },
+      "b": {
+        "run_id": "20261109T165314Z-6147a7457cd1",
+        "run_hash": "852c27f7562b23c4bdcd6b386fc9a1bd385a2018637d4b881c3b35977562d9dd",
+        "backend": "sim",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "38c357a1686421d7daa0f3950cfca598300fee77e6b14abd676c4d1d5b7d9383",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": false,
+          "max_abs_diff": 1.1920928955078125e-07
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2209570,
+          "b": 2209578,
+          "links_differing": [
+            [
+              "swell-13",
+              "cloud"
+            ],
+            [
+              "swell-14",
+              "cloud"
+            ],
+            [
+              "swell-15",
+              "cloud"
+            ],
+            [
+              "swell-17",
+              "cloud"
+            ],
+            [
+              "swell-22",
+              "cloud"
+            ],
+            [
+              "swell-23",
+              "cloud"
+            ],
+            [
+              "swell-24",
+              "cloud"
+            ],
+            [
+              "swell-25",
+              "cloud"
+            ],
+            [
+              "swell-3",
+              "cloud"
+            ],
+            [
+              "swell-5",
+              "cloud"
+            ],
+            [
+              "swell-6",
+              "cloud"
+            ],
+            [
+              "swell-7",
+              "cloud"
+            ],
+            [
+              "swell-8",
+              "cloud"
+            ],
+            [
+              "swell-9",
+              "cloud"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 31633,
+            "b": 31633
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "8831739c186d192ea720de8be91f32b28abd9d0378a4a9859ad70ad9c9aa4223",
+      "seed": 1,
+      "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_cloud_npz,{'root': 'cloud-1', 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164233Z-1daa8cee2b61",
+        "run_hash": "47587b6683dab6d968f995a5607b200b21964f6b0db3302d035243cfc3a5dd9e",
+        "backend": "emulated",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "073cc75fa1ab4f7e7b9fb97a982ee1211353d9fcb0e8b4d0b185141e8d463510"
+      },
+      "b": {
+        "run_id": "20261109T165331Z-1b0cfd0baf2e",
+        "run_hash": "8e491a9589dc878002a146de2b00e1f58a8d7b028378bd7e53022c8e35b99e2b",
+        "backend": "sim",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "38c357a1686421d7daa0f3950cfca598300fee77e6b14abd676c4d1d5b7d9383",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": false,
+          "bitwise": false,
+          "max_abs_diff": 3.3080577850341797e-06
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2209576,
+          "b": 2209576,
+          "links_differing": [
+            [
+              "swell-10",
+              "cloud"
+            ],
+            [
+              "swell-15",
+              "cloud"
+            ],
+            [
+              "swell-17",
+              "cloud"
+            ],
+            [
+              "swell-22",
+              "cloud"
+            ],
+            [
+              "swell-23",
+              "cloud"
+            ],
+            [
+              "swell-25",
+              "cloud"
+            ],
+            [
+              "swell-3",
+              "cloud"
+            ],
+            [
+              "swell-4",
+              "cloud"
+            ],
+            [
+              "swell-7",
+              "cloud"
+            ],
+            [
+              "swell-9",
+              "cloud"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 31633,
+            "b": 31633
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "8831739c186d192ea720de8be91f32b28abd9d0378a4a9859ad70ad9c9aa4223",
+      "seed": 2,
+      "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_cloud_npz,{'root': 'cloud-1', 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164504Z-3e7b17799760",
+        "run_hash": "f0d60e86d5837bf3562e37950d80ab72fa79a5eaf0b68d960905789729eeb5f6",
+        "backend": "emulated",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "073cc75fa1ab4f7e7b9fb97a982ee1211353d9fcb0e8b4d0b185141e8d463510"
+      },
+      "b": {
+        "run_id": "20261109T165345Z-4b4009f802ac",
+        "run_hash": "a4e0216251de9d480150ae1825f213a65aae8b5ff5ab5c4cc62a2d0642373561",
+        "backend": "sim",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "38c357a1686421d7daa0f3950cfca598300fee77e6b14abd676c4d1d5b7d9383",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": false,
+          "bitwise": false,
+          "max_abs_diff": 1.449882984161377e-05
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2209579,
+          "b": 2209574,
+          "links_differing": [
+            [
+              "swell-10",
+              "cloud"
+            ],
+            [
+              "swell-11",
+              "cloud"
+            ],
+            [
+              "swell-13",
+              "cloud"
+            ],
+            [
+              "swell-15",
+              "cloud"
+            ],
+            [
+              "swell-17",
+              "cloud"
+            ],
+            [
+              "swell-21",
+              "cloud"
+            ],
+            [
+              "swell-22",
+              "cloud"
+            ],
+            [
+              "swell-23",
+              "cloud"
+            ],
+            [
+              "swell-24",
+              "cloud"
+            ],
+            [
+              "swell-25",
+              "cloud"
+            ],
+            [
+              "swell-3",
+              "cloud"
+            ],
+            [
+              "swell-7",
+              "cloud"
+            ],
+            [
+              "swell-8",
+              "cloud"
+            ],
+            [
+              "swell-9",
+              "cloud"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 31633,
+            "b": 31633
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "8831739c186d192ea720de8be91f32b28abd9d0378a4a9859ad70ad9c9aa4223",
+      "seed": 3,
+      "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_cloud_npz,{'root': 'cloud-1', 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164737Z-d77bd091b2c6",
+        "run_hash": "1e331cd11604140cf9cb6c9c43fb31742f7bbfbd9746c37c06b4ee0635fa8fc4",
+        "backend": "emulated",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "073cc75fa1ab4f7e7b9fb97a982ee1211353d9fcb0e8b4d0b185141e8d463510"
+      },
+      "b": {
+        "run_id": "20261109T165359Z-aa42bf68ed9e",
+        "run_hash": "2c6839e9426b4da5bc5d9852cd4c80fe4ef5d5545fd7fafbe90944829396304d",
+        "backend": "sim",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "38c357a1686421d7daa0f3950cfca598300fee77e6b14abd676c4d1d5b7d9383",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": false,
+          "max_abs_diff": 1.1920928955078125e-07
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2209574,
+          "b": 2209572,
+          "links_differing": [
+            [
+              "swell-10",
+              "cloud"
+            ],
+            [
+              "swell-13",
+              "cloud"
+            ],
+            [
+              "swell-14",
+              "cloud"
+            ],
+            [
+              "swell-16",
+              "cloud"
+            ],
+            [
+              "swell-17",
+              "cloud"
+            ],
+            [
+              "swell-20",
+              "cloud"
+            ],
+            [
+              "swell-22",
+              "cloud"
+            ],
+            [
+              "swell-23",
+              "cloud"
+            ],
+            [
+              "swell-24",
+              "cloud"
+            ],
+            [
+              "swell-25",
+              "cloud"
+            ],
+            [
+              "swell-3",
+              "cloud"
+            ],
+            [
+              "swell-4",
+              "cloud"
+            ],
+            [
+              "swell-6",
+              "cloud"
+            ],
+            [
+              "swell-7",
+              "cloud"
+            ],
+            [
+              "swell-8",
+              "cloud"
+            ],
+            [
+              "swell-9",
+              "cloud"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 31633,
+            "b": 31633
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "8831739c186d192ea720de8be91f32b28abd9d0378a4a9859ad70ad9c9aa4223",
+      "seed": 4,
+      "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_cloud_npz,{'root': 'cloud-1', 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T165006Z-13d67603f5dd",
+        "run_hash": "e064920b5a51795e15de1857e9b242248b43d4c4c6ff431a89b9cb3405dba015",
+        "backend": "emulated",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "073cc75fa1ab4f7e7b9fb97a982ee1211353d9fcb0e8b4d0b185141e8d463510"
+      },
+      "b": {
+        "run_id": "20261109T165413Z-367be6ddedfe",
+        "run_hash": "cbf987f3848acc1484ec45fc2fe4eaf6f43ddf6a0253eacaa5f19ef97ea5991a",
+        "backend": "sim",
+        "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "38c357a1686421d7daa0f3950cfca598300fee77e6b14abd676c4d1d5b7d9383",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": false,
+          "bitwise": false,
+          "max_abs_diff": 1.7285346984863281e-06
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2209564,
+          "b": 2209562,
+          "links_differing": [
+            [
+              "swell-10",
+              "cloud"
+            ],
+            [
+              "swell-14",
+              "cloud"
+            ],
+            [
+              "swell-15",
+              "cloud"
+            ],
+            [
+              "swell-16",
+              "cloud"
+            ],
+            [
+              "swell-21",
+              "cloud"
+            ],
+            [
+              "swell-22",
+              "cloud"
+            ],
+            [
+              "swell-23",
+              "cloud"
+            ],
+            [
+              "swell-3",
+              "cloud"
+            ],
+            [
+              "swell-4",
+              "cloud"
+            ],
+            [
+              "swell-7",
+              "cloud"
+            ],
+            [
+              "swell-8",
+              "cloud"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 31633,
+            "b": 31633
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "b1c5da984520aa04f09bafef6a58b3089965cc44ddfb1ef93c02a8db7f856c70",
+      "seed": 0,
+      "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-b'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164205Z-47dfae5b7840",
+        "run_hash": "63f25e6b6da92630eadf1a83571390b91644c8a4a44670c5f89cffca09dd202d",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "bbc995bcb08d94ee9e62f38861c217a79936c81b9be98a85803a608f5a295fd7"
+      },
+      "b": {
+        "run_id": "20261109T165320Z-b2dbc4ff8bd6",
+        "run_hash": "d5b617f88acb2b2a341a4f84cd4cff266b53f2b066b7d37ad86076245a278fd5",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "e1317beb10d3ecbcb97f29a4d226bfb4c44174ce79dd956eacdc8c76a488d082",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": false,
+          "max_abs_diff": 1.341104507446289e-07
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307469,
+          "b": 2307457,
+          "links_differing": [
+            [
+              "fog_1",
+              "cloud"
+            ],
+            [
+              "swell-10",
+              "fog_1"
+            ],
+            [
+              "swell-13",
+              "fog_1"
+            ],
+            [
+              "swell-14",
+              "fog_1"
+            ],
+            [
+              "swell-15",
+              "fog_1"
+            ],
+            [
+              "swell-16",
+              "fog_1"
+            ],
+            [
+              "swell-17",
+              "fog_1"
+            ],
+            [
+              "swell-20",
+              "fog_1"
+            ],
+            [
+              "swell-21",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-25",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-4",
+              "fog_1"
+            ],
+            [
+              "swell-6",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-8",
+              "fog_1"
+            ],
+            [
+              "swell-9",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 32882,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "b1c5da984520aa04f09bafef6a58b3089965cc44ddfb1ef93c02a8db7f856c70",
+      "seed": 1,
+      "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-b'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164436Z-67d202a68f37",
+        "run_hash": "54f77a3cb808d67cbedca64602d2f2e6684293028c197e995c405c7a4899c3b0",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "bbc995bcb08d94ee9e62f38861c217a79936c81b9be98a85803a608f5a295fd7"
+      },
+      "b": {
+        "run_id": "20261109T165335Z-3e7b4cae812a",
+        "run_hash": "25cdb7dc283809f16df3813b4d7fa3d474bc5c7337437f4a9e007dbebfbf4c17",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "e1317beb10d3ecbcb97f29a4d226bfb4c44174ce79dd956eacdc8c76a488d082",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": false,
+          "bitwise": false,
+          "max_abs_diff": 7.003545761108398e-07
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307446,
+          "b": 2307443,
+          "links_differing": [
+            [
+              "fog_1",
+              "cloud"
+            ],
+            [
+              "swell-10",
+              "fog_1"
+            ],
+            [
+              "swell-13",
+              "fog_1"
+            ],
+            [
+              "swell-14",
+              "fog_1"
+            ],
+            [
+              "swell-15",
+              "fog_1"
+            ],
+            [
+              "swell-16",
+              "fog_1"
+            ],
+            [
+              "swell-17",
+              "fog_1"
+            ],
+            [
+              "swell-20",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-24",
+              "fog_1"
+            ],
+            [
+              "swell-25",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-4",
+              "fog_1"
+            ],
+            [
+              "swell-5",
+              "fog_1"
+            ],
+            [
+              "swell-6",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-8",
+              "fog_1"
+            ],
+            [
+              "swell-9",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 32882,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "b1c5da984520aa04f09bafef6a58b3089965cc44ddfb1ef93c02a8db7f856c70",
+      "seed": 2,
+      "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-b'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164709Z-0545a656b05e",
+        "run_hash": "e9fec25af0a7e5c5561596ed034c77875660ce0cdc58b5eb4cc92601c3d434b8",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "bbc995bcb08d94ee9e62f38861c217a79936c81b9be98a85803a608f5a295fd7"
+      },
+      "b": {
+        "run_id": "20261109T165350Z-925a60af7fba",
+        "run_hash": "501735d937898fe92295d3f39974ecdf152452027e2a061174c45d6ef3898d9e",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "e1317beb10d3ecbcb97f29a4d226bfb4c44174ce79dd956eacdc8c76a488d082",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": false,
+          "max_abs_diff": 2.682209014892578e-07
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307431,
+          "b": 2307445,
+          "links_differing": [
+            [
+              "fog_1",
+              "cloud"
+            ],
+            [
+              "swell-10",
+              "fog_1"
+            ],
+            [
+              "swell-11",
+              "fog_1"
+            ],
+            [
+              "swell-13",
+              "fog_1"
+            ],
+            [
+              "swell-14",
+              "fog_1"
+            ],
+            [
+              "swell-15",
+              "fog_1"
+            ],
+            [
+              "swell-16",
+              "fog_1"
+            ],
+            [
+              "swell-17",
+              "fog_1"
+            ],
+            [
+              "swell-21",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-24",
+              "fog_1"
+            ],
+            [
+              "swell-25",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-4",
+              "fog_1"
+            ],
+            [
+              "swell-5",
+              "fog_1"
+            ],
+            [
+              "swell-6",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-8",
+              "fog_1"
+            ],
+            [
+              "swell-9",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 32882,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "b1c5da984520aa04f09bafef6a58b3089965cc44ddfb1ef93c02a8db7f856c70",
+      "seed": 3,
+      "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-b'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T164938Z-782cf44ad2e9",
+        "run_hash": "136f01628222ecaee118d72863378188d5c98070f46f3ad37663e09976f224d1",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "bbc995bcb08d94ee9e62f38861c217a79936c81b9be98a85803a608f5a295fd7"
+      },
+      "b": {
+        "run_id": "20261109T165404Z-b16db9d36c70",
+        "run_hash": "ee657b6fc0a17999d1d36da48b7b87b451bf1925beeef069a5aa88e03cca33fe",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "e1317beb10d3ecbcb97f29a4d226bfb4c44174ce79dd956eacdc8c76a488d082",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": false,
+          "bitwise": false,
+          "max_abs_diff": 1.0654330253601074e-06
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307406,
+          "b": 2307429,
+          "links_differing": [
+            [
+              "fog_1",
+              "cloud"
+            ],
+            [
+              "swell-10",
+              "fog_1"
+            ],
+            [
+              "swell-11",
+              "fog_1"
+            ],
+            [
+              "swell-13",
+              "fog_1"
+            ],
+            [
+              "swell-14",
+              "fog_1"
+            ],
+            [
+              "swell-15",
+              "fog_1"
+            ],
+            [
+              "swell-16",
+              "fog_1"
+            ],
+            [
+              "swell-17",
+              "fog_1"
+            ],
+            [
+              "swell-20",
+              "fog_1"
+            ],
+            [
+              "swell-21",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-24",
+              "fog_1"
+            ],
+            [
+              "swell-25",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-4",
+              "fog_1"
+            ],
+            [
+              "swell-5",
+              "fog_1"
+            ],
+            [
+              "swell-6",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-9",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 32882,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "b1c5da984520aa04f09bafef6a58b3089965cc44ddfb1ef93c02a8db7f856c70",
+      "seed": 4,
+      "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_one_fog_npz,{'root': 'cloud-1', 'aggregators': {'fog_1': 'fog-b'}, 'edges': {'name': 'colocated', 'per_host': 4}}",
+      "a": {
+        "run_id": "20261109T165214Z-c9a4b71030b7",
+        "run_hash": "264f854c0e03b0f81759065dd08975d723ae41238970440a7312954a397bd84a",
+        "backend": "emulated",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "bbc995bcb08d94ee9e62f38861c217a79936c81b9be98a85803a608f5a295fd7"
+      },
+      "b": {
+        "run_id": "20261109T165419Z-a96e1c777d97",
+        "run_hash": "95a409fe2db80d61f6bc2bf875f0a32942790dcc2693f4d602b5d2c677b47c23",
+        "backend": "sim",
+        "topology_id": "296d4fe28b43e41de00bcb98e5dfbe5e846c0f6258dfcb13c54fce61a8e6e8a4",
+        "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+        "config_id": "e1317beb10d3ecbcb97f29a4d226bfb4c44174ce79dd956eacdc8c76a488d082",
+        "calibrations": [
+          "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+        ]
+      },
+      "functional": {
+        "model": {
+          "match": false,
+          "bitwise": false,
+          "max_abs_diff": 3.510713577270508e-05
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 2307451,
+          "b": 2307450,
+          "links_differing": [
+            [
+              "fog_1",
+              "cloud"
+            ],
+            [
+              "swell-10",
+              "fog_1"
+            ],
+            [
+              "swell-13",
+              "fog_1"
+            ],
+            [
+              "swell-14",
+              "fog_1"
+            ],
+            [
+              "swell-15",
+              "fog_1"
+            ],
+            [
+              "swell-17",
+              "fog_1"
+            ],
+            [
+              "swell-20",
+              "fog_1"
+            ],
+            [
+              "swell-21",
+              "fog_1"
+            ],
+            [
+              "swell-22",
+              "fog_1"
+            ],
+            [
+              "swell-23",
+              "fog_1"
+            ],
+            [
+              "swell-24",
+              "fog_1"
+            ],
+            [
+              "swell-25",
+              "fog_1"
+            ],
+            [
+              "swell-3",
+              "fog_1"
+            ],
+            [
+              "swell-4",
+              "fog_1"
+            ],
+            [
+              "swell-5",
+              "fog_1"
+            ],
+            [
+              "swell-6",
+              "fog_1"
+            ],
+            [
+              "swell-7",
+              "fog_1"
+            ],
+            [
+              "swell-8",
+              "fog_1"
+            ],
+            [
+              "swell-9",
+              "fog_1"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 32882,
+            "b": 32882
+          }
+        },
+        "complete": false
+      }
+    }
+  ]
+}
