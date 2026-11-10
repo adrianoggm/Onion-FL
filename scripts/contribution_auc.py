@@ -85,6 +85,20 @@ def read_run(path: Path) -> dict | None:
         out[f"auc_{label}"] = wins / pairs if pairs else float("nan")
         out[f"honest_{label}"] = float(np.mean(means[False]))
         out[f"noisy_{label}"] = float(np.mean(means[True]))
+        # Added after the first analysis: each edge's mean over the rounds, the
+        # pairs again within a fog.
+        per_edge: dict[tuple[str, str], list[float]] = defaultdict(list)
+        for (fog, _, child), values in by_key.items():
+            per_edge[(fog, child)].append(float(np.mean(values)))
+        wins = pairs = 0.0
+        for fog in sorted({f for f, _ in per_edge}):
+            edges = {c: np.mean(v) for (f, c), v in per_edge.items() if f == fog}
+            bad = [s for c, s in edges.items() if c in noisy]
+            good = [s for c, s in edges.items() if c not in noisy]
+            if bad and good:
+                w, p = auc(good, bad)
+                wins, pairs = wins + w, pairs + p
+        out[f"edge_auc_{label}"] = wins / pairs if pairs else float("nan")
     return out
 
 
@@ -120,7 +134,7 @@ def main() -> None:
     for scenario in sorted({r["scenario"] for r in rows}):
         group = [r for r in rows if r["scenario"] == scenario]
         for key in sorted({k for r in group for k in r}):
-            if key.startswith(("auc_", "honest_", "noisy_", "macro_f1")):
+            if key.startswith(("auc_", "edge_auc_", "honest_", "noisy_", "macro_f1")):
                 mean, half = interval([r[key] for r in group])
                 summary.append(
                     {
