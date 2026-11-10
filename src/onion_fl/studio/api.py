@@ -9,6 +9,7 @@ against ``^[A-Za-z0-9_.-]+$`` so no request leaves its folder.
 
 import json
 import math
+import os
 import re
 import subprocess
 import sys
@@ -17,10 +18,21 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from fastapi import Body, FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, Header, HTTPException, Query
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from onion_fl.continual.control import (
+    ENV,
+    OperatorError,
+    append_order,
+    authenticate,
+    load_operators,
+    parse_order,
+    read_inbox,
+    read_state,
+    sign,
+)
 from onion_fl.core.topology import TopologyError, load_topology, parse_topology
 from onion_fl.data.contract import DataError
 from onion_fl.experiment.config import (
@@ -34,6 +46,7 @@ from onion_fl.experiment.config import (
 from onion_fl.experiment.sweep import scenarios
 from onion_fl.observability.analysis import RunRecord, Runs, load_runs
 from onion_fl.observability.events import read_events
+from onion_fl.studio.continuum import continuum_view
 from onion_fl.studio.previews import link_preview, placement_preview, sharing_preview
 
 SAFE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$")
@@ -106,6 +119,13 @@ AXES: list[tuple[str, str, str, str | None]] = [
         None,
     ),
     (
+        "unlabelled",
+        "Datos sin etiquetar",
+        "Cómo aprende cada edge de un stream de las filas cuya etiqueta aún no "
+        "ha llegado: pseudoetiquetas o consistencia.",
+        None,
+    ),
+    (
         "trigger",
         "Disparador",
         "Cuándo abre ronda el coordinador de una federación continua, y cuándo "
@@ -161,6 +181,18 @@ AXES: list[tuple[str, str, str, str | None]] = [
         "assignment",
         "Asignación",
         "En qué host de la infraestructura física se ejecuta cada edge.",
+        None,
+    ),
+    (
+        "backend",
+        "Backend",
+        "Dónde y con qué reloj se ejecuta cada escenario: simulación o local.",
+        None,
+    ),
+    (
+        "failover",
+        "Reasignación",
+        "Adónde va un edge cuando cae el host de su agregador.",
         None,
     ),
     (
@@ -241,8 +273,18 @@ def _safe(name: str) -> str:
     return name
 
 
-def create_app(root: str | Path = ".") -> FastAPI:
+def create_app(root: str | Path = ".", operators: str | Path | None = None) -> FastAPI:
+    """The Studio over ``root``. ``operators`` (or the file ``ONIONFL_OPERATORS``
+    names) holds who may give runs orders, each with its token; without it no
+    order is taken (``continual.control``)."""
     root = Path(root).resolve()
+    keys = load_operators(operators)
+    # The runs it launches check the same operators' signatures.
+    child_env = (
+        None
+        if operators is None
+        else os.environ | {ENV: str(Path(operators).resolve())}
+    )
     folders = {
         name: root / name for name in ("topologies", "experiments", "runs", "datasets")
     }
@@ -433,7 +475,14 @@ def create_app(root: str | Path = ".") -> FastAPI:
         ]
         if body.get("scenario"):
             args += ["--scenario", str(body["scenario"])]
-        process = subprocess.Popen(args, cwd=str(root))
+        if body.get("paused"):
+            if mode != "sim" or not keys:
+                raise HTTPException(
+                    400, "only a simulation with operators can start paused"
+                )
+            args.append("--paused")
+        extra = {} if child_env is None else {"env": child_env}
+        process = subprocess.Popen(args, cwd=str(root), **extra)
         return _json({"pid": process.pid})
 
     # --- runs -------------------------------------------------------------------------
@@ -453,7 +502,7 @@ def create_app(root: str | Path = ".") -> FastAPI:
         try:
             return list(
                 resolve_topology(
-                    rooted(parse_experiment(record.meta["config"]), root)
+                    rooted(parse_experiment(record.meta["config"], signed=True), root)
                 ).levels
             )
         except (ConfigError, TopologyError, KeyError, ValueError):
@@ -577,6 +626,64 @@ def create_app(root: str | Path = ".") -> FastAPI:
         )
         split = table.attrs.get("by", keys)  # what the series were split by
         return _json([row | {"_by": split} for row in table.to_dict(orient="records")])
+
+    # --- versions and operator orders (continuum C7, #203) ----------------------------
+
+    @app.get("/api/runs/{run_id}/versions")
+    def run_versions(run_id: str) -> JSONResponse:
+        record = run_record(run_id)
+        events = record.path / "events.jsonl"
+        view = continuum_view(read_events(events) if events.is_file() else [])
+        promotion = (record.meta.get("config") or {}).get("promotion")
+        return _json(view | {"promotion": promotion})
+
+    def operator_of(authorization: str | None) -> str:
+        """The operator a request's bearer token belongs to; it fails closed."""
+        if not keys:
+            raise HTTPException(
+                403, f"no operators: serve with --operators or set {ENV}"
+            )
+        scheme, _, token = (authorization or "").partition(" ")
+        operator = authenticate(keys, token) if scheme.lower() == "bearer" else None
+        if operator is None:
+            raise HTTPException(
+                401,
+                "an operator's token is needed",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return operator
+
+    @app.get("/api/runs/{run_id}/control")
+    def run_control(run_id: str) -> JSONResponse:
+        record = run_record(run_id)
+        return _json(
+            {
+                "operators": bool(keys),
+                "state": read_state(record.path),
+                "orders": read_inbox(record.path),
+            }
+        )
+
+    @app.post("/api/runs/{run_id}/control")
+    def order_run(
+        run_id: str,
+        body: dict = Body(...),
+        authorization: str | None = Header(None),
+    ) -> JSONResponse:
+        operator = operator_of(authorization)  # before anything about the run
+        record = run_record(run_id)
+        state = read_state(record.path) or {}
+        if record.meta.get("status") != "running" or not state.get("listening"):
+            raise HTTPException(
+                409, f"run {run_id} is not a live simulation that takes orders"
+            )
+        try:
+            order = parse_order(body)
+        except OperatorError as exc:
+            return _errors(str(exc))
+        signed = sign(order, operator=operator, token=keys[operator], audience=run_id)
+        append_order(record.path, operator, signed)
+        return _json({"operator": operator, "order": order})
 
     # --- previews ---------------------------------------------------------------------
 

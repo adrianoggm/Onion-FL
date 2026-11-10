@@ -7,10 +7,13 @@ from __future__ import annotations
     onion_fl data prepare|inspect <dataset> [--option key=value]...
     onion_fl topology show <file> [--graph | --mermaid]
     onion_fl plan <experiment.yaml>
-    onion_fl run <experiment.yaml> [--scenario NAME] [--mode sim|real] [--workers N]
+    onion_fl run <experiment.yaml> [--scenario NAME] [--backend sim|local]
+                 [--mode sim|real] [--workers N]
     onion_fl node --id <node> --run <run_id> --config <experiment.yaml>
     onion_fl ceiling <experiment.yaml> [--replicas R] [--metric NAME] [--series KEY]
                      [--resample] [--paired] [--workers N]
+    onion_fl fidelity <runs A> <runs B> [--metric NAME]... [--target METRIC=VALUE]
+                      [--ceiling FILE] [--csv FILE] [--html FILE]
     onion_fl report <experiment.yaml | runs_dir>... [--out FILE] [--metric NAME]... [--by TAG]...
     onion_fl baseline <experiment.yaml> [--models lr rf xgboost] [--cv K]
     onion_fl schema [--out FILE]
@@ -24,6 +27,7 @@ exit code 2.
 import argparse
 import json
 import sys
+import warnings
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -154,7 +158,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         config = parse_experiment(
             config.dump() | {"runtime": config.dump()["runtime"] | {"mode": args.mode}}
         )
-    for path in run_experiment(config, workers=args.workers, only=args.scenario):
+    if args.backend:
+        config = parse_experiment(config.dump() | {"backend": args.backend})
+    for path in run_experiment(
+        config, workers=args.workers, only=args.scenario, paused=args.paused
+    ):
         print(path)
     return 0
 
@@ -184,6 +192,41 @@ def cmd_ceiling(args: argparse.Namespace) -> int:
             workers=args.workers,
         )
     )
+    return 0
+
+
+def _target(text: str | None) -> tuple[str, float] | None:
+    if text is None:
+        return None
+    metric, sep, value = text.partition("=")
+    if not sep:
+        raise ValueError(f"--target {text!r}: use metric=value, as accuracy=0.8")
+    return metric, float(value)
+
+
+def cmd_fidelity(args: argparse.Namespace) -> int:
+    from onion_fl.experiment.fidelity import fidelity, write_csv, write_html
+
+    noise = None
+    if args.ceiling:
+        noise = json.loads(Path(args.ceiling).read_text(encoding="utf-8"))
+    result = fidelity(
+        args.a,
+        args.b,
+        metrics=args.metric or ["accuracy", "time"],
+        series=args.series,
+        target=_target(args.target),
+        experiment=args.experiment,
+        noise_ceiling=noise,
+        minimize=args.minimize or [],
+        resamples=args.bootstrap,
+        seed=args.seed,
+    )
+    if args.csv:
+        write_csv(result, args.csv)
+    if args.html:
+        write_html(result, args.html)
+    _print_json(result)
     return 0
 
 
@@ -239,7 +282,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
     print(
         f"Onion-FL Studio on http://{args.host}:{args.port}  (root {Path(args.root).resolve()})"
     )
-    uvicorn.run(create_app(args.root), host=args.host, port=args.port)
+    uvicorn.run(
+        create_app(args.root, operators=args.operators), host=args.host, port=args.port
+    )
     return 0
 
 
@@ -300,8 +345,15 @@ def parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="run an experiment")
     run.add_argument("experiment")
     run.add_argument("--scenario", help="only the scenario with this name")
-    run.add_argument("--mode", choices=["sim", "real"])
+    run.add_argument("--backend", help="sim, local...; overrides the experiment's")
+    run.add_argument("--mode", choices=["sim", "real"], help="real: alias of local")
     run.add_argument("--workers", type=int, default=1)
+    run.add_argument(
+        "--paused",
+        action="store_true",
+        help="start each simulation paused, for an operator to resume "
+        "(needs ONIONFL_OPERATORS)",
+    )
     run.set_defaults(func=cmd_run)
 
     node = sub.add_parser("node", help="start one node of a real run")
@@ -341,6 +393,34 @@ def parser() -> argparse.ArgumentParser:
     ceiling.add_argument("--workers", type=int, default=1)
     ceiling.set_defaults(func=cmd_ceiling)
 
+    fidelity = sub.add_parser(
+        "fidelity", help="fidelity of the runs of B against those of A (reference)"
+    )
+    fidelity.add_argument("a", help="runs folder of the reference backend")
+    fidelity.add_argument("b", help="runs folder of the backend under test")
+    fidelity.add_argument(
+        "--metric",
+        action="append",
+        help="decide on it: a root score, time, bytes or time_to_target; "
+        "default accuracy and time",
+    )
+    fidelity.add_argument(
+        "--series", help="model/dataset of the root score, when there are several"
+    )
+    fidelity.add_argument("--target", help="metric=value for the time to target")
+    fidelity.add_argument("--experiment", help="only the runs of this experiment")
+    fidelity.add_argument(
+        "--ceiling", help="output of onion_fl ceiling; default: the seeds of A"
+    )
+    fidelity.add_argument(
+        "--minimize", action="append", help="a metric where lower is better"
+    )
+    fidelity.add_argument("--bootstrap", type=int, default=2000)
+    fidelity.add_argument("--seed", type=int, default=0, help="of the bootstrap")
+    fidelity.add_argument("--csv", help="also write the result as CSV rows")
+    fidelity.add_argument("--html", help="also write an HTML report")
+    fidelity.set_defaults(func=cmd_fidelity)
+
     report = sub.add_parser("report", help="HTML report comparing runs")
     report.add_argument(
         "targets", nargs="+", help="experiment YAML files or runs folders"
@@ -368,6 +448,11 @@ def parser() -> argparse.ArgumentParser:
     )
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
+    serve.add_argument(
+        "--operators",
+        help="YAML of operator ids and tokens that may give orders "
+        "(default: the file ONIONFL_OPERATORS names; none: no orders)",
+    )
     serve.set_defaults(func=cmd_serve)
 
     schema = sub.add_parser(
@@ -398,6 +483,9 @@ def _utf8_output() -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     _utf8_output()
+    # Python hides a DeprecationWarning outside __main__; the old config forms
+    # (M1, #193) should reach whoever runs them.
+    warnings.filterwarnings("default", "continuum: ", DeprecationWarning)
     args = parser().parse_args(argv)
     try:
         return args.func(args)

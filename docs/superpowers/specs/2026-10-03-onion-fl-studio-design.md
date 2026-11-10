@@ -42,11 +42,14 @@ Todas las respuestas son JSON. Los errores de validación devuelven 422 con `{"e
 | `GET /api/experiments/{name}` | `{name, yaml, config, scenarios: [{name, seed, config_id}]}` |
 | `POST /api/experiments/validate` | Cuerpo: la config. Devuelve escenarios o 422 |
 | `POST /api/experiments/{name}/plan` | El plan en seco de cada escenario; 422 si faltan datos |
-| `POST /api/experiments/{name}/run` | Cuerpo `{scenario?, mode, workers}`. Lanza el proceso y devuelve `{pid}` |
+| `POST /api/experiments/{name}/run` | Cuerpo `{scenario?, mode, workers, paused?}`. Lanza el proceso y devuelve `{pid}`; `paused` solo en simulación con operadores |
 | `GET /api/runs` | `[{run_id, experiment, scenario, seed, status, started_at, finished_at, topology_id, config_id, rounds, final}]` |
 | `GET /api/runs/{run_id}` | `{meta, summary, roles, composition}` |
 | `GET /api/runs/{run_id}/events?after=N&limit=M` | Las líneas a partir de la `N`, con `next` para el siguiente sondeo |
 | `GET /api/runs/{run_id}/series?level&name&model&dataset` | Serie por ronda (media, mínimo y máximo entre los nodos del nivel) |
+| `GET /api/runs/{run_id}/versions` | Versiones con su linaje, estado y puntuaciones, decisiones, versión servida por ronda, y filas y deriva por edge (#203) |
+| `GET /api/runs/{run_id}/control` | Si hay operadores, el estado del control en vivo (`control.json`) y las órdenes sin firma |
+| `POST /api/runs/{run_id}/control` | Cuerpo `{order, version?, at?}` con `Authorization: Bearer <token>`: firma la orden y la añade al buzón. 403 sin operadores, 401 sin un token válido, 409 si la ejecución no escucha |
 | `GET /api/compare?experiment&level&metric&by` | La tabla de `Runs.compare` |
 | `GET /api/tutorial` | Ejes con sus plugins: título, descripción, explicación y JSON Schema de parámetros |
 | `POST /api/preview/sharing` | `{topology, sharing, model, datasets}` → grupos por enlace y qué guarda cada nivel |
@@ -81,4 +84,4 @@ Las previsualizaciones son funciones puras sin datos. El reparto trabaja con rec
 
 ## 6. Fuera de alcance
 
-Autenticación y uso multiusuario, edición de descriptores de datasets desde el front, y despliegue remoto (E6).
+Autenticación y uso multiusuario (salvo el token de operador de las órdenes, #203), edición de descriptores de datasets desde el front, y despliegue remoto (E6).
