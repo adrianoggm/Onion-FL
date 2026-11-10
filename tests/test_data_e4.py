@@ -405,3 +405,26 @@ def test_wesad_and_e4_csv_share_feature_names(tmp_path: Path) -> None:
 
     assert data.feature_names == HARMONIZED
     assert len(data.y) == 3 and (data.y[0], data.y[-1]) == (0, 1)
+
+
+def test_a_subject_left_out_by_a_select_adds_no_rows(tmp_path: Path) -> None:
+    e4_session(tmp_path / "S1")
+    e4_session(tmp_path / "S2")
+    _intervals(tmp_path, [("S1", START, START + 10, "rest")])
+    spec = e4_spec(
+        tmp_path,
+        {"reader": "empatica_e4_csv", "path": "{subject}/EDA.csv"},
+        [
+            {"select": {"query": "subject != 'S2'"}},
+            {
+                "intervals": {
+                    "source": {"reader": "csv", "path": "protocol.csv"},
+                    "by": ["subject"],
+                }
+            },
+        ],
+    )
+
+    (data,) = ingest(spec)  # no warning from an empty frame (filterwarnings=error)
+
+    assert data.subject == "S1" and data.y.tolist() == [0, 0, 0, 0]

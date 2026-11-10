@@ -1312,7 +1312,8 @@ def ingest(
                 f"missing {missing}, extra {extra}"
             )
         frames.append(df)
-    df = pd.concat(frames, ignore_index=True)
+    # A file the steps emptied (a subject left out by a select) adds no rows.
+    df = pd.concat([f for f in frames if len(f)] or frames, ignore_index=True)
     ran = {name for name, _ in active}
 
     if "subject" not in df.columns:
