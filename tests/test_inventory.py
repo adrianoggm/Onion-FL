@@ -236,3 +236,27 @@ def test_sntp_reads_the_offset_of_a_server() -> None:
         server.close()
 
     assert offset == pytest.approx(ahead, abs=0.1)
+
+
+def test_the_probe_frees_its_grpc_port_as_soon_as_the_session_ends() -> None:
+    """The node's gRPC server binds the port right after the preflight (#227)."""
+    from onion_fl.infrastructure.probe import listen, release
+
+    port = free_port()
+    held = listen("127.0.0.1", port)
+    assert held is not None
+    with socket.create_connection(("127.0.0.1", port), timeout=3) as client:
+        client.recv(1)  # the probe accepts and closes: TIME_WAIT on its side
+    before = threading.active_count()
+    release(held)
+    deadline = time.monotonic() + 3
+    while threading.active_count() >= before and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert threading.active_count() < before  # the accept thread is gone
+
+    server = socket.socket()
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # as gRPC does
+    try:
+        server.bind(("127.0.0.1", port))
+    finally:
+        server.close()
