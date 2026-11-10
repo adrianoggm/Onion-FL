@@ -1,0 +1,3 @@
+{"python": "3.11.15", "machine": "Windows-10-10.0.26300-SP0"}
+{"edges": 100, "fogs": 10, "rounds": 3, "codec": "json", "diagnostics": "all", "build_s": 0.15, "run_s": 59.9, "s_per_round": 19.97, "peak_rss_mib": 507.0, "import_rss_mib": 200.3}
+{"edges": 200, "fogs": 10, "rounds": 3, "codec": "json", "diagnostics": "all", "build_s": 0.24, "run_s": 115.65, "s_per_round": 38.55, "peak_rss_mib": 786.9, "import_rss_mib": 200.1}
