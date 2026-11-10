@@ -409,6 +409,125 @@ def test_participation_plugins() -> None:
         participations.create("fraction", {"p": 0})
 
 
+def timed(seconds: dict[str, float]) -> dict[str, list[EdgeSpec]]:
+    """Edges under ``fog_0`` that train their 10 examples in the given seconds."""
+    return {"fog_0": [slow(name, s) for name, s in seconds.items()]}
+
+
+def free_links(nodes) -> dict[str, dict]:
+    return {n: {"latency_s": 0.0, "distribution": "fixed"} for n in nodes}
+
+
+def picks(federation) -> list[list[str]]:
+    chosen = names(federation, "round.participants", "fog_0")
+    return [e["tags"]["children"] for e in chosen]
+
+
+SPEEDS = {"a": 8.0, "b": 4.0, "c": 1.0, "d": 2.0}  # seconds per training
+
+
+def test_fastest_k_tries_every_child_then_keeps_the_fastest() -> None:
+    fog = {"participation": {"name": "fastest_k", "k": 2}}
+
+    federation = run(
+        tree(1, fog=fog), timed(SPEEDS), rounds=4, link_profiles=free_links(SPEEDS)
+    )
+
+    assert picks(federation) == [["a", "b"], ["c", "d"], ["c", "d"], ["c", "d"]]
+
+
+def test_deadline_feasible_drops_the_children_that_miss_the_deadline() -> None:
+    fog = {
+        "participation": {"name": "deadline_feasible", "threshold": 0.5},
+        "deadline": 5,
+        "quorum": 1,
+    }
+
+    federation = run(
+        tree(1, fog=fog), timed(SPEEDS), rounds=3, link_profiles=free_links(SPEEDS)
+    )
+
+    every = ["a", "b", "c", "d"]
+    assert picks(federation) == [every, ["b", "c", "d"], ["b", "c", "d"]]
+
+
+def test_deadline_feasible_can_estimate_a_deadline_the_node_does_not_have() -> None:
+    participation = {"name": "deadline_feasible", "deadline": "3s"}
+
+    federation = run(
+        tree(1, fog={"participation": participation}),
+        timed(SPEEDS),
+        rounds=2,
+        link_profiles=free_links(SPEEDS),
+    )
+
+    assert picks(federation)[1] == ["c", "d"]
+
+
+def rate(samples_per_second: float) -> tuple[str, dict]:
+    return "samples_per_second", {"samples_per_second": samples_per_second}
+
+
+def test_utility_prefers_samples_and_penalises_slow_children() -> None:
+    edges = {
+        "fog_0": [  # examples, then the seconds training them takes
+            edge(n, examples=x, compute=compute_models.create(*rate(x / s)))
+            for n, x, s in (("a", 10, 1.0), ("b", 40, 2.0), ("c", 80, 8.0))
+        ]
+    }
+    participation = {"name": "utility", "k": 1, "preferred": 2, "alpha": 2}
+
+    federation = run(
+        tree(1, fog={"participation": participation}),
+        edges,
+        rounds=5,
+        link_profiles=free_links("abc"),
+    )
+
+    # Each tried once, then b: 40 beats c: 80 · (2/8)² = 5 and a: 10.
+    assert picks(federation) == [["a"], ["b"], ["c"], ["b"], ["b"]]
+
+
+def test_system_participation_sees_only_past_rounds() -> None:
+    plugin = participations.create("fastest_k", {"k": 1})
+    rng = np.random.default_rng(0)
+    plugin.observe("a", 1, 9.0, True, {})
+    plugin.observe("b", 1, 3.0, True, {})
+    plugin.observe("b", 2, 5.0, False, {})  # missed: at least the round's 5 s
+
+    assert plugin.estimated("b") == 4.0
+    assert plugin.select(["a", "b", "c"], 3, rng) == ["c"]  # never tried
+    assert plugin.select(["a", "b"], 3, rng) == ["b"]
+
+    feasible = participations.create("deadline_feasible", {"threshold": 0.6})
+    for ok in (True, True, False):
+        feasible.observe("x", 1, 1.0, ok, {})
+    feasible.observe("y", 1, 1.0, False, {})
+    assert feasible.probability("x") == pytest.approx(2 / 3)
+    assert feasible.select(["x", "y"], 2, rng) == ["x"]
+    assert feasible.select(["y"], 2, rng) == ["y"]  # nobody likely: the likeliest
+
+
+def test_system_participation_is_deterministic_by_seed() -> None:
+    def once(seed: int):
+        rate = {"samples_per_second": 2, "sigma": 0.6}
+        compute = compute_models.create("lognormal_rate", rate)
+        edges = {"fog_0": [edge(f"e{i}", compute=compute) for i in range(6)]}
+        fog = {"participation": {"name": "fastest_k", "k": 3}}
+        return run(
+            tree(1, fog=fog),
+            edges,
+            rounds=6,
+            seed=seed,
+            link_profiles=free_links(f"e{i}" for i in range(6)),
+        )
+
+    a, b, c = once(1), once(1), once(2)
+
+    assert a.runtime.events == b.runtime.events
+    assert picks(a) != picks(c)
+
+
 # --- sharing across the hierarchy ---------------------------------------------------------------
 
 
