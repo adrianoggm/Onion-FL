@@ -20,7 +20,9 @@ it, so it needs ``scaler: local`` or ``none``.
 Imputation, scaling and the removal of constant features are fitted on the
 training portions only: never on val, test or the ``local_val`` rows. With
 ``scaler: local`` every data holder (client or evaluator) standardises with
-its own statistics, which use no labels.
+its own statistics, which use no labels. ``overrides.<dataset>`` can set
+``scaler``, ``impute`` and ``drop_constant`` for one dataset, for raw columns
+such as pixels or token indices; unset, the global value applies.
 """
 
 import warnings
@@ -35,6 +37,8 @@ from onion_fl.core.context import node_rng
 from onion_fl.data.contract import DataError, SubjectData, natural_key
 
 Share = Annotated[float, Field(ge=0, lt=1)]
+Scaler = Literal["global", "local", "none"]
+Impute = Literal["mean", "median"]
 
 
 class RoleOverride(BaseModel):
@@ -44,6 +48,22 @@ class RoleOverride(BaseModel):
     val: Share | list[str] | None = None
     exclude: list[str] = Field(
         default_factory=list, description="Sujetos que no toman ningún rol"
+    )
+    # Unset, they take the global value and keep existing config_ids.
+    scaler: Scaler | None = Field(
+        None,
+        description="Escalado de este dataset; sin él, el global",
+        exclude_if=lambda v: v is None,
+    )
+    impute: Impute | None = Field(
+        None,
+        description="Imputación de este dataset; sin ella, la global",
+        exclude_if=lambda v: v is None,
+    )
+    drop_constant: bool | None = Field(
+        None,
+        description="Quitar features constantes en este dataset; sin ello, el global",
+        exclude_if=lambda v: v is None,
     )
     held_out: bool = Field(
         False,
@@ -75,13 +95,31 @@ class RolesConfig(BaseModel):
         exclude_if=lambda v: v == "tail",  # unset, it keeps existing config_ids
     )
     subjects_per_client: PositiveInt = 1
-    scaler: Literal["global", "local", "none"] = Field(
+    scaler: Scaler = Field(
         "global", description="global: por dataset; local: cada nodo con sus datos"
     )
-    impute: Literal["mean", "median"] = "mean"
+    impute: Impute = "mean"
     drop_constant: bool = Field(
         True, description="Quitar features constantes en la bolsa de entrenamiento"
     )
+
+    def of(self, dataset: str) -> RolesConfig:
+        """This config with the preprocessing that ``overrides.<dataset>`` sets."""
+        override = self.overrides.get(dataset, RoleOverride())
+        keys = ("scaler", "impute", "drop_constant")
+        return self.model_copy(
+            update={
+                k: getattr(override, k)
+                for k in keys
+                if getattr(override, k) is not None
+            }
+        )
+
+    def scalers(self) -> set[str]:
+        """Every scaler some dataset uses: the global one and the overrides'."""
+        return {self.scaler} | {
+            o.scaler for o in self.overrides.values() if o.scaler is not None
+        }
 
 
 @dataclass(frozen=True)
@@ -272,10 +310,12 @@ def split_subjects(
     if unknown:
         raise DataError(f"overrides for datasets {unknown} that are not loaded")
 
-    scale, local = config.scaler != "none", config.scaler == "local"
     clients, val, test, roles = [], [], [], {}
     preprocessing: dict[str, dict[str, Any]] = {}
+    roles_config = config
     for dataset in sorted(by_dataset):
+        config = roles_config.of(dataset)
+        scale = config.scaler != "none"
         pool = by_dataset[dataset]
         names = sorted(pool, key=natural_key)
         roles[dataset] = _assign(names, dataset, config)
@@ -345,8 +385,14 @@ def split_subjects(
         preprocessing[dataset] = saved
         feature_names = [own[i] for i in keep]
 
-        def holder_fit(X: np.ndarray, shared: _Fit = shared) -> _Fit:
-            return _Fit.on(X, config.impute, fallback=shared.fill) if local else shared
+        def holder_fit(
+            X: np.ndarray, shared: _Fit = shared, config: RolesConfig = config
+        ) -> _Fit:
+            return (
+                _Fit.on(X, config.impute, fallback=shared.fill)
+                if config.scaler == "local"
+                else shared
+            )
 
         for role, out in (("val", val), ("test", test)):
             for name in roles[dataset][role]:
