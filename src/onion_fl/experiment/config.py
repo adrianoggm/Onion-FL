@@ -49,6 +49,7 @@ from pydantic import (
 from onion_fl.baselines import baseline_models
 from onion_fl.continuum.drift import detectors
 from onion_fl.continuum.memory import memories
+from onion_fl.continuum.promotion import promotions
 from onion_fl.continuum.triggers import Schedule, drift_detectors, leaves, triggers
 from onion_fl.core.codec import codecs
 from onion_fl.core.registry import PluginError, Registry
@@ -111,6 +112,7 @@ REGISTRIES: dict[str, Registry] = {
     "memory": memories,
     "trigger": triggers,
     "detector": detectors,
+    "promotion": promotions,
     "assignment": assignments,
     "failover": failovers,
 }
@@ -450,6 +452,12 @@ class ExperimentConfig(Strict):
         description="Federación continua: disparadores en vez de rondas a ritmo fijo",
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
+    promotion: PluginRef | None = Field(
+        None,
+        description="Champion y challenger: el modelo de cada ronda solo llega a "
+        "los edges si la validación lo promueve",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
 
     infrastructure: InfrastructureConfig | None = Field(
         None,
@@ -462,6 +470,9 @@ class ExperimentConfig(Strict):
     )
     _attack = field_validator("attack")(
         lambda v: v if v is None else _plugin(attacks, v)
+    )
+    _promotion = field_validator("promotion")(
+        lambda v: v if v is None else _plugin(promotions, v)
     )
 
     @field_validator("sweep")
@@ -521,6 +532,25 @@ class ExperimentConfig(Strict):
             raise ValueError(
                 "infrastructure: real runs take the machines they run on; an "
                 "infrastructure is simulated only for now (I7, I14)"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _promotion_fits(self) -> ExperimentConfig:
+        """A challenger is validated on the validation streams, by an evaluation
+        metric (continuum C7)."""
+        if self.promotion is None:
+            return self
+        if self.stream is None:
+            raise ValueError(
+                "promotion: a challenger is validated on the validation streams; "
+                "set stream too"
+            )
+        metric = getattr(create(promotions, self.promotion), "metric", None)
+        if metric in metrics.names() and metric not in self.evaluation.metrics:
+            raise ValueError(
+                f"promotion: it compares {metric!r}, which evaluation.metrics "
+                "does not compute; add it there"
             )
         return self
 

@@ -26,6 +26,7 @@ import numpy as np
 from onion_fl.continuum.bundle import Bundle, load_bundle, save_bundle
 from onion_fl.continuum.memory import NoMemory, memories
 from onion_fl.continuum.pace import Continuum
+from onion_fl.continuum.promotion import promotions
 from onion_fl.continuum.triggers import drift_detectors, triggers
 from onion_fl.core.context import node_rng
 from onion_fl.core.topology import Topology, load_topology, parse_topology
@@ -954,6 +955,7 @@ def edge_specs(
             train=False,
             tags={"dataset": data.dataset},
             stream=stream,
+            validates=prefix == "validate",
         )
 
     bad = malicious_edges(config, _placed(placement), scenario.seed)
@@ -988,6 +990,18 @@ def edge_specs(
         ]
     else:
         edges[topology.root.id] = [evaluator("test", data) for data in placement.test]
+    if config.promotion is not None:  # the validation streams decide (C7)
+        validators = [
+            evaluator("validate", data)
+            for leaf in sorted(placement.zone_evaluators)
+            for data in placement.zone_evaluators[leaf]
+        ]
+        if not validators:
+            raise ValueError(
+                "promotion: there are no validation subjects to decide with; "
+                "set data.roles.val"
+            )
+        edges[topology.root.id] += validators
     return edges, initial
 
 
@@ -1240,6 +1254,9 @@ def build_scenario(
         rounds=start + rounds,  # a continuation's numbering goes on
         round_every=round_every,
         continuum=pace,
+        promotion=(
+            None if config.promotion is None else create(promotions, config.promotion)
+        ),
         sharing=config.learning.sharing,
         seed=scenario.seed,
         metrics=config.evaluation.metrics,
@@ -1254,6 +1271,17 @@ def build_scenario(
     if parent:
         _restore(federation, parent[1], parent[2])
     return federation
+
+
+def _versions(coordinator: Any) -> dict[str, Any]:
+    """The champion and every version's lineage, with a promotion policy; the
+    bundle's model is the champion."""
+    if coordinator.promotion is None:
+        return {}
+    return {
+        "champion": coordinator.champion,
+        "versions": [v.record() for _, v in sorted(coordinator.versions.items())],
+    }
 
 
 def run_scenario(
@@ -1332,6 +1360,7 @@ def run_scenario(
                 "run_id": run.run_id,
                 "parent": lineage_parent,
                 "algorithms": algorithms,
+                **_versions(federation.coordinator),
             },
             config=identity(config),
             roles=_lineage_roles(earlier.roles if earlier else {}, split.roles),
