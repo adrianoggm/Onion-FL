@@ -58,6 +58,7 @@ from onion_fl.infrastructure.model import (
     Infrastructure,
     InfrastructureError,
     anchor_traces,
+    expand_traces,
     load_infrastructure,
     parse_infrastructure,
 )
@@ -161,11 +162,11 @@ def resolve_infrastructure(config: ExperimentConfig) -> Infrastructure | None:
     try:
         if isinstance(ref, dict):  # its traces live with the infrastructures
             raw = anchor_traces(deepcopy(ref), config.paths.infrastructures)
-            return parse_infrastructure(raw)
+            return parse_infrastructure(expand_traces(raw, config.paths.device_traces))
         path = Path(ref)
         if path.suffix not in (".yaml", ".yml"):
             path = Path(config.paths.infrastructures) / f"{ref}.yaml"
-        return load_infrastructure(path)
+        return load_infrastructure(path, config.paths.device_traces)
     except InfrastructureError as exc:
         raise ConfigError(f"infrastructure: {exc}") from None
 
@@ -210,8 +211,10 @@ def edge_statistics(
     name: str, scenario: Scenario, placement: Placement, initial: Mapping[str, Any]
 ) -> dict[str, float]:
     """Each training edge's ``samples``, ``label_divergence`` (KL divergence of its
-    labels from those of all the training edges of its dataset) or
-    ``initial_loss`` (cross-entropy of the initial model on its training data)."""
+    labels from those of all the training edges of its dataset), ``initial_loss``
+    (cross-entropy of the initial model on its training data) or
+    ``gradient_norm`` (L2 norm of the gradient of that loss over every parameter
+    of the initial model, one full-batch pass)."""
     clients = _placed(placement)
     if name == "samples":
         return {c.id: float(c.train.n_samples) for c in clients}
@@ -234,11 +237,27 @@ def edge_statistics(
     for c in clients:
         model = family.build([c.train.shape], seed=scenario.seed)
         load_arrays(model, initial)
+        if name == "gradient_norm":
+            out[c.id] = _gradient_norm(model, c.train)
+            continue
         y = np.asarray(c.train.y, np.int64)
         logits = predict(model, c.train.X)
         loss = compute(logits, y, c.train.n_classes, ["loss"]) if len(y) else {}
         out[c.id] = loss.get("loss", 0.0)
     return out
+
+
+def _gradient_norm(model: Any, data: Any) -> float:
+    import torch
+    import torch.nn.functional as F
+
+    if not len(data.y):
+        return 0.0
+    model.eval()  # no dropout: the same model every edge sees
+    X = torch.from_numpy(np.asarray(data.X, np.float32))
+    F.cross_entropy(model(X), torch.from_numpy(np.asarray(data.y, np.int64))).backward()
+    grads = [p.grad for p in model.parameters() if p.grad is not None]
+    return float(torch.sqrt(sum((g**2).sum() for g in grads))) if grads else 0.0
 
 
 def load_data(config: ExperimentConfig) -> tuple[list[Any], dict[str, str]]:
@@ -779,9 +798,15 @@ def plan(config: ExperimentConfig) -> list[dict[str, Any]]:
         topology, split, placement, digests = _scenario_data(scenario)
         _, state = _initial_state(scenario.config, _shapes(split), scenario.seed)
         resolved = physical(scenario, topology, placement, state)
+        backend = {}
         if resolved is not None:
             check_memory(resolved, placement, state)
             check_capacity(scenario.config, topology, placement)
+            # A backend that runs on machines it builds (emulated) shows and
+            # checks them here: its container cap, what it cannot emulate.
+            backend_ref = scenario.config.backend_ref
+            inspect = getattr(create(backends, backend_ref), "inspect", None)
+            backend = {} if inspect is None else {"backend": inspect(resolved)}
         policy = create(sharing, scenario.config.learning.sharing)
         previews.append(
             {
@@ -797,6 +822,7 @@ def plan(config: ExperimentConfig) -> list[dict[str, Any]]:
                 "warnings": link_warnings(topology, resolved),
             }
             | ({} if resolved is None else {"infrastructure": resolved.preview()})
+            | backend
             | (
                 {}
                 if scenario.config.stream is None
@@ -1060,7 +1086,10 @@ def _on_hosts(
     out = {
         leaf: [
             replace(
-                s, host=resolved.hosts[s.id], compute=_rate(resolved.train_rate(s.id))
+                s,
+                host=resolved.hosts[s.id],
+                compute=_rate(resolved.train_rate(s.id)),
+                availability=_availability(s, resolved),
             )
             if s.train
             else replace(s, host=resolved.hosts[leaf])
@@ -1075,6 +1104,24 @@ def _on_hosts(
         if not spec.train
     } | {child: profile for child, (_, profile) in resolved.links.items()}
     return out, profiles
+
+
+def _availability(spec: EdgeSpec, resolved: Resolved) -> Any:
+    """The availability of the edge's host profile (a device trace), if any."""
+    given = resolved.infrastructure.profile_of(resolved.hosts[spec.id]).availability
+    if given is None:
+        return spec.availability
+    if spec.availability is not None:
+        raise ConfigError(
+            f"edge {spec.id}: its host {resolved.hosts[spec.id]} has its own "
+            "availability; remove edge.availability from the topology"
+        )
+    try:
+        return create(availability_models, given)
+    except (KeyError, ValueError) as exc:
+        raise ConfigError(
+            f"infrastructure: host {resolved.hosts[spec.id]} availability: {exc}"
+        ) from None
 
 
 def _rate(rate: float | None) -> Any:
@@ -1362,6 +1409,17 @@ def run_scenario(
     )
 
 
+def _diagnostic(federation: Any, scenario: Scenario, placement: Placement) -> dict:
+    """The ex ante diagnostic of the deadline bias (N8); a run goes on without it
+    when it cannot be computed, with the reason."""
+    from onion_fl.experiment.diagnostic import diagnose_scenario
+
+    try:
+        return diagnose_scenario(federation, scenario, placement)
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
 def simulate(
     scenario: Scenario,
     evaluate: Callable[..., Any] | None = None,
@@ -1392,6 +1450,8 @@ def simulate(
             "version": parent[1].snapshot.round,
         }
         run.meta["parent"] = lineage_parent  # signed with the rest at finish
+    if infra is not None and infra.device_traces:  # sampled devices, cited (G9)
+        run.meta["device_traces"] = infra.device_traces
     try:
         record_data(run, scenario, split, placement)
         federation = build_scenario(
@@ -1405,6 +1465,7 @@ def simulate(
             audience=run.run_id,
         )
         run.attach(federation)
+        run.meta["diagnostic"] = _diagnostic(federation, scenario, placement)
         if config.stream is not None:
             streams = {k: e.stream for k, e in federation.edges.items() if e.train}
             summary = _stream_summary(config, streams)

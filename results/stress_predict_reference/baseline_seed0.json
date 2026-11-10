@@ -1,0 +1,184 @@
+{
+  "lr": {
+    "stress_predict": {
+      "model": "lr",
+      "folds": [
+        {
+          "test_subjects": [
+            "S07",
+            "S20",
+            "S25",
+            "S29",
+            "S30",
+            "S31",
+            "S32"
+          ],
+          "accuracy": 0.6619519094766619,
+          "balanced_accuracy": 0.5482253842181184,
+          "f1_macro": 0.5286311660850329,
+          "n_samples": 707
+        },
+        {
+          "test_subjects": [
+            "S03",
+            "S08",
+            "S16",
+            "S17",
+            "S18",
+            "S28",
+            "S35"
+          ],
+          "accuracy": 0.6810344827586207,
+          "balanced_accuracy": 0.5390238416554206,
+          "f1_macro": 0.5037512846865365,
+          "n_samples": 696
+        },
+        {
+          "test_subjects": [
+            "S05",
+            "S06",
+            "S10",
+            "S12",
+            "S14",
+            "S21",
+            "S26"
+          ],
+          "accuracy": 0.642754662840746,
+          "balanced_accuracy": 0.5843112717834631,
+          "f1_macro": 0.5860344190151343,
+          "n_samples": 697
+        },
+        {
+          "test_subjects": [
+            "S02",
+            "S13",
+            "S15",
+            "S19",
+            "S24",
+            "S27",
+            "S34"
+          ],
+          "accuracy": 0.6291666666666667,
+          "balanced_accuracy": 0.5000776457799518,
+          "f1_macro": 0.45998634796947113,
+          "n_samples": 720
+        },
+        {
+          "test_subjects": [
+            "S04",
+            "S09",
+            "S11",
+            "S22",
+            "S23",
+            "S33"
+          ],
+          "accuracy": 0.6760330578512397,
+          "balanced_accuracy": 0.5485944213822737,
+          "f1_macro": 0.5144621331236897,
+          "n_samples": 605
+        }
+      ],
+      "mean": {
+        "accuracy": 0.658188155918787,
+        "balanced_accuracy": 0.5440465129638454,
+        "f1_macro": 0.518573070175973
+      },
+      "std": {
+        "accuracy": 0.019672318434270274,
+        "balanced_accuracy": 0.026899389388056846,
+        "f1_macro": 0.0407950683979311
+      }
+    }
+  },
+  "rf": {
+    "stress_predict": {
+      "model": "rf",
+      "folds": [
+        {
+          "test_subjects": [
+            "S07",
+            "S20",
+            "S25",
+            "S29",
+            "S30",
+            "S31",
+            "S32"
+          ],
+          "accuracy": 0.6916548797736917,
+          "balanced_accuracy": 0.5917938489484088,
+          "f1_macro": 0.5877043742509844,
+          "n_samples": 707
+        },
+        {
+          "test_subjects": [
+            "S03",
+            "S08",
+            "S16",
+            "S17",
+            "S18",
+            "S28",
+            "S35"
+          ],
+          "accuracy": 0.7255747126436781,
+          "balanced_accuracy": 0.6283738191632928,
+          "f1_macro": 0.6347982319021337,
+          "n_samples": 696
+        },
+        {
+          "test_subjects": [
+            "S05",
+            "S06",
+            "S10",
+            "S12",
+            "S14",
+            "S21",
+            "S26"
+          ],
+          "accuracy": 0.648493543758967,
+          "balanced_accuracy": 0.5972515758249908,
+          "f1_macro": 0.5984768148076738,
+          "n_samples": 697
+        },
+        {
+          "test_subjects": [
+            "S02",
+            "S13",
+            "S15",
+            "S19",
+            "S24",
+            "S27",
+            "S34"
+          ],
+          "accuracy": 0.6902777777777778,
+          "balanced_accuracy": 0.572443512695085,
+          "f1_macro": 0.556923076923077,
+          "n_samples": 720
+        },
+        {
+          "test_subjects": [
+            "S04",
+            "S09",
+            "S11",
+            "S22",
+            "S23",
+            "S33"
+          ],
+          "accuracy": 0.6330578512396694,
+          "balanced_accuracy": 0.5101352171485447,
+          "f1_macro": 0.47357487771227896,
+          "n_samples": 605
+        }
+      ],
+      "mean": {
+        "accuracy": 0.6778117530387567,
+        "balanced_accuracy": 0.5799995947560644,
+        "f1_macro": 0.5702954751192296
+      },
+      "std": {
+        "accuracy": 0.033138507396775166,
+        "balanced_accuracy": 0.039280851580268665,
+        "f1_macro": 0.05439036367681956
+      }
+    }
+  }
+}

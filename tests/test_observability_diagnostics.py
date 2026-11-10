@@ -210,8 +210,90 @@ def test_fairness_per_dataset() -> None:
     assert by["b"][0] == 0.0
 
 
+# --- contribution ----------------------------------------------------------------------------
+
+
+def contribution(round_view: RoundView, **params) -> dict[tuple[str, str], float]:
+    out = diagnostics.create("contribution", params).compute(round_view)
+    return {(n, t["child"]): v for n, v, t in out if t["group"] == "trunk"}
+
+
+def test_an_aligned_child_scores_above_noise_and_an_opposed_one() -> None:
+    contributions = {
+        "e1": child("e1", trunk__0__weight=arr(1, 0, 0)),
+        "e2": child("e2", trunk__0__weight=arr(5, 0, 0)),  # size buys nothing
+        "e3": child("e3", trunk__0__weight=arr(1, 0, 0)),
+        "e4": child("e4", trunk__0__weight=arr(0, 1, 0)),
+        "e5": child("e5", trunk__0__weight=arr(-1, 0, 0)),
+    }
+    sent = {"trunk.0.weight": arr(0, 0, 0)}
+
+    out = contribution(view(sent=sent, contributions=contributions))
+
+    for name in ("contribution_loo", "contribution_shapley"):
+        assert out[(name, "e1")] == pytest.approx(out[(name, "e2")])
+        assert out[(name, "e1")] > out[(name, "e4")] > out[(name, "e5")]
+    shapley = [v for (n, _), v in out.items() if n == "contribution_shapley"]
+    assert sum(shapley) == pytest.approx(0.0, abs=1e-12)  # v(N), see below
+    # v(N) = ‖(2, 1, 0)‖ − √5 = 0; without e1: ‖(1, 1, 0)‖ − 2.
+    assert out[("contribution_loo", "e1")] == pytest.approx(2 - math.sqrt(2))
+
+
+def test_orthogonal_children_score_zero() -> None:
+    contributions = {
+        "e1": child("e1", trunk__0__weight=arr(1, 0)),
+        "e2": child("e2", trunk__0__weight=arr(0, 3)),
+    }
+
+    out = contribution(view(contributions=contributions))
+
+    assert all(v == pytest.approx(0.0) for v in out.values())
+
+
+def test_monte_carlo_approaches_the_exact_shapley_value() -> None:
+    values = [(1, 0.2), (0.9, 0.1), (1, -0.3), (0, 1), (-1, 0.5)]
+    contributions = {
+        f"e{i}": child(f"e{i}", trunk__0__weight=arr(*v)) for i, v in enumerate(values)
+    }
+    round_view = view(contributions=contributions)
+
+    exact = contribution(round_view)
+    sampled = contribution(round_view, exact_max=2, permutations=2000)
+    again = contribution(round_view, exact_max=2, permutations=2000)
+
+    assert sampled == again  # seeded by the round and the group
+    for key, value in exact.items():
+        assert sampled[key] == pytest.approx(value, abs=0.05)
+    methods = {
+        t["method"]
+        for _, _, t in diagnostics.create("contribution", {"exact_max": 2}).compute(
+            round_view
+        )
+        if "method" in t
+    }
+    assert methods == {"monte_carlo"}
+
+
+def test_a_zero_delta_contributes_nothing_and_datasets_are_tagged() -> None:
+    contributions = {
+        "e1": child("e1", trunk__0__weight=arr(1, 0)),
+        "e2": child("e2", trunk__0__weight=arr(0, 0)),
+    }
+
+    out = diagnostics.create("contribution").compute(
+        view(contributions=contributions, datasets={"e1": "a"})
+    )
+
+    by = {(n, t["child"]): (v, t) for n, v, t in out}
+    assert by[("contribution_shapley", "e2")][0] == 0.0
+    assert by[("contribution_loo", "e2")][0] == 0.0
+    assert by[("contribution_shapley", "e1")][1]["dataset"] == "a"
+    assert "dataset" not in by[("contribution_shapley", "e2")][1]
+
+
 def test_registry_lists_the_built_ins() -> None:
     assert diagnostics.names() == [
+        "contribution",
         "dataset_conflict",
         "divergence",
         "drift",

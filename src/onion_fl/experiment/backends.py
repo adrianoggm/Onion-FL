@@ -7,17 +7,20 @@ same federation with ``build_federation``:
 
 - ``sim``: the virtual clock in one process, with the resources and network
   the infrastructure models;
-- ``local``: the wall clock, one process per group on this machine over MQTT
-  or gRPC, with its own resources and no emulated network. ``runtime.mode: real`` is
-  its alias.
+- ``local``: the wall clock, one process per group on this machine over MQTT,
+  gRPC or Flower, with its own resources and no emulated network.
+  ``runtime.mode: real`` is its alias.
 
 An experiment picks one with ``backend``; without it, ``runtime.mode`` does.
 """
 
 import sys
 from dataclasses import dataclass
+from ipaddress import IPv4Network
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
 
 from onion_fl.infrastructure.backends import backends
 
@@ -75,13 +78,14 @@ class SimBackend:
     "local",
     title="Local",
     description=(
-        "Reloj de pared, un proceso por grupo en esta máquina, sobre MQTT o gRPC"
+        "Reloj de pared, un proceso por grupo en esta máquina, sobre MQTT, gRPC "
+        "o Flower"
     ),
     explain=(
         "Arranca un proceso `onion_fl node` por coordinador o agregador, con "
-        "sus edges, y los comunica por MQTT o por gRPC (sin broker). Usa los "
-        "recursos de la máquina, sin límites ni red emulada: es la referencia "
-        "de la fidelidad "
+        "sus edges, y los comunica por MQTT, por gRPC (sin broker) o por "
+        "Flower (mensajes de Flower sobre gRPC). Usa los recursos de la "
+        "máquina, sin límites ni red emulada: es la referencia de la fidelidad "
         "funcional. `runtime.mode: real` es su alias."
     ),
 )
@@ -114,6 +118,92 @@ class LocalBackend:
         from onion_fl.experiment.real import launch
 
         launch(plan)
+
+    def collect(self, plan: Any) -> Path:
+        from onion_fl.experiment.real import merge
+
+        return merge(plan)
+
+
+class EmulatedParams(BaseModel):
+    image: str = Field(
+        "onionfl-emulated:latest",
+        description="Imagen de los hosts; se construye si no existe",
+    )
+    broker_image: str = Field("eclipse-mosquitto:2", description="Imagen del broker")
+    project: str = Field(
+        "onionfl",
+        pattern=r"^[a-z0-9][a-z0-9_-]*$",
+        description="Prefijo del proyecto Compose, sus contenedores y sus redes",
+    )
+    subnet: str = Field(
+        "10.195.0.0/16", description="Red de la que sale una /24 por LAN y por enlace"
+    )
+    max_containers: int = Field(
+        64, gt=0, description="Tope de contenedores de una ejecución"
+    )
+    ready_timeout: float = Field(
+        120.0, gt=0, description="Espera máxima a que los contenedores estén listos (s)"
+    )
+
+    @field_validator("subnet")
+    @classmethod
+    def _subnet(cls, value: str) -> str:
+        net = IPv4Network(value)
+        if net.prefixlen > 23:
+            raise ValueError(f"{value}: give a /23 or wider; each network takes a /24")
+        return value
+
+
+@backends.register(
+    "emulated",
+    title="Emulado",
+    description="Un contenedor por host con su CPU y memoria, y red emulada con netem",
+    explain=(
+        "Genera un proyecto de Docker Compose desde la infraestructura: un "
+        "contenedor por host con los límites de CPU y memoria de su perfil, un "
+        "router por sitio con netem en cada enlace físico (latencia, ancho de "
+        "banda y pérdidas) y el broker MQTT en su host. Dentro arranca un "
+        "proceso `onion_fl node` por host, como `local`. Necesita Docker; mide "
+        "la fidelidad de rendimiento sin hardware."
+    ),
+    params=EmulatedParams,
+)
+class EmulatedBackend:
+    def __init__(self, **params: Any) -> None:
+        self.params = EmulatedParams(**params)
+
+    def supports(self, infrastructure: Any) -> list[str]:
+        if infrastructure is None:
+            return [
+                "backend emulated: give the experiment an infrastructure; the one "
+                "implicit in the topology is not emulated"
+            ]
+        return []
+
+    def inspect(self, resolved: Any) -> dict[str, Any]:
+        """The containers ``onion_fl plan`` shows; refuses what cannot be emulated."""
+        from onion_fl.experiment.emulated import inspect
+
+        return inspect(self.params, resolved)
+
+    def prepare(
+        self,
+        scenario: Any,
+        infrastructure: Any = None,
+        assignment: Any = None,
+        evaluate: Any = None,
+    ) -> Any:
+        from onion_fl.experiment.emulated import prepare_emulated
+
+        if evaluate is not None:
+            raise ValueError("a custom evaluate cannot be sent to the containers")
+        return prepare_emulated(scenario, self.params)
+
+    def run(self, plan: Any) -> None:
+        from onion_fl.experiment.emulated import launch_emulated
+
+        launch_emulated(plan)
 
     def collect(self, plan: Any) -> Path:
         from onion_fl.experiment.real import merge

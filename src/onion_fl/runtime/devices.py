@@ -7,8 +7,11 @@ stream, ``node_rng(seed, "<node>/compute")``: the same seed gives the same times
 and the node's own stream (what its trainer draws) is not touched.
 """
 
+import bisect
+import math
+
 import numpy as np
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from onion_fl.core.context import node_rng
 from onion_fl.core.registry import Registry
@@ -236,3 +239,72 @@ class CrashAt:
 
     def is_up(self, t: float, round: int | None, node_id: str, seed: int) -> bool:
         return t < self.t
+
+
+class WindowsParams(BaseModel):
+    active: list[float] = Field(
+        min_length=1, description="Inicio de cada ventana con conexión (s)"
+    )
+    inactive: list[float] = Field(
+        min_length=1, description="Fin de cada ventana con conexión (s)"
+    )
+    period: float | None = Field(
+        None, gt=0, description="Cada cuánto se repiten las ventanas; sin él, no"
+    )
+
+    @model_validator(mode="after")
+    def _ordered(self) -> WindowsParams:
+        if len(self.active) != len(self.inactive):
+            raise ValueError("active and inactive must have the same length")
+        edges = [
+            x for pair in zip(self.active, self.inactive, strict=True) for x in pair
+        ]
+        if edges[0] < 0 or any(b < a for a, b in zip(edges, edges[1:], strict=False)):
+            raise ValueError("windows must be ordered: 0 <= active[i] <= inactive[i]")
+        if self.period is not None and edges[-1] > self.period:
+            raise ValueError(f"the last window ends after the period {self.period}")
+        return self
+
+
+@availability_models.register(
+    "windows",
+    title="Ventanas de conexión",
+    description=(
+        "Conectado dentro de las ventanas [inicio, fin]; con periodo, se repiten "
+        "cada periodo (la traza de disponibilidad de FedScale)."
+    ),
+    params=WindowsParams,
+    explain="Reproduce cuándo se conectó un dispositivo real; fuera de ellas, nada llega.",
+)
+class Windows:
+    """Up inside ``[active[i], inactive[i]]`` of ``t`` modulo ``period``, as
+    FedScale's ``ClientMetadata.is_active``; without a period, the last window
+    is the last time it is up."""
+
+    def __init__(
+        self, active: list[float], inactive: list[float], period: float | None = None
+    ) -> None:
+        self.active, self.inactive, self.period = list(active), list(inactive), period
+        # a time computed from a cycle start may fall an ulp before its window
+        self.eps = 1e-9 * max(1.0, period or 0.0, self.inactive[-1])
+
+    def _cycle(self, t: float) -> tuple[float, float]:
+        if self.period is None:
+            return 0.0, t
+        start = math.floor(t / self.period) * self.period
+        return start, t - start
+
+    def is_up(self, t: float, round: int | None, node_id: str, seed: int) -> bool:
+        _, tt = self._cycle(t)
+        i = bisect.bisect_right(self.active, tt + self.eps) - 1
+        return i >= 0 and tt <= self.inactive[i] + self.eps
+
+    def up_again(self, t: float) -> float | None:
+        """When a node offline at ``t`` is up again; None if never."""
+        if self.is_up(t, None, "", 0):
+            return t
+        start, tt = self._cycle(t)
+        j = bisect.bisect_right(self.active, tt + self.eps)
+        if j < len(self.active):
+            return start + self.active[j]
+        return None if self.period is None else start + self.period + self.active[0]

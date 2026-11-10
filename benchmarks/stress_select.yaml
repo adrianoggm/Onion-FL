@@ -1,0 +1,67 @@
+# onion-bench-stress (issue #244), E4 track: learning-rate selection, run
+# before benchmarks/stress.yaml and decided by validation data only.
+#
+# Every technique of the benchmark at lr 0.03, 0.1 and 0.3, seed 0, on the
+# hierarchical topology with per-dataset adapters. The rule, fixed before any
+# run (results/stress_e4/INDEX.md, "Protocol"):
+#   - FedAvg, SCAFFOLD and FedDyn: the global model's macro-F1 on the
+#     validation subjects (evaluation.global.subjects: val) at round 20;
+#   - Ditto, FedRep and FedBABU: the edges' macro-F1 on their own local_val
+#     rows at round 20, for the model the technique delivers (Ditto: personal,
+#     FedRep: local, FedBABU: finetuned).
+# Ties (within 0.005) go to the smaller lr. The test subjects play no part.
+#
+#   onion_fl run benchmarks/stress_select.yaml --workers 6
+name: stress_e4_select
+description: onion-bench-stress, pista E4. Selección del lr de cada técnica con los sujetos de validación.
+topology: stress_e4_studies
+data: &data
+  datasets:
+    wesad_e4: {}
+    physionet_e4: {}
+    nurse_stress: {}
+    stress_predict: {}
+  roles: &roles
+    test: 0.25
+    val: 0.1
+    local_val: 0.2
+    local_val_split: class_tail
+    scaler: local
+    drop_constant: false
+    seed: 0
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: &sgd {name: standard, optimizer: sgd, local_epochs: 5, batch_size: 32, lr: 0.1}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge:
+    every: 20
+    models: [received, local, personal, finetuned]
+    finetune: {name: standard, optimizer: sgd, local_epochs: 2, batch_size: 32, lr: 0.03}
+  aggregators: {every: 20}
+  global: {every: 20, subjects: val}
+seeds: [0]
+sweep:
+  learning.sharing,learning.trainer,learning.server_optimizer:
+    - [fedavg, {<<: *sgd, name: standard, lr: 0.03}, replace]
+    - [fedavg, {<<: *sgd, name: standard, lr: 0.1}, replace]
+    - [fedavg, {<<: *sgd, name: standard, lr: 0.3}, replace]
+    - [fedavg, {<<: *sgd, name: scaffold, lr: 0.03}, scaffold]
+    - [fedavg, {<<: *sgd, name: scaffold, lr: 0.1}, scaffold]
+    - [fedavg, {<<: *sgd, name: scaffold, lr: 0.3}, scaffold]
+    - [fedavg, {<<: *sgd, name: feddyn, lr: 0.03}, feddyn]
+    - [fedavg, {<<: *sgd, name: feddyn, lr: 0.1}, feddyn]
+    - [fedavg, {<<: *sgd, name: feddyn, lr: 0.3}, feddyn]
+    - [fedavg, {<<: *sgd, name: ditto, lr: 0.03}, replace]
+    - [fedavg, {<<: *sgd, name: ditto, lr: 0.1}, replace]
+    - [fedavg, {<<: *sgd, name: ditto, lr: 0.3}, replace]
+    - [fedper, {<<: *sgd, name: fedrep, lr: 0.03}, replace]
+    - [fedper, {<<: *sgd, name: fedrep, lr: 0.1}, replace]
+    - [fedper, {<<: *sgd, name: fedrep, lr: 0.3}, replace]
+    - [fedavg, {<<: *sgd, name: fedbabu, lr: 0.03}, replace]
+    - [fedavg, {<<: *sgd, name: fedbabu, lr: 0.1}, replace]
+    - [fedavg, {<<: *sgd, name: fedbabu, lr: 0.3}, replace]
