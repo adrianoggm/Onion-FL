@@ -596,21 +596,28 @@ class TimeStep:
         if self.rate is not None:
             return df.assign(**{TIME: np.arange(len(df)) / self.rate})
         _require(df, [self.column], "time")
-        raw = df[self.column]
-        if self.format is None and pd.api.types.is_numeric_dtype(raw):
-            seconds = raw.astype(float)
-        else:
-            text = raw.astype(str)
-            if self.pad_to is not None:
-                text = text.str.ljust(self.pad_to, "0")
-            stamps = pd.to_datetime(text, format=self.format, errors="coerce")
-            seconds = (stamps - pd.Timestamp(0)).dt.total_seconds()
-        bad = raw[seconds.isna()].unique()[:3].tolist()
-        if bad:
-            raise DataError(f"time: rows of {self.column!r} without a time: {bad}")
+        seconds = _seconds(df[self.column], self.format, self.pad_to, "time")
         if ctx is not None:
             ctx.meta_columns.add(self.column)
-        return df.assign(**{TIME: seconds.to_numpy(np.float64)})
+        return df.assign(**{TIME: seconds})
+
+
+def _seconds(
+    raw: pd.Series, format: str | None, pad_to: int | None, step: str
+) -> np.ndarray:
+    """Seconds since the epoch: numbers as they are, text parsed as dates."""
+    if format is None and pd.api.types.is_numeric_dtype(raw):
+        seconds = raw.astype(float)
+    else:
+        text = raw.astype(str)
+        if pad_to is not None:
+            text = text.str.ljust(pad_to, "0")
+        stamps = pd.to_datetime(text, format=format, errors="coerce")
+        seconds = (stamps - pd.Timestamp(0)).dt.total_seconds()
+    bad = raw[seconds.isna()].unique()[:3].tolist()
+    if bad:
+        raise DataError(f"{step}: rows of {raw.name!r} without a time: {bad}")
+    return seconds.to_numpy(np.float64)
 
 
 STATS: dict[str, Callable[[np.ndarray], np.ndarray]] = {
