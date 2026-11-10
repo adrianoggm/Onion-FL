@@ -50,6 +50,10 @@ studio = [
     "fastapi>=0.110,<1",
     "uvicorn>=0.29,<1",
 ]
+# The excel reader (datasets/nurse_stress.yaml reads SurveyResults.xlsx)
+excel = [
+    "openpyxl>=3.1,<4",
+]
 # XGBoost baseline (onion_fl.baselines) and analysis scripts (scripts/, results/legacy/)
 analysis = [
     "matplotlib>=3.5,<4",
