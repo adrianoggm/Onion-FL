@@ -612,3 +612,52 @@ def test_a_host_without_memory_for_its_nodes_is_refused(
         ConfigError, match="host field-pi-1 needs .* MiB for the models"
     ):
         plan(parse_experiment(raw))
+
+
+def test_a_two_level_federation_places_every_client_under_the_cloud(
+    workspace: Path,  # noqa: F811
+) -> None:
+    """Architecture A of issue #192: no fog, the edges report to the root. The
+    placement gives it the same clients as the fogs of the three-level run, and
+    each edge's link to the cloud is its whole physical path."""
+    two = {"name": "cloud_only", "levels": ["global", "edge"], "root": {"id": "cloud"}}
+    raw = with_infrastructure(workspace, topology=two)
+    raw["infrastructure"]["assignment"].pop("aggregators")
+    (flat,) = plan(parse_experiment(raw))
+    (tree,) = plan(parse_experiment(with_infrastructure(workspace)))
+
+    edges = sorted(flat["infrastructure"]["hosts"].keys() - {"cloud"})
+    assert flat["composition"].keys() == {"cloud"}
+    assert edges == sorted(
+        tree["infrastructure"]["hosts"].keys() - {"cloud", "fog_a", "fog_b"}
+    )
+    assert flat["composition"]["cloud"]["datasets"] == {
+        "demo": sum(c["datasets"]["demo"] for c in tree["composition"].values())
+    }
+    assert {tuple(flat["infrastructure"]["links"][e]["path"]) for e in edges} == {
+        ("field", "fog", "dc")
+    }
+
+    (scenario,) = scenarios(parse_experiment(raw))
+    path = run_scenario(scenario, evaluate=stub_score)
+    events = [
+        json.loads(line)
+        for line in (path / "events.jsonl").read_text("utf-8").splitlines()
+    ]
+    updates = {
+        (e["tags"]["src"], e["tags"]["round"])
+        for e in events
+        if e["name"] == "message.delivered"
+        and e["node"] == "cloud"
+        and e["tags"].get("kind") == "update"
+    }
+    assert updates == {(e, r) for e in edges for r in (1, 2)}
+    assert json.loads((path / "run.json").read_text("utf-8"))["status"] == "finished"
+
+    # FedAvg weighted by samples at every level: the fogs change nothing
+    (three,) = scenarios(parse_experiment(with_infrastructure(workspace)))
+    other = run_scenario(three, evaluate=stub_score)
+    with np.load(path / "model.npz") as a, np.load(other / "model.npz") as b:
+        assert a.files == b.files
+        for key in a.files:
+            np.testing.assert_allclose(a[key], b[key], rtol=1e-6, atol=1e-7)

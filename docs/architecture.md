@@ -74,6 +74,7 @@ flowchart LR
   - `mixing(α)` weights each dataset by home fog (declared, inherited or assigned in turns), from segregated at α = 0 to uniform at α = 1;
   - the others are `dirichlet(β)`, `label_skew(β)`, `explicit` and `pooled`, the centralised baseline with the same model and trainer.
   - The composition per leaf (samples, classes, dataset mix and its entropy) is recorded as `data.composition`.
+  - In a two-level topology (`levels: [global, edge]`, the edges straight under the cloud) the root is the only leaf: it takes every client, and the global evaluators stand in for the zone ones. With FedAvg weighted by samples at every level, it reaches the same model as a tree of fogs.
 
 ## 5. Learning
 

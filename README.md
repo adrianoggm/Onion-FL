@@ -47,7 +47,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 
 ### What the results can and can't support today
 
-- **Seventeen experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the comparison of two model families, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, the selection of the unlabelled objectives (a null result: nothing could be chosen), the continual benchmark (five baselines chosen on validation, then run on test, with sweeps and a promotion run), a FedAvg reference on 200 FEMNIST writers, FLamby's triangle on Fed-Heart-Disease, and FedAvg with an MLP on CIFAR-10 (Dir(0.5) and IID; the NIID-Bench CNN reproduction waits for #245). Most have three seeds (Fed-Heart-Disease has five), so many intervals overlap.
+- **Eighteen experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the comparison of two model families, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, the selection of the unlabelled objectives (a null result: nothing could be chosen), the continual benchmark (five baselines chosen on validation, then run on test, with sweeps and a promotion run), a FedAvg reference on 200 FEMNIST writers, FLamby's triangle on Fed-Heart-Disease, FedAvg with an MLP on CIFAR-10 (Dir(0.5) and IID; the NIID-Bench CNN reproduction waits for #245), and the same federation over four simulated architectures of the continuum. Most have three seeds (Fed-Heart-Disease and the architectures have five, and the architectures' times come from an uncalibrated infrastructure), so many intervals overlap.
   - The reference run and the mixing sweep have no strong result. On SWELL, no model beats always predicting "stress" on the held-out subjects. On WESAD, the federated model reaches 0.77 accuracy where centralised logistic regression reaches 0.91.
   - In the technique comparisons, the clearest effects are on WESAD: FedDyn and SCAFFOLD beat FedAvg under drift, the adaptive server optimizers beat it too, and a strong sign-flip attack collapses FedAvg while norm clipping holds.
   - On the streams, no continual baseline learns to tell the classes apart on held-out subjects: every model that keeps updating ends predicting one class. The baselines differ only in how fast they follow the class that is arriving, and replay and the unlabelled rows add nothing measurable at a tenth of the labels.
@@ -422,6 +422,21 @@ Source: [results/techniques_server/](results/techniques_server/INDEX.md), `topol
 
 - **In these runs, FedAdagrad, FedYogi and FedAdam beat FedAvg on WESAD**; the intervals do not overlap. On SWELL they overlap.
 - **FedBuff-style buffering finishes 20 rounds in 43% less simulated time**, but its per-round score on SWELL is lower; time-to-accuracy is not compared yet. It is a hierarchical adaptation (the fogs buffer, the cloud stays synchronous), not the FedBuff or FedAsync protocol.
+
+### New framework: the same federation over four architectures
+
+Source: [results/infrastructure_architectures/](results/infrastructure_architectures/INDEX.md), commit `2833a9c`, `infrastructure_id` `90b27e16…` (A–C) and `a28dd1a2…` (D). It is `experiments/infrastructure_architectures.yaml`: SWELL + WESAD, the same subjects, training (SGD at lr 0.1, chosen on validation) and 5 seeds on an illustrative, uncalibrated infrastructure, on the `sim` backend. A: the 28 edges straight under the cloud; B: four fogs on two fog servers; C: B with mixed devices; D: C with the SWELL fogs' server down from 30 to 60 s and `nearest_alive` failover. Mean ± 95% CI:
+
+| Arm | Global SWELL | Global WESAD | Round time (s) | Run (s) | WAN (MB) |
+|---|---|---|---|---|---|
+| A, cloud-centralised | 0.551 ± 0.039 | 0.753 ± 0.013 | 5.48 | 109.8 | 198.4 |
+| B, edge–fog–cloud | 0.552 ± 0.036 | 0.754 ± 0.012 | 1.88 | 37.7 | 28.6 |
+| C, heterogeneous | 0.552 ± 0.036 | 0.754 ± 0.012 | 7.56 | 151.3 | 28.6 |
+| D, dynamic | 0.544 ± 0.042 | 0.751 ± 0.014 | 7.72 | 339.1 ± 120 | 18.2 |
+
+- **The architectures tie on learning** (B and C give the same model bit for bit), so they are ranked on system metrics only.
+- **In this model of the continuum**, the fogs cut WAN traffic 7× and round time 2.9× against the centralised cloud, slow devices make every round wait (4× B's), and a fog failure costs a round deadline (120 or 300 s) although the failover moves its edges within 5 s.
+- **Decision fidelity between `sim` and `local`** (the logical federations of A and B, commit `76d1bd8`, 5 seeds each): the final models, protocol events and bytes match bit for bit in all 10 pairs, so both backends rank A and B the same on learning (a tie, below the seeds' noise ceiling) and on traffic. They rank them in opposite order on time: the logical `sim` has no compute model and counts link hops, while `local` measures this machine's training, which B spreads over four processes. C and D wait for the emulated backend (I10). The `local` runs had first stalled on MQTT behind Docker Desktop's port forwarding, fixed by giving the transport one connection each way. The INDEX gives the details.
 
 ### New framework: two model families
 

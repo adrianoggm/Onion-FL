@@ -17,8 +17,10 @@ Each aggregation node reads its round settings from the topology::
 
 The edge template takes ``eval: {every: 1, models: [received, local]}``.
 Edges hang from the leaf aggregators and use the topology's edge link; the
-root takes evaluators only: the ``test`` subjects, or the validation ones with
-``evaluation.global.subjects: val`` (hyperparameter selection).
+root takes evaluators: the ``test`` subjects, or the validation ones with
+``evaluation.global.subjects: val`` (hyperparameter selection). It takes
+training edges too only when it is the leaf, in a two-level topology (the
+edges report straight to the cloud).
 """
 
 from collections.abc import Mapping, Sequence
@@ -178,7 +180,7 @@ def build_federation(
     if stray:
         raise ValueError(f"edges under {stray}, which are not leaf aggregators")
     trainers_at_root = [e.id for e in edges.get(root.id, []) if e.train]
-    if trainers_at_root:
+    if trainers_at_root and root.id not in leaves:
         raise ValueError(
             f"the root {root.id!r} takes evaluators only, not {trainers_at_root}"
         )
