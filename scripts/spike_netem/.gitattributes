@@ -1,0 +1,2 @@
+# Mounted into Linux containers: keep LF even with core.autocrlf.
+*.sh text eol=lf

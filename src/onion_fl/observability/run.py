@@ -195,7 +195,8 @@ class Run:
         _write_json(self.path / "run.json", self.meta)
         self.sinks = [JsonlSink(self.path / "events.jsonl"), *sinks]
         self.nodes: dict[str, tuple[str | None, str | None]] = {
-            "experiment": (None, "experiment")
+            "experiment": (None, "experiment"),
+            "control": (None, "control"),  # a simulation's operator orders (#203)
         }
         self.summary = _Summary()
         self._wall = time.perf_counter()
@@ -244,6 +245,12 @@ class Run:
                 "tags": tags,
             }
         )
+
+    def sync(self) -> None:
+        """Write out what the sinks buffer, so readers of the files see it now."""
+        for sink in self.sinks:
+            if hasattr(sink, "sync"):
+                sink.sync()
 
     def finish(self, status: str = "finished") -> dict[str, Any]:
         # Communication per link and round, from the message events (spec §10.4).

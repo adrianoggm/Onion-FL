@@ -16,6 +16,7 @@ arrives; check arrivals against the schedule if that ever matters.
 """
 
 import csv
+import math
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,8 @@ def changes(infra: Infrastructure) -> list[tuple[float, str, dict | None, bool |
     out = []
     links = {frozenset(link.between): link.between for link in infra.network.links}
     for change in infra.network.schedule:
+        if change.host is not None:
+            continue
         key = _key(links[frozenset(change.between)])
         if change.trace is None:
             out.append((change.at, key, change.set, change.down))
@@ -54,6 +57,38 @@ def changes(infra: Infrastructure) -> list[tuple[float, str, dict | None, bool |
                         "with units (latency, jitter, bandwidth, loss)"
                     ) from None
     return sorted(out, key=lambda c: c[0])  # stable: same instant, declared order
+
+
+def downtime(infra: Infrastructure) -> dict[str, list[tuple[float, float]]]:
+    """When each host is down: windows [start, end), end inf if it never comes back.
+
+    A host already down stays down at a second ``down``, and up at an ``up``.
+    """
+    out: dict[str, list[tuple[float, float]]] = {}
+    since: dict[str, float] = {}
+    for change in sorted(
+        (c for c in infra.network.schedule if c.host is not None),
+        key=lambda c: c.at,  # stable: same instant, declared order
+    ):
+        if change.down and change.host not in since:
+            since[change.host] = change.at
+        elif not change.down and change.host in since:
+            start = since.pop(change.host)
+            out.setdefault(change.host, []).append((start, change.at))
+    for host, start in since.items():
+        out.setdefault(host, []).append((start, math.inf))
+    return dict(sorted(out.items()))
+
+
+def host_events(infra: Infrastructure) -> list[tuple[float, str, dict[str, Any]]]:
+    """``host.down`` and ``host.up`` with their instants."""
+    out = []
+    for host, windows in downtime(infra).items():
+        for start, end in windows:
+            out.append((start, "host.down", {"host": host}))
+            if end != math.inf:
+                out.append((end, "host.up", {"host": host}))
+    return sorted(out, key=lambda e: e[0])
 
 
 class PhysicalNetwork:
