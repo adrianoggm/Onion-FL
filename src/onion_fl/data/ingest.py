@@ -355,6 +355,95 @@ class LeafJsonReader:
         )
 
 
+def _cifar_array(subtype: Any, shape: Any, dtype: Any) -> np.ndarray:
+    if subtype is not np.ndarray:
+        raise pickle.UnpicklingError(f"array subtype {subtype!r} is not allowed")
+    return np.ndarray.__new__(np.ndarray, shape, _cifar_dtype(dtype))
+
+
+def _cifar_dtype(name: Any, align: Any = False, copy: Any = False) -> np.dtype:
+    if isinstance(name, bytes):
+        name = name.decode("latin1")
+    dtype = np.dtype(name, align=bool(align), copy=bool(copy))
+    if dtype.hasobject:
+        raise pickle.UnpicklingError("object arrays are not allowed")
+    return dtype
+
+
+def _latin1(text: Any, encoding: Any = "latin1") -> bytes:
+    # How Python 3 writes bytes at protocol 2: _codecs.encode(str, "latin1").
+    if not isinstance(text, str) or encoding not in ("latin1", "latin-1"):
+        raise pickle.UnpicklingError("only latin1 text can become bytes")
+    return text.encode("latin1")
+
+
+class _CifarUnpickler(pickle.Unpickler):
+    """Only plain values and numeric numpy arrays: nothing in the file runs code.
+
+    The batches are a dict of bytes, lists and one uint8 array; the array is
+    rebuilt by numpy's ``_reconstruct`` and ``dtype``, here replaced by checked
+    versions that refuse any subtype but ``ndarray`` and any object dtype.
+    """
+
+    SAFE = {
+        ("numpy.core.multiarray", "_reconstruct"): _cifar_array,
+        ("numpy._core.multiarray", "_reconstruct"): _cifar_array,
+        ("numpy", "ndarray"): np.ndarray,
+        ("numpy", "dtype"): _cifar_dtype,
+        ("_codecs", "encode"): _latin1,
+    }
+
+    def find_class(self, module: str, name: str) -> Any:
+        try:
+            return self.SAFE[(module, name)]
+        except KeyError:
+            raise pickle.UnpicklingError(f"{module}.{name} is not allowed") from None
+
+    def persistent_load(self, pid: Any) -> Any:
+        raise pickle.UnpicklingError("persistent ids are not allowed")
+
+
+CIFAR_PIXELS = 3 * 32 * 32
+
+
+@readers.register(
+    "cifar_pickle",
+    title="CIFAR (Python)",
+    description="Lote de la versión Python de CIFAR-10: una fila por imagen, 3072 píxeles.",
+    explain=(
+        "Los píxeles se leen en [0, 1] como x_0…x_3071 en el orden del fichero "
+        "(1024 rojos, 1024 verdes, 1024 azules, por filas); la clase queda en y y "
+        "el nombre del lote (data_batch_1, test_batch…) en batch. Se lee sin "
+        "ejecutar código del fichero."
+    ),
+)
+class CifarPickleReader:
+    """One batch of the CIFAR-10 python version (Krizhevsky, 2009)."""
+
+    def read(self, path: Path) -> pd.DataFrame:
+        with open(path, "rb") as handle:
+            try:
+                batch = _CifarUnpickler(handle, encoding="bytes").load()
+            except (pickle.UnpicklingError, EOFError, ValueError) as error:
+                raise DataError(f"{path}: not a CIFAR batch: {error}") from None
+        if not isinstance(batch, dict) or not {b"data", b"labels"} <= set(batch):
+            raise DataError(f"{path}: a CIFAR batch is a dict with data and labels")
+        pixels, labels = batch[b"data"], np.asarray(batch[b"labels"], dtype=np.int64)
+        if (
+            not isinstance(pixels, np.ndarray)
+            or pixels.dtype != np.uint8
+            or pixels.shape != (len(labels), CIFAR_PIXELS)
+        ):
+            raise DataError(
+                f"{path}: data must be uint8 of shape ({len(labels)}, {CIFAR_PIXELS})"
+            )
+        frame = pd.DataFrame(
+            pixels.astype(np.float32) / 255,
+            columns=[f"x_{i}" for i in range(CIFAR_PIXELS)],
+        )
+        return frame.assign(y=labels, batch=path.stem)
+
+
 def source_files(source: SourceSpec, root: Path) -> list[tuple[Path, str | None]]:
     """Files the path matches, with the subject that ``{subject}`` captured."""
     regex = _glob_regex(source.path)

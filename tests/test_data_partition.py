@@ -7,10 +7,15 @@ check parsing; the real batches are checked in test_datasets_descriptors.py.
 
 from __future__ import annotations
 
+import os
+import pickle
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from onion_fl.data.contract import DataError
+from onion_fl.data.ingest import readers
 from onion_fl.data.partition import partition_labels
 
 LABELS = np.repeat(np.arange(10), 200)  # 2,000 rows, 200 per class
@@ -98,3 +103,61 @@ def test_bad_partitions_are_refused(scheme, kwargs, match):
 def test_labels_outside_the_classes_are_refused():
     with pytest.raises(DataError, match="outside"):
         partition_labels(np.array([0, 10]), "iid", 2, n_classes=10, seed=0)
+
+
+# --- the CIFAR reader and the step on a format fixture ------------------------------
+
+
+def write_batch(path: Path, labels: list[int], shade: int = 0) -> None:
+    pixels = np.full((len(labels), 3072), shade, dtype=np.uint8)
+    pixels[:, 0] = np.arange(len(labels))  # tells the rows apart
+    batch = {
+        b"batch_label": path.stem.encode(),
+        b"labels": labels,
+        b"data": pixels,
+        b"filenames": [b"f%d.png" % i for i in range(len(labels))],
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(pickle.dumps(batch, protocol=2))  # as the published batches
+
+
+def test_the_reader_gives_pixels_in_0_1_a_label_and_the_batch(tmp_path: Path):
+    write_batch(tmp_path / "data_batch_1", [3, 1, 4], shade=255)
+
+    frame = readers.create("cifar_pickle").read(tmp_path / "data_batch_1")
+
+    assert list(frame.columns[:2]) == ["x_0", "x_1"] and frame.shape == (3, 3074)
+    assert frame["y"].tolist() == [3, 1, 4]
+    assert set(frame["batch"]) == {"data_batch_1"}
+    assert frame["x_1"].tolist() == [1.0, 1.0, 1.0]
+    assert frame["x_0"].tolist() == pytest.approx([0, 1 / 255, 2 / 255])
+
+
+class _Runs:
+    def __reduce__(self):
+        return (os.getcwd, ())
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {b"data": _Runs(), b"labels": []},
+        {b"data": np.array([object()], dtype=object), b"labels": [0]},
+    ],
+)
+def test_the_reader_runs_no_code_from_the_file(tmp_path: Path, payload):
+    path = tmp_path / "data_batch_1"
+    path.write_bytes(pickle.dumps(payload, protocol=2))
+
+    with pytest.raises(DataError, match="not allowed"):
+        readers.create("cifar_pickle").read(path)
+
+
+def test_the_reader_checks_the_shape(tmp_path: Path):
+    path = tmp_path / "data_batch_1"
+    path.write_bytes(
+        pickle.dumps({b"data": np.zeros((2, 5), np.uint8), b"labels": [0, 1]}, 2)
+    )
+
+    with pytest.raises(DataError, match="shape"):
+        readers.create("cifar_pickle").read(path)
