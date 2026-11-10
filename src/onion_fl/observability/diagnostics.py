@@ -6,6 +6,10 @@ A plugin gets a ``RoundView`` and returns ``(name, value, tags)`` triples,
 emitted as ``diagnostic.<name>``. A child's delta is its contribution minus the
 model it was sent, flattened per parameter group.
 
+``contribution`` values each child's update with the aggregator's own view only:
+no validation or test data reaches an aggregator, and scoring coalitions on the
+zone evaluators would cost a message round trip per coalition.
+
 Communication (bytes and messages per link and round) is not here: the
 aggregators never see encoded sizes, so ``observability.run`` derives it from
 the message events.
@@ -14,9 +18,12 @@ the message events.
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import combinations
+from math import factorial
 from typing import Any
+from zlib import crc32
 
 import numpy as np
+from pydantic import BaseModel, Field
 
 from onion_fl.core.registry import Registry
 from onion_fl.learning.aggregators import Contribution
@@ -191,3 +198,132 @@ class Fairness:
             )
             for (m, d), v in sorted(values.items())
         ]
+
+
+class ContributionParams(BaseModel):
+    exact_max: int = Field(
+        10,
+        ge=1,
+        le=16,
+        description="Hasta cuántos hijos se calcula el Shapley exacto (2^n coaliciones)",
+    )
+    permutations: int = Field(
+        128, ge=1, description="Permutaciones de Monte Carlo con más hijos"
+    )
+    seed: int = Field(0, description="Semilla de las permutaciones")
+
+
+def coherence(units: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """v(S) = ‖Σ_{i∈S} u_i‖ for each row of ``mask`` (0/1 per child)."""
+    gram = units @ units.T
+    quad = np.einsum("ki,ij,kj->k", mask, gram, mask)
+    return np.sqrt(np.maximum(quad, 0.0))
+
+
+def _exact_shapley(units: np.ndarray) -> np.ndarray:
+    n = len(units)
+    masks = (np.arange(2**n)[:, None] >> np.arange(n)) & 1
+    values = coherence(units, masks.astype(np.float64))
+    sizes = masks.sum(axis=1)
+    weight = np.array(
+        [factorial(s) * factorial(n - s - 1) / factorial(n) for s in range(n)]
+    )
+    out = np.zeros(n)
+    for i in range(n):
+        without = np.flatnonzero(masks[:, i] == 0)
+        out[i] = np.sum(
+            weight[sizes[without]] * (values[without | (1 << i)] - values[without])
+        )
+    return out
+
+
+def _sampled_shapley(units: np.ndarray, permutations: int, rng) -> np.ndarray:
+    n = len(units)
+    gram = units @ units.T
+    out = np.zeros(n)
+    for _ in range(permutations):
+        order = rng.permutation(n)
+        quad, inside, value = 0.0, np.zeros(n), 0.0
+        for i in order:
+            quad += 2 * inside @ gram[i] + gram[i, i]
+            inside[i] = 1.0
+            new = float(np.sqrt(max(quad, 0.0)))
+            out[i] += new - value
+            value = new
+    return out / permutations
+
+
+@diagnostics.register(
+    "contribution",
+    title="Contribución",
+    description=(
+        "Valor de cada hijo por grupo: leave-one-out y Shapley (exacto o por "
+        "Monte Carlo) en el juego v(S) = ‖Σ_{i∈S} Δ_i/‖Δ_i‖‖ − √|S|."
+    ),
+    params=ContributionParams,
+    explain=(
+        "Solo usa las actualizaciones que ya ve el agregador, sin datos de "
+        "validación ni de test. Un Δ que apunta como el resto puntúa alto, uno "
+        "ortogonal (ruido) cerca de 0 y uno en contra, negativo."
+    ),
+)
+class ContributionValue:
+    """Leave-one-out and Shapley values of each child in a coherence game.
+
+    Each child's delta becomes a unit vector, so neither the size of an update
+    nor its samples buy value: only its direction relative to the others. The
+    game is v(S) = ‖Σ_{i∈S} u_i‖ − √|S|, the coherence of S beyond that of
+    mutually orthogonal vectors (independent noise in many dimensions), which
+    is 0. A zero delta is a zero vector and does not count in |S|, so it scores
+    0. The Shapley values add up to v(N). Leave-one-out is v(N) − v(N∖i), the
+    aggregated direction with and without the child.
+
+    The √|S| term is symmetric, so its share is exact (1/√m among the m
+    non-zero children); only the norm term is sampled beyond ``exact_max``.
+    """
+
+    def __init__(
+        self, exact_max: int = 10, permutations: int = 128, seed: int = 0
+    ) -> None:
+        self.exact_max, self.permutations, self.seed = exact_max, permutations, seed
+
+    def compute(self, view: RoundView) -> list[Item]:
+        out: list[Item] = []
+        for group, by_child in deltas(view).items():
+            children = list(by_child)
+            n = len(children)
+            if n < 2:
+                continue
+            vectors = np.stack([by_child[c] for c in children])
+            norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+            units = np.divide(
+                vectors, norms, out=np.zeros_like(vectors), where=norms > 0
+            )
+            full = coherence(units, np.ones((1, n)))[0]
+            loo = full - coherence(units, 1.0 - np.eye(n))
+            if n <= self.exact_max:
+                shapley, method = _exact_shapley(units), "exact"
+            else:
+                rng = np.random.default_rng(
+                    [self.seed, view.round, crc32(group.encode())]
+                )
+                shapley = _sampled_shapley(units, self.permutations, rng)
+                method = "monte_carlo"
+            nonzero = (norms[:, 0] > 0).astype(np.float64)
+            m = nonzero.sum()
+            if m:
+                shapley = shapley - nonzero / np.sqrt(m)
+                loo = loo - nonzero * (np.sqrt(m) - np.sqrt(m - 1))
+            for i, name in enumerate(children):
+                tags: dict[str, Any] = {"group": group, "child": name, "n": n}
+                if name in view.datasets:
+                    tags["dataset"] = view.datasets[name]
+                out.append(("contribution_loo", float(loo[i]), tags))
+                out.append(
+                    (
+                        "contribution_shapley",
+                        float(shapley[i]),
+                        tags | {"method": method},
+                    )
+                )
+        return out
