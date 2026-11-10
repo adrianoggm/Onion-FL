@@ -96,6 +96,7 @@ class SubjectData:
             task=self.task,
             n_features=self.X.shape[1],
             n_classes=self.n_classes,
+            features=tuple(self.feature_names),
         )
 
     @property

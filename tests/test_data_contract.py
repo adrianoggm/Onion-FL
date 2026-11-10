@@ -43,7 +43,11 @@ def test_meta_is_derived_from_the_arrays() -> None:
 
 def test_shape_feeds_the_model() -> None:
     assert subject().shape == DataShape(
-        dataset="sweet", task="stress_3class", n_features=2, n_classes=3
+        dataset="sweet",
+        task="stress_3class",
+        n_features=2,
+        n_classes=3,
+        features=("hr", "eda"),
     )
 
 

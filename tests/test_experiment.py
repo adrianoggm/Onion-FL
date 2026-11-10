@@ -893,7 +893,11 @@ def test_the_second_model_family_runs_end_to_end(workspace: Path) -> None:
     assert final["adapter.demo.0.weight"].shape == (2, 4)  # one token per feature
     assert verify_run(path)
     catalogue = experiment_schema()["plugins"]["model"]
-    assert {p["name"] for p in catalogue} == {"feature_transformer", "modular_mlp"}
+    assert {p["name"] for p in catalogue} == {
+        "feature_transformer",
+        "modular_mlp",
+        "torch_module",
+    }
 
 
 def _noisy(workspace: Path, **learning) -> dict:
