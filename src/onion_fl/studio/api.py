@@ -164,6 +164,12 @@ AXES: list[tuple[str, str, str, str | None]] = [
         None,
     ),
     (
+        "backend",
+        "Backend",
+        "Dónde y con qué reloj se ejecuta cada escenario: simulación o local.",
+        None,
+    ),
+    (
         "failover",
         "Reasignación",
         "Adónde va un edge cuando cae el host de su agregador.",
