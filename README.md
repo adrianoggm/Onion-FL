@@ -33,7 +33,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Area | Status | Summary |
 |---|---|---|
 | Topologies | ✅ | Trees of any depth in YAML (compact or general form), each with a `topology_id` (SHA-256 of its structure and links) and a JSON/Mermaid graph |
-| Data | ✅ / ⚠️ | Declarative ingestion (readers and steps), a signed cache, subject roles fixed across scenarios, and placement plugins. FEMNIST (LEAF, one subject per writer, 200 fixed writers) adds a dataset with hundreds of natural clients. The SWELL, WESAD and FEMNIST descriptors are checked against the published files and the loaders from before the redesign; **SWEET is not** ([§5](#5-datasets)) |
+| Data | ✅ / ⚠️ | Declarative ingestion (readers and steps), a signed cache, subject roles fixed across scenarios, and placement plugins. FEMNIST (LEAF, one subject per writer, 200 fixed writers) adds a dataset with hundreds of natural clients, and Fed-Heart-Disease (FLamby, four hospitals with their official test splits) a cross-silo one. The SWELL, WESAD, FEMNIST and Fed-Heart-Disease descriptors are checked against the published files (and against the loaders from before the redesign, or FLamby's code for Fed-Heart-Disease); **SWEET is not** ([§5](#5-datasets)) |
 | Learning | ✅ | Modular model (adapter per dataset, shared or per-dataset trunk, head per task or dataset). Sharing scopes: global, per level, local. Per-key aggregators and server optimizers; trainers `standard`, `fedprox`; for personalisation `ditto`, `apfl`, `fedrep`, `fedbabu` and the `lg_fedavg` sharing preset; for non-IID drift `scaffold`, `moon`, and the trainer + server optimizer pairs `fednova` and `feddyn`. Algorithms exchange extra state (control variates) as auxiliary arrays, and the server optimizer gets each round's statistics (steps, edges). Robust aggregators (`krum`, `multi_krum`, `bulyan`, `geometric_median`, `norm_clip`), central and local differential privacy (`dp_fedavg`, `local_dp`) with ε per round, and an attack axis (`label_flip`, `sign_flip`, `gaussian`, `scale`) on a seeded fraction of edges. Edges also score personal and fine-tuned models; random or checkpoint init |
 | Round protocol | ✅ | Coordinator, aggregators at any level, edges and evaluators. Registration with acknowledged `hello`, quorum and deadline, staleness and participation plugins, per-key weights, evaluation at edge, zone and global level |
 | Simulation | ✅ | Virtual clock; links with latency, jitter, bandwidth and loss; compute and availability models; deterministic for a seed |
@@ -47,7 +47,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 
 ### What the results can and can't support today
 
-- **Twelve experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, and a FedAvg reference on 200 FEMNIST writers. Each has three seeds, so many intervals overlap.
+- **Thirteen experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, a FedAvg reference on 200 FEMNIST writers and FLamby's triangle on Fed-Heart-Disease. Most have three seeds (Fed-Heart-Disease has five), so many intervals overlap.
   - The reference run and the mixing sweep have no strong result. On SWELL, no model beats always predicting "stress" on the held-out subjects. On WESAD, the federated model reaches 0.77 accuracy where centralised logistic regression reaches 0.91.
   - In the technique comparisons, the clearest effects are on WESAD: FedDyn and SCAFFOLD beat FedAvg under drift, the adaptive server optimizers beat it too, and a strong sign-flip attack collapses FedAvg while norm clipping holds.
 - **Checking the data found real problems,** now fixed. 999 means "missing" in the SWELL physiology file, for 53% of the heart-rate values, and both the old and the new loaders read it as a value. The facial and physiology joins and the WESAD chest signals `Resp` and `Temp` failed to load. The SWELL posture file has every date a month early, so posture is left out.
@@ -472,6 +472,18 @@ Source: [results/femnist_reference/](results/femnist_reference/INDEX.md), `confi
 | Always "1" (majority class) | 0.060 | 0.002 |
 
 The federated model clearly beats the majority class, so it is not a constant predictor; it was still improving at round 30 and stays below centralised logistic regression. [results/sim_scale/](results/sim_scale/INDEX.md) measures the simulator from 100 to 4,000 edges.
+
+### New framework: Fed-Heart-Disease triangle (cross-silo)
+
+Source: [results/heart_disease_triangle/](results/heart_disease_triangle/INDEX.md), commit `0fa2b87`. It is `experiments/heart_disease_triangle.yaml`: FLamby's four hospitals as clients, each tested on its official FLamby test split (254 patients), with `modular_mlp` (one hidden layer) trained for 50 rounds of one Adam epoch in every arm, seeds 0–4. FedAvg runs on two fogs (`topology_id` `6f49bb9f…`, `config_id` `67041951…`), and pooled and local-only on one fog (`topology_id` `54cd664e…`).
+
+| Arm (accuracy, mean ± 95% CI over 5 seeds) | Mean of the 4 hospitals | All 254 test patients |
+|---|---|---|
+| Pooled | 0.820 ± 0.018 | 0.795 ± 0.014 |
+| Local-only, best hospital (Cleveland) | 0.704 ± 0.042 | 0.720 ± 0.015 |
+| FedAvg (2 fogs) | 0.747 ± 0.039 | 0.782 ± 0.024 |
+
+FedAvg comes close to pooled over all test patients and beats every local-only arm, but it does worse than pooled on Switzerland's 16 test patients. The local Switzerland model is a constant predictor, because all 30 of its training patients have the disease. Pooled matches FLamby's own pooled number (0.795, the mean of the per-seed files it publishes), but the protocol is not FLamby's (MLP instead of logistic regression, Adam epochs instead of SGD steps, and a hierarchical FedAvg), so the FedAvg row does not reproduce FLamby's. The INDEX has the per-hospital table and the comparison.
 
 ### Before the redesign
 
