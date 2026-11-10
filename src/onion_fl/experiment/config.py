@@ -49,6 +49,7 @@ from pydantic import (
 from onion_fl.baselines import baseline_models
 from onion_fl.continuum.drift import detectors
 from onion_fl.continuum.memory import memories
+from onion_fl.continuum.promotion import promotions
 from onion_fl.continuum.triggers import Schedule, drift_detectors, leaves, triggers
 from onion_fl.continuum.unlabelled import objectives
 from onion_fl.core.codec import codecs
@@ -63,7 +64,10 @@ from onion_fl.data.stream import (
     Staggered,
     StreamConfig,
 )
+from onion_fl.experiment.backends import backend_name
 from onion_fl.infrastructure.assignment import assignments
+from onion_fl.infrastructure.backends import backends
+from onion_fl.infrastructure.failover import failovers
 from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.attacks import attacks
 from onion_fl.learning.metrics import metrics
@@ -112,7 +116,10 @@ REGISTRIES: dict[str, Registry] = {
     "unlabelled": objectives,
     "trigger": triggers,
     "detector": detectors,
+    "promotion": promotions,
     "assignment": assignments,
+    "backend": backends,
+    "failover": failovers,
 }
 
 
@@ -329,6 +336,16 @@ class InfrastructureConfig(Strict):
         description="infrastructures/<nombre>.yaml, una ruta, o en línea"
     )
     assignment: AssignmentConfig
+    failover: PluginRef | None = Field(
+        None,
+        description="Adónde va un edge cuyo agregador cae (none, por defecto, "
+        "nearest_alive, explicit)",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+
+    _failover = field_validator("failover")(
+        lambda v: v if v is None else _plugin(failovers, v)
+    )
 
 
 class Range(Strict):
@@ -445,10 +462,21 @@ class ExperimentConfig(Strict):
         description="Cómo aprende cada edge de un stream de sus filas aún sin etiqueta",
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
+    promotion: PluginRef | None = Field(
+        None,
+        description="Champion y challenger: el modelo de cada ronda solo llega a "
+        "los edges si la validación lo promueve",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
 
     infrastructure: InfrastructureConfig | None = Field(
         None,
         description="Infraestructura física y asignación de lo lógico a ella",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+    backend: PluginRef | None = Field(
+        None,
+        description="Backend que ejecuta cada escenario; sin él, lo dice runtime.mode",
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
 
@@ -461,6 +489,25 @@ class ExperimentConfig(Strict):
     _unlabelled = field_validator("unlabelled")(
         lambda v: v if v is None else _plugin(objectives, v)
     )
+
+    _promotion = field_validator("promotion")(
+        lambda v: v if v is None else _plugin(promotions, v)
+    )
+
+    _backend = field_validator("backend")(
+        lambda v: v if v is None else _plugin(backends, v)
+    )
+
+    @property
+    def backend_ref(self) -> PluginRef:
+        """The backend that runs the scenarios: ``backend``, or ``runtime.mode``."""
+        if self.backend is not None:
+            return self.backend
+        return "local" if self.runtime.mode == "real" else "sim"
+
+    @property
+    def simulated(self) -> bool:
+        return backend_name(self.backend_ref) == "sim"
 
     @field_validator("sweep")
     @classmethod
@@ -514,11 +561,37 @@ class ExperimentConfig(Strict):
         return self
 
     @model_validator(mode="after")
-    def _infrastructure_fits(self) -> ExperimentConfig:
-        if self.infrastructure is not None and self.runtime.mode == "real":
+    def _backend_fits(self) -> ExperimentConfig:
+        if (
+            self.backend is not None
+            and self.runtime.mode == "real"
+            and backend_name(self.backend) != "local"
+        ):
             raise ValueError(
-                "infrastructure: real runs take the machines they run on; an "
-                "infrastructure is simulated only for now (I7, I14)"
+                f"backend: runtime.mode: real is an alias of backend: local, not of "
+                f"{backend_name(self.backend)}; leave runtime.mode out"
+            )
+        refused = create(backends, self.backend_ref).supports(self.infrastructure)
+        if refused:
+            raise ValueError("; ".join(refused))
+        return self
+
+    @model_validator(mode="after")
+    def _promotion_fits(self) -> ExperimentConfig:
+        """A challenger is validated on the validation streams, by an evaluation
+        metric (continuum C7)."""
+        if self.promotion is None:
+            return self
+        if self.stream is None:
+            raise ValueError(
+                "promotion: a challenger is validated on the validation streams; "
+                "set stream too"
+            )
+        metric = getattr(create(promotions, self.promotion), "metric", None)
+        if metric in metrics.names() and metric not in self.evaluation.metrics:
+            raise ValueError(
+                f"promotion: it compares {metric!r}, which evaluation.metrics "
+                "does not compute; add it there"
             )
         return self
 
@@ -560,7 +633,7 @@ class ExperimentConfig(Strict):
         name = ref if isinstance(ref, str) else ref["name"]
         merging = getattr(placements.create(name, params), "merge", False)
         refusals = [
-            (self.runtime.mode == "real", "real runs do not stream yet (C9)"),
+            (not self.simulated, "real runs do not stream yet (C9)"),
             (
                 (init if isinstance(init, str) else init["name"]) == "run",
                 "learning.init: run cannot continue a stream yet; the bundle holds "

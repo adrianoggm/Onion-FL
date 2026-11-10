@@ -1,0 +1,11 @@
+{
+  "_doc": "I9 spike targets. latency_ms is one way (LinkFields.latency); bw_mbit both ways; loss_pct per direction. 'lower' is the edge side, 'upper' runs the iperf3 servers.",
+  "links": {
+    "e1_f1":    {"lower": "e1",   "upper": "fog1",  "lower_ip": "10.194.1.2", "upper_ip": "10.194.1.3", "latency_ms": 5,  "bw_mbit": 50,  "loss_pct": 1},
+    "e2_f1":    {"lower": "e2",   "upper": "fog1",  "lower_ip": "10.194.2.2", "upper_ip": "10.194.2.3", "latency_ms": 20, "bw_mbit": 10,  "loss_pct": 2},
+    "e3_f2":    {"lower": "e3",   "upper": "fog2",  "lower_ip": "10.194.3.2", "upper_ip": "10.194.3.3", "latency_ms": 2,  "bw_mbit": 100, "loss_pct": 0.5},
+    "e4_f2":    {"lower": "e4",   "upper": "fog2",  "lower_ip": "10.194.4.2", "upper_ip": "10.194.4.3", "latency_ms": 50, "bw_mbit": 5,   "loss_pct": 5},
+    "f1_cloud": {"lower": "fog1", "upper": "cloud", "lower_ip": "10.194.5.2", "upper_ip": "10.194.5.3", "latency_ms": 10, "bw_mbit": 20,  "loss_pct": 1},
+    "f2_cloud": {"lower": "fog2", "upper": "cloud", "lower_ip": "10.194.6.2", "upper_ip": "10.194.6.3", "latency_ms": 30, "bw_mbit": 10,  "loss_pct": 0.5}
+  }
+}
