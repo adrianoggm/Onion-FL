@@ -830,6 +830,8 @@ REDUCE: dict[str, Callable[[np.ndarray], float]] = {
     "mode": lambda a: float(np.bincount(a.astype(np.int64)).argmax()),
     "first": lambda a: float(a[0]),
     "last": lambda a: float(a[-1]),
+    # one class throughout, or no label: the window is dropped
+    "unanimous": lambda a: float(a[0]) if (a == a[0]).all() else float("nan"),
 }
 
 
@@ -905,7 +907,11 @@ class MultirateWindowParams(BaseModel):
     columns: list[str] | None = Field(
         None, description="Canales; por defecto los numéricos"
     )
-    label: Literal["mean_round", "mode", "first", "last"] = "mean_round"
+    label: Literal["mean_round", "mode", "first", "last", "unanimous"] = Field(
+        "mean_round",
+        description="Cómo resume la ventana sus muestras de etiqueta; unanimous "
+        "descarta las ventanas que mezclan clases",
+    )
     label_rows: str | None = Field(
         None,
         description="Columna cuyas filas con valor son las muestras de la etiqueta; "

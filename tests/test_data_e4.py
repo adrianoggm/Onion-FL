@@ -454,3 +454,20 @@ def test_e4_reader_rejects_a_start_that_is_not_a_time(tmp_path: Path) -> None:
 
     with pytest.raises(DataError, match="neither Unix seconds nor a date"):
         readers.create("empatica_e4_csv", {"signals": "EDA"}).read(folder)
+
+
+def test_multirate_window_unanimous_drops_windows_that_mix_classes(
+    tmp_path: Path,
+) -> None:
+    df = _session_table(tmp_path, "EDA")
+    label = np.where(df["time"] - START < 5, 0.0, 1.0)
+
+    out = window(
+        {"seconds": 2, "columns": ["eda"], "label": "unanimous"},
+        df.assign(label=label),
+    )
+
+    # The window over seconds 4-6 mixes the classes; ingest drops its NaN label.
+    assert out["label"].tolist()[:2] == [0, 0]
+    assert np.isnan(out["label"].iloc[2])
+    assert out["label"].tolist()[3:] == [1, 1]
