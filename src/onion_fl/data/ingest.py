@@ -73,6 +73,11 @@ class DatasetSpec(BaseModel):
     options: dict[str, Any] = Field(default_factory=dict)
     steps: list[dict[str, Any]]
     min_samples_per_subject: PositiveInt = 1
+    tokens: bool = Field(
+        False,
+        description="Las features son índices o tokens: no admiten escalado",
+        exclude_if=lambda v: not v,  # unset, it keeps existing cache keys
+    )
 
 
 def load_spec(path: str | Path) -> DatasetSpec:

@@ -242,6 +242,12 @@ def load_data(config: ExperimentConfig) -> tuple[list[Any], dict[str, str]]:
                 f"{spec.name!r}; give one descriptor another name"
             )
         loaded[spec.name] = name
+        scaler = config.data.roles.of(spec.name).scaler
+        if spec.tokens and scaler != "none":
+            raise ConfigError(
+                f"data.roles: dataset {spec.name!r} holds tokens, which scaling "
+                f"({scaler}) would destroy; set overrides.{spec.name}.scaler: none"
+            )
         path = prepare(spec, use.options, cache_dir=config.paths.cache)
         digests[name] = hashlib.sha256((path / "meta.json").read_bytes()).hexdigest()
         subjects += load_prepared(path)
