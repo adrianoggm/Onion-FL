@@ -164,6 +164,12 @@ AXES: list[tuple[str, str, str, str | None]] = [
         None,
     ),
     (
+        "failover",
+        "Reasignación",
+        "Adónde va un edge cuando cae el host de su agregador.",
+        None,
+    ),
+    (
         "availability_model",
         "Disponibilidad",
         "Cuándo está un nodo encendido en simulación.",
