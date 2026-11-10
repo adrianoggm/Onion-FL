@@ -1426,7 +1426,9 @@ def ingest(
                 f"missing {missing}, extra {extra}"
             )
         frames.append(df)
-    df = pd.concat(frames, ignore_index=True)
+    # Files that end without rows (an E4 session without labelled windows) are
+    # left out of the concatenation, which would otherwise warn about them.
+    df = pd.concat([f for f in frames if len(f)] or frames[:1], ignore_index=True)
     ran = {name for name, _ in active}
 
     if "subject" not in df.columns:
