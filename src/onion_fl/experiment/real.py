@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from onion_fl.continual.control import load_operators
 from onion_fl.core.topology import Topology
 from onion_fl.experiment.config import ConfigError, parse_experiment
 from onion_fl.experiment.sweep import Scenario, identity
@@ -256,7 +257,15 @@ def run_node(
         epoch=epoch,
         heartbeat_s=chosen.config.runtime.heartbeat,
     )
-    federation = build_scenario(chosen, topology, split, placement, runtime=runtime)
+    federation = build_scenario(
+        chosen,
+        topology,
+        split,
+        placement,
+        runtime=runtime,
+        operator_keys=load_operators(),  # orders over the transport are signed
+        audience=run_id,
+    )
     roles = node_roles(federation, topology)
     (Path(chosen.config.paths.runs) / run_id).mkdir(parents=True, exist_ok=True)
     part = JsonlSink(
