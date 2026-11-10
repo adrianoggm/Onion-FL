@@ -45,6 +45,9 @@ State = dict[str, np.ndarray]
 Evaluate = Callable[[Any, Any], tuple[Mapping[str, float], int]]
 
 
+UPDATES = ("warm", "frozen", "scratch")
+
+
 def _reject(ctx: Context, msg: Message, reason: str) -> None:
     ctx.emit(
         "message.rejected", src=msg.src, kind=msg.kind, round=msg.round, reason=reason
@@ -1284,8 +1287,27 @@ class Edge(_Greeter, Node):
         continuum: Any = None,
         metrics: Sequence[str] = ("loss", "accuracy"),
         validates: bool = False,
+        update: str = "warm",
     ) -> None:
         super().__init__(node_id)
+        if update not in UPDATES:
+            raise ValueError(
+                f"{node_id}: update must be one of {UPDATES}, not {update}"
+            )
+        if update != "warm":
+            if stream is None:
+                raise ValueError(f"{node_id}: update {update} needs a stream")
+            if replay is not None or unlabelled is not None:
+                raise ValueError(
+                    f"{node_id}: update {update} takes no replay memory and no "
+                    "unlabelled objective; they need warm"
+                )
+        # How a stream edge updates (the baselines of continuum C8): warm goes on
+        # from the model received; frozen trains v0 on the history, with the
+        # first model it gets, and is idle from then on; scratch starts every training from the initial weights,
+        # on every trainable row it has.
+        self.update = update
+        self._initial: State | None = None  # the first model received, whole
         if validates and (train or stream is None):
             raise ValueError(f"{node_id}: a validator is an evaluator with a stream")
         # A validator scores the champion and a challenger on its stream (C7).
@@ -1515,6 +1537,8 @@ class Edge(_Greeter, Node):
                 s.arrived(since, now) & (s.label_at > now) & (self._unlabelled_by < 0)
             )
         rows = buffer.copy()
+        if self.update == "scratch":  # all it may train on, used or not
+            rows = s.trainable(since, now)
         if self.replay is not None:
             # replay_ratio r of the training comes from memory: k = r·n / (1 − r);
             # with nothing new the edge stays idle, whatever it remembers
@@ -1666,13 +1690,18 @@ class Edge(_Greeter, Node):
         if self.stream is not None:
             own, metrics = self._arrivals(msg.round, ctx)
         load_arrays(self.model, received)
+        if self._initial is None:  # the first model a child gets is whole
+            self._initial = dict(received)
         if self.stream is not None:
             self._served = state_arrays(self.model)
             # Nothing to train on, or no update wanted yet: idle, with its scores.
             first = bool(msg.meta.get("bootstrap"))
-            if own is None or not self._wants_update(msg.round, ctx, first):
+            frozen = self.update == "frozen" and not first  # v0 only
+            if own is None or frozen or not self._wants_update(msg.round, ctx, first):
                 _send_idle(self, msg.round, metrics, ctx)
                 return
+            if self.update == "scratch":  # served as received, trained afresh
+                load_arrays(self.model, self._initial)
         scoring = (
             self.evaluate is not None
             and self.val_data is not None

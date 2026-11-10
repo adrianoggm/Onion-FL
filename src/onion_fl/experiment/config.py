@@ -149,8 +149,25 @@ class ContinualConfig(Strict):
         lt=1,
         description="Fracción de cada entrenamiento que sale de la memoria",
     )
+    update: Literal["warm", "frozen", "scratch"] = Field(
+        "warm",
+        description="Cómo se actualiza cada edge: warm sigue desde el modelo "
+        "recibido, frozen solo entrena v0 con el histórico y scratch reentrena "
+        "desde los pesos iniciales con todas sus filas etiquetadas",
+        exclude_if=lambda v: v == "warm",  # unset, it keeps existing config_ids
+    )
 
     _memory = field_validator("memory")(lambda v: _plugin(memories, v))
+
+    @model_validator(mode="after")
+    def _warm_only(self) -> ContinualConfig:
+        name = self.memory if isinstance(self.memory, str) else self.memory["name"]
+        if self.update != "warm" and name != "none":
+            raise ValueError(
+                f"continual.update: {self.update} trains no rows twice from "
+                "memory; a replay memory needs warm"
+            )
+        return self
 
 
 class ContinuumConfig(Strict):
@@ -449,7 +466,7 @@ class ExperimentConfig(Strict):
     )
     continual: ContinualConfig | None = Field(
         None,
-        description="Memoria de replay de los edges de un stream",
+        description="Memoria de replay y forma de actualizar los edges de un stream",
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
     continuum: ContinuumConfig | None = Field(
@@ -610,6 +627,15 @@ class ExperimentConfig(Strict):
             raise ValueError(
                 "unlabelled: it learns from the rows of a stream still waiting for "
                 "their label; set stream too"
+            )
+        update = "warm" if self.continual is None else self.continual.update
+        objective = self.unlabelled
+        if isinstance(objective, dict):
+            objective = objective["name"]
+        if update != "warm" and objective not in (None, "none"):
+            raise ValueError(
+                f"unlabelled: continual.update {update} has no training on the "
+                "pool to add it to; use warm"
             )
         if self.stream is None:
             return self

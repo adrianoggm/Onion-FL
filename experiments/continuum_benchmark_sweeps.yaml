@@ -1,0 +1,58 @@
+# The continual benchmark's sweeps (issue #163, continuum C8), on test and
+# one axis at a time around warm start + replay as chosen on validation
+# (reservoir of 512 rows, replay_ratio 0.25, SGD at lr 0.1, 10 local epochs):
+# - labels: the labelled fraction (0.1, 0.25, 0.5, 1.0) at 10 minutes' delay,
+#   and the delay (0, 10 or 30 minutes) at a tenth;
+# - memory: fifo, reservoir and class_balanced at 4 and 16 rows. At a tenth
+#   of the labels a SWELL edge holds about 13 labelled rows, so 512 (the base)
+#   never binds and the three memories are the same there;
+# - trigger: volume (30 rows, a tenth of C6's 300, since a tenth of the rows
+#   is labelled) and prior drift, each with a status every 5 minutes, against
+#   the base schedule.
+# Nothing is chosen from these runs: they describe the chosen configuration.
+#
+#   onion_fl run experiments/continuum_benchmark_sweeps.yaml --workers 4
+name: continuum_benchmark_sweeps
+description: Barridos del benchmark continuo - fracción y retraso de etiquetas, memoria y disparador.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+rounds: 60                 # an upper bound: the run ends at the last label
+stream:
+  bootstrap: 20m
+  batch_size: 1
+  speed: 60
+labels: {fraction: 0.1, delay: 10m}
+continual: {memory: {name: reservoir, capacity: 512}, replay_ratio: 0.25}
+continuum:
+  trigger: {name: schedule, every: 10m}
+  status_every: 10m
+evaluation:
+  metrics: [loss, accuracy, macro_f1, confusion_matrix]
+  aggregators: {every: 1}
+  global: {every: 1}
+seeds: [0, 1, 2]
+sweep:
+  labels, continual.memory, continuum:
+    - [{fraction: 0.1, delay: 10m}, {name: reservoir, capacity: 512}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
+    - [{fraction: 0.25, delay: 10m}, {name: reservoir, capacity: 512}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
+    - [{fraction: 0.5, delay: 10m}, {name: reservoir, capacity: 512}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
+    - [{fraction: 1.0, delay: 10m}, {name: reservoir, capacity: 512}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
+    - [{fraction: 0.1, delay: 0}, {name: reservoir, capacity: 512}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
+    - [{fraction: 0.1, delay: 30m}, {name: reservoir, capacity: 512}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
+    - [{fraction: 0.1, delay: 10m}, {name: fifo, capacity: 4}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
+    - [{fraction: 0.1, delay: 10m}, {name: fifo, capacity: 16}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
+    - [{fraction: 0.1, delay: 10m}, {name: reservoir, capacity: 4}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
+    - [{fraction: 0.1, delay: 10m}, {name: reservoir, capacity: 16}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
+    - [{fraction: 0.1, delay: 10m}, {name: class_balanced, capacity: 4}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
+    - [{fraction: 0.1, delay: 10m}, {name: class_balanced, capacity: 16}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
+    - [{fraction: 0.1, delay: 10m}, {name: reservoir, capacity: 512}, {trigger: {name: volume, samples: 30}, status_every: 5m}]
+    - [{fraction: 0.1, delay: 10m}, {name: reservoir, capacity: 512}, {trigger: {name: drift, kind: prior}, status_every: 5m}]
