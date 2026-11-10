@@ -170,6 +170,7 @@ def _param_groups(
 )
 class Standard:
     Params: type[StandardParams] = StandardParams
+    takes_unlabelled = True  # adds an objective's term to each batch (C5)
     _memory: tuple[str, ...] = ()  # attributes a diverged round rolls back
     _weights: tuple[str, ...] = ()  # the memory that holds model weights
 
@@ -267,6 +268,7 @@ class Standard:
         data: Samples,
         received: Mapping[str, np.ndarray] | None = None,
         ctx: Any = None,
+        unlabelled: Any = None,
     ) -> TrainResult:
         xs, ys = _samples(data)
         self._check(received)
@@ -280,13 +282,23 @@ class Standard:
         )
         rng = ctx.rng if ctx is not None else np.random.default_rng(0)
         total, batches = 0.0, 0
+        pool = 0 if unlabelled is None else unlabelled.size
         with _training([model], names, rng):
             for _ in range(p.local_epochs):
-                for idx in batches_of(len(xs), p.batch_size, rng):
+                order = batches_of(len(xs), p.batch_size, rng)
+                # One epoch covers the unlabelled pool once, a chunk per batch.
+                chunks = (
+                    np.array_split(rng.permutation(pool), len(order))
+                    if pool
+                    else [None] * len(order)
+                )
+                for idx, chunk in zip(order, chunks, strict=True):
                     optimizer.zero_grad()
                     loss = F.cross_entropy(model(xs[idx]), ys[idx])
                     total += float(loss.item()) * len(idx)
                     extra = self._batch_term(model, xs[idx])
+                    if pool:  # the reported loss stays the supervised one
+                        extra = extra + unlabelled.term(model, chunk)
                     (loss + self._penalty(model, received, names) + extra).backward()
                     optimizer.step()
                     batches += 1
@@ -342,6 +354,7 @@ class DittoParams(StandardParams):
 )
 class Ditto(Standard):
     _memory = _weights = ("_personal",)
+    takes_unlabelled = False  # its own loops add no unlabelled term
     Params = DittoParams
 
     def __init__(self, **params: Any) -> None:
@@ -402,6 +415,7 @@ class APFLParams(StandardParams):
 )
 class APFL(Standard):
     _memory = ("alpha", "_v", "_w")
+    takes_unlabelled = False  # its own loops add no unlabelled term
     _weights = ("_v", "_w")
     Params = APFLParams
 
@@ -497,6 +511,7 @@ class FedRepParams(StandardParams):
     ),
 )
 class FedRep(Standard):
+    takes_unlabelled = False  # its own loops add no unlabelled term
     Params = FedRepParams
 
     @property
@@ -599,6 +614,7 @@ class Scaffold(Standard):
         data: Samples,
         received: Mapping[str, np.ndarray] | None = None,
         ctx: Any = None,
+        unlabelled: Any = None,
     ) -> TrainResult:
         received = dict(received or {})
         names = trainable(model, self.params.frozen)
@@ -610,7 +626,7 @@ class Scaffold(Standard):
         self._correction = {
             n: torch.as_tensor(c[n] - c_i[n], dtype=params[n].dtype) for n in names
         }
-        result = super().train(model, data, received, ctx)
+        result = super().train(model, data, received, ctx, unlabelled)
         after = state_arrays(model)
         # Each parameter's own step size, so group_lr keeps (x − y)/(K·η) exact.
         scale = {
@@ -651,9 +667,10 @@ class FedNova(Standard):
         data: Samples,
         received: Mapping[str, np.ndarray] | None = None,
         ctx: Any = None,
+        unlabelled: Any = None,
     ) -> TrainResult:
         start = state_arrays(model)
-        result = super().train(model, data, received, ctx)
+        result = super().train(model, data, received, ctx, unlabelled)
         after = state_arrays(model)
         names = trainable(model, self.params.frozen)
         steps = np.full(1, float(result.batches), dtype=np.float32)
@@ -714,8 +731,9 @@ class FedDyn(Standard):
         data: Samples,
         received: Mapping[str, np.ndarray] | None = None,
         ctx: Any = None,
+        unlabelled: Any = None,
     ) -> TrainResult:
-        result = super().train(model, data, received, ctx)
+        result = super().train(model, data, received, ctx, unlabelled)
         params = dict(model.named_parameters())
         for name in trainable(model, self.params.frozen):
             if name not in received:
@@ -780,9 +798,10 @@ class Moon(Standard):
         data: Samples,
         received: Mapping[str, np.ndarray] | None = None,
         ctx: Any = None,
+        unlabelled: Any = None,
     ) -> TrainResult:
         self._global = copy.deepcopy(model).eval()  # the model as received
-        result = super().train(model, data, received, ctx)
+        result = super().train(model, data, received, ctx, unlabelled)
         self._previous = copy.deepcopy(model).eval()
         return result
 

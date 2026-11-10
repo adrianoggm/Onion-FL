@@ -1,0 +1,53 @@
+# FEMNIST (LEAF, Caldas et al., 2018): handwritten digits and letters of NIST
+# SD19, 28x28 grey images, 62 classes, one natural client per writer. LEAF's
+# preprocessing writes them as JSON, 100 writers per file (`all_data_<k>.json`);
+# `scripts/femnist_from_flower.py` writes the same format from the Flower
+# Datasets copy (README §2).
+#
+# Checked on 2026-11-05 against flwrlabs/femnist (814,277 images of 3,597
+# writers, 18 to 583 per writer): the pixels are grey levels / 255 with a white
+# background (1.0), and the classes are 0-9, then A-Z, then a-z.
+#
+# The full dataset has ~3,600 writers; the simulator is checked with hundreds of
+# edges, not thousands (README §10). So the descriptor reads a fixed subsample of
+# 200 writers (44,451 images): numpy default_rng(206).choice over the 3,597
+# writer ids sorted, without replacement, sorted. The writer id is the subject
+# and is never a feature; the 784 pixels are the features.
+name: femnist
+description: FEMNIST (LEAF), dígitos y letras manuscritos de 28x28, 62 clases; un sujeto por escritor (200 escritores fijos).
+root: data/FEMNIST
+source:
+  reader: leaf_json
+  path: "all_data/*.json"
+  writers: [
+    f0005_26, f0009_06, f0026_17, f0037_16, f0095_41, f0130_28, f0136_18, f0150_25,
+    f0166_12, f0199_01, f0231_43, f0240_02, f0286_16, f0300_24, f0304_23, f0354_10,
+    f0360_15, f0362_44, f0364_10, f0423_04, f0455_26, f0525_15, f0530_15, f0567_25,
+    f0586_11, f0609_12, f0621_33, f0635_33, f0637_21, f0642_27, f0647_19, f0662_29,
+    f0710_08, f0778_20, f0808_46, f0815_12, f0834_03, f0841_10, f0865_24, f0877_17,
+    f0885_39, f0899_05, f0971_24, f0975_48, f0989_33, f1013_47, f1032_06, f1051_38,
+    f1064_32, f1065_10, f1070_09, f1095_24, f1096_05, f1103_38, f1107_44, f1154_00,
+    f1156_23, f1159_29, f1234_26, f1251_10, f1253_43, f1272_09, f1278_22, f1311_39,
+    f1321_40, f1325_20, f1328_01, f1342_17, f1384_42, f1399_06, f1416_00, f1429_14,
+    f1430_10, f1453_47, f1479_40, f1504_10, f1521_17, f1527_46, f1537_32, f1552_32,
+    f1661_05, f1670_20, f1684_08, f1690_24, f1699_42, f1708_22, f1721_26, f1766_41,
+    f1779_01, f1792_12, f1795_30, f1799_27, f1801_01, f1817_18, f1821_24, f1822_45,
+    f1823_43, f1844_38, f1904_33, f1930_02, f1945_00, f1947_49, f1980_17, f1991_47,
+    f2010_38, f2018_05, f2034_14, f2038_08, f2085_02, f2137_90, f2142_69, f2144_67,
+    f2152_98, f2194_63, f2221_70, f2238_86, f2273_84, f2302_58, f2305_60, f2308_56,
+    f2316_50, f2327_90, f2362_73, f2364_65, f2371_68, f2377_66, f2402_75, f2403_71,
+    f2414_89, f2453_70, f2470_80, f2472_83, f2481_58, f2488_90, f2492_72, f2504_69,
+    f2547_96, f2551_80, f2575_67, f2579_76, f3112_45, f3118_09, f3146_14, f3147_41,
+    f3163_24, f3177_03, f3191_43, f3199_08, f3204_15, f3232_11, f3271_09, f3274_27,
+    f3279_28, f3285_15, f3293_30, f3297_22, f3303_31, f3304_23, f3318_25, f3344_26,
+    f3360_00, f3381_42, f3395_44, f3432_38, f3439_44, f3448_15, f3473_21, f3515_26,
+    f3520_45, f3521_09, f3523_31, f3533_31, f3540_36, f3556_19, f3648_17, f3676_37,
+    f3684_46, f3701_44, f3705_48, f3712_14, f3730_33, f3761_12, f3781_28, f3803_39,
+    f3841_01, f3863_30, f3887_39, f3891_31, f3896_07, f3918_03, f3930_25, f3955_03,
+    f3956_26, f3982_48, f3993_05, f3994_27, f4006_12, f4064_46, f4067_23, f4074_12,
+  ]
+steps:
+  - subject: {column: user}
+  - label: {task: character, column: y, n_classes: 62}
+  - features:
+      regex: "^x_\\d+$"

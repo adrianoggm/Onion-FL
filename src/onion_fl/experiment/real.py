@@ -25,6 +25,7 @@ from typing import Any
 
 import numpy as np
 
+from onion_fl.continual.control import load_operators
 from onion_fl.core.topology import Topology
 from onion_fl.experiment.config import ConfigError, parse_experiment
 from onion_fl.experiment.sweep import Scenario, identity
@@ -308,7 +309,15 @@ def run_node(
         heartbeat_s=chosen.config.runtime.heartbeat,
         broker=launcher.get("broker"),
     )
-    federation = build_scenario(chosen, topology, split, placement, runtime=runtime)
+    federation = build_scenario(
+        chosen,
+        topology,
+        split,
+        placement,
+        runtime=runtime,
+        operator_keys=load_operators(),  # orders over the transport are signed
+        audience=run_id,
+    )
     if "initial" in launcher:
         take_initial(federation, Path(config).parent / launcher["initial"])
     roles = node_roles(federation, topology)

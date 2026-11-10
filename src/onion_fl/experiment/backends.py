@@ -35,6 +35,7 @@ def backend_name(ref: str | dict[str, Any]) -> str:
 class SimPlan:
     scenario: Any
     evaluate: Any = None
+    paused: bool = False  # for the operators to resume (continual.control)
     path: Path | None = None
 
 
@@ -58,13 +59,14 @@ class SimBackend:
         infrastructure: Any = None,
         assignment: Any = None,
         evaluate: Any = None,
+        paused: bool = False,
     ) -> SimPlan:
-        return SimPlan(scenario, evaluate)
+        return SimPlan(scenario, evaluate, paused)
 
     def run(self, plan: SimPlan) -> None:
         from onion_fl.experiment.runner import simulate
 
-        plan.path = simulate(plan.scenario, plan.evaluate)
+        plan.path = simulate(plan.scenario, plan.evaluate, plan.paused)
 
     def collect(self, plan: SimPlan) -> Path:
         if plan.path is None:
