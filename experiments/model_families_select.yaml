@@ -2,6 +2,8 @@
 # final global model's macro-F1 on the validation subjects (`evaluation.global.
 # subjects: val`); the test subjects are never evaluated here. Seed 0, SGD at
 # 0.03, 0.1 and 0.3 for each family, everything else as in model_families.yaml.
+# The transformer scored best at 0.3, the edge of its grid, so its grid was
+# widened by one step (1.0).
 #
 #   onion_fl run experiments/model_families_select.yaml --workers 2
 name: model_families_select
@@ -33,3 +35,4 @@ sweep:
     - [{name: feature_transformer, token_dim: 16, blocks: 1, attention_heads: 2, ffn_factor: 2, dropout: 0.1}, 0.03]
     - [{name: feature_transformer, token_dim: 16, blocks: 1, attention_heads: 2, ffn_factor: 2, dropout: 0.1}, 0.1]
     - [{name: feature_transformer, token_dim: 16, blocks: 1, attention_heads: 2, ffn_factor: 2, dropout: 0.1}, 0.3]
+    - [{name: feature_transformer, token_dim: 16, blocks: 1, attention_heads: 2, ffn_factor: 2, dropout: 0.1}, 1.0]
