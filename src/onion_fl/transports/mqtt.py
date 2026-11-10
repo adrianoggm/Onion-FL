@@ -128,7 +128,8 @@ class MqttTransport:
         return context
 
     def _accepted(self, reason_code: Any) -> bool:
-        if not reason_code.is_failure:
+        # paho 2 gives a ReasonCode; a bare int (0: accepted) is taken too
+        if not getattr(reason_code, "is_failure", reason_code != 0):
             return True
         self._refused = str(reason_code)
         return False
