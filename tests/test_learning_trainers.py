@@ -142,6 +142,32 @@ def test_standard_params_are_validated(params: dict) -> None:
         trainers.create("standard", params)
 
 
+@pytest.mark.parametrize(
+    "params, match",
+    [
+        ({"optimizer": "sgd", "momentum": 1.0}, "momentum"),
+        ({"momentum": 0.9}, "SGD option"),  # adam has no momentum option
+    ],
+)
+def test_momentum_is_validated_and_only_for_sgd(params: dict, match: str) -> None:
+    with pytest.raises(PluginError, match=match):
+        trainers.create("standard", params)
+
+
+def test_sgd_gets_the_momentum_and_it_defaults_to_none() -> None:
+    from onion_fl.learning.trainers import make_optimizer
+
+    model = build(SWELL)
+    params, names = dict(model.named_parameters()), list(dict(model.named_parameters()))
+
+    def optimizer(**p):
+        return make_optimizer(params, names, trainers.create("standard", p).params)
+
+    assert optimizer(optimizer="sgd", momentum=0.9).defaults["momentum"] == 0.9
+    assert optimizer(optimizer="sgd").defaults["momentum"] == 0
+    assert isinstance(optimizer(), torch.optim.Adam)
+
+
 def test_fedprox_mu_is_validated() -> None:
     with pytest.raises(PluginError, match="mu"):
         trainers.create("fedprox", {"mu": -1})
