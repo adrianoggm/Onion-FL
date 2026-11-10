@@ -32,6 +32,14 @@ The guarantees of MQTT with QoS 1:
 On ``stop``, what is still queued gets one more try each within
 ``flush_timeout``: the ``stop`` that travels down the tree leaves as the
 sender finishes.
+
+``tls`` (#227) turns every link into mutual TLS: the server presents
+``tls.cert`` and accepts only clients whose certificate ``tls.ca`` signed, and
+each client checks the server's certificate against the same CA and the
+peer's address. Both certificates are required: an unauthenticated client,
+plain or TLS without a certificate, never completes the handshake, so
+nothing it sends reaches an inbox. The link holds paths only (see
+``onion_fl.transports.tls``).
 """
 
 import os
@@ -45,10 +53,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from onion_fl.core.registry import PluginError
 from onion_fl.transports import transports
+from onion_fl.transports.tls import TlsParams, read
 
 Callback = Callable[[bytes], None]
 METHOD = "/onionfl.Transport/Deliver"
@@ -76,6 +85,16 @@ class GrpcParams(BaseModel):
     reconnect_max: float = Field(5.0, gt=0, description="Reintento máximo (s)")
     flush_timeout: float = Field(5.0, ge=0, description="Vaciado al parar (s)")
     workers: int = Field(4, ge=1, description="Hilos del servidor")
+    tls: TlsParams | None = Field(
+        None,
+        description="TLS mutuo: rutas de la CA, del certificado y de la clave",
+    )
+
+    @model_validator(mode="after")
+    def _mutual(self) -> GrpcParams:
+        if self.tls is not None and self.tls.cert is None:
+            raise ValueError("grpc tls is mutual: give tls.cert and tls.key")
+        return self
 
 
 def _require_grpc() -> Any:
@@ -114,6 +133,14 @@ class GrpcTransport:
         self._stopping = threading.Event()
         self._flush_until = 0.0
         self._server: Any = None
+        self._credentials: Any = None  # the channels', once TLS files are read
+
+    def _tls(self) -> tuple[bytes, bytes, bytes] | None:
+        """The CA, certificate and key, read when the transport starts."""
+        tls = self.params.tls
+        if tls is None:
+            return None
+        return read(tls.ca, "ca"), read(tls.cert, "cert"), read(tls.key, "key")
 
     # --- receiving -----------------------------------------------------------
 
@@ -162,7 +189,18 @@ class GrpcTransport:
             options=UNLIMITED,
         )
         bound = f"{self.params.host}:{self.params.port}"
-        port = self._server.add_insecure_port(bound)
+        files = self._tls()
+        if files is None:
+            port = self._server.add_insecure_port(bound)
+        else:
+            ca, cert, key = files
+            server = grpc.ssl_server_credentials(
+                [(key, cert)], root_certificates=ca, require_client_auth=True
+            )
+            port = self._server.add_secure_port(bound, server)
+            self._credentials = grpc.ssl_channel_credentials(
+                root_certificates=ca, private_key=key, certificate_chain=cert
+            )
         if port == 0:
             raise ConnectionError(f"gRPC could not listen on {bound}")
         self.endpoint = f"{self.params.host}:{port}"
@@ -199,9 +237,13 @@ class GrpcTransport:
     def _channel(self, endpoint: str) -> Any:
         with self._lock:
             if endpoint not in self._channels:
-                self._channels[endpoint] = self._grpc.insecure_channel(
-                    endpoint, options=UNLIMITED
-                )
+                if self._credentials is None:
+                    channel = self._grpc.insecure_channel(endpoint, options=UNLIMITED)
+                else:
+                    channel = self._grpc.secure_channel(
+                        endpoint, self._credentials, options=UNLIMITED
+                    )
+                self._channels[endpoint] = channel
             return self._channels[endpoint]
 
     def _try(self, address: str, data: bytes) -> bool:

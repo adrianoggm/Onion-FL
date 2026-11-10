@@ -205,3 +205,117 @@ def test_a_real_runtime_can_give_every_grpc_link_its_listen_and_peers() -> None:
     assert (carrier.params.host, carrier.params.port) == ("0.0.0.0", 50999)
     assert carrier.params.peers == {"onionfl/r/a/inbox": "10.0.0.1:50051"}
     assert carrier.params.call_timeout == 3
+
+
+# --- mutual TLS (issue #227) ---------------------------------------------------------------
+
+
+@pytest.fixture
+def pki(tmp_path: Path):
+    from tests.certs import Pki
+
+    return Pki(tmp_path / "pki")
+
+
+def tls_of(pki, name: str) -> dict:
+    cert, key = pki.issue(name, ["127.0.0.1", "localhost"])
+    return {"ca": str(pki.ca), "cert": str(cert), "key": str(key)}
+
+
+def test_grpc_over_mutual_tls_delivers(tmp_path: Path, pki) -> None:
+    a = make(tmp_path, tls=tls_of(pki, "a"))
+    b = make(tmp_path, tls=tls_of(pki, "b"))
+    got = Inbox()
+    b.on_receive("secure", got)
+    a.start()
+    b.start()
+    try:
+        a.send("secure", b"sealed")
+        assert got.wait(1) == [b"sealed"]
+    finally:
+        a.stop()
+        b.stop()
+
+
+def _call(channel, address: str = "secure") -> None:
+    from onion_fl.transports.grpc import ADDRESS, METHOD
+
+    with channel:
+        channel.unary_unary(METHOD)(
+            b"intruder", timeout=3, metadata=((ADDRESS, address),)
+        )
+
+
+def test_grpc_tls_rejects_clients_without_a_valid_certificate(
+    tmp_path: Path, pki
+) -> None:
+    import grpc
+
+    from tests.certs import Pki
+
+    server = make(tmp_path, tls=tls_of(pki, "server"))
+    got = Inbox()
+    server.on_receive("secure", got)
+    server.start()
+    stranger = Pki(tmp_path / "other", name="another-ca")
+    foreign_cert, foreign_key = stranger.issue("stranger", ["127.0.0.1"])
+    ca = pki.ca.read_bytes()
+    try:
+        clients = {
+            "plain": grpc.insecure_channel(server.endpoint),
+            "tls without a certificate": grpc.secure_channel(
+                server.endpoint, grpc.ssl_channel_credentials(root_certificates=ca)
+            ),
+            "a certificate another CA signed": grpc.secure_channel(
+                server.endpoint,
+                grpc.ssl_channel_credentials(
+                    root_certificates=ca,
+                    private_key=foreign_key.read_bytes(),
+                    certificate_chain=foreign_cert.read_bytes(),
+                ),
+            ),
+        }
+        for what, channel in clients.items():
+            with pytest.raises(grpc.RpcError) as refused:
+                _call(channel)
+            assert refused.value.code() == grpc.StatusCode.UNAVAILABLE, what
+    finally:
+        server.stop()
+    assert got.items == []  # nothing an unauthenticated client sent got in
+
+
+def test_a_plain_grpc_transport_cannot_talk_to_a_tls_one(tmp_path: Path, pki) -> None:
+    plain = make(tmp_path, flush_timeout=0.2)
+    secure = make(tmp_path, tls=tls_of(pki, "secure"))
+    got = Inbox()
+    secure.on_receive("secure", got)
+    plain.start()
+    secure.start()
+    try:
+        plain.send("secure", b"plain")
+        assert got.wait(1, timeout=1.0) == []
+    finally:
+        plain.stop()
+        secure.stop()
+
+
+@pytest.mark.parametrize(
+    "tls",
+    [
+        {"ca": "ca.pem"},  # mutual: the certificate is required
+        {"ca": "ca.pem", "cert": "c.pem"},  # cert without key
+        {"ca": "-----BEGIN CERTIFICATE-----\nMIIB...", "cert": "c", "key": "k"},
+        {"ca": "ca.pem", "cert": "c", "key": "k", "password": "x"},
+    ],
+)
+def test_grpc_tls_takes_paths_only(tls) -> None:
+    with pytest.raises(ValueError):
+        transports.create("grpc", {"tls": tls})
+
+
+def test_grpc_tls_files_are_read_on_start_and_missing_ones_are_named(
+    tmp_path: Path,
+) -> None:
+    t = make(tmp_path, tls={"ca": "nowhere/ca.pem", "cert": "c.pem", "key": "k.key"})
+    with pytest.raises(ConnectionError, match="ca 'nowhere/ca.pem'"):
+        t.start()
