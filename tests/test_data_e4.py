@@ -746,10 +746,6 @@ def _sheet(path: Path, rows: list[list]) -> None:
     book.save(path)
 
 
-def unix(text: str) -> float:
-    return (pd.Timestamp(text) - pd.Timestamp(0)).total_seconds()
-
-
 MORNING = [  # 20 clock times: 10 phases, the last ones after noon on a 12-hour clock
     "11:00", "11:05", "11:05", "11:15", "11:15", "11:20", "11:20", "11:25",
     "11:25", "11:35", "11:35", "11:40", "11:40", "11:42", "11:42", "11:47",
