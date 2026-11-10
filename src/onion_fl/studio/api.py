@@ -152,6 +152,12 @@ AXES: list[tuple[str, str, str, str | None]] = [
         None,
     ),
     (
+        "explainer",
+        "Explicabilidad",
+        "Qué se calcula sobre el modelo final, después de la ejecución (onion_fl explain).",
+        None,
+    ),
+    (
         "compute_model",
         "Cómputo",
         "Cuánto tarda en simulación el entrenamiento de un edge.",
