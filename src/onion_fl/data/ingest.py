@@ -1101,8 +1101,8 @@ class IntervalsStep:
         _require(df, list(self.by), "intervals")
         times = df[TIME].to_numpy(np.float64)
         hit = np.full(len(df), -1)
+        left = _keys(df, list(self.by)) if self.by else np.zeros(len(df), str)
         if self.by:
-            left = _keys(df, list(self.by))
             right = _keys(table, list(self.by.values()))
             groups = [(left == key, right == key) for key in np.unique(right)]
         else:
@@ -1133,9 +1133,8 @@ class IntervalsStep:
         if self.outside is not None:
             # Only in a file with an interval of its key: elsewhere, nothing says
             # whether the rows are outside every event or simply not surveyed.
-            keyed = _keys(df, list(self.by)) if self.by else np.zeros(len(df), str)
-            held = np.unique(keyed[hit >= 0])
-            lone = (hit < 0) & np.isin(keyed, held)
+            held = np.unique(left[hit >= 0])
+            lone = (hit < 0) & np.isin(left, held)
             classes = classes.astype(object).where(~lone, self.outside)
             classes = classes.infer_objects()
         ctx.meta_columns.add(self.column)
@@ -1144,7 +1143,10 @@ class IntervalsStep:
 
 def _keys(df: pd.DataFrame, columns: list[str]) -> np.ndarray:
     """One text key per row from ``columns``, so int and text ids compare equal."""
-    return df[columns].astype(str).agg("\x1f".join, axis=1).to_numpy()
+    keys = df[columns[0]].astype(str)
+    for column in columns[1:]:  # by column, not by row: sessions have millions
+        keys = keys + "\x1f" + df[column].astype(str)
+    return keys.to_numpy()
 
 
 class LabelRule(BaseModel):
@@ -1183,8 +1185,11 @@ class LabelRule(BaseModel):
             values = values.round()
         if self.map is not None:
             text = {str(k): v for k, v in self.map.items()}
-            exact = values.map(lambda v: self.map.get(v, text.get(str(v).strip())))
-            return pd.to_numeric(exact, errors="coerce").astype(float)
+            codes, uniques = pd.factorize(values)  # each distinct value once
+            found = [self.map.get(v, text.get(str(v).strip())) for v in uniques]
+            exact = pd.to_numeric(pd.Series(found, dtype=object), errors="coerce")
+            exact = np.append(exact.to_numpy(np.float64), np.nan)  # code -1: missing
+            return pd.Series(exact[codes], index=values.index)
         if self.threshold is not None:
             return (values >= self.threshold).astype(float).where(values.notna())
         if self.bins is not None:
