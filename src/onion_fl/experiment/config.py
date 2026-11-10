@@ -587,7 +587,7 @@ class ExperimentConfig(Strict):
                 "a stream scores test-then-train instead",
             ),
             (
-                roles.scaler == "local",
+                "local" in roles.scalers(),
                 "data.roles.scaler: local would refit on rows after the bootstrap",
             ),
             (

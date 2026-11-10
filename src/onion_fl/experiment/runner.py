@@ -338,7 +338,7 @@ def _parent(config: ExperimentConfig, seed: int) -> tuple[Path, Bundle, Any] | N
             "write no bundle until the distributed continuum (C9)"
         )
     init = create(inits, config.learning.init)
-    if init.restore.preprocessing and config.data.roles.scaler == "local":
+    if init.restore.preprocessing and "local" in config.data.roles.scalers():
         raise ConfigError(
             "learning.init: frozen local preprocessing is not supported yet (each "
             "holder would refit its own scaler); use scaler: global, or set "
