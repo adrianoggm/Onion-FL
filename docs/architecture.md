@@ -67,7 +67,8 @@ flowchart LR
   - `test` subjects are the global evaluators, and they are identical in every scenario;
   - `val` subjects become zone evaluators;
   - `train` subjects are grouped into clients (`subjects_per_client`), each keeping `local_val` rows: its last rows (`tail`) or the last rows of each class (`class_tail`);
-  - imputation, scaling (`global`, `local` or `none`) and constant-feature removal are fitted on the training portions only.
+  - imputation, scaling (`global`, `local` or `none`) and constant-feature removal are fitted on the training portions only;
+  - `overrides.<dataset>` can set `scaler`, `impute` and `drop_constant` for one dataset, for raw columns such as pixels or tokens. Unset, they stay out of the `config_id`. A descriptor with `tokens: true` holds indices, and the runner refuses it unless its scaler is `none`.
 - **Placement** gives each leaf aggregator its clients and its zone evaluators:
   - `mixing(α)` weights each dataset by home fog (declared, inherited or assigned in turns), from segregated at α = 0 to uniform at α = 1;
   - the others are `dirichlet(β)`, `label_skew(β)`, `explicit` and `pooled`, the centralised baseline with the same model and trainer.

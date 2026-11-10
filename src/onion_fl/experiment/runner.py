@@ -252,6 +252,12 @@ def load_data(config: ExperimentConfig) -> tuple[list[Any], dict[str, str]]:
                 f"{spec.name!r}; give one descriptor another name"
             )
         loaded[spec.name] = name
+        scaler = config.data.roles.of(spec.name).scaler
+        if spec.tokens and scaler != "none":
+            raise ConfigError(
+                f"data.roles: dataset {spec.name!r} holds tokens, which scaling "
+                f"({scaler}) would destroy; set overrides.{spec.name}.scaler: none"
+            )
         path = prepare(spec, use.options, cache_dir=config.paths.cache)
         digests[name] = hashlib.sha256((path / "meta.json").read_bytes()).hexdigest()
         subjects += load_prepared(path)
@@ -348,7 +354,7 @@ def _parent(config: ExperimentConfig, seed: int) -> tuple[Path, Bundle, Any] | N
             "write no bundle until the distributed continuum (C9)"
         )
     init = create(inits, config.learning.init)
-    if init.restore.preprocessing and config.data.roles.scaler == "local":
+    if init.restore.preprocessing and "local" in config.data.roles.scalers():
         raise ConfigError(
             "learning.init: frozen local preprocessing is not supported yet (each "
             "holder would refit its own scaler); use scaler: global, or set "
