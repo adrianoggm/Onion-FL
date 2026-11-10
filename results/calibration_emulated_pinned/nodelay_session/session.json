@@ -1,0 +1,243 @@
+{
+  "spec": {
+    "name": "emulated_lab_nodelay",
+    "description": "MQTT paths of the emulated lab, messages 50 ms apart, nodelay true.",
+    "infrastructure": "emulated_lab",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": "datasets/swell_physiology.yaml",
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.0,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.0,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "workloads": [
+      {
+        "model": {
+          "name": "modular_mlp",
+          "adapter_width": 32,
+          "trunk_hidden": [
+            16
+          ]
+        },
+        "trainer": {
+          "name": "standard",
+          "local_epochs": 5,
+          "batch_size": 32,
+          "lr": 0.01
+        }
+      }
+    ],
+    "train": null,
+    "aggregate": null,
+    "links": {
+      "pairs": [
+        [
+          "fog-a",
+          "cloud-1"
+        ],
+        [
+          "field-edge_device-1",
+          "fog-a"
+        ],
+        [
+          "cloud-1",
+          "cloud-1"
+        ]
+      ],
+      "sizes": [
+        100,
+        1000,
+        5000,
+        10000,
+        30000
+      ],
+      "fit_up_to": 10000,
+      "repeats": 15,
+      "qos": 1,
+      "gap": 0.05,
+      "wait": 30.0,
+      "nodelay": true
+    },
+    "seed": 0,
+    "lead": 20.0,
+    "pin": {
+      "cpus": [
+        2,
+        4,
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        18
+      ],
+      "others": "20-23"
+    },
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    },
+    "emulation": {
+      "image": "onionfl-a197b-emulated:latest",
+      "broker_image": "eclipse-mosquitto:2",
+      "project": "onionfl-a197b",
+      "subnet": "10.197.0.0/16",
+      "max_containers": 64,
+      "ready_timeout": 120.0
+    }
+  },
+  "infrastructure_id": "da875674ad22d77f7aabcc6d9ac2fe642e9e8be204889668bb4adc5f238df43e",
+  "hosts": {
+    "cloud-1": "cloud_vm",
+    "field-edge_device-1": "edge_device",
+    "fog-a": "fog_small"
+  },
+  "broker": "cloud-1",
+  "workloads": {
+    "0ed95108ec44feea": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 32,
+        "trunk_hidden": [
+          16
+        ]
+      },
+      "trainer": {
+        "name": "standard",
+        "local_epochs": 5,
+        "batch_size": 32,
+        "lr": 0.01
+      },
+      "batch_size": 32,
+      "shapes": {
+        "adapter.swell.0.weight": [
+          32,
+          3
+        ],
+        "adapter.swell.0.bias": [
+          32
+        ],
+        "trunk.0.weight": [
+          16,
+          32
+        ],
+        "trunk.0.bias": [
+          16
+        ],
+        "head.stress_binary.weight": [
+          2,
+          16
+        ],
+        "head.stress_binary.bias": [
+          2
+        ]
+      },
+      "flops_per_sample": 4140.0
+    }
+  },
+  "clients": {},
+  "code": {
+    "commit": "d3d050e95e06f6b390630184cda88b4c9a1d9d1f",
+    "dirty": false
+  },
+  "project": "onionfl-a197b-cal-20261106t103359",
+  "shaping": {
+    "router-dc": [
+      "tc qdisc add dev $(dev 10.197.4.3) root netem limit 1034 delay 40000us rate 10000000bit"
+    ],
+    "router-field": [
+      "tc qdisc add dev $(dev 10.197.3.2) root netem limit 1042 delay 10000us rate 50000000bit"
+    ],
+    "router-fog-a": [
+      "tc qdisc add dev $(dev 10.197.3.3) root netem limit 1042 delay 10000us rate 50000000bit",
+      "tc qdisc add dev $(dev 10.197.4.2) root netem limit 1034 delay 40000us rate 10000000bit"
+    ],
+    "host-cloud-1": [],
+    "host-field-edge-device-1": [],
+    "host-fog-a": []
+  },
+  "cpusets": {
+    "host-cloud-1": "2,4",
+    "host-field-edge-device-1": "6",
+    "host-fog-a": "8",
+    "router-dc": "20-23",
+    "router-field": "20-23",
+    "router-fog-a": "20-23",
+    "broker": "20-23"
+  },
+  "environment": {
+    "machine": {
+      "platform": "Windows-10-10.0.26300-SP0",
+      "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel"
+    },
+    "docker": {
+      "docker": "28.3.2",
+      "ncpu": 24,
+      "memory": 16559267840,
+      "kernel": "6.6.87.2-microsoft-standard-WSL2",
+      "os": "Docker Desktop (containerized)"
+    },
+    "image": {
+      "name": "onionfl-a197b-emulated:latest",
+      "id": "sha256:a826e66ea506c34a6105933b94102ed2a9824ed42e896164763a2c1851aa5a8f",
+      "pins": {
+        "torch": "2.14.1",
+        "numpy": "2.4.6",
+        "scipy": "1.17.1",
+        "pandas": "2.3.3",
+        "scikit-learn": "1.9.1"
+      }
+    }
+  },
+  "load": [
+    {
+      "phase": "links before",
+      "at": 1793961244.7562165,
+      "machine": {
+        "busy_percent": 44.0,
+        "performance_percent": 168.0,
+        "frequency_mhz": 2142.0
+      },
+      "vm_loadavg": [
+        1.28,
+        0.99,
+        1.61
+      ]
+    },
+    {
+      "phase": "links after",
+      "at": 1793961325.4011154,
+      "machine": {
+        "busy_percent": 59.0,
+        "performance_percent": 144.0,
+        "frequency_mhz": 2171.0
+      },
+      "vm_loadavg": [
+        0.82,
+        0.89,
+        1.52
+      ]
+    }
+  ],
+  "started_at": "2026-11-06T10:34:00.743016+00:00",
+  "duration_s": 90.598
+}

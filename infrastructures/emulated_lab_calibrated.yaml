@@ -1,0 +1,56 @@
+# emulated_lab.yaml with the profiles and links that calibration
+# b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc measured citing it (onion_fl calibrate fit).
+name: emulated_lab_calibrated
+profiles:
+  cloud_vm:
+    cpus: 2
+    memory: 4GB
+    calibration: b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc
+  fog_small:
+    cpus: 1
+    memory: 2GB
+    calibration: b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc
+  edge_device:
+    cpus: 1
+    memory: 2GB
+    calibration: b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc
+sites:
+  dc:
+    hosts:
+      cloud-1: cloud_vm
+  fog_a:
+    hosts:
+      fog-a: fog_small
+  fog_b:
+    hosts:
+      fog-b: fog_small
+  field:
+    pool:
+      edge_device: 6
+network:
+  links:
+  - between:
+    - field
+    - fog_a
+    latency: 10ms
+    bandwidth: 50Mbps
+    calibration: b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc
+  - between:
+    - field
+    - fog_b
+    latency: 15ms
+    bandwidth: 20Mbps
+  - between:
+    - fog_a
+    - dc
+    latency: 40ms
+    bandwidth: 10Mbps
+    calibration: b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc
+  - between:
+    - fog_b
+    - dc
+    latency: 60ms
+    bandwidth: 10Mbps
+    calibration: b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc
+services:
+  mqtt_broker: cloud-1
