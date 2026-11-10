@@ -415,17 +415,25 @@ class Resolved:
         return dict(sorted(out.items()))
 
     def preview(self) -> dict[str, Any]:
-        return {
-            "infrastructure_id": self.infrastructure_id,
-            "name": self.infrastructure.name,
-            "hosts": dict(sorted(self.hosts.items())),
-            "load": self.load(),
-            "services": dict(sorted(self.services.items())),
-            "links": {
-                child: {"path": path, "profile": profile}
-                for child, (path, profile) in sorted(self.links.items())
-            },
-        } | ({} if self.coupling is None else {"coupling": self.coupling})
+        return (
+            {
+                "infrastructure_id": self.infrastructure_id,
+                "name": self.infrastructure.name,
+                "hosts": dict(sorted(self.hosts.items())),
+                "load": self.load(),
+                "services": dict(sorted(self.services.items())),
+                "links": {
+                    child: {"path": path, "profile": profile}
+                    for child, (path, profile) in sorted(self.links.items())
+                },
+            }
+            | ({} if self.coupling is None else {"coupling": self.coupling})
+            | (
+                {}
+                if not self.infrastructure.device_traces
+                else {"device_traces": self.infrastructure.device_traces}
+            )
+        )
 
 
 def resolve(

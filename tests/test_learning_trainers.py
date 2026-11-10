@@ -941,3 +941,61 @@ def test_importing_a_memory_without_some_entry_keeps_the_trainers_own() -> None:
     trainer.import_memory({}, {"alpha": {"kind": "scalar", "value": 0.3}}, build())
 
     assert trainer.alpha == 0.3 and trainer._w is own
+
+
+# --- unlabelled rows (continuum C5) ------------------------------------------------
+
+
+def objective(name: str, model, X, **params):
+    from onion_fl.continual.unlabelled import objectives
+
+    fitted = objectives.create(name, params)
+    fitted.fit(model, X)
+    return fitted
+
+
+@real
+def test_no_objective_and_an_empty_pool_train_as_before(swell) -> None:
+    trainer = trainers.create("standard", {"local_epochs": 2})
+    plain, none, empty = build(), build(), build()
+    pool = objective("pseudo_label", empty, swell.X[:0], threshold=0.0)
+
+    trainer.train(plain, swell, ctx=ctx(3))
+    trainer.train(none, swell, ctx=ctx(3), unlabelled=None)
+    trainer.train(empty, swell, ctx=ctx(3), unlabelled=pool)
+
+    for key, value in state_arrays(plain).items():
+        np.testing.assert_array_equal(value, state_arrays(none)[key])
+        np.testing.assert_array_equal(value, state_arrays(empty)[key])
+
+
+@real
+@pytest.mark.parametrize(
+    "name", ["standard", "fedprox", "scaffold", "fednova", "feddyn", "moon"]
+)
+def test_an_accepted_pool_changes_the_training(swell, name: str) -> None:
+    trainer = trainers.create(name)
+    received = state_arrays(build())
+    plain, pooled = build(), build()
+    pool = objective("pseudo_label", pooled, swell.X[:64], threshold=0.0, weight=1.0)
+    assert pool.mask.all()
+
+    a = trainer.train(plain, swell, received, ctx(3))
+    b = trainers.create(name).train(pooled, swell, received, ctx(3), unlabelled=pool)
+
+    assert a.examples == b.examples and a.batches == b.batches
+    changed = [
+        k
+        for k, v in state_arrays(plain).items()
+        if not np.array_equal(v, state_arrays(pooled)[k])
+    ]
+    assert changed
+
+
+def test_trainers_with_their_own_loops_refuse_unlabelled_rows() -> None:
+    takes = {
+        n: trainers.create(n).takes_unlabelled for n in ("ditto", "apfl", "fedrep")
+    }
+    assert takes == dict.fromkeys(takes, False)
+    assert trainers.create("fedbabu").takes_unlabelled
+    assert not getattr(trainers.create("stub"), "takes_unlabelled", False)

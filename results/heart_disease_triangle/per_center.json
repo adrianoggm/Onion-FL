@@ -1,0 +1,932 @@
+[
+ {
+  "run_id": "20261110T121712Z-91043e5c0225",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),[]",
+  "seed": 1,
+  "config_id": "7594b0d894e56210fa99eac0b7c4054801b250b7ce0f1cba661214f8a129f3a5",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "de51dae6a734744351fa9967d6c4f37451bcd543d06ca8c3a3784dde67502aea",
+  "pooled_accuracy": 0.8070866141732284,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.7788461538461539,
+    "macro_f1": 0.7771774569166279
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.797752808988764,
+    "macro_f1": 0.7804276315789473
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.875,
+    "macro_f1": 0.4666666666666667
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.8666666666666667,
+    "macro_f1": 0.7719594594594594
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121712Z-ab32658ced50",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),[]",
+  "seed": 0,
+  "config_id": "7594b0d894e56210fa99eac0b7c4054801b250b7ce0f1cba661214f8a129f3a5",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "dc8c0a03e6e48eabc6fe41b95db143fec2f44e2bdb0e9fbf79f7ec1773dd0e59",
+  "pooled_accuracy": 0.7834645669291339,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.7403846153846154,
+    "macro_f1": 0.7392031206464197
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.797752808988764,
+    "macro_f1": 0.7804276315789473
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.8125,
+    "macro_f1": 0.4482758620689655
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.8444444444444444,
+    "macro_f1": 0.7461724415793715
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121712Z-e1767bfd1637",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),[]",
+  "seed": 2,
+  "config_id": "7594b0d894e56210fa99eac0b7c4054801b250b7ce0f1cba661214f8a129f3a5",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "10b1c187601ec05e6c020fd7f8ad0e424a0aebbc65192533aa523d227f21df8d",
+  "pooled_accuracy": 0.8070866141732284,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.7788461538461539,
+    "macro_f1": 0.7778396953654685
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.8089887640449438,
+    "macro_f1": 0.7988299428267518
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.9375,
+    "macro_f1": 0.4838709677419355
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.8222222222222222,
+    "macro_f1": 0.6959459459459459
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121736Z-37946e0bc0fb",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),[]",
+  "seed": 3,
+  "config_id": "7594b0d894e56210fa99eac0b7c4054801b250b7ce0f1cba661214f8a129f3a5",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "2b4b2839e64d7e96225191249c42ca6213542bff5483c21f4abf71866344ff2e",
+  "pooled_accuracy": 0.7874015748031497,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.7403846153846154,
+    "macro_f1": 0.7392031206464197
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.8202247191011236,
+    "macro_f1": 0.8096256684491979
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.9375,
+    "macro_f1": 0.4838709677419355
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.7777777777777778,
+    "macro_f1": 0.6527777777777778
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121736Z-94667d79dff8",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['hungarian', 'switzerland', 'va']",
+  "seed": 0,
+  "config_id": "3874d24cbcc7e6945af6cc631fa42ce04614f313eca3431a55b825364df04087",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "90addf7178a32e9e30dd1f85a9f08e40b335c252a626583f5aefa6fedfc25fab",
+  "pooled_accuracy": 0.7165354330708661,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.75,
+    "macro_f1": 0.7453860640301319
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.6741573033707865,
+    "macro_f1": 0.6715031182385134
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.6875,
+    "macro_f1": 0.5428571428571429
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.7333333333333333,
+    "macro_f1": 0.4924812030075188
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121736Z-d870f968f21e",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),[]",
+  "seed": 4,
+  "config_id": "7594b0d894e56210fa99eac0b7c4054801b250b7ce0f1cba661214f8a129f3a5",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "03e585e5176e33070212259f6d1fe044ce9826373bfe1c25642176b0e13eed75",
+  "pooled_accuracy": 0.7913385826771654,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.7403846153846154,
+    "macro_f1": 0.7384257102934326
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.8089887640449438,
+    "macro_f1": 0.7880061650553454
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.875,
+    "macro_f1": 0.4666666666666667
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.8444444444444444,
+    "macro_f1": 0.72
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121744Z-ee0033e1aecd",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['hungarian', 'switzerland', 'va']",
+  "seed": 1,
+  "config_id": "3874d24cbcc7e6945af6cc631fa42ce04614f313eca3431a55b825364df04087",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "13f5578c9682856bca108223f44c507d7dfcd971629bda7ce3c0bd1015d19a97",
+  "pooled_accuracy": 0.7362204724409449,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.7307692307692307,
+    "macro_f1": 0.7282568122433744
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.7303370786516854,
+    "macro_f1": 0.7244582043343654
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.75,
+    "macro_f1": 0.5897435897435896
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.7555555555555555,
+    "macro_f1": 0.6011281224818694
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121751Z-4c055f12137f",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['hungarian', 'switzerland', 'va']",
+  "seed": 2,
+  "config_id": "3874d24cbcc7e6945af6cc631fa42ce04614f313eca3431a55b825364df04087",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "ee7f9a4b5e3f1e885e2290963049e07b98285b6b9d345d0470ef7099d5b4c70f",
+  "pooled_accuracy": 0.7165354330708661,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.7403846153846154,
+    "macro_f1": 0.7392031206464197
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.7078651685393258,
+    "macro_f1": 0.7048469387755103
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.625,
+    "macro_f1": 0.49999999999999994
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.7111111111111111,
+    "macro_f1": 0.48
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121753Z-2403cee5aaae",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['hungarian', 'switzerland', 'va']",
+  "seed": 4,
+  "config_id": "3874d24cbcc7e6945af6cc631fa42ce04614f313eca3431a55b825364df04087",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "89473025827c8745bda056f8aa73706ae87a873c2c078e366b0e3486202962f9",
+  "pooled_accuracy": 0.7283464566929134,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.7596153846153846,
+    "macro_f1": 0.7568957456755494
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.6966292134831461,
+    "macro_f1": 0.6927502876869965
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.6875,
+    "macro_f1": 0.5428571428571429
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.7333333333333333,
+    "macro_f1": 0.5439189189189189
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121753Z-c2b4c4c417b0",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['hungarian', 'switzerland', 'va']",
+  "seed": 3,
+  "config_id": "3874d24cbcc7e6945af6cc631fa42ce04614f313eca3431a55b825364df04087",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "eb10152244b24a5b07fea12f6f6d8270438d4544dd270139c7dc4c74fd1bb8af",
+  "pooled_accuracy": 0.7047244094488189,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.7403846153846154,
+    "macro_f1": 0.7384257102934326
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.7415730337078652,
+    "macro_f1": 0.7350161812297735
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.5,
+    "macro_f1": 0.41818181818181815
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.6222222222222222,
+    "macro_f1": 0.3835616438356164
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121802Z-f11c30b9a5bc",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['cleveland', 'switzerland', 'va']",
+  "seed": 0,
+  "config_id": "5ede5bd7e1d475a8ec22a601da97f075b24a6306c0e3dbd05125985945d121ba",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "89285af40b290e1ac46800231681c8a30a82b9c588788dda7d1683f9ee4fd2ac",
+  "pooled_accuracy": 0.6811023622047244,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.7307692307692307,
+    "macro_f1": 0.7271364317841079
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.7415730337078652,
+    "macro_f1": 0.72782874617737
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.3125,
+    "macro_f1": 0.28744939271255066
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.5777777777777777,
+    "macro_f1": 0.5325314379442317
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121804Z-08999a642c3c",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['cleveland', 'switzerland', 'va']",
+  "seed": 1,
+  "config_id": "5ede5bd7e1d475a8ec22a601da97f075b24a6306c0e3dbd05125985945d121ba",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "4e2ec4c4d210a07baaa5c269c0d912f52ca6825ae73ae0b92b3f89aeb8f85d7f",
+  "pooled_accuracy": 0.6968503937007874,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.75,
+    "macro_f1": 0.7453860640301319
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.7528089887640449,
+    "macro_f1": 0.7434486373165619
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.4375,
+    "macro_f1": 0.37662337662337664
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.5555555555555556,
+    "macro_f1": 0.5150862068965517
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121805Z-ca7a3e1a1ac3",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['cleveland', 'switzerland', 'va']",
+  "seed": 2,
+  "config_id": "5ede5bd7e1d475a8ec22a601da97f075b24a6306c0e3dbd05125985945d121ba",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "09eb7eeefec687acfe7a5ca827cbc1c8cd62c0be2332d504e86cef0ea0ecf70b",
+  "pooled_accuracy": 0.6889763779527559,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.7307692307692307,
+    "macro_f1": 0.7258003766478343
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.7415730337078652,
+    "macro_f1": 0.7305515335000659
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.375,
+    "macro_f1": 0.33333333333333337
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.6,
+    "macro_f1": 0.5635775862068966
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121814Z-c4e105293076",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['cleveland', 'switzerland', 'va']",
+  "seed": 3,
+  "config_id": "5ede5bd7e1d475a8ec22a601da97f075b24a6306c0e3dbd05125985945d121ba",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "9797e022620446be96ee1fe331a6b6963e2cd7470d0c144de307cf6570cba17d",
+  "pooled_accuracy": 0.7007874015748031,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.75,
+    "macro_f1": 0.7466266866566716
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.7865168539325843,
+    "macro_f1": 0.7726233696382951
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.25,
+    "macro_f1": 0.23809523809523814
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.5777777777777777,
+    "macro_f1": 0.5325314379442317
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121815Z-023a5f942f27",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['cleveland', 'switzerland', 'va']",
+  "seed": 4,
+  "config_id": "5ede5bd7e1d475a8ec22a601da97f075b24a6306c0e3dbd05125985945d121ba",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "57d2843bbc56ea077b7d6302a79a5c753c1329eb3a363e0c95a2441fc3c1d1ec",
+  "pooled_accuracy": 0.7086614173228346,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.75,
+    "macro_f1": 0.7476670399402762
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.7640449438202247,
+    "macro_f1": 0.751495811727164
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.4375,
+    "macro_f1": 0.37662337662337664
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.6,
+    "macro_f1": 0.5635775862068966
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121815Z-1def2351bf8c",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['cleveland', 'hungarian', 'va']",
+  "seed": 0,
+  "config_id": "ed135709f41f6cf3f181672bf55b2da094de3239419d4e449ba3347b1898ae39",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "6b6f3012af1fd0e89c7fc2d7c783f320d7c2f9e0cdf87ee08bb4f3f12a29bee2",
+  "pooled_accuracy": 0.515748031496063,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.46153846153846156,
+    "macro_f1": 0.3157894736842105
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.3707865168539326,
+    "macro_f1": 0.27049180327868855
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.9375,
+    "macro_f1": 0.4838709677419355
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.7777777777777778,
+    "macro_f1": 0.43750000000000006
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121819Z-b81fafafeaef",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['cleveland', 'hungarian', 'va']",
+  "seed": 1,
+  "config_id": "ed135709f41f6cf3f181672bf55b2da094de3239419d4e449ba3347b1898ae39",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "fdb03513f6c4c69881c86b8d9ddd9fd49fba9f73c6e6e1d8cc90f2e996067761",
+  "pooled_accuracy": 0.515748031496063,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.46153846153846156,
+    "macro_f1": 0.3157894736842105
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.3707865168539326,
+    "macro_f1": 0.27049180327868855
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.9375,
+    "macro_f1": 0.4838709677419355
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.7777777777777778,
+    "macro_f1": 0.43750000000000006
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121822Z-3621ecf9697f",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['cleveland', 'hungarian', 'va']",
+  "seed": 2,
+  "config_id": "ed135709f41f6cf3f181672bf55b2da094de3239419d4e449ba3347b1898ae39",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "6feed0036e8cc909f5ee31ca0963ed8c800df7e46f2fafa99c362117e914518c",
+  "pooled_accuracy": 0.515748031496063,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.46153846153846156,
+    "macro_f1": 0.3157894736842105
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.3707865168539326,
+    "macro_f1": 0.27049180327868855
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.9375,
+    "macro_f1": 0.4838709677419355
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.7777777777777778,
+    "macro_f1": 0.43750000000000006
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121823Z-f3db70654a35",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['cleveland', 'hungarian', 'va']",
+  "seed": 3,
+  "config_id": "ed135709f41f6cf3f181672bf55b2da094de3239419d4e449ba3347b1898ae39",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "d0652486c965cd7a412e6cc9f9e8662d598419ec3139a3eb027566cfaafebd51",
+  "pooled_accuracy": 0.515748031496063,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.46153846153846156,
+    "macro_f1": 0.3157894736842105
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.3707865168539326,
+    "macro_f1": 0.27049180327868855
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.9375,
+    "macro_f1": 0.4838709677419355
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.7777777777777778,
+    "macro_f1": 0.43750000000000006
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121825Z-8c0e4c79885e",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['cleveland', 'hungarian', 'va']",
+  "seed": 4,
+  "config_id": "ed135709f41f6cf3f181672bf55b2da094de3239419d4e449ba3347b1898ae39",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "b6b2e4d7b2197f4b7a87570eca72d653ac9375644a31b62dd3e3bc8a8693bfad",
+  "pooled_accuracy": 0.515748031496063,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.46153846153846156,
+    "macro_f1": 0.3157894736842105
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.3707865168539326,
+    "macro_f1": 0.27049180327868855
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.9375,
+    "macro_f1": 0.4838709677419355
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.7777777777777778,
+    "macro_f1": 0.43750000000000006
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121826Z-5b0d36d707b5",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['cleveland', 'hungarian', 'switzerland']",
+  "seed": 0,
+  "config_id": "b7031f33ddf35aeb051f8772726e59dbe1e70ce1e0c7628ff65bfeb07dbbebf4",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "9366198022159dde36f2b9befd83ca1f4b7a063ced6c4ea32113f8a856a84394",
+  "pooled_accuracy": 0.5866141732283464,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.5673076923076923,
+    "macro_f1": 0.530827067669173
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.5168539325842697,
+    "macro_f1": 0.5079079336505079
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.625,
+    "macro_f1": 0.3846153846153846
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.7555555555555555,
+    "macro_f1": 0.6011281224818694
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121827Z-44620b829487",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['cleveland', 'hungarian', 'switzerland']",
+  "seed": 1,
+  "config_id": "b7031f33ddf35aeb051f8772726e59dbe1e70ce1e0c7628ff65bfeb07dbbebf4",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "045c4853722591616491f1001663867b60f9dbd79ce83c8a82acd7c90805d94e",
+  "pooled_accuracy": 0.5905511811023622,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.5865384615384616,
+    "macro_f1": 0.5751876128051677
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.48314606741573035,
+    "macro_f1": 0.4718782249742002
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.75,
+    "macro_f1": 0.42857142857142855
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.7555555555555555,
+    "macro_f1": 0.6011281224818694
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121829Z-fb2a23b6ce21",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['cleveland', 'hungarian', 'switzerland']",
+  "seed": 2,
+  "config_id": "b7031f33ddf35aeb051f8772726e59dbe1e70ce1e0c7628ff65bfeb07dbbebf4",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "ef229da059f4dc48563c47674cdcf9ced2003f3f599fbf33aefd820e7457fd66",
+  "pooled_accuracy": 0.562992125984252,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.5480769230769231,
+    "macro_f1": 0.5154158818280955
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.4606741573033708,
+    "macro_f1": 0.4489164086687306
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.8125,
+    "macro_f1": 0.4482758620689655
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.7111111111111111,
+    "macro_f1": 0.5286059629331185
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121832Z-76ee05038ca5",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['cleveland', 'hungarian', 'switzerland']",
+  "seed": 3,
+  "config_id": "b7031f33ddf35aeb051f8772726e59dbe1e70ce1e0c7628ff65bfeb07dbbebf4",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "e3306957f7639c2e78253d4d8fb8db9ce50b01e89e077a8db9bf1b9ba5573db5",
+  "pooled_accuracy": 0.7086614173228346,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.75,
+    "macro_f1": 0.749907510173881
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.651685393258427,
+    "macro_f1": 0.6452359521666453
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.625,
+    "macro_f1": 0.49999999999999994
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.7555555555555555,
+    "macro_f1": 0.6330615270570793
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121833Z-911efdd0e5de",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_one_fog,pooled(),['cleveland', 'hungarian', 'switzerland']",
+  "seed": 4,
+  "config_id": "b7031f33ddf35aeb051f8772726e59dbe1e70ce1e0c7628ff65bfeb07dbbebf4",
+  "topology_id": "54cd664efd6fd812626a9751ba7689a8a66ae5dbc2e8f7b37e2af6529051ee8b",
+  "run_hash": "230b07285722ded246e1027aaa3ceae58454f1bf9257026745a2f8456b4b329c",
+  "pooled_accuracy": 0.515748031496063,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.5096153846153846,
+    "macro_f1": 0.4547136835612213
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.38202247191011235,
+    "macro_f1": 0.30280586810995586
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.75,
+    "macro_f1": 0.42857142857142855
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.7111111111111111,
+    "macro_f1": 0.48
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121833Z-964727ae41c0",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_two_fogs,explicit(assignment={'fog_us': ['heart_disease-cleveland', 'heart_disease-va'], 'fog_eu': ['heart_disease-hungarian', 'heart_disease-switzerland']}),[]",
+  "seed": 0,
+  "config_id": "6704195151b665edfa4c58145cdd6ae3f06ab334065313769fdf252db2d9f10f",
+  "topology_id": "6f49bb9fa961df752b183adf750c8f704fd98c021131b10d593772b71cd56ded",
+  "run_hash": "0b9e774fdbf8c8a23380f9510e3035a2177c28fcef7e913bffc25df51ed9f11e",
+  "pooled_accuracy": 0.7834645669291339,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.8076923076923077,
+    "macro_f1": 0.8050974512743628
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.7865168539325843,
+    "macro_f1": 0.7697753573859769
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.625,
+    "macro_f1": 0.49999999999999994
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.7777777777777778,
+    "macro_f1": 0.6785714285714286
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121837Z-73421de0cefa",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_two_fogs,explicit(assignment={'fog_us': ['heart_disease-cleveland', 'heart_disease-va'], 'fog_eu': ['heart_disease-hungarian', 'heart_disease-switzerland']}),[]",
+  "seed": 2,
+  "config_id": "6704195151b665edfa4c58145cdd6ae3f06ab334065313769fdf252db2d9f10f",
+  "topology_id": "6f49bb9fa961df752b183adf750c8f704fd98c021131b10d593772b71cd56ded",
+  "run_hash": "dabb188fe74fd19b5b03f02fd78864eec4a6e98ef60ca93fc0a582a65c053d4e",
+  "pooled_accuracy": 0.7952755905511811,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.8269230769230769,
+    "macro_f1": 0.8253079507278835
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.7752808988764045,
+    "macro_f1": 0.7485875706214689
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.6875,
+    "macro_f1": 0.5428571428571429
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.8,
+    "macro_f1": 0.7204968944099378
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121837Z-8ff8d9ece379",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_two_fogs,explicit(assignment={'fog_us': ['heart_disease-cleveland', 'heart_disease-va'], 'fog_eu': ['heart_disease-hungarian', 'heart_disease-switzerland']}),[]",
+  "seed": 1,
+  "config_id": "6704195151b665edfa4c58145cdd6ae3f06ab334065313769fdf252db2d9f10f",
+  "topology_id": "6f49bb9fa961df752b183adf750c8f704fd98c021131b10d593772b71cd56ded",
+  "run_hash": "ef4caea59e34d0bf89fca10cb6678d88495e4c826df8d7791b0eaeb4aec2da13",
+  "pooled_accuracy": 0.7952755905511811,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.7884615384615384,
+    "macro_f1": 0.784557438794727
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.8202247191011236,
+    "macro_f1": 0.8020022246941045
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.6875,
+    "macro_f1": 0.5428571428571429
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.8,
+    "macro_f1": 0.7204968944099378
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121853Z-e15105bd2ded",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_two_fogs,explicit(assignment={'fog_us': ['heart_disease-cleveland', 'heart_disease-va'], 'fog_eu': ['heart_disease-hungarian', 'heart_disease-switzerland']}),[]",
+  "seed": 3,
+  "config_id": "6704195151b665edfa4c58145cdd6ae3f06ab334065313769fdf252db2d9f10f",
+  "topology_id": "6f49bb9fa961df752b183adf750c8f704fd98c021131b10d593772b71cd56ded",
+  "run_hash": "49a40a5d9a199991217388daa9a6715c8d1c744789f480b5207d5c3307bcbedc",
+  "pooled_accuracy": 0.7480314960629921,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.7596153846153846,
+    "macro_f1": 0.7557997557997558
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.7752808988764045,
+    "macro_f1": 0.7591991341991342
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.5,
+    "macro_f1": 0.41818181818181815
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.7555555555555555,
+    "macro_f1": 0.6583850931677019
+   }
+  }
+ },
+ {
+  "run_id": "20261110T121857Z-bc27b89c8861",
+  "scenario": "topology,data.placement,data.roles.overrides.heart_disease.exclude=heart_disease_two_fogs,explicit(assignment={'fog_us': ['heart_disease-cleveland', 'heart_disease-va'], 'fog_eu': ['heart_disease-hungarian', 'heart_disease-switzerland']}),[]",
+  "seed": 4,
+  "config_id": "6704195151b665edfa4c58145cdd6ae3f06ab334065313769fdf252db2d9f10f",
+  "topology_id": "6f49bb9fa961df752b183adf750c8f704fd98c021131b10d593772b71cd56ded",
+  "run_hash": "7657e0b8ddb1cd620f230e4180c39eed735a516736ea325e8186baac305dabf4",
+  "pooled_accuracy": 0.7874015748031497,
+  "test": {
+   "cleveland_test": {
+    "samples": 104,
+    "accuracy": 0.7980769230769231,
+    "macro_f1": 0.7957924263674615
+   },
+   "hungarian_test": {
+    "samples": 89,
+    "accuracy": 0.8202247191011236,
+    "macro_f1": 0.8020022246941045
+   },
+   "switzerland_test": {
+    "samples": 16,
+    "accuracy": 0.5625,
+    "macro_f1": 0.4589371980676329
+   },
+   "va_test": {
+    "samples": 45,
+    "accuracy": 0.7777777777777778,
+    "macro_f1": 0.6785714285714286
+   }
+  }
+ }
+]

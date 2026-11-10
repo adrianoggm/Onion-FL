@@ -203,6 +203,18 @@ class SimRuntime:
             )
             self._links[(src, dst)] = _Link(built, wire)
 
+    def compute_of(self, node_id: str) -> Any:
+        """The compute model of a node (None: its work takes no time)."""
+        return self._compute[node_id]
+
+    def channel_of(self, src: str, dst: str) -> Any:
+        """The channel of the direction ``src -> dst`` of a link."""
+        return self._links[(src, dst)].channel
+
+    def codec_of(self, src: str, dst: str) -> Codec:
+        """The codec of the direction ``src -> dst`` of a link."""
+        return self._links[(src, dst)].codec
+
     def note(
         self, t: float, node: str, name: str, value: Any = None, **tags: Any
     ) -> None:
@@ -213,10 +225,7 @@ class SimRuntime:
 
     def run(self, until: float | None = None) -> None:
         """Process events up to ``until`` (or until none are left). Can be called again."""
-        if not self._started:
-            self._started = True
-            for node_id in self._nodes:
-                self._push(0.0, "start", (node_id,))
+        self._start()
         while self._queue:
             if until is not None and self._queue[0][0] > until:
                 break
@@ -230,6 +239,41 @@ class SimRuntime:
             getattr(self, f"_on_{kind}")(*payload)
         if until is not None:
             self.now = max(self.now, until)
+
+    def next_time(self) -> float | None:
+        """When the next event happens; None when none is left (the run is over)."""
+        self._start()
+        return self._queue[0][0] if self._queue else None
+
+    def inject(self, msg: Message) -> None:
+        """Deliver ``msg`` now, from a sender outside the tree and without a link
+        (an operator's order, continuum #203). The receiver decides whether to
+        trust the sender."""
+        self._push(self.now, "external", (msg, f"{msg.src}>{msg.dst}#external"))
+
+    def record(self, node: str, name: str, value: Any = None, **tags: Any) -> None:
+        """Record an event now, at ``node`` (e.g. the run being paused)."""
+        self._record(node, name, value, tags)
+
+    def _start(self) -> None:
+        if not self._started:
+            self._started = True
+            for node_id in self._nodes:
+                self._push(0.0, "start", (node_id,))
+
+    def _on_external(self, msg: Message, msg_id: str) -> None:
+        if msg.dst not in self._nodes:
+            self._record(msg.src, "link.dropped", None, {"dst": msg.dst})
+            return
+        if self._defer_if_busy(msg.dst, "external", (msg, msg_id)):
+            return
+        self._record(
+            msg.dst,
+            "message.delivered",
+            None,
+            {"src": msg.src, "kind": msg.kind, "round": msg.round, "msg_id": msg_id},
+        )
+        self._handle(msg.dst, "on_message", lambda node, ctx: node.on_message(msg, ctx))
 
     def _on_start(self, node_id: str) -> None:
         if self._is_up(node_id, None):

@@ -60,7 +60,7 @@ def test_the_local_backend_says_what_it_does_not_support() -> None:
     assert SimBackend().supports({"name": "lab"}) == []
     assert LocalBackend().supports(None) == []
     (reason,) = LocalBackend().supports({"name": "lab"})
-    assert "simulated only for now" in reason
+    assert "emulated or distributed backend" in reason
 
 
 def test_a_scenario_runs_through_its_backend_and_records_it(
@@ -98,7 +98,7 @@ def test_execute_prepares_runs_and_collects_in_order(tmp_path: Path) -> None:
 
 
 def test_execute_refuses_what_a_backend_does_not_support() -> None:
-    with pytest.raises(ValueError, match="simulated only"):
+    with pytest.raises(ValueError, match="emulated or distributed"):
         execute(LocalBackend(), "s", {"name": "lab"})
 
 

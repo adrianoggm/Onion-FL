@@ -83,6 +83,25 @@ class Profile(Strict):
     )
     cpus: int | None = Field(None, gt=0, description="Trabajos a la vez")
     memory: float | None = Field(None, gt=0, description="Bytes de memoria")
+    # The fields below are left out of the infrastructure_id when unset, so the
+    # ids of infrastructures that do not use them do not change.
+    bandwidth: float | None = Field(
+        None,
+        gt=0,
+        description="Ancho de banda del acceso del dispositivo (bps, cada sentido)",
+        exclude_if=lambda v: v is None,
+    )
+    availability: dict[str, Any] | None = Field(
+        None,
+        description="Modelo de disponibilidad de los edges del host",
+        exclude_if=lambda v: v is None,
+    )
+    origin: Literal["declared", "trace"] = Field(
+        "declared",
+        description="De dónde salen las tasas: declaradas o de una traza; "
+        "ninguna de las dos está calibrada",
+        exclude_if=lambda v: v == "declared",
+    )
     calibration: str | None = Field(
         None,
         pattern=CALIBRATION_ID,
@@ -91,6 +110,9 @@ class Profile(Strict):
     )
 
     _memory = field_validator("memory", mode="before")(lambda v: quantity(v, "memory"))
+    _bandwidth = field_validator("bandwidth", mode="before")(
+        lambda v: quantity(v, "bandwidth")
+    )
 
     @model_validator(mode="after")
     def _one_source(self) -> Profile:
@@ -140,6 +162,22 @@ class LinkFields(Strict):
 LAN = LinkFields(latency=0.001, jitter=0.0002, distribution="normal", bandwidth=1e9)
 
 
+class TracePool(Strict):
+    """Devices sampled from a trace of real clients: each becomes a profile
+    ``<source>_<site>_<i>`` with one device in the site's pool."""
+
+    source: Literal["fedscale"] = "fedscale"
+    devices: int = Field(gt=0, description="Cuántos clientes de la traza")
+    seed: int = Field(0, description="Semilla del muestreo de clientes")
+    availability: bool = Field(
+        True, description="Usar también su traza de disponibilidad"
+    )
+    cpus: int | None = Field(None, gt=0, description="Trabajos a la vez")
+    memory: float | None = Field(None, gt=0, description="Bytes de memoria")
+
+    _memory = field_validator("memory", mode="before")(lambda v: quantity(v, "memory"))
+
+
 class Site(Strict):
     """Hosts in one place: named ones, and a pool of identical devices."""
 
@@ -148,6 +186,11 @@ class Site(Strict):
         default_factory=dict, description="perfil -> cuántos dispositivos"
     )
     lan: LinkFields = Field(default=LAN, description="Red local entre sus hosts")
+    traces: TracePool | None = Field(
+        None,
+        description="Dispositivos muestreados de una traza (FedScale)",
+        exclude_if=lambda v: v is None,
+    )
 
     @field_validator("hosts")
     @classmethod
@@ -252,6 +295,11 @@ class Infrastructure(Strict):
         default_factory=dict, description="servicio -> host (p. ej. mqtt_broker)"
     )
     _calibrations: dict[str, Any] = PrivateAttr(default_factory=dict)  # id -> loaded
+    device_traces: dict[str, dict[str, Any]] | None = Field(
+        None,
+        description="Por sitio, la traza, sus hashes y los clientes muestreados",
+        exclude_if=lambda v: v is None,
+    )
 
     @model_validator(mode="after")
     def _check(self) -> Infrastructure:
@@ -297,6 +345,12 @@ class Infrastructure(Strict):
         for service, host in self.services.items():
             if host not in seen:
                 raise ValueError(f"services.{service}: unknown host {host!r}")
+        for site, spec in self.sites.items():
+            if spec.traces is not None and site not in (self.device_traces or {}):
+                raise ValueError(
+                    f"sites.{site}.traces: not sampled; load the infrastructure "
+                    "with load_infrastructure or expand_traces"
+                )
         return self
 
     @staticmethod
@@ -356,8 +410,12 @@ def parse_infrastructure(
 
 
 def load_infrastructure(
-    path: str | Path, calibrations: str | Path | None = None
+    path: str | Path,
+    calibrations: str | Path | None = None,
+    device_traces: str | Path = "data",
 ) -> Infrastructure:
+    """The infrastructure in ``path``; its trace pools are sampled from the
+    traces under ``device_traces`` (``<device_traces>/FedScale/``)."""
     import yaml
 
     path = Path(path)
@@ -367,7 +425,17 @@ def load_infrastructure(
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as exc:
         raise InfrastructureError(f"{path.name} is not valid YAML: {exc}") from None
-    return parse_infrastructure(anchor_traces(raw, path.parent), calibrations)
+    return parse_infrastructure(
+        expand_traces(anchor_traces(raw, path.parent), device_traces),
+        calibrations,
+    )
+
+
+def expand_traces(raw: Any, root: str | Path) -> Any:
+    """Sample the trace pools of ``raw`` (see :mod:`onion_fl.infrastructure.fedscale`)."""
+    from onion_fl.infrastructure.fedscale import expand
+
+    return expand(raw, root)
 
 
 def anchor_traces(raw: Any, folder: str | Path) -> Any:

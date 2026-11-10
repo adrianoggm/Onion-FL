@@ -10,6 +10,7 @@ from __future__ import annotations
    under the root; then it runs inside a ``Run`` that writes ``runs/<run_id>/``.
 """
 
+import functools
 import hashlib
 import json
 import math
@@ -23,10 +24,13 @@ from typing import Any
 
 import numpy as np
 
-from onion_fl.continuum.bundle import Bundle, load_bundle, save_bundle
-from onion_fl.continuum.memory import NoMemory, memories
-from onion_fl.continuum.pace import Continuum
-from onion_fl.continuum.triggers import drift_detectors, triggers
+from onion_fl.continual.bundle import Bundle, load_bundle, save_bundle
+from onion_fl.continual.control import LiveControl, load_operators
+from onion_fl.continual.memory import NoMemory, memories
+from onion_fl.continual.pace import Continuum
+from onion_fl.continual.promotion import promotions
+from onion_fl.continual.triggers import drift_detectors, triggers
+from onion_fl.continual.unlabelled import NoObjective, objectives
 from onion_fl.core.context import node_rng
 from onion_fl.core.topology import Topology, load_topology, parse_topology
 from onion_fl.data.cache import load_prepared, prepare
@@ -55,6 +59,7 @@ from onion_fl.infrastructure.model import (
     Infrastructure,
     InfrastructureError,
     anchor_traces,
+    expand_traces,
     load_infrastructure,
     parse_infrastructure,
 )
@@ -159,11 +164,15 @@ def resolve_infrastructure(config: ExperimentConfig) -> Infrastructure | None:
         calibrations = config.paths.calibrations
         if isinstance(ref, dict):  # its traces live with the infrastructures
             raw = anchor_traces(deepcopy(ref), config.paths.infrastructures)
-            return parse_infrastructure(raw, calibrations)
+            return parse_infrastructure(
+                expand_traces(raw, config.paths.device_traces), calibrations
+            )
         path = Path(ref)
         if path.suffix not in (".yaml", ".yml"):
             path = Path(config.paths.infrastructures) / f"{ref}.yaml"
-        return load_infrastructure(path, calibrations)
+        return load_infrastructure(
+            path, calibrations, device_traces=config.paths.device_traces
+        )
     except InfrastructureError as exc:
         raise ConfigError(f"infrastructure: {exc}") from None
 
@@ -208,8 +217,10 @@ def edge_statistics(
     name: str, scenario: Scenario, placement: Placement, initial: Mapping[str, Any]
 ) -> dict[str, float]:
     """Each training edge's ``samples``, ``label_divergence`` (KL divergence of its
-    labels from those of all the training edges of its dataset) or
-    ``initial_loss`` (cross-entropy of the initial model on its training data)."""
+    labels from those of all the training edges of its dataset), ``initial_loss``
+    (cross-entropy of the initial model on its training data) or
+    ``gradient_norm`` (L2 norm of the gradient of that loss over every parameter
+    of the initial model, one full-batch pass)."""
     clients = _placed(placement)
     if name == "samples":
         return {c.id: float(c.train.n_samples) for c in clients}
@@ -232,11 +243,27 @@ def edge_statistics(
     for c in clients:
         model = family.build([c.train.shape], seed=scenario.seed)
         load_arrays(model, initial)
+        if name == "gradient_norm":
+            out[c.id] = _gradient_norm(model, c.train)
+            continue
         y = np.asarray(c.train.y, np.int64)
         logits = predict(model, c.train.X)
         loss = compute(logits, y, c.train.n_classes, ["loss"]) if len(y) else {}
         out[c.id] = loss.get("loss", 0.0)
     return out
+
+
+def _gradient_norm(model: Any, data: Any) -> float:
+    import torch
+    import torch.nn.functional as F
+
+    if not len(data.y):
+        return 0.0
+    model.eval()  # no dropout: the same model every edge sees
+    X = torch.from_numpy(np.asarray(data.X, np.float32))
+    F.cross_entropy(model(X), torch.from_numpy(np.asarray(data.y, np.int64))).backward()
+    grads = [p.grad for p in model.parameters() if p.grad is not None]
+    return float(torch.sqrt(sum((g**2).sum() for g in grads))) if grads else 0.0
 
 
 def load_data(config: ExperimentConfig) -> tuple[list[Any], dict[str, str]]:
@@ -250,6 +277,12 @@ def load_data(config: ExperimentConfig) -> tuple[list[Any], dict[str, str]]:
                 f"{spec.name!r}; give one descriptor another name"
             )
         loaded[spec.name] = name
+        scaler = config.data.roles.of(spec.name).scaler
+        if spec.tokens and scaler != "none":
+            raise ConfigError(
+                f"data.roles: dataset {spec.name!r} holds tokens, which scaling "
+                f"({scaler}) would destroy; set overrides.{spec.name}.scaler: none"
+            )
         path = prepare(spec, use.options, cache_dir=config.paths.cache)
         digests[name] = hashlib.sha256((path / "meta.json").read_bytes()).hexdigest()
         subjects += load_prepared(path)
@@ -346,7 +379,7 @@ def _parent(config: ExperimentConfig, seed: int) -> tuple[Path, Bundle, Any] | N
             "write no bundle until the distributed continuum (C9)"
         )
     init = create(inits, config.learning.init)
-    if init.restore.preprocessing and config.data.roles.scaler == "local":
+    if init.restore.preprocessing and "local" in config.data.roles.scalers():
         raise ConfigError(
             "learning.init: frozen local preprocessing is not supported yet (each "
             "holder would refit its own scaler); use scaler: global, or set "
@@ -512,7 +545,7 @@ def _restore_parts(
             return restore.server_state if is_aux(rest) else restore.model
         if part in ("zone", "previous", "model"):
             return restore.model
-        if part in ("replay", "stream"):
+        if part in ("replay", "stream", "unlabelled"):
             return restore.edge_state
         return restore.server_state if part == "server" else True
 
@@ -648,6 +681,13 @@ def _check_learning(config: ExperimentConfig, state: Mapping[str, Any]) -> None:
             f"learning.trainer: {name} contrasts with the global model's features, "
             f"but sharing {policy.name!r} keeps {features} on the edge, so the "
             "global ones never arrive; use fedavg, fedper or zone"
+        )
+    unlabelled = config.unlabelled is not None and _name(config.unlabelled) != "none"
+    if unlabelled and not getattr(trainer, "takes_unlabelled", False):
+        raise ConfigError(
+            f"unlabelled: trainer {name} runs its own training loops, which add "
+            "no term for unlabelled rows; use standard, fedprox, fedbabu, "
+            "scaffold, fednova, feddyn or moon"
         )
     topology = resolve_topology(config)
     if getattr(trainer, "sends_aux", False):
@@ -878,8 +918,8 @@ def _paced(
         return config.rounds, None, None
     drain = max((s.drain for s in streams.values()), default=0.0)
     speed = config.stream.speed
-    c = config.continuum
-    if c is not None:
+    c = config.continual
+    if c is not None and c.trigger is not None:
         trigger = create(triggers, c.trigger)
         local = None if c.edge_trigger is None else create(triggers, c.edge_trigger)
         pace = Continuum(
@@ -901,7 +941,7 @@ def _rounds_preview(config: ExperimentConfig, learners: Mapping[str, Any]) -> di
     rounds, _, pace = _paced(config, learners)
     if pace is None:
         return {"rounds": rounds}
-    return {"rounds": None, "trigger": _name(config.continuum.trigger)}
+    return {"rounds": None, "trigger": _name(config.continual.trigger)}
 
 
 def _stream_summary(config: ExperimentConfig, streams: Mapping[str, Any]) -> dict:
@@ -940,6 +980,25 @@ def _replay(scenario: Scenario, edge: str) -> dict[str, Any]:
     return {"replay": memory, "replay_ratio": continual.replay_ratio}
 
 
+def _update(scenario: Scenario) -> dict[str, Any]:
+    """How a stream edge updates; warm, the default, runs as C3 to C5 do."""
+    continual = scenario.config.continual
+    if continual is None or continual.update == "warm":
+        return {}
+    return {"update": continual.update}
+
+
+def _unlabelled(scenario: Scenario) -> dict[str, Any]:
+    """An edge's own objective on its unlabelled rows; none runs as C3/C4 do."""
+    ref = scenario.config.unlabelled
+    objective = None if ref is None else create(objectives, ref)
+    return (
+        {}
+        if objective is None or isinstance(objective, NoObjective)
+        else {"unlabelled": objective}
+    )
+
+
 def edge_specs(
     scenario: Scenario, topology: Topology, split: DataSplit, placement: Placement
 ) -> tuple[dict[str, list[EdgeSpec]], dict[str, Any]]:
@@ -964,6 +1023,7 @@ def edge_specs(
             train=False,
             tags={"dataset": data.dataset},
             stream=stream,
+            validates=prefix == "validate",
         )
 
     bad = malicious_edges(config, _placed(placement), scenario.seed)
@@ -986,6 +1046,8 @@ def edge_specs(
                 ),
                 stream=streams.get(client.id),
                 **_replay(scenario, client.id),
+                **_unlabelled(scenario),
+                **_update(scenario),
                 **device,
             )
             for client in clients
@@ -1004,6 +1066,18 @@ def edge_specs(
         edges[root] = trainers_at_root + [
             evaluator("test", data) for data in placement.test
         ]
+    if config.promotion is not None:  # the validation streams decide (C7)
+        validators = [
+            evaluator("validate", data)
+            for leaf in sorted(placement.zone_evaluators)
+            for data in placement.zone_evaluators[leaf]
+        ]
+        if not validators:
+            raise ValueError(
+                "promotion: there are no validation subjects to decide with; "
+                "set data.roles.val"
+            )
+        edges[topology.root.id] += validators
     return edges, initial
 
 
@@ -1069,7 +1143,12 @@ def _on_hosts(
         rate, note = resolved.rate(spec.id, workload(spec))
         if note is not None and estimated is not None:
             estimated.append({"node": spec.id, **note})
-        return replace(spec, host=resolved.hosts[spec.id], compute=_rate(rate))
+        return replace(
+            spec,
+            host=resolved.hosts[spec.id],
+            compute=_rate(rate),
+            availability=_availability(spec, resolved),
+        )
 
     out = {
         leaf: [
@@ -1085,6 +1164,24 @@ def _on_hosts(
         if not spec.train
     } | {child: profile for child, (_, profile) in resolved.links.items()}
     return out, profiles
+
+
+def _availability(spec: EdgeSpec, resolved: Resolved) -> Any:
+    """The availability of the edge's host profile (a device trace), if any."""
+    given = resolved.infrastructure.profile_of(resolved.hosts[spec.id]).availability
+    if given is None:
+        return spec.availability
+    if spec.availability is not None:
+        raise ConfigError(
+            f"edge {spec.id}: its host {resolved.hosts[spec.id]} has its own "
+            "availability; remove edge.availability from the topology"
+        )
+    try:
+        return create(availability_models, given)
+    except (KeyError, ValueError) as exc:
+        raise ConfigError(
+            f"infrastructure: host {resolved.hosts[spec.id]} availability: {exc}"
+        ) from None
 
 
 def _rate(rate: float | None) -> Any:
@@ -1286,6 +1383,8 @@ def build_scenario(
     runtime: Any = None,
     parent: Any = ...,
     calibrations: dict[str, Any] | None = None,
+    operator_keys: Mapping[str, str] | None = None,
+    audience: str = "",
 ) -> Any:
     """The federation of a scenario, on ``runtime`` (a new SimRuntime by default).
 
@@ -1293,7 +1392,9 @@ def build_scenario(
     infrastructure cites, the rates estimated by FLOPs (``estimated``) and,
     per logical link whose path crosses a calibrated link, the largest
     message its path model holds (``valid_up_to``).
-    """
+
+    ``operator_keys`` (``continual.control``) are who may give the coordinator
+    orders, signed for ``audience``, the run's id."""
     config = scenario.config
     edges, initial = edge_specs(scenario, topology, split, placement)
     resolved, link_profiles = physical(scenario, topology, placement, initial), None
@@ -1320,6 +1421,9 @@ def build_scenario(
         rounds=start + rounds,  # a continuation's numbering goes on
         round_every=round_every,
         continuum=pace,
+        promotion=(
+            None if config.promotion is None else create(promotions, config.promotion)
+        ),
         sharing=config.learning.sharing,
         seed=scenario.seed,
         metrics=config.evaluation.metrics,
@@ -1327,6 +1431,8 @@ def build_scenario(
         runtime=runtime,
         link_profiles=link_profiles,
         link_channels=channels,
+        operator_keys=operator_keys,
+        audience=audience,
     )
     if resolved is not None:
         _on_machines(federation.runtime, resolved, topology, network)
@@ -1336,11 +1442,33 @@ def build_scenario(
     return federation
 
 
+def _versions(coordinator: Any) -> dict[str, Any]:
+    """The champion and every version's lineage, with a promotion policy; the
+    bundle's model is the champion."""
+    if coordinator.promotion is None:
+        return {}
+    return {
+        "champion": coordinator.champion,
+        "versions": [v.record() for _, v in sorted(coordinator.versions.items())],
+    }
+
+
 def run_scenario(
-    scenario: Scenario, evaluate: Callable[..., Any] | None = None
+    scenario: Scenario,
+    evaluate: Callable[..., Any] | None = None,
+    paused: bool = False,
 ) -> Path:
-    """Run one scenario on its backend and return its ``runs/<run_id>/`` folder."""
+    """Run one scenario on its backend and return its ``runs/<run_id>/`` folder.
+
+    With operators (``ONIONFL_OPERATORS``), a simulation takes their signed
+    orders as it runs (``continual.control``); ``paused`` starts it paused, for
+    them to resume."""
     config = scenario.config
+    if paused and (load_operators() is None or not config.simulated):
+        raise ConfigError(
+            "paused: only a simulation with operators (ONIONFL_OPERATORS) can be "
+            "resumed"
+        )
     infra = config.infrastructure
     return execute(
         create(backends, config.backend_ref),
@@ -1348,12 +1476,29 @@ def run_scenario(
         infra,
         None if infra is None else infra.assignment,
         evaluate=evaluate,
+        **({"paused": True} if paused else {}),  # only the sim backend takes it
     )
 
 
-def simulate(scenario: Scenario, evaluate: Callable[..., Any] | None = None) -> Path:
+def _diagnostic(federation: Any, scenario: Scenario, placement: Placement) -> dict:
+    """The ex ante diagnostic of the deadline bias (N8); a run goes on without it
+    when it cannot be computed, with the reason."""
+    from onion_fl.experiment.diagnostic import diagnose_scenario
+
+    try:
+        return diagnose_scenario(federation, scenario, placement)
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
+def simulate(
+    scenario: Scenario,
+    evaluate: Callable[..., Any] | None = None,
+    paused: bool = False,
+) -> Path:
     """Run one scenario in the simulator (the ``sim`` backend) and sign it."""
     config = scenario.config
+    operators = load_operators()
     parent = _parent(config, scenario.seed)  # resolved once for the whole run
     topology, split, placement, digests = _scenario_data(scenario, parent)
     infra = resolve_infrastructure(config)
@@ -1376,6 +1521,8 @@ def simulate(scenario: Scenario, evaluate: Callable[..., Any] | None = None) -> 
             "version": parent[1].snapshot.round,
         }
         run.meta["parent"] = lineage_parent  # signed with the rest at finish
+    if infra is not None and infra.device_traces:  # sampled devices, cited (G9)
+        run.meta["device_traces"] = infra.device_traces
     try:
         record_data(run, scenario, split, placement)
         calibrations: dict[str, Any] = {}
@@ -1387,6 +1534,8 @@ def simulate(scenario: Scenario, evaluate: Callable[..., Any] | None = None) -> 
             evaluate=evaluate,
             parent=parent,
             calibrations=calibrations,
+            operator_keys=operators,
+            audience=run.run_id,
         )
         if calibrations.get("ids"):  # signed with the rest at finish
             run.meta["calibrations"] = calibrations["ids"]
@@ -1394,6 +1543,7 @@ def simulate(scenario: Scenario, evaluate: Callable[..., Any] | None = None) -> 
             run.meta["estimated"] = calibrations["estimated"]
         largest = _largest_messages(federation, calibrations.get("valid_up_to"))
         run.attach(federation)
+        run.meta["diagnostic"] = _diagnostic(federation, scenario, placement)
         if config.stream is not None:
             streams = {k: e.stream for k, e in federation.edges.items() if e.train}
             summary = _stream_summary(config, streams)
@@ -1404,7 +1554,17 @@ def simulate(scenario: Scenario, evaluate: Callable[..., Any] | None = None) -> 
                 rounds=summary["rounds"],
                 edges=summary["edges"],
             )
-        federation.run()
+        if operators is None:
+            federation.run()
+        else:  # the operators' orders, read as it runs
+            LiveControl(
+                run.path,
+                operators,
+                run.run_id,
+                federation.coordinator.id,
+                paused=paused,
+                idle=run.sync,  # a paused run's events reach the Studio
+            ).run(federation.runtime)
         outside = [
             {"link": child, "max_bytes": size, "valid_up_to": limit}
             for child, (size, limit) in sorted(largest.items())
@@ -1438,6 +1598,7 @@ def simulate(scenario: Scenario, evaluate: Callable[..., Any] | None = None) -> 
                 "run_id": run.run_id,
                 "parent": lineage_parent,
                 "algorithms": algorithms,
+                **_versions(federation.coordinator),
             },
             config=identity(config),
             roles=_lineage_roles(earlier.roles if earlier else {}, split.roles),
@@ -1486,6 +1647,7 @@ def run_experiment(
     workers: int = 1,
     only: str | None = None,
     evaluate: Callable[..., Any] | None = None,
+    paused: bool = False,
 ) -> list[Path]:
     """Run every scenario (or the one named ``only``); in parallel processes when ``workers > 1``."""
     every = scenarios(config)
@@ -1493,15 +1655,18 @@ def run_experiment(
     if not todo:
         names = sorted({s.name for s in every})
         raise ConfigError(f"no scenario named {only!r}; the scenarios are {names}")
-    return run_scenarios(todo, workers=workers, evaluate=evaluate)
+    return run_scenarios(todo, workers=workers, evaluate=evaluate, paused=paused)
 
 
 def run_scenarios(
     todo: Sequence[Scenario],
     workers: int = 1,
     evaluate: Callable[..., Any] | None = None,
+    paused: bool = False,
 ) -> list[Path]:
-    """Run the scenarios of one experiment, in order; in parallel when ``workers > 1``."""
+    """Run the scenarios of one experiment, in order; in parallel when ``workers > 1``.
+
+    ``paused`` starts each simulation paused (``run_scenario``)."""
     if workers > 1 and evaluate is not None:
         raise ValueError(
             "a custom evaluate cannot be sent to worker processes; use workers=1"
@@ -1518,8 +1683,8 @@ def run_scenarios(
         )
     check_scenarios(todo)  # also fills the caches before any worker reads them
     if workers <= 1:
-        return [run_scenario(s, evaluate) for s in todo]
-    return _in_parallel(run_scenario, todo, workers)
+        return [run_scenario(s, evaluate, paused) for s in todo]
+    return _in_parallel(functools.partial(run_scenario, paused=paused), todo, workers)
 
 
 def _in_parallel(fn: Callable[[Any], Any], items: Sequence[Any], workers: int) -> list:

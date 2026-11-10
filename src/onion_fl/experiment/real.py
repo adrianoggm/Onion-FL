@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Real runs: one process per group of nodes over MQTT (spec §9.2).
+"""Real runs: one process per group of nodes over MQTT, gRPC or Flower (§9.2).
 
 The ``local`` backend (``backend: local``, or its alias ``runtime.mode:
 real``) in three steps. ``prepare_local`` creates ``runs/<run_id>/`` and
@@ -25,6 +25,7 @@ from typing import Any
 
 import numpy as np
 
+from onion_fl.continual.control import load_operators
 from onion_fl.core.topology import Topology
 from onion_fl.experiment.config import ConfigError, parse_experiment
 from onion_fl.experiment.sweep import Scenario, identity
@@ -90,17 +91,20 @@ def _root_members(config: Any, topology: Topology, placement: Any) -> list[str]:
     return clients + _root_evaluators(config, placement)
 
 
+CROSS_PROCESS = ("mqtt", "grpc", "flower")
+
+
 def _check_links(topology: Topology) -> None:
-    """Every link of a real run must cross processes: MQTT."""
+    """Every link of a real run must cross processes: MQTT, gRPC or Flower."""
     links = [n.link_up for n in topology.nodes if n.link_up is not None]
     links.append(topology.edge.link_up)
     for link in links:
         spec = link.transport
         name = spec if isinstance(spec, str) else spec.get("name")
-        if name != "mqtt":
+        if name not in CROSS_PROCESS:
             raise ConfigError(
-                f"runtime.mode: real needs mqtt links, but a link uses {name!r}; a "
-                "memory bus does not cross processes"
+                f"runtime.mode: real needs mqtt, grpc or flower links, but a link "
+                f"uses {name!r}; a memory bus does not cross processes"
             )
 
 
@@ -197,7 +201,7 @@ def write_scenario(
 ) -> Path:
     """``scenario.json``: what every node process rebuilds. ``launcher`` adds
     what the processes take from the launcher (``groups``, ``broker``,
-    ``nodelay``)."""
+    ``nodelay``, ``grpc``, ``initial``)."""
     document = {
         "name": scenario.name,
         "seed": scenario.seed,
@@ -214,7 +218,8 @@ def write_scenario(
 def edge_groups(
     config: Any, topology: Topology, placement: Any
 ) -> dict[str, list[str]]:
-    """The edges and evaluators under each leaf, and the root's evaluators."""
+    """The edges and evaluators under each leaf, and the root's members: its
+    training clients when it is the leaf (two levels), then its evaluators."""
     out = {leaf: [c.id for c in clients] for leaf, clients in placement.edges.items()}
     for leaf, evaluators in placement.zone_evaluators.items():
         out.setdefault(leaf, []).extend(
@@ -308,6 +313,9 @@ def run_node(
         federation_nodes = set(launcher["groups"][group])
     else:
         federation_nodes = _group_members(chosen.config, topology, placement, group)
+    grpc = launcher.get("grpc")  # across machines: where each node listens
+    if grpc is not None:
+        grpc = {"listen": grpc["listen"][group], "peers": grpc["peers"]}
     runtime = RealRuntime(
         run_id,
         seed=chosen.seed,
@@ -316,8 +324,17 @@ def run_node(
         heartbeat_s=chosen.config.runtime.heartbeat,
         broker=launcher.get("broker"),
         nodelay=launcher.get("nodelay"),
+        grpc=grpc,
     )
-    federation = build_scenario(chosen, topology, split, placement, runtime=runtime)
+    federation = build_scenario(
+        chosen,
+        topology,
+        split,
+        placement,
+        runtime=runtime,
+        operator_keys=load_operators(),  # orders over the transport are signed
+        audience=run_id,
+    )
     if "initial" in launcher:
         take_initial(federation, Path(config).parent / launcher["initial"])
     roles = node_roles(federation, topology)
@@ -356,7 +373,7 @@ def _launcher(config: str | Path) -> dict[str, Any]:
     if path.suffix != ".json":
         return {}
     doc = json.loads(path.read_text(encoding="utf-8"))
-    keys = ("groups", "broker", "nodelay", "initial")
+    keys = ("groups", "broker", "nodelay", "grpc", "initial")
     return {k: doc[k] for k in keys if k in doc}
 
 

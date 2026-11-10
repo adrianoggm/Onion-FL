@@ -1,8 +1,10 @@
 """Simulation and real runtime give the same final model (spec §9.3, issue #100).
 
 With full quorum and the same seed, the coordinator's final model must match
-in SimRuntime, in RealRuntime over the memory bus, and over MQTT with one
-process per group. The edges use the stub trainer with per-node noise: it
+in SimRuntime, in RealRuntime over the memory bus, gRPC and Flower, and over
+MQTT, gRPC and Flower with one process per group. Flower needs the ``flower``
+extra, and its tests skip without it. The edges use the stub trainer with
+per-node noise: it
 learns nothing, but every edge sends a different, seeded update, so any
 difference in participants, rng streams or aggregation order would show.
 The dataset is a CSV format fixture (docs/RULES.md).
@@ -15,6 +17,7 @@ import os
 import socket
 import subprocess
 import textwrap
+import time
 from pathlib import Path
 
 import numpy as np
@@ -129,6 +132,66 @@ def test_the_real_runtime_in_one_process_matches_the_simulation(tmp_path: Path) 
 
     assert federation.coordinator.finished
     assert_same_model(simulated(config), federation.coordinator.state)
+
+
+DIRECT = ["grpc", "flower"]  # transports with direct links, no broker
+
+
+def _direct(tmp_path: Path, name: str = "grpc") -> dict:
+    if name == "flower":
+        pytest.importorskip("flwr", minversion="1.21")
+    pytest.importorskip("grpc")
+    return {"name": name, "directory": str(tmp_path / f"peers_{name}")}
+
+
+@pytest.mark.parametrize("name", DIRECT)
+def test_the_real_runtime_over_a_direct_transport_matches_the_simulation(
+    tmp_path: Path, name: str
+) -> None:
+    config = experiment(tmp_path, _direct(tmp_path, name))
+    (scenario,) = scenarios(config)
+    topology, split, placement, _ = _scenario_data(scenario)
+    runtime = RealRuntime(f"equivalence-{name}", seed=scenario.seed, heartbeat_s=None)
+    federation = build_scenario(scenario, topology, split, placement, runtime=runtime)
+
+    runtime.run(timeout=30)
+
+    assert federation.coordinator.finished
+    assert_same_model(simulated(config), federation.coordinator.state)
+
+
+@pytest.mark.parametrize("name", DIRECT)
+def test_a_direct_transport_with_one_process_per_group_matches_the_simulation(
+    tmp_path: Path, name: str
+) -> None:
+    transport = _direct(tmp_path, name)
+    expected = simulated(experiment(tmp_path, transport))
+
+    (path,) = run_experiment(experiment(tmp_path, transport, mode="real"))
+
+    with np.load(path / "model.npz", allow_pickle=False) as saved:
+        assert_same_model(expected, {k: saved[k] for k in saved.files})
+
+
+def test_local_over_grpc_and_over_flower_give_the_same_model_and_bytes(
+    tmp_path: Path,
+) -> None:
+    from onion_fl.experiment.fidelity import fidelity
+
+    for name in DIRECT:
+        raw = experiment(tmp_path, _direct(tmp_path, name)).dump()
+        raw = raw | {"backend": "local"}
+        raw["paths"] = raw["paths"] | {"runs": str(tmp_path / f"runs_{name}")}
+        run_experiment(parse_experiment(raw))
+
+    result = fidelity(
+        tmp_path / "runs_grpc", tmp_path / "runs_flower", metrics=["time"]
+    )
+
+    (pair,) = result["pairs"]
+    assert pair["functional"]["model"]["bitwise"], pair["functional"]
+    assert result["functional"]["complete"], pair["functional"]
+    assert pair["functional"]["bytes"]["a"] == pair["functional"]["bytes"]["b"] > 0
 
 
 def _round_bytes(events) -> dict:
@@ -246,6 +309,27 @@ def test_a_real_run_feeds_its_sinks_and_labels_its_traffic(
     assert {"run.finished", "diagnostic.communication"} <= set(seen)
 
 
+@pytest.mark.skipif(not _broker_up(), reason=f"no MQTT broker at {BROKER}")
+def test_local_over_mqtt_and_over_grpc_give_the_same_model_and_measure_the_rest(
+    tmp_path: Path,
+) -> None:
+    from onion_fl.experiment.fidelity import fidelity
+
+    transports = {"mqtt": {"name": "mqtt", "broker": BROKER}, "grpc": _direct(tmp_path)}
+    for name, transport in transports.items():
+        raw = experiment(tmp_path, transport).dump() | {"backend": "local"}
+        raw["paths"] = raw["paths"] | {"runs": str(tmp_path / f"runs_{name}")}
+        run_experiment(parse_experiment(raw))
+
+    result = fidelity(tmp_path / "runs_mqtt", tmp_path / "runs_grpc", metrics=["time"])
+
+    (pair,) = result["pairs"]
+    assert pair["functional"]["model"]["bitwise"], pair["functional"]
+    assert result["functional"]["complete"], pair["functional"]
+    assert pair["functional"]["bytes"]["a"] == pair["functional"]["bytes"]["b"] > 0
+    assert {"round_time", "link_latency", "duration"} <= set(result["performance"])
+
+
 # --- the emulated backend (issue #195) -------------------------------------------
 
 EMULATED = {
@@ -334,6 +418,195 @@ def test_the_emulated_backend_matches_the_simulation(tmp_path: Path) -> None:
     assert expected and _round_bytes(read_events(path / "events.jsonl")) == expected
     result = fidelity(
         tmp_path / "runs_emulated", tmp_path / "runs_sim", metrics=["time"]
+    )
+    functional = result["pairs"][0]["functional"]
+    assert result["functional"]["complete"], functional
+    assert functional["model"]["bitwise"], functional["model"]
+
+
+# --- the distributed backend (issue #199) ----------------------------------------------
+#
+# Docker containers act as the machines: each runs an SSH server and the
+# emulated backend's Python, with this checkout's onion_fl mounted read-only.
+# The launcher reaches them only through SSH, as it would real machines, with
+# a throwaway key made for the test. The broker runs in cloud-1's network
+# namespace, as on a real cloud host.
+
+DISTRIBUTED = {
+    "base": EMULATED["image"],
+    "image": os.environ.get("ONIONFL_DISTRIBUTED_IMAGE", "onionfl-distributed:latest"),
+    "prefix": os.environ.get("ONIONFL_DISTRIBUTED_PREFIX", "onionfl-dist-test"),
+    "mqtt_port": os.environ.get("ONIONFL_DISTRIBUTED_MQTT_PORT"),  # published if set
+    "ssh": os.environ.get("ONIONFL_SSH", "ssh"),
+}
+MACHINES = ["cloud-1", "fog-a", "fog-b", "field-device-1", "field-device-2"]
+MACHINE_LAB = LAB | {
+    "name": "distributed_lab",
+    "sites": LAB["sites"] | {"field": {"pool": {"device": 2}}},
+}
+
+
+def _machines_possible() -> bool:
+    import shutil
+
+    tools = (DISTRIBUTED["ssh"], "ssh-keygen")
+    return all(shutil.which(t) for t in tools) and _emulator_up()
+
+
+def _docker(*args: str, check: bool = True) -> str:
+    done = subprocess.run(
+        ["docker", *args], capture_output=True, text=True, timeout=600
+    )
+    if check and done.returncode != 0:
+        raise RuntimeError(f"docker {args[0]}: {done.stderr.strip()}")
+    return done.stdout.strip()
+
+
+@pytest.fixture(scope="module")
+def machines(tmp_path_factory: pytest.TempPathFactory):
+    """Five containers acting as machines; yields their inventory."""
+    from importlib import resources
+
+    import onion_fl
+    from onion_fl.experiment.distributed import ssh_command
+    from onion_fl.experiment.emulated import ensure_image
+    from onion_fl.infrastructure.inventory import parse_inventory
+
+    ensure_image(DISTRIBUTED["base"])  # the launcher's numeric versions
+    dockerfile = resources.files("onion_fl.infrastructure") / "distributed.Dockerfile"
+    subprocess.run(
+        ["docker", "build", "-q", "-t", DISTRIBUTED["image"]]
+        + ["--build-arg", f"BASE={DISTRIBUTED['base']}", "-"],
+        input=dockerfile.read_bytes(),
+        capture_output=True,
+        check=True,
+        timeout=900,
+    )
+    folder = tmp_path_factory.mktemp("machines")
+    key = folder / "id_ed25519"
+    subprocess.run(
+        ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "onionfl-test"]
+        + ["-f", str(key)],
+        check=True,
+        capture_output=True,
+    )
+    public = (folder / "id_ed25519.pub").read_text(encoding="utf-8").strip()
+    source = Path(onion_fl.__file__).resolve().parent.as_posix()
+    mount = f"type=bind,source={source},target=/onionfl/src/onion_fl,readonly"
+    prefix = DISTRIBUTED["prefix"]
+    network, started = f"{prefix}-net", []
+    _docker("network", "create", network)
+    try:
+        for host in MACHINES:
+            name = f"{prefix}-{host}"
+            published = ["-p", "127.0.0.1::22"]
+            if host == "cloud-1" and DISTRIBUTED["mqtt_port"]:
+                published += ["-p", f"127.0.0.1:{DISTRIBUTED['mqtt_port']}:1883"]
+            _docker(
+                "run", "-d", "--name", name, "--hostname", host,
+                "--network", network, *published,
+                "-e", f"AUTHORIZED_KEY={public}", "--mount", mount,
+                DISTRIBUTED["image"],
+            )  # fmt: skip
+            started.append(name)
+        broker = f"{prefix}-mqtt"
+        _docker(
+            "run", "-d", "--name", broker, "--network", f"container:{prefix}-cloud-1",
+            "eclipse-mosquitto:2", "mosquitto", "-c", "/mosquitto-no-auth.conf",
+        )  # fmt: skip
+        started.append(broker)
+        ports = {
+            host: int(_docker("port", f"{prefix}-{host}", "22").rsplit(":")[-1])
+            for host in MACHINES
+        }
+        raw = {
+            "machines": {
+                host: {
+                    "address": "127.0.0.1",
+                    "port": ports[host],
+                    "user": "root",
+                    "key": str(key),
+                    "python": "python",
+                    "root": "/root/onionfl",
+                    "advertise": f"{prefix}-{host}",
+                    "env": {"PYTHONPATH": "/onionfl/src"},
+                }
+                for host in MACHINES
+            },
+            "known_hosts": str(folder / "known_hosts"),
+            # Docker Desktop's VM keeps its clock close to the host's, not exact.
+            "clock": {"max_offset": 0.25},
+        }
+        inventory = parse_inventory(raw)
+        deadline = time.monotonic() + 60
+        for host in MACHINES:
+            machine = inventory.machine(host)
+            line = ssh_command(
+                DISTRIBUTED["ssh"], inventory, machine, "true", no_stdin=True
+            )
+            while subprocess.run(line, capture_output=True, timeout=30).returncode:
+                if time.monotonic() > deadline:
+                    raise TimeoutError(f"no SSH to {host}")
+                time.sleep(0.5)
+        yield raw
+    finally:
+        for name in started:
+            _docker("rm", "-f", name, check=False)
+        _docker("network", "rm", network, check=False)
+
+
+def on_the_machines(config, backend, runs: Path):
+    """``config`` on ``MACHINE_LAB``, four edges per device, run by ``backend``."""
+    raw = config.dump() | {
+        "backend": backend,
+        "infrastructure": {
+            "name": MACHINE_LAB,
+            "assignment": {
+                "root": "cloud-1",
+                "aggregators": {"fog_a": "fog-a", "fog_b": "fog-b"},
+                "edges": {"name": "colocated", "per_host": 4},
+            },
+        },
+    }
+    raw["paths"] = raw["paths"] | {"runs": str(runs)}
+    return parse_experiment(raw)
+
+
+@pytest.mark.skipif(
+    not _machines_possible(), reason="no Docker, no ssh or no emulated host image"
+)
+@pytest.mark.parametrize("transport", ["mqtt", "grpc"])
+def test_the_distributed_backend_matches_the_simulation(
+    tmp_path: Path, machines, transport: str
+) -> None:
+    from onion_fl.experiment.fidelity import fidelity
+    from onion_fl.observability.events import read_events
+
+    if transport == "grpc":
+        pytest.importorskip("grpc")
+    link = {"name": transport} | ({"broker": BROKER} if transport == "mqtt" else {})
+    base = experiment(tmp_path, link)
+    backend = {"name": "distributed", "inventory": machines, "ssh": DISTRIBUTED["ssh"]}
+    sim = on_the_machines(base, "sim", tmp_path / "runs_sim")
+    distributed = on_the_machines(base, backend, tmp_path / "runs_distributed")
+
+    (sim_path,) = run_experiment(sim)
+    (path,) = run_experiment(distributed)
+
+    meta = json.loads((path / "run.json").read_text(encoding="utf-8"))
+    assert meta["status"] == "finished", meta.get("processes")
+    assert meta["backend"] == "distributed" and meta["infrastructure_id"]
+    ran = meta["distributed"]["machines"]
+    assert sorted(ran) == sorted(MACHINES)
+    assert all(m["system"] == "Linux" and abs(m["offset"]) < 0.25 for m in ran.values())
+    assert meta["distributed"]["transports"] == [transport]
+    assert "model.npz" in meta["distributed"]["pulled"]["cloud-1"]
+    with np.load(path / "model.npz", allow_pickle=False) as saved:
+        assert_same_model(simulated(sim), {k: saved[k] for k in saved.files})
+    expected = _round_bytes(read_events(sim_path / "events.jsonl"))
+    assert expected and _round_bytes(read_events(path / "events.jsonl")) == expected
+    result = fidelity(
+        tmp_path / "runs_distributed", tmp_path / "runs_sim", metrics=["time"]
     )
     functional = result["pairs"][0]["functional"]
     assert result["functional"]["complete"], functional

@@ -98,10 +98,14 @@ class RealRuntime:
         epoch: float | None = None,
         broker: str | None = None,
         nodelay: bool | None = None,
+        grpc: Mapping[str, Any] | None = None,
     ) -> None:
         self.run_id, self.seed = run_id, seed
         self.broker = broker  # host:port of every MQTT link, whatever they say
         self.nodelay = nodelay  # and their TCP_NODELAY, when given
+        # Across machines, every gRPC link listens on ``grpc["listen"]`` and finds
+        # each node at ``grpc["peers"][node]`` (host:port), whatever they say.
+        self.grpc = None if grpc is None else dict(grpc)
         self.hosted = None if hosted is None else set(hosted)
         self.listeners = list(listeners or [])
         self.heartbeat_s = heartbeat_s
@@ -168,6 +172,19 @@ class RealRuntime:
                 spec["broker"] = self.broker
             if self.nodelay is not None:
                 spec["nodelay"] = self.nodelay
+        if self.grpc is not None:
+            name = spec if isinstance(spec, str) else spec.get("name")
+            if name == "grpc":
+                host, _, port = self.grpc["listen"].rpartition(":")
+                spec = {**({} if isinstance(spec, str) else spec), "name": "grpc"}
+                spec |= {
+                    "host": host,
+                    "port": int(port),
+                    "peers": {
+                        self.inbox(node): endpoint
+                        for node, endpoint in self.grpc["peers"].items()
+                    },
+                }
         key = json.dumps(spec, sort_keys=True)
         if key not in self._transports:
             self._transports[key] = create(transports, spec)

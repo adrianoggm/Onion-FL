@@ -8,8 +8,8 @@ same federation with ``build_federation``:
 - ``sim``: the virtual clock in one process, with the resources and network
   the infrastructure models;
 - ``local``: the wall clock, one process per group on this machine over MQTT,
-  with its own resources and no emulated network. ``runtime.mode: real`` is
-  its alias.
+  gRPC or Flower, with its own resources and no emulated network.
+  ``runtime.mode: real`` is its alias.
 
 An experiment picks one with ``backend``; without it, ``runtime.mode`` does.
 """
@@ -35,6 +35,7 @@ def backend_name(ref: str | dict[str, Any]) -> str:
 class SimPlan:
     scenario: Any
     evaluate: Any = None
+    paused: bool = False  # for the operators to resume (continual.control)
     path: Path | None = None
 
 
@@ -58,13 +59,14 @@ class SimBackend:
         infrastructure: Any = None,
         assignment: Any = None,
         evaluate: Any = None,
+        paused: bool = False,
     ) -> SimPlan:
-        return SimPlan(scenario, evaluate)
+        return SimPlan(scenario, evaluate, paused)
 
     def run(self, plan: SimPlan) -> None:
         from onion_fl.experiment.runner import simulate
 
-        plan.path = simulate(plan.scenario, plan.evaluate)
+        plan.path = simulate(plan.scenario, plan.evaluate, plan.paused)
 
     def collect(self, plan: SimPlan) -> Path:
         if plan.path is None:
@@ -75,11 +77,15 @@ class SimBackend:
 @backends.register(
     "local",
     title="Local",
-    description="Reloj de pared, un proceso por grupo en esta máquina, sobre MQTT",
+    description=(
+        "Reloj de pared, un proceso por grupo en esta máquina, sobre MQTT, gRPC "
+        "o Flower"
+    ),
     explain=(
         "Arranca un proceso `onion_fl node` por coordinador o agregador, con "
-        "sus edges, y los comunica por MQTT. Usa los recursos de la máquina, "
-        "sin límites ni red emulada: es la referencia de la fidelidad "
+        "sus edges, y los comunica por MQTT, por gRPC (sin broker) o por "
+        "Flower (mensajes de Flower sobre gRPC). Usa los recursos de la "
+        "máquina, sin límites ni red emulada: es la referencia de la fidelidad "
         "funcional. `runtime.mode: real` es su alias."
     ),
 )
@@ -91,8 +97,8 @@ class LocalBackend:
         if infrastructure is None:
             return []
         return [
-            "infrastructure: real runs take the machines they run on; an "
-            "infrastructure is simulated only for now (I10, I14)"
+            "infrastructure: local runs on this machine as it is; an "
+            "infrastructure runs on the emulated or distributed backend"
         ]
 
     def prepare(
@@ -228,6 +234,94 @@ class EmulatedBackend:
         from onion_fl.experiment.emulated import launch_emulated
 
         launch_emulated(plan)
+
+    def collect(self, plan: Any) -> Path:
+        from onion_fl.experiment.real import merge
+
+        return merge(plan)
+
+
+class DistributedParams(BaseModel):
+    inventory: str | dict[str, Any] = Field(
+        description=(
+            "Inventario de máquinas: ruta de un YAML o el mapa en línea; "
+            "sin secretos, solo rutas de claves"
+        ),
+    )
+    broker: str | None = Field(
+        None,
+        pattern=r"^[^:\s]+:\d+$",
+        description=(
+            "host:puerto del broker MQTT visto desde las máquinas; por defecto, "
+            "el host de services.mqtt_broker"
+        ),
+    )
+    mqtt_port: int = Field(1883, gt=0, le=65535, description="Puerto del broker")
+    push_data: bool = Field(
+        True, description="Enviar la caché de datos a las máquinas que no la tienen"
+    )
+    ssh: str = Field("ssh", description="Cliente OpenSSH del lanzador")
+    clock_samples: int = Field(
+        5, ge=1, description="Muestras para medir el desfase de cada reloj"
+    )
+    probe_timeout: float = Field(
+        60.0, gt=0, description="Plazo de la comprobación previa de cada máquina (s)"
+    )
+    grace: float = Field(
+        60.0, ge=0, description="Margen de arranque de los procesos (s)"
+    )
+
+
+@backends.register(
+    "distributed",
+    title="Distribuido",
+    description="Máquinas reales por SSH: un proceso por host, con relojes comprobados",
+    explain=(
+        "Ejecuta la federación en las máquinas reales de un inventario: un "
+        "proceso `onion_fl node` por host, lanzado por SSH. Antes comprueba "
+        "cada máquina (Python, el mismo código de onion_fl, los datos, el "
+        "desfase del reloj frente al lanzador o NTP, el broker y los puertos "
+        "gRPC de las demás), les envía la configuración y la caché de datos y, "
+        "al acabar, recoge sus eventos y firma la ejecución como `local`. Es la "
+        "referencia física."
+    ),
+    params=DistributedParams,
+)
+class DistributedBackend:
+    def __init__(self, **params: Any) -> None:
+        self.params = DistributedParams(**params)
+
+    def supports(self, infrastructure: Any) -> list[str]:
+        if infrastructure is None:
+            return [
+                "backend distributed: give the experiment an infrastructure; its "
+                "hosts are the machines of the inventory"
+            ]
+        return []
+
+    def inspect(self, resolved: Any) -> dict[str, Any]:
+        """The machines ``onion_fl plan`` shows; contacts none of them."""
+        from onion_fl.experiment.distributed import inspect
+
+        return inspect(self.params, resolved)
+
+    def prepare(
+        self,
+        scenario: Any,
+        infrastructure: Any = None,
+        assignment: Any = None,
+        evaluate: Any = None,
+    ) -> Any:
+        from onion_fl.experiment.distributed import prepare_distributed
+
+        if evaluate is not None:
+            raise ValueError("a custom evaluate cannot be sent to the machines")
+        return prepare_distributed(scenario, self.params)
+
+    def run(self, plan: Any) -> None:
+        from onion_fl.experiment.distributed import launch_distributed
+
+        launch_distributed(plan)
 
     def collect(self, plan: Any) -> Path:
         from onion_fl.experiment.real import merge

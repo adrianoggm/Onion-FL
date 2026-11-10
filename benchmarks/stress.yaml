@@ -1,0 +1,59 @@
+# onion-bench-stress (issue #244), E4 track: the in-domain comparison.
+#
+# Four Empatica E4 studies with the same 30 harmonized features (ACC, BVP,
+# EDA, TEMP; mean, std, min, max, median over 60 s windows at native rates),
+# one edge per subject and one fog per study (topologies/stress_e4_studies).
+# The test subjects are fixed by roles.seed and are the same in every scenario
+# and seed; the seeds 0-4 change the model's initialisation and training.
+# The protocol, the label of each dataset and what was run are in
+# results/stress_e4/INDEX.md.
+#
+# Learning rates come from benchmarks/stress_select.yaml (validation only):
+# FedAvg 0.03, SCAFFOLD 0.03, FedDyn 0.03, Ditto 0.1, FedRep 0.1, FedBABU 0.3.
+#
+#   onion_fl run benchmarks/stress.yaml --workers 6
+#   python scripts/stress_bench.py score runs/ --out results/stress_e4/runs.csv
+name: stress_e4
+description: onion-bench-stress, pista E4. FedAvg plano y jerárquico, adaptadores por dataset o compartidos, personalización y deriva.
+topology: stress_e4_studies
+data:
+  datasets:
+    wesad_e4: {}
+    physionet_e4: {}
+    nurse_stress: {}
+    stress_predict: {}
+  roles:
+    test: 0.25
+    val: 0.1
+    local_val: 0.2
+    local_val_split: class_tail
+    scaler: local
+    drop_constant: false
+    seed: 0
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2, adapters: per_dataset}
+  sharing: fedavg
+  trainer: &sgd {name: standard, optimizer: sgd, local_epochs: 5, batch_size: 32, lr: 0.03}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge:
+    every: 20
+    models: [received, local, personal, finetuned]
+    finetune: {name: standard, optimizer: sgd, local_epochs: 2, batch_size: 32, lr: 0.03}
+  aggregators: {every: 20}
+  global: {every: 1}
+seeds: [0, 1, 2, 3, 4]
+sweep:
+  topology,learning.model.adapters,learning.sharing,learning.trainer,learning.server_optimizer:
+    - [stress_e4_studies, per_dataset, fedavg, {<<: *sgd, name: standard, lr: 0.03}, replace]  # reference
+    - [stress_e4_studies, shared, fedavg, {<<: *sgd, name: standard, lr: 0.03}, replace]
+    - [stress_e4_flat, per_dataset, fedavg, {<<: *sgd, name: standard, lr: 0.03}, replace]
+    - [stress_e4_flat, shared, fedavg, {<<: *sgd, name: standard, lr: 0.03}, replace]
+    - [stress_e4_studies, per_dataset, fedavg, {<<: *sgd, name: ditto, lr: 0.1}, replace]
+    - [stress_e4_studies, per_dataset, fedper, {<<: *sgd, name: fedrep, lr: 0.1}, replace]
+    - [stress_e4_studies, per_dataset, fedavg, {<<: *sgd, name: fedbabu, lr: 0.3}, replace]
+    - [stress_e4_studies, per_dataset, fedavg, {<<: *sgd, name: scaffold, lr: 0.03}, scaffold]
+    - [stress_e4_studies, per_dataset, fedavg, {<<: *sgd, name: feddyn, lr: 0.03}, feddyn]

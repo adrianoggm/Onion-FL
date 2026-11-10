@@ -1,0 +1,44 @@
+# The continual benchmark (issue #163, continuum C8), step 2 of the selection:
+# warm start with replay. The streams and the warm trainer are step 1's
+# choice for warm (continuum_benchmark_select: SGD at lr 0.1, 10 local epochs,
+# chosen on the validation streams); the memory, its share of each training
+# and, since C4 saw replay diverge at lr 0.1, the learning rate are chosen
+# here on the same validation streams. The capacity is fixed at 512 rows; the
+# benchmark's memory sweep varies it on test, without choosing.
+#
+#   onion_fl run experiments/continuum_benchmark_select_replay.yaml --workers 4
+name: continuum_benchmark_select_replay
+description: Selección en validación de la memoria, su proporción y la tasa de aprendizaje del warm start con replay.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+rounds: 60                 # an upper bound: the run ends at the last label
+stream:
+  bootstrap: 20m
+  batch_size: 1
+  speed: 60
+labels: {fraction: 0.1, delay: 10m}
+continual: {memory: {name: reservoir, capacity: 512}, replay_ratio: 0.25}
+continuum:
+  trigger: {name: schedule, every: 10m}
+  status_every: 10m
+evaluation:
+  metrics: [loss, accuracy, macro_f1, confusion_matrix]
+  aggregators: {every: 1}
+  global: {every: 1, subjects: val}
+seeds: [0, 1, 2]
+sweep:
+  continual.memory:
+    - {name: fifo, capacity: 512}
+    - {name: reservoir, capacity: 512}
+    - {name: class_balanced, capacity: 512}
+  continual.replay_ratio: [0.25, 0.5]
+  learning.trainer.lr: [0.1, 0.03]

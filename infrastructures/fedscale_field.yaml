@@ -1,0 +1,17 @@
+# The lab's cloud and fog servers over a field of 160 phones sampled from
+# FedScale's client traces (issue #253): each device trains at the speed of a
+# real client and connects at its bandwidth, and is up only when that client
+# was. The traces are FedScale's (Apache-2.0); download and import them as
+# README §2 says. Their rates are trace-derived, not calibrated (I1 §13).
+name: fedscale_field
+profiles:
+  cloud_vm:  {cpus: 8, memory: 16GB, train_rate: 20000, aggregate_rate: 5.0e8}
+  fog_small: {cpus: 4, memory: 4GB,  train_rate: 4000,  aggregate_rate: 1.0e8}
+sites:
+  dc:    {hosts: {cloud-1: cloud_vm}}
+  fog_1: {hosts: {fog-1: fog_small}}
+  field: {traces: {source: fedscale, devices: 160, seed: 0, cpus: 1}}
+network:
+  links:
+    - {between: [field, fog_1], latency: 20ms, bandwidth: 1Gbps}
+    - {between: [fog_1, dc], latency: 70ms, bandwidth: 100Mbps}
