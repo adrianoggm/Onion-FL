@@ -1,0 +1,214 @@
+{
+  "run_id": "20261110T102446Z-a9949f47d76c",
+  "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+  "config_id": "71212fcd5e7739de9a2dda57c5be245febb5aa1bd2f6d041889f7b1c639e1856",
+  "backend": "emulated",
+  "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+  "data_id": "7949a27b972ad85bf284ca213fcbfe77c610276f373755f866de29850c0bfc53",
+  "code_version": {
+    "commit": "5ac0133bf8e9046cad7684183952aee78e8fd9cd",
+    "dirty": false
+  },
+  "seed": 3,
+  "scenario": "learning.trainer.local_epochs=1,topology,infrastructure.assignment=swell_cloud_npz,{'root': 'cloud-1', 'edges': {'name': 'colocated', 'per_host': 4}}",
+  "started_at": "2026-11-10T10:24:46.392934+00:00",
+  "status": "finished",
+  "config": {
+    "name": "fidelity_sim_emulated",
+    "description": "Validaci\u00f3n de la simulaci\u00f3n frente a la emulaci\u00f3n con la calibraci\u00f3n cerrada, en otras topolog\u00edas.",
+    "topology": "swell_cloud_npz",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": "datasets/swell_physiology.yaml",
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.0,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.0,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 1.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 32,
+        "trunk_hidden": [
+          16
+        ]
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "local_epochs": 1,
+        "batch_size": 32,
+        "lr": 0.01
+      },
+      "init": "random"
+    },
+    "rounds": 10,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": null,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": null,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 900.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "infrastructure": {
+      "name": "fidelity_validation_lab",
+      "assignment": {
+        "root": "cloud-1",
+        "aggregators": {},
+        "edges": {
+          "name": "colocated",
+          "per_host": 4
+        },
+        "services": {}
+      }
+    },
+    "backend": {
+      "name": "emulated",
+      "image": "onionfl-a197b-emulated:latest",
+      "project": "onionfl-a198",
+      "subnet": "10.198.0.0/16",
+      "pin": {
+        "cpus": {
+          "cloud-1": [
+            2,
+            4
+          ],
+          "field-edge_device-1": [
+            6
+          ],
+          "field-edge_device-2": [
+            8
+          ],
+          "field-edge_device-3": [
+            10
+          ],
+          "field-edge_device-4": [
+            12
+          ],
+          "field-edge_device-5": [
+            14
+          ],
+          "fog-a": [
+            16
+          ],
+          "fog-b": [
+            18
+          ]
+        },
+        "others": "20-23"
+      }
+    }
+  },
+  "emulation": {
+    "project": "onionfl-a198-a9949f47d76c",
+    "image": "onionfl-a197b-emulated:latest",
+    "broker_image": "eclipse-mosquitto:2",
+    "nodelay": true,
+    "containers": 10,
+    "hosts": 6,
+    "routers": 3,
+    "broker": "cloud-1",
+    "networks": 5,
+    "shaping": {
+      "router-dc": [
+        "tc qdisc add dev $(dev 10.198.4.3) root netem limit 1034 delay 40000us rate 10000000bit"
+      ],
+      "router-field": [
+        "tc qdisc add dev $(dev 10.198.3.2) root netem limit 1042 delay 10000us rate 50000000bit"
+      ],
+      "router-fog-a": [
+        "tc qdisc add dev $(dev 10.198.3.3) root netem limit 1042 delay 10000us rate 50000000bit",
+        "tc qdisc add dev $(dev 10.198.4.2) root netem limit 1034 delay 40000us rate 10000000bit"
+      ],
+      "host-cloud-1": [],
+      "host-field-edge-device-1": [
+        "tc qdisc add dev $(dev 10.198.1.3) root handle 1: prio bands 2 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+        "tc qdisc add dev $(dev 10.198.1.3) parent 1:2 handle 20: netem limit 1133 delay 1000us 200us distribution normal rate 1000000000bit",
+        "tc filter add dev $(dev 10.198.1.3) parent 1: protocol ip prio 1 u32 match ip dst 10.198.1.0/24 flowid 1:2"
+      ],
+      "host-field-edge-device-2": [
+        "tc qdisc add dev $(dev 10.198.1.4) root handle 1: prio bands 2 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+        "tc qdisc add dev $(dev 10.198.1.4) parent 1:2 handle 20: netem limit 1133 delay 1000us 200us distribution normal rate 1000000000bit",
+        "tc filter add dev $(dev 10.198.1.4) parent 1: protocol ip prio 1 u32 match ip dst 10.198.1.0/24 flowid 1:2"
+      ],
+      "host-field-edge-device-3": [
+        "tc qdisc add dev $(dev 10.198.1.5) root handle 1: prio bands 2 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+        "tc qdisc add dev $(dev 10.198.1.5) parent 1:2 handle 20: netem limit 1133 delay 1000us 200us distribution normal rate 1000000000bit",
+        "tc filter add dev $(dev 10.198.1.5) parent 1: protocol ip prio 1 u32 match ip dst 10.198.1.0/24 flowid 1:2"
+      ],
+      "host-field-edge-device-4": [
+        "tc qdisc add dev $(dev 10.198.1.6) root handle 1: prio bands 2 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+        "tc qdisc add dev $(dev 10.198.1.6) parent 1:2 handle 20: netem limit 1133 delay 1000us 200us distribution normal rate 1000000000bit",
+        "tc filter add dev $(dev 10.198.1.6) parent 1: protocol ip prio 1 u32 match ip dst 10.198.1.0/24 flowid 1:2"
+      ],
+      "host-field-edge-device-5": [
+        "tc qdisc add dev $(dev 10.198.1.7) root handle 1: prio bands 2 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+        "tc qdisc add dev $(dev 10.198.1.7) parent 1:2 handle 20: netem limit 1133 delay 1000us 200us distribution normal rate 1000000000bit",
+        "tc filter add dev $(dev 10.198.1.7) parent 1: protocol ip prio 1 u32 match ip dst 10.198.1.0/24 flowid 1:2"
+      ]
+    },
+    "cpusets": {
+      "host-cloud-1": "2,4",
+      "host-field-edge-device-1": "6",
+      "host-field-edge-device-2": "8",
+      "host-field-edge-device-3": "10",
+      "host-field-edge-device-4": "12",
+      "host-field-edge-device-5": "14",
+      "router-dc": "20-23",
+      "router-field": "20-23",
+      "router-fog-a": "20-23",
+      "broker": "20-23"
+    },
+    "setup_s": 9.093
+  },
+  "processes": {
+    "groups": 6,
+    "exit_codes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "finished_at": "2026-11-10T10:25:42.890318+00:00",
+  "run_hash": "839542a335977f4995d60f30647f907d4aacb815b6c2026c55d973dd6a5d6a7a"
+}

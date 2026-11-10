@@ -146,3 +146,13 @@ Means over seeds, emulated / sim:
   - `events.jsonl` (78 MB for the 60 runs) is left out.
 - `fidelity.json`, `fidelity.csv` and `fidelity.html`: the output of the analysis command above.
 - `PREREGISTRATION.md`.
+
+## Follow-up, 2026-11-10: where the 64 ms went
+
+Added after the fact; the results above are unchanged. [`followup_2026-11-10/`](followup_2026-11-10/INDEX.md) traced and sniffed each message's path and tested the causes one at a time in paired runs:
+
+- **About two thirds: the receiving process's queue.** Four edges share one process, so a model waits there while its neighbours train. The emulation counts that wait as link latency; the simulation counts it as compute.
+- **About a quarter: Nagle.** It delayed back-to-back updates and control messages by 11–50 ms. It is now off on the MQTT clients and the emulated broker (`5ac0133`).
+- **The same-host links,** which the simulation makes free, alone account for −0.19 of H2c.
+
+Without Nagle and without the queue, the simulated links are within −3.9 % [−8.4 %, +0.4 %] of the emulated ones. A reduced rerun (2 designs × 5 seeds, on a busy machine) moves H2c from −0.562 to −0.447 and the uplinks from −0.316 to −0.076. The pre-registered criteria are not re-judged.
