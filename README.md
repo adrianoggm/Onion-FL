@@ -91,6 +91,7 @@ onion_fl plan experiments/mix_ab.yaml         # composition per fog and groups p
 onion_fl run experiments/mix_ab.yaml --workers 3
 onion_fl report experiments/mix_ab.yaml --by topology_id --by scenario
 onion_fl baseline experiments/mix_ab.yaml     # LR, RF, XGBoost on the same test subjects
+onion_fl explain runs/<run_id>                # feature importance on val subjects
 ```
 
 For a real run over MQTT, start the stack (`just docker-up`, [docker/README.md](docker/README.md)), point the links at the broker and run `onion_fl run <experiment> --mode real`.

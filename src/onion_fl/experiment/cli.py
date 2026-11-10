@@ -205,6 +205,19 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_explain(args: argparse.Namespace) -> int:
+    from onion_fl.experiment.explain import explain_run
+
+    explainer = {"name": args.explainer}
+    if args.metric:
+        explainer["metric"] = args.metric
+    if args.repeats:
+        explainer["repeats"] = args.repeats
+    for run in args.runs:
+        print(explain_run(run, explainer))
+    return 0
+
+
 def cmd_baseline(args: argparse.Namespace) -> int:
     from onion_fl.baselines import cross_validate, evaluate
     from onion_fl.data.roles import split_subjects
@@ -341,6 +354,15 @@ def parser() -> argparse.ArgumentParser:
     report.add_argument("--metric", action="append")
     report.add_argument("--by", action="append")
     report.set_defaults(func=cmd_report)
+
+    explain = sub.add_parser(
+        "explain", help="feature importance of a run's final model on val subjects"
+    )
+    explain.add_argument("runs", nargs="+", help="run folders")
+    explain.add_argument("--explainer", default="permutation")
+    explain.add_argument("--metric")
+    explain.add_argument("--repeats", type=int)
+    explain.set_defaults(func=cmd_explain)
 
     baseline = sub.add_parser(
         "baseline", help="classical baselines on the experiment's subject roles"
