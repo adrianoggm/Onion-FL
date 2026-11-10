@@ -16,7 +16,8 @@ from __future__ import annotations
                       [--metric NAME]... [--target METRIC=VALUE] [--control RUNS]
                       [--no-predictor] [--ceiling FILE] [--csv FILE] [--html FILE]
     onion_fl report <experiment.yaml | runs_dir>... [--out FILE] [--metric NAME]... [--by TAG]...
-    onion_fl baseline <experiment.yaml> [--models lr rf xgboost] [--cv K]
+    onion_fl baseline <experiment.yaml> [--models lr rf xgboost] [--cv K | --seeds 0 1 2]
+                      [--seed S]
     onion_fl schema [--out FILE]
     onion_fl traces import fedscale [<folder>]
     onion_fl serve [--root .] [--host 127.0.0.1] [--port 8765]
@@ -266,22 +267,34 @@ def cmd_explain(args: argparse.Namespace) -> int:
 
 
 def cmd_baseline(args: argparse.Namespace) -> int:
-    from onion_fl.baselines import cross_validate, evaluate
+    from onion_fl.baselines import cross_validate, evaluate, over_role_seeds
     from onion_fl.data.roles import split_subjects
     from onion_fl.experiment.runner import load_data
 
+    if args.cv and args.seeds:
+        raise ValueError("use --cv or --seeds, not both")
     config = _experiment(args.experiment)
     subjects, _ = load_data(config)
-    if args.cv:
+    if args.seeds:
+        _print_json(
+            over_role_seeds(subjects, args.models, args.seeds, config.data.roles)
+        )
+    elif args.cv:
         _print_json(
             {
-                m: cross_validate(subjects, m, k=args.cv, roles=config.data.roles)
+                m: cross_validate(
+                    subjects, m, k=args.cv, seed=args.seed, roles=config.data.roles
+                )
                 for m in args.models
             }
         )
     else:
         _print_json(
-            evaluate(split_subjects(subjects, config.data.roles), models=args.models)
+            evaluate(
+                split_subjects(subjects, config.data.roles),
+                models=args.models,
+                seed=args.seed,
+            )
         )
     return 0
 
@@ -478,6 +491,15 @@ def parser() -> argparse.ArgumentParser:
     baseline.add_argument("--models", nargs="+", default=["lr", "rf", "xgboost"])
     baseline.add_argument(
         "--cv", type=int, help="subject-level k-fold instead of the test role"
+    )
+    baseline.add_argument(
+        "--seeds",
+        type=int,
+        nargs="+",
+        help="repeat with each seed drawing the test subjects; mean and 95%% CI",
+    )
+    baseline.add_argument(
+        "--seed", type=int, default=0, help="seed of the models and of the folds"
     )
     baseline.set_defaults(func=cmd_baseline)
 

@@ -327,6 +327,135 @@ def test_intervals_must_not_overlap(tmp_path: Path) -> None:
         intervals(tmp_path, df, by=["subject"])
 
 
+def _survey(root: Path, rows: list[str]) -> None:
+    """The layout of a survey sheet: an id, a day and local times of day."""
+    lines = ["ID,date,start,end,level"] + rows
+    (root / "survey.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def survey(root: Path, df: pd.DataFrame, **params) -> pd.DataFrame:
+    params = {
+        "source": {"reader": "csv", "path": "survey.csv", "na_values": ["na"]},
+        "date": "date",
+        "value": "level",
+        "by": {"subject": "ID"},
+        **params,
+    }
+    return steps.create("intervals", params).apply(df, _ctx(root))
+
+
+def unix(text: str) -> float:
+    return (pd.Timestamp(text, tz="UTC") - pd.Timestamp(0, tz="UTC")).total_seconds()
+
+
+def test_intervals_join_a_day_and_times_of_day_in_a_timezone(tmp_path: Path) -> None:
+    _survey(tmp_path, ["94,2020-04-18,08:49:00,08:56:00,2"])
+    # 08:49 at UTC-6 is 14:49 UTC.
+    times = [
+        unix("2020-04-18 14:48:59"),
+        unix("2020-04-18 14:49"),
+        unix("2020-04-18 14:55:59"),
+    ]
+    df = pd.DataFrame({"subject": "94", TIME: times + [unix("2020-04-18 14:56")]})
+
+    out = survey(tmp_path, df, timezone="Etc/GMT+6")
+
+    assert out["interval"].isna().tolist() == [True, False, False, True]
+
+
+def test_intervals_without_timezone_read_the_times_as_utc(tmp_path: Path) -> None:
+    _survey(tmp_path, ["94,2020-04-18,08:49:00,08:56:00,2"])
+    df = pd.DataFrame({"subject": [94], TIME: [unix("2020-04-18 08:50")]})
+
+    assert survey(tmp_path, df)["interval"].tolist() == [2]
+
+
+def test_intervals_follow_daylight_saving_in_a_named_zone(tmp_path: Path) -> None:
+    # Chicago is UTC-5 in October 2020 and UTC-6 from November 1.
+    _survey(
+        tmp_path,
+        ["BG,2020-10-28,10:00:00,11:00:00,1", "BG,2020-11-02,10:00:00,11:00:00,2"],
+    )
+    df = pd.DataFrame(
+        {"subject": "BG", TIME: [unix("2020-10-28 15:30"), unix("2020-11-02 16:30")]}
+    )
+
+    out = survey(tmp_path, df, timezone="America/Chicago")
+
+    assert out["interval"].tolist() == [1, 2]
+
+
+def test_intervals_past_midnight_end_the_next_day(tmp_path: Path) -> None:
+    _survey(tmp_path, ["BG,2020-12-02,23:53:00,00:05:00,1"])
+    df = pd.DataFrame({"subject": "BG", TIME: [unix("2020-12-03 00:01")]})
+
+    assert survey(tmp_path, df)["interval"].tolist() == [1]
+
+
+def test_intervals_overlap_max_keeps_the_largest_class(tmp_path: Path) -> None:
+    _survey(
+        tmp_path,
+        [
+            "6B,2020-05-08,17:01:00,18:33:00,na",
+            "6B,2020-05-08,17:01:00,17:07:00,2",
+            "6B,2020-05-08,17:20:00,17:30:00,0",
+        ],
+    )
+    times = ["17:02", "17:10", "17:25"]
+    df = pd.DataFrame({"subject": "6B", TIME: [unix(f"2020-05-08 {t}") for t in times]})
+
+    with pytest.raises(DataError, match="overlapping"):
+        survey(tmp_path, df)
+    out = survey(tmp_path, df, overlap="max")
+
+    # 2 over a missing level; 0 over a missing one; a missing level alone stays missing.
+    assert out["interval"].tolist()[0] == 2
+    assert pd.isna(out["interval"].iloc[1])
+    assert out["interval"].iloc[2] == 0
+
+
+def test_intervals_overlap_max_needs_numeric_classes(tmp_path: Path) -> None:
+    _intervals(tmp_path, [("S1", 0, 10, "rest"), ("S1", 5, 15, "tsst")])
+    df = pd.DataFrame({"subject": "S1", TIME: [1.0]})
+
+    with pytest.raises(DataError, match="numeric"):
+        intervals(tmp_path, df, by=["subject"], overlap="max")
+
+
+def test_intervals_outside_only_in_files_with_an_interval(tmp_path: Path) -> None:
+    _survey(tmp_path, ["94,2020-04-18,08:00:00,09:00:00,na"])
+    day = [unix("2020-04-18 08:30"), unix("2020-04-18 10:00")]
+    held = pd.DataFrame({"subject": "94", TIME: day})
+    other = pd.DataFrame({"subject": "94", TIME: [unix("2020-04-19 10:00")]})
+    unsurveyed = pd.DataFrame({"subject": "E4", TIME: day})
+
+    step = steps.create(
+        "intervals",
+        {
+            "source": {"reader": "csv", "path": "survey.csv", "na_values": ["na"]},
+            "date": "date",
+            "value": "level",
+            "by": {"subject": "ID"},
+            "outside": -1,
+        },
+    )
+    out = step.apply(held, _ctx(tmp_path))
+
+    # Inside an event without a level: missing; outside it, in the same file: -1.
+    assert pd.isna(out["interval"].iloc[0]) and out["interval"].iloc[1] == -1
+    # A file of the same subject without an event, or of an unsurveyed subject.
+    assert step.apply(other, _ctx(tmp_path))["interval"].isna().all()
+    assert step.apply(unsurveyed, _ctx(tmp_path))["interval"].isna().all()
+
+
+def test_intervals_reject_an_unknown_timezone() -> None:
+    with pytest.raises(ValueError, match="timezone"):
+        steps.create(
+            "intervals",
+            {"source": {"reader": "csv", "path": "x.csv"}, "timezone": "Mars/Base"},
+        )
+
+
 def test_intervals_need_a_time_step(tmp_path: Path) -> None:
     _intervals(tmp_path, [("S1", 0, 10, "rest")])
 
@@ -546,3 +675,118 @@ def test_physionet_sessions_ingest_as_one_subject_per_participant(
     # dropped), then STRESS/S01, rest until the tag at second 4 and stress after.
     assert data.y.tolist() == [2, 2, 2, 2, 2, 0, 0, 1, 1, 1]
     assert data.feature_names == HARMONIZED
+
+
+def test_excel_reads_the_declared_missing_texts(tmp_path: Path) -> None:
+    pytest.importorskip("openpyxl")
+    pd.DataFrame({"ID": ["94", "5C"], "level": [2, "na"]}).to_excel(
+        tmp_path / "survey.xlsx", index=False
+    )
+
+    out = readers.create("excel", {"na_values": ["na"]}).read(tmp_path / "survey.xlsx")
+
+    assert out["level"].tolist()[0] == 2 and pd.isna(out["level"].iloc[1])
+
+
+def test_a_subject_left_out_by_a_select_adds_no_rows(tmp_path: Path) -> None:
+    e4_session(tmp_path / "S1")
+    e4_session(tmp_path / "S2")
+    _intervals(tmp_path, [("S1", START, START + 10, "rest")])
+    spec = e4_spec(
+        tmp_path,
+        {"reader": "empatica_e4_csv", "path": "{subject}/EDA.csv"},
+        [
+            {"select": {"query": "subject != 'S2'"}},
+            {
+                "intervals": {
+                    "source": {"reader": "csv", "path": "protocol.csv"},
+                    "by": ["subject"],
+                }
+            },
+        ],
+    )
+
+    (data,) = ingest(spec)  # no warning from an empty frame (filterwarnings=error)
+
+    assert data.subject == "S1" and data.y.tolist() == [0, 0, 0, 0]
+
+
+# --- stress_predict_time_logs (issue #242) -----------------------------------------
+
+
+def time_logs(path: Path, rows: list[tuple[str, list[str], str]]) -> Path:
+    """Time_logs.xlsx's layout: a two-row header, a (Start, End) pair per phase."""
+    pytest.importorskip("openpyxl")
+    import datetime as dt
+
+    phases = ["Consent", "Baseline/Questionniare", "Stroop Test", "Relax"]
+    phases += ["Interview", "Relax", "Hyperventilation", "Relax"]
+    phases += ["Questionniare", "Relax/Baseline"]
+    head = ["S. ID.", "Start Time", "End Time", "Session ID"]
+    head += [x for p in phases for x in (p, None)] + [None, "Date"]
+    sub = [None] * 4 + ["Start", "End"] * len(phases) + [None, None]
+    body = []
+    for subject, clock, day in rows:
+        times = [dt.time(*map(int, c.split(":"))) for c in clock]
+        body.append(
+            [subject, times[0], times[-1], 1]
+            + times
+            + ["Day 1", dt.datetime.fromisoformat(day)]
+        )
+    _sheet(path, [head, sub, *body])
+    return path
+
+
+def _sheet(path: Path, rows: list[list]) -> None:
+    from openpyxl import Workbook
+
+    book = Workbook()
+    for row in rows:
+        book.active.append(row)
+    book.save(path)
+
+
+MORNING = [  # 20 clock times: 10 phases, the last ones after noon on a 12-hour clock
+    "11:00", "11:05", "11:05", "11:15", "11:15", "11:20", "11:20", "11:25",
+    "11:25", "11:35", "11:35", "11:40", "11:40", "11:42", "11:42", "11:47",
+    "11:47", "11:52", "12:52", "01:02",
+]  # fmt: skip
+
+
+def test_time_logs_give_one_row_per_phase_in_unix_seconds(tmp_path: Path) -> None:
+    path = time_logs(tmp_path / "logs.xlsx", [("S02", MORNING, "2022-02-07")])
+
+    out = readers.create("stress_predict_time_logs", {}).read(path)
+
+    assert out.columns.tolist() == ["subject", "phase", "start", "end"]
+    assert out["phase"].tolist()[:3] == ["consent", "baseline", "stroop"]
+    stroop = out.set_index("phase").loc["stroop"]
+    assert (stroop.start, stroop.end) == (
+        unix("2022-02-07 11:15"),
+        unix("2022-02-07 11:20"),
+    )
+    last = out.set_index("phase").loc["relax_4"]  # 12:52 to 01:02 is past noon
+    assert (last.start, last.end) == (
+        unix("2022-02-07 12:52"),
+        unix("2022-02-07 13:02"),
+    )
+
+
+def test_time_logs_end_a_phase_where_the_next_begins(tmp_path: Path) -> None:
+    clock = list(MORNING)
+    clock[3] = "11:16"  # the baseline ends a minute after the Stroop test starts
+    path = time_logs(tmp_path / "logs.xlsx", [("S33", clock, "2022-03-09")])
+
+    out = readers.create("stress_predict_time_logs", {}).read(path)
+
+    baseline = out.set_index("phase").loc["baseline"]
+    assert baseline.end == unix("2022-03-09 11:15")
+
+
+def test_time_logs_need_the_phase_columns(tmp_path: Path) -> None:
+    pytest.importorskip("openpyxl")
+    path = tmp_path / "logs.xlsx"
+    _sheet(path, [["S. ID.", "Date"], ["", "Start"], ["S02", None]])
+
+    with pytest.raises(DataError, match=r"\(Start, End\) pairs"):
+        readers.create("stress_predict_time_logs", {}).read(path)
