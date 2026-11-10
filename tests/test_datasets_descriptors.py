@@ -20,7 +20,9 @@ def descriptor(name: str):
     return load_spec(DESCRIPTORS / f"{name}.yaml")
 
 
-@pytest.mark.parametrize("name", ["swell", "sweet", "wesad", "wesad_e4", "femnist"])
+@pytest.mark.parametrize(
+    "name", ["swell", "sweet", "wesad", "wesad_e4", "physionet_e4", "femnist"]
+)
 def test_descriptors_are_valid(name: str) -> None:
     spec = descriptor(name)
 
@@ -40,6 +42,8 @@ def test_descriptors_are_valid(name: str) -> None:
             "wesad_e4",
             {"signals": "EDA,TEMP", "window_seconds": 30, "label": "three_class"},
         ),
+        ("physionet_e4", {"signals": "EDA,HR", "window_seconds": 30}),
+        ("physionet_e4", {"label": "three_class"}),
     ],
 )
 def test_descriptor_options_are_valid(name: str, options: dict) -> None:
@@ -161,6 +165,121 @@ def test_wesad_wrist_reads_the_same_windows_at_native_rates() -> None:
         else:
             tolerance = 0.04 if stat == "median" else 3e-4
             assert (error <= tolerance * span + 1e-6).all(), name
+
+
+# --- PhysioNet Wearable Device Dataset (issue #240) ---------------------------------
+
+PHYSIONET = Path("data/PhysioNetE4/Wearable_Dataset")
+PHYSIONET_SAMPLE = Path("data/samples/physionet_e4")
+DROPPED = {  # data_constraints.txt, as the descriptor's select step applies it
+    "STRESS/f07",
+    "AEROBIC/S03",
+    "AEROBIC/S07",
+    "AEROBIC/S11_a",
+    "AEROBIC/S11_b",
+    "ANAEROBIC/S06",
+    "ANAEROBIC/S16_a",
+    "ANAEROBIC/S16_b",
+}
+TAGS = {  # tags per complete session, as the protocol figures of the notebook
+    ("STRESS", "V1"): 13,
+    ("STRESS", "V2"): 9,
+    ("AEROBIC", "V1"): 12,
+    ("AEROBIC", "V2"): 8,
+    ("ANAEROBIC", "V1"): 7,
+    ("ANAEROBIC", "V2"): 11,
+}
+SHORT_STAGES = {"V1": [7, 9, 11], "V2": [4, 6, 8]}  # opinions and subtract, 30 s
+
+
+def _tag_seconds(folder: Path) -> np.ndarray:
+    import pandas as pd
+
+    start = pd.Timestamp(folder.joinpath("EDA.csv").read_text().splitlines()[0])
+    lines = folder.joinpath("tags.csv").read_text().split()
+    stamps = [" ".join(pair) for pair in zip(lines[::2], lines[1::2], strict=True)]
+    return np.array([(pd.Timestamp(t) - start).total_seconds() for t in stamps])
+
+
+@pytest.mark.skipif(not PHYSIONET.exists(), reason="data/PhysioNetE4 not available")
+def test_physionet_tags_follow_the_protocol_the_labels_assume() -> None:
+    """Every session the descriptor labels has its protocol's tags in place."""
+    unsorted = set()
+    for folder in sorted(PHYSIONET.glob("*/*")):
+        session = f"{folder.parent.name}/{folder.name}"
+        if session in DROPPED or session == "STRESS/f14_a":  # f14_a: no tags
+            continue
+        version = "V1" if folder.name.startswith("S") else "V2"
+        tags = _tag_seconds(folder)
+        assert len(tags) == TAGS[folder.parent.name, version], session
+        if np.any(np.diff(tags) <= 0):
+            unsorted.add(session)
+        tags = np.sort(tags)  # as the reader does
+        assert np.all(np.diff(tags) > 0), session
+        if folder.parent.name == "STRESS":
+            # The 30 s stages last 30 s: the tag k is where the map says.
+            for k in SHORT_STAGES[version]:
+                assert 15 <= tags[k] - tags[k - 1] <= 75, (session, k)
+    # Its tags 5 and 6 (the 90/95 rpm block) were written 12 s apart, swapped.
+    assert unsorted == {"AEROBIC/f07"}
+
+
+@pytest.mark.skipif(not PHYSIONET.exists(), reason="data/PhysioNetE4 not available")
+def test_physionet_s02_repeat_starts_where_the_descriptor_cuts_it() -> None:
+    import pandas as pd
+
+    folder = PHYSIONET / "STRESS" / "S02"
+    eda = pd.read_csv(folder / "EDA.csv", header=None, skiprows=2)[0].to_numpy()
+    start = pd.Timestamp(folder.joinpath("EDA.csv").read_text().splitlines()[0])
+
+    half = 1548 * 4  # data_constraints.txt: EDA row 6,195, after the two header rows
+    np.testing.assert_array_equal(eda[half:], eda[: len(eda) - half])
+    assert (start - pd.Timestamp(0)).total_seconds() + 1548 == 1361387717
+    assert _tag_seconds(folder)[-1] < 1548  # the protocol ends before the repeat
+
+
+@pytest.mark.skipif(not PHYSIONET.exists(), reason="data/PhysioNetE4 not available")
+@pytest.mark.parametrize(
+    "label, n_subjects, counts",
+    [("binary", 35, [1243, 203]), ("three_class", 36, [1243, 203, 1197])],
+)
+def test_physionet_reads_one_subject_per_participant(label, n_subjects, counts):
+    subjects = ingest(descriptor("physionet_e4"), {"label": label})
+
+    assert len(subjects) == n_subjects  # 36 participants; f07 has no valid stress
+    assert ("f07" in {s.subject for s in subjects}) == (label == "three_class")
+    labels = np.concatenate([s.y for s in subjects]).astype(int)
+    assert np.bincount(labels).tolist() == counts  # 2026-11-10, 60 s windows
+    for data in subjects:
+        assert data.feature_names == descriptor_features(), data.subject
+        # A participant's sessions come in path order (AEROBIC, ANAEROBIC,
+        # STRESS), not in time order; their windows never share a time.
+        assert data.t.min() == 0 and len(np.unique(data.t)) == len(data.t)
+
+
+def descriptor_features() -> list[str]:
+    channels = ["acc_x", "acc_y", "acc_z", "bvp", "eda", "temp"]
+    stats = ["mean", "std", "min", "max", "median"]
+    return [f"{c}_{s}" for c in channels for s in stats]  # as wesad_e4.yaml
+
+
+@pytest.mark.skipif(
+    not PHYSIONET_SAMPLE.exists(), reason="data/samples/physionet_e4 not available"
+)
+def test_physionet_sample_reads_its_participants() -> None:
+    """The real extract: S02 (duplicated), f07 (invalid PPG) and f14 (split)."""
+    spec = descriptor("physionet_e4")
+    binary = {s.subject: s for s in ingest(spec, root=PHYSIONET_SAMPLE)}
+    three = {
+        s.subject: s
+        for s in ingest(spec, {"label": "three_class"}, root=PHYSIONET_SAMPLE)
+    }
+
+    assert sorted(binary) == ["S02", "f14"]
+    assert np.bincount(binary["S02"].y.astype(int)).tolist() == [20, 4]
+    assert np.bincount(binary["f14"].y.astype(int)).tolist() == [42, 6]
+    assert sorted(three) == ["S02", "f07", "f14"]
+    assert set(three["f07"].y.tolist()) == {2}  # its exercise sessions are valid
 
 
 def test_femnist_declares_a_fixed_subsample_of_hundreds_of_writers() -> None:

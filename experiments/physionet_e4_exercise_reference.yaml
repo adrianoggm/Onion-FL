@@ -1,0 +1,34 @@
+# Centralised reference on the PhysioNet Wearable Device dataset (issue #240):
+# stress_vs_exercise (rest, stress tasks, aerobic exercise) on 60 s windows with
+# the harmonized E4 features, pooled in one edge as in
+# physionet_e4_reference.yaml and tested on the same nine participants. f07,
+# whose stress session is dropped, trains with its exercise windows only. The
+# hyperparameters are those of physionet_e4_reference.yaml, not tuned.
+#
+#   onion_fl run experiments/physionet_e4_exercise_reference.yaml --workers 3
+#   onion_fl report experiments/physionet_e4_exercise_reference.yaml --out report.html --metric accuracy --metric macro_f1
+#   onion_fl baseline experiments/physionet_e4_exercise_reference.yaml --models lr rf > baselines.json
+name: physionet_e4_exercise_reference
+description: Referencia centralizada en PhysioNet Wearable Device (E4), descanso, estrés y ejercicio, con los sujetos de test de physionet_e4_reference.
+topology: one_fog
+data:
+  datasets:
+    physionet_e4: {options: {label: three_class}}
+  roles:
+    seed: 0
+    scaler: global
+    overrides:
+      physionet_e4:
+        test: [S04, S09, S10, S11, S16, S18, f10, f15, f17]
+        val: []
+  placement: {name: pooled}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, local_epochs: 5, batch_size: 32, lr: 0.001}
+  init: random
+rounds: 10
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  global: {every: 1}
+seeds: [0, 1, 2, 3, 4]

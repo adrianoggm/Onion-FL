@@ -345,10 +345,11 @@ class E4CsvParams(BaseModel):
     description="Carpeta de una sesión E4: un CSV por señal, cada una a su tasa nativa.",
     params=E4CsvParams,
     explain=(
-        "Cada CSV trae la marca de tiempo de inicio (Unix, en segundos) en la fila 1 "
-        "y la frecuencia en la fila 2; IBI.csv trae el inicio y luego pares (desfase, "
-        "IBI). La ruta es la carpeta o un fichero suyo. La columna time es la marca "
-        "de cada muestra: es un metadato, así que el descriptor necesita un paso time."
+        "Cada CSV trae la marca de tiempo de inicio en la fila 1 (Unix en segundos, o "
+        "una fecha UTC como en PhysioNet) y la frecuencia en la fila 2; IBI.csv trae "
+        "el inicio y luego pares (desfase, IBI). La ruta es la carpeta o un fichero "
+        "suyo. La columna time es la marca de cada muestra en segundos Unix: es un "
+        "metadato, así que el descriptor necesita un paso time."
     ),
 )
 class EmpaticaE4CsvReader:
@@ -364,32 +365,117 @@ class EmpaticaE4CsvReader:
             file = folder / f"{signal}.csv"
             if not file.exists():
                 raise DataError(f"{folder} has no {signal}.csv")
-            raw = pd.read_csv(file, header=None, skipinitialspace=True)
             reader = self._ibi if signal == "IBI" else self._regular
-            blocks.append(reader(file, raw, E4_CHANNELS[signal]))
+            blocks.append(reader(file, E4_CHANNELS[signal]))
         return _e4_table(blocks)
 
     @staticmethod
-    def _regular(file: Path, raw: pd.DataFrame, names: list[str]):
-        if raw.shape[1] != len(names) or len(raw) < 2:
+    def _regular(file: Path, names: list[str]):
+        head = _e4_rows(file, 2)
+        if head.shape != (2, len(names)):
             raise DataError(
                 f"{file}: expected {len(names)} columns and the start and rate rows"
             )
-        head = raw.iloc[:2].to_numpy(np.float64)
-        start, rate = head[0, 0], head[1, 0]
-        if not ((head[0] == start).all() and (head[1] == rate).all()) or rate <= 0:
+        starts = {e4_seconds(v, file) for v in head[0]}
+        rates = {e4_seconds(v, file) for v in head[1]}
+        if len(starts) > 1 or len(rates) > 1 or min(rates) <= 0:
             raise DataError(f"{file}: columns with different starts or rates {head}")
-        values = raw.iloc[2:].to_numpy(np.float64)
-        times = start + np.arange(len(values)) / rate
+        values = _e4_values(file, 2, len(names))
+        times = starts.pop() + np.arange(len(values)) / rates.pop()
         return times, {name: values[:, i] for i, name in enumerate(names)}
 
     @staticmethod
-    def _ibi(file: Path, raw: pd.DataFrame, names: list[str]):
-        if raw.shape[1] != 2 or len(raw) < 1:
-            raise DataError(f"{file}: expected the start row and (offset, ibi) pairs")
-        start = float(raw.iloc[0, 0])
-        values = raw.iloc[1:].to_numpy(np.float64)
+    def _ibi(file: Path, names: list[str]):
+        start = e4_seconds(_e4_rows(file, 1)[0, 0], file)
+        values = _e4_values(file, 1, 2)  # E4 connect may export an empty IBI
         return start + values[:, 0], {names[0]: values[:, 1]}
+
+
+def e4_seconds(value: Any, file: Path | str = "") -> float:
+    """An E4 time as Unix seconds: a number, or a UTC date as PhysioNet writes it."""
+    text = str(value).strip()
+    try:
+        return float(text)
+    except ValueError:
+        pass
+    try:
+        stamp = pd.Timestamp(text)
+    except ValueError:
+        raise DataError(
+            f"{file}: {text!r} is neither Unix seconds nor a date"
+        ) from None
+    if stamp.tzinfo is not None:
+        stamp = stamp.tz_convert("UTC").tz_localize(None)
+    return (stamp - pd.Timestamp(0)).total_seconds()
+
+
+def _e4_rows(file: Path, n: int) -> np.ndarray:
+    """The first ``n`` rows as text: the start time (and the rate)."""
+    try:
+        rows = pd.read_csv(file, header=None, nrows=n, dtype=str)
+    except pd.errors.EmptyDataError:
+        raise DataError(f"{file} is empty") from None
+    if len(rows) < n:
+        raise DataError(f"{file}: expected {n} header rows, got {len(rows)}")
+    return rows.to_numpy()
+
+
+def _e4_values(file: Path, skip: int, width: int) -> np.ndarray:
+    try:
+        values = pd.read_csv(
+            file, header=None, skiprows=skip, skipinitialspace=True
+        ).to_numpy(np.float64)
+    except pd.errors.EmptyDataError:
+        return np.empty((0, width))
+    if values.shape[1] != width:
+        raise DataError(f"{file}: expected {width} columns, got {values.shape[1]}")
+    return values
+
+
+# Sessions of the first stage are S<nn> (protocol V1), of the second f<nn> (V2).
+PHYSIONET_STAGES = {"S": "V1", "f": "V2"}
+
+
+@readers.register(
+    "physionet_wearable",
+    title="PhysioNet Wearable Device (E4)",
+    description="Sesión E4 de PhysioNet (estrés inducido y ejercicio) con su tramo de protocolo.",
+    params=E4CsvParams,
+    explain=(
+        "Lee Wearable_Dataset/<ACTIVIDAD>/<sesión>/ como empatica_e4_csv y añade "
+        "session (ACTIVIDAD/sesión) y segment (ACTIVIDAD_V<versión>_<k>), donde k es "
+        "el número de tags pulsados hasta esa muestra: 0 antes del primero y k entre "
+        "el tag k y el k+1. La versión sale del prefijo de la sesión (S = V1, f = V2). "
+        "Ambas columnas son metadatos: la etiqueta se declara mapeando segment."
+    ),
+)
+class PhysioNetWearableReader:
+    """PhysioNet's Wearable Device Dataset: E4 sessions with protocol tags."""
+
+    def __init__(self, signals: list[str] | str | None = E4_DEFAULT) -> None:
+        self.e4 = EmpaticaE4CsvReader(signals)
+
+    def read(self, path: Path) -> pd.DataFrame:
+        folder = path if path.is_dir() else path.parent
+        activity, session = folder.parent.name, folder.name
+        version = PHYSIONET_STAGES.get(session[:1])
+        if version is None:
+            raise DataError(f"{folder}: a session starts with S or f, got {session!r}")
+        df = self.e4.read(folder)
+        tags = np.sort(_e4_tags(folder / "tags.csv"))
+        k = np.searchsorted(tags, df["time"].to_numpy(np.float64), side="right")
+        return df.assign(
+            session=f"{activity}/{session}",
+            segment=[f"{activity}_{version}_{i}" for i in k],
+        )
+
+
+def _e4_tags(file: Path) -> np.ndarray:
+    """The times of the button presses (one per line); a session may have none."""
+    if not file.exists():
+        raise DataError(f"{file.parent} has no tags.csv")
+    lines = [line.strip() for line in file.read_text(encoding="utf-8").splitlines()]
+    return np.array([e4_seconds(line, file) for line in lines if line], np.float64)
 
 
 class WesadE4Params(BaseModel):
@@ -790,6 +876,8 @@ REDUCE: dict[str, Callable[[np.ndarray], float]] = {
     "mode": lambda a: float(np.bincount(a.astype(np.int64)).argmax()),
     "first": lambda a: float(a[0]),
     "last": lambda a: float(a[-1]),
+    # one class throughout, or no label: the window is dropped
+    "unanimous": lambda a: float(a[0]) if (a == a[0]).all() else float("nan"),
 }
 
 
@@ -865,7 +953,11 @@ class MultirateWindowParams(BaseModel):
     columns: list[str] | None = Field(
         None, description="Canales; por defecto los numéricos"
     )
-    label: Literal["mean_round", "mode", "first", "last"] = "mean_round"
+    label: Literal["mean_round", "mode", "first", "last", "unanimous"] = Field(
+        "mean_round",
+        description="Cómo resume la ventana sus muestras de etiqueta; unanimous "
+        "descarta las ventanas que mezclan clases",
+    )
     label_rows: str | None = Field(
         None,
         description="Columna cuyas filas con valor son las muestras de la etiqueta; "
@@ -1312,7 +1404,8 @@ def ingest(
                 f"missing {missing}, extra {extra}"
             )
         frames.append(df)
-    df = pd.concat(frames, ignore_index=True)
+    # A file a select step emptied (an excluded session) adds no rows.
+    df = pd.concat([f for f in frames if len(f)] or frames[:1], ignore_index=True)
     ran = {name for name, _ in active}
 
     if "subject" not in df.columns:

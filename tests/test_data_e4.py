@@ -405,3 +405,144 @@ def test_wesad_and_e4_csv_share_feature_names(tmp_path: Path) -> None:
 
     assert data.feature_names == HARMONIZED
     assert len(data.y) == 3 and (data.y[0], data.y[-1]) == (0, 1)
+
+
+# --- PhysioNet's E4 export (issue #240) ----------------------------------------------
+
+
+def _utc(seconds: float) -> str:
+    return pd.Timestamp(seconds, unit="s").strftime("%Y-%m-%d %H:%M:%S")
+
+
+def physionet_session(root: Path, activity: str, session: str, tags) -> Path:
+    """An E4 session as PhysioNet writes it: UTC dates instead of Unix starts."""
+    folder = e4_session(root / "Wearable_Dataset" / activity / session)
+    for file in folder.glob("*.csv"):
+        lines = file.read_text(encoding="utf-8").splitlines()
+        start = lines[0].split(",")
+        stamp = _utc(float(start[0]))
+        lines[0] = ",".join([stamp] * len(start))
+        file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    text = "".join(f"{_utc(START + t)}\n" for t in tags)
+    (folder / "tags.csv").write_text(text, encoding="utf-8")
+    return folder
+
+
+def test_e4_reader_reads_utc_dates_as_unix_seconds(tmp_path: Path) -> None:
+    folder = physionet_session(tmp_path, "STRESS", "S01", [])
+    unix = readers.create("empatica_e4_csv", {"signals": "ACC,EDA,IBI"})
+
+    df = unix.read(folder)
+
+    assert df["time"].min() == START
+    ibi = df.dropna(subset=["ibi"])
+    np.testing.assert_allclose(ibi["time"] - START, [0.5, 1.3, 6.0])
+
+
+def test_e4_reader_reads_an_empty_ibi_export(tmp_path: Path) -> None:
+    folder = physionet_session(tmp_path, "ANAEROBIC", "S01", [])
+    (folder / "IBI.csv").write_text(f"{_utc(START)},IBI\n", encoding="utf-8")
+
+    df = readers.create("empatica_e4_csv", {"signals": "EDA,IBI"}).read(folder)
+
+    assert df["ibi"].isna().all() and len(df) == SECONDS
+
+
+def test_e4_reader_rejects_a_start_that_is_not_a_time(tmp_path: Path) -> None:
+    folder = e4_session(tmp_path / "S1")
+    (folder / "EDA.csv").write_text("start\n4.0\n0.1\n", encoding="utf-8")
+
+    with pytest.raises(DataError, match="neither Unix seconds nor a date"):
+        readers.create("empatica_e4_csv", {"signals": "EDA"}).read(folder)
+
+
+def test_physionet_reader_counts_the_tags_pressed_so_far(tmp_path: Path) -> None:
+    folder = physionet_session(tmp_path, "STRESS", "f02", [3, 6])
+
+    df = readers.create("physionet_wearable", {"signals": "EDA"}).read(folder)
+
+    assert list(df.columns) == ["time", "eda", "session", "segment"]
+    assert set(df["session"]) == {"STRESS/f02"}
+    by_second = dict(zip(df["time"] - START, df["segment"], strict=True))
+    assert [by_second[t] for t in (0, 2, 3, 5, 6, 9)] == [
+        "STRESS_V2_0",
+        "STRESS_V2_0",
+        "STRESS_V2_1",  # a press at second 3 starts segment 1 there
+        "STRESS_V2_1",
+        "STRESS_V2_2",
+        "STRESS_V2_2",
+    ]
+
+
+def test_physionet_reader_reads_a_session_without_tags(tmp_path: Path) -> None:
+    folder = physionet_session(tmp_path, "STRESS", "f14_a", [])
+    (folder / "tags.csv").write_text("", encoding="utf-8")
+
+    df = readers.create("physionet_wearable", {"signals": "EDA"}).read(folder)
+
+    assert set(df["segment"]) == {"STRESS_V2_0"}
+
+
+def test_physionet_reader_needs_a_stage_prefix(tmp_path: Path) -> None:
+    folder = physionet_session(tmp_path, "STRESS", "X01", [])
+
+    with pytest.raises(DataError, match="S or f"):
+        readers.create("physionet_wearable", {"signals": "EDA"}).read(folder)
+
+
+def test_multirate_window_unanimous_drops_windows_that_mix_classes(
+    tmp_path: Path,
+) -> None:
+    df = _session_table(tmp_path, "EDA")
+    label = np.where(df["time"] - START < 5, 0.0, 1.0)
+
+    out = window(
+        {"seconds": 2, "columns": ["eda"], "label": "unanimous"},
+        df.assign(label=label),
+    )
+
+    # The window over seconds 4-6 mixes the classes; ingest drops its NaN label.
+    assert out["label"].tolist()[:2] == [0, 0]
+    assert np.isnan(out["label"].iloc[2])
+    assert out["label"].tolist()[3:] == [1, 1]
+
+
+def physionet_spec(root: Path) -> DatasetSpec:
+    return DatasetSpec(
+        name="demo_physionet",
+        root=str(root),
+        source={
+            "reader": "physionet_wearable",
+            "path": "Wearable_Dataset/*/{subject}/EDA.csv",
+        },
+        steps=[
+            {"subject": {"regex": r"^([Sf]\d{2})"}},
+            {"select": {"query": "session != 'AEROBIC/S01_b'"}},
+            {"time": {"column": "time"}},
+            {
+                "label": {
+                    "task": "stress_vs_exercise",
+                    "column": "segment",
+                    "map": {"STRESS_V1_1": 1, "AEROBIC_V1_0": 2, "STRESS_V1_0": 0},
+                }
+            },
+            {"multirate_window": {"seconds": 2, "label": "unanimous"}},
+            {"features": {"regex": "_(mean|std|min|max|median)$"}},
+        ],
+    )
+
+
+def test_physionet_sessions_ingest_as_one_subject_per_participant(
+    tmp_path: Path,
+) -> None:
+    physionet_session(tmp_path, "STRESS", "S01", [4])
+    physionet_session(tmp_path, "AEROBIC", "S01_a", [])
+    physionet_session(tmp_path, "AEROBIC", "S01_b", [])  # excluded by the select
+
+    (data,) = ingest(physionet_spec(tmp_path))
+
+    assert data.subject == "S01"
+    # Files in path order: AEROBIC/S01_a, exercise throughout (S01_b is
+    # dropped), then STRESS/S01, rest until the tag at second 4 and stress after.
+    assert data.y.tolist() == [2, 2, 2, 2, 2, 0, 0, 1, 1, 1]
+    assert data.feature_names == HARMONIZED
