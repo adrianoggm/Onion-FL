@@ -243,10 +243,10 @@ def test_grpc_over_mutual_tls_delivers(tmp_path: Path, pki) -> None:
 
 
 def _call(channel, address: str = "secure") -> None:
-    from onion_fl.transports.grpc import ADDRESS, METHOD
+    from onion_fl.transports.grpc import ADDRESS, GrpcTransport
 
     with channel:
-        channel.unary_unary(METHOD)(
+        channel.unary_unary(f"/{GrpcTransport.SERVICE}/Deliver")(
             b"intruder", timeout=3, metadata=((ADDRESS, address),)
         )
 
