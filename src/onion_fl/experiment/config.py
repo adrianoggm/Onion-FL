@@ -761,7 +761,6 @@ class ExperimentConfig(Strict):
         name = ref if isinstance(ref, str) else ref["name"]
         merging = getattr(placements.create(name, params), "merge", False)
         refusals = [
-            (not self.simulated, "real runs do not stream yet (C9)"),
             (
                 (init if isinstance(init, str) else init["name"]) == "run",
                 "learning.init: run cannot continue a stream yet; the bundle holds "

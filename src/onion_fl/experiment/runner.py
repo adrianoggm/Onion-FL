@@ -1483,6 +1483,89 @@ def run_scenario(
     )
 
 
+def sim_faults(
+    scenario: Scenario,
+    topology: Topology,
+    placement: Placement,
+    federation: Any,
+    faults: Any,
+) -> list[dict[str, Any]]:
+    """The ``distributed`` backend's start and failures on the virtual clock (C9).
+
+    Every node starts ``start_in`` seconds before the clock's zero. The hosts
+    are checked as ``distributed`` checks them, and each one's nodes fail
+    together (``fail_nodes``). What is scheduled goes to ``run.json``.
+    """
+    from onion_fl.experiment.distributed import check_faults
+    from onion_fl.experiment.emulated import host_load
+    from onion_fl.experiment.real import edge_groups
+
+    resolved = physical(scenario, topology, placement, federation.coordinator.state)
+    if resolved is None:
+        raise ConfigError("backend sim: restarts and joins need an infrastructure")
+    load = host_load(resolved, edge_groups(scenario.config, topology, placement))
+    check_faults(faults, topology, resolved, load, backend="sim")
+    federation.runtime.start_at(-faults.start_in)
+    fail_nodes(
+        federation,
+        restarts={n: (r.at, r.down) for r in faults.restarts for n in load[r.host]},
+        joins={n: at for host, at in faults.joins.items() for n in load[host]},
+    )
+    done = [{"host": h, "action": "join", "at": at} for h, at in faults.joins.items()]
+    for r in faults.restarts:
+        done += [
+            {"host": r.host, "action": "kill", "at": r.at},
+            {"host": r.host, "action": "resume", "at": r.at + r.down},
+        ]
+    return sorted(done, key=lambda d: (d["at"], d["host"], d["action"]))
+
+
+def fail_nodes(
+    federation: Any,
+    restarts: Mapping[str, tuple[float, float]],
+    joins: Mapping[str, float],
+) -> None:
+    """Kill and restart edges, and start others late, on a simulated federation.
+
+    An edge of ``restarts`` (``node: (at, down)``) loses its process at
+    ``at``: it drops what reaches it, its timers and the work it had not
+    finished. ``down`` seconds later it comes back as a node process does with
+    ``--resume``: rebuilt from its specs (so with fresh drift detectors),
+    brought to the part it saved after its last finished handler, and saying
+    hello again. An edge of ``joins`` starts at its second.
+    """
+    from onion_fl.continual.bundle import NodeState
+    from onion_fl.experiment.real import resume_from
+    from onion_fl.roles.snapshot import checkpoint_edge
+
+    runtime = federation.runtime
+    # As built, before the run: what a restarted process builds again.
+    built = {n: deepcopy(federation.edges[n]) for n in sorted(restarts)}
+    saved: dict[str, Any] = {}
+
+    def save(node_id: str) -> None:  # as save_node and load_node would give it
+        if node_id in built:
+            part = checkpoint_edge(federation.edges[node_id], runtime._rng(node_id))
+            saved[node_id] = NodeState(
+                {k: np.array(v) for k, v in part.arrays.items()},
+                json.loads(json.dumps(part.meta, sort_keys=True)),
+            )
+
+    def revive(node_id: str, restarted: bool) -> None:
+        if restarted and node_id in built:
+            edge = deepcopy(built[node_id])
+            resume_from(edge, saved.get(node_id), runtime)
+            federation.edges[node_id] = edge
+            runtime.replace_node(node_id, edge)
+
+    runtime.after_handle.append(save)
+    runtime.on_revive.append(revive)
+    for node, (at, down) in sorted(restarts.items()):
+        runtime.restart(node, at, down)
+    for node, at in sorted(joins.items()):
+        runtime.join(node, at)
+
+
 def _diagnostic(federation: Any, scenario: Scenario, placement: Placement) -> dict:
     """The ex ante diagnostic of the deadline bias (N8); a run goes on without it
     when it cannot be computed, with the reason."""
@@ -1498,8 +1581,13 @@ def simulate(
     scenario: Scenario,
     evaluate: Callable[..., Any] | None = None,
     paused: bool = False,
+    faults: Any = None,
 ) -> Path:
-    """Run one scenario in the simulator (the ``sim`` backend) and sign it."""
+    """Run one scenario in the simulator (the ``sim`` backend) and sign it.
+
+    ``faults`` are the backend's ``start_in``, ``restarts`` and ``joins``
+    (``sim_faults``).
+    """
     config = scenario.config
     operators = load_operators()
     parent = _parent(config, scenario.seed)  # resolved once for the whole run
@@ -1546,6 +1634,10 @@ def simulate(
             run.meta["estimated"] = calibrations["estimated"]
         largest = _largest_messages(federation, calibrations.get("valid_up_to"))
         run.attach(federation)
+        if faults is not None:
+            run.meta["sim"] = {
+                "faults": sim_faults(scenario, topology, placement, federation, faults)
+            }
         run.meta["diagnostic"] = _diagnostic(federation, scenario, placement)
         if config.stream is not None:
             streams = {k: e.stream for k, e in federation.edges.items() if e.train}

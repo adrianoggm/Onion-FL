@@ -15,6 +15,12 @@ Nodes placed on a host with ``cpus`` share it: at most ``cpus`` of their jobs
 run at once, and the others wait in FIFO order (``host.queued``). Nodes on no
 host, or on one without ``cpus``, never wait for a CPU. A host taken offline
 (``host_offline``) takes its nodes with it, as their own availability does.
+
+A node's process can die and come back (``restart``) or start late (``join``),
+as with the ``distributed`` backend's real failures (continuum C9). While it
+is down, what reaches it is dropped; its death takes its timers and the work
+it had not finished, and when it is back the ``on_revive`` hooks may replace
+it (an edge rebuilt from its specs and its saved state) before it starts.
 """
 
 import heapq
@@ -22,7 +28,7 @@ import inspect
 import itertools
 import math
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from onion_fl.core.codec import Codec, get_codec
@@ -112,6 +118,16 @@ class SimRuntime:
         self._rngs: dict[str, Any] = {}
         self._msg_ids = itertools.count(1)
         self._started = False
+        # Called with a node's id after each of its handlers, when what it sent
+        # leaves (its work done): where a run saves the node's state, as with
+        # RealRuntime.after_handle (C9).
+        self.after_handle: list[Callable[[str], None]] = []
+        # Called with a node's id, and whether it restarts (not starts late),
+        # when its process is back and before it starts.
+        self.on_revive: list[Callable[[str, bool], None]] = []
+        self._down: dict[str, float] = {}  # node -> when its process is back
+        self._late: set[str] = set()  # nodes whose process starts late
+        self._life: dict[str, int] = {}  # node -> processes that died
 
     # --- setup -------------------------------------------------------------
 
@@ -221,6 +237,42 @@ class SimRuntime:
         """Record an event at virtual time ``t`` (e.g. a link going down)."""
         self._push(t, "note", (node, name, value, tags))
 
+    def restart(self, node_id: str, at: float, down: float) -> None:
+        """Kill ``node_id``'s process at ``at`` and start it again ``down`` later."""
+        self._check_fault(node_id, at)
+        if down < 0:
+            raise SimulationError(f"restart {node_id}: negative down {down}")
+        self._push(at, "kill", (node_id, at + down))
+        self._push(at + down, "revive", (node_id, True))
+
+    def join(self, node_id: str, at: float) -> None:
+        """Start ``node_id``'s process at ``at``, not at 0."""
+        self._check_fault(node_id, at)
+        self._late.add(node_id)
+        self._down[node_id] = at
+        self._push(at, "revive", (node_id, False))
+
+    def start_at(self, t: float) -> None:
+        """Start every node at ``t`` (negative: before the clock's zero, as the
+        processes of a real run whose clock starts after they are up)."""
+        if self._started:
+            raise SimulationError("start_at: the run has started")
+        self.now = t
+
+    def replace_node(self, node_id: str, node: Node) -> None:
+        """Host ``node`` as ``node_id`` from now on (its process rebuilt it)."""
+        if node.id != node_id or node_id not in self._nodes:
+            raise SimulationError(f"cannot replace {node_id!r} with {node.id!r}")
+        self._nodes[node_id] = node
+
+    def _check_fault(self, node_id: str, at: float) -> None:
+        if node_id not in self._nodes:
+            raise SimulationError(f"unknown node {node_id!r}; add nodes first")
+        if self._started or at < self.now:
+            raise SimulationError(
+                f"{node_id}: schedule a failure after the start, before the run"
+            )
+
     # --- running -----------------------------------------------------------
 
     def run(self, until: float | None = None) -> None:
@@ -259,7 +311,8 @@ class SimRuntime:
         if not self._started:
             self._started = True
             for node_id in self._nodes:
-                self._push(0.0, "start", (node_id,))
+                if node_id not in self._late:  # a late one starts on its join
+                    self._push(0.0, "start", (node_id,))
 
     def _on_external(self, msg: Message, msg_id: str) -> None:
         if msg.dst not in self._nodes:
@@ -281,11 +334,16 @@ class SimRuntime:
         elif (back := self._back_at(node_id)) is not None:
             self._push(back, "start", (node_id,))  # it starts when it is back
 
-    def _on_deliver(self, src: str, dst: str, data: bytes, msg_id: str) -> None:
-        if self._defer_if_busy(dst, "deliver", (src, dst, data, msg_id)):
+    def _on_deliver(
+        self, src: str, dst: str, data: bytes, msg_id: str, life: int | None = None
+    ) -> None:
+        # A message that waited for a busy node is in its process: it dies with it.
+        waiting = (src, dst, data, msg_id, self._life.get(dst, 0))
+        if self._defer_if_busy(dst, "deliver", waiting):
             return
         msg = self._links[(src, dst)].codec.decode(data)
-        if not self._is_up(dst, msg.round):
+        died = life is not None and life != self._life.get(dst, 0)
+        if died or not self._is_up(dst, msg.round):
             self._record(
                 dst,
                 "message.dropped_offline",
@@ -332,14 +390,30 @@ class SimRuntime:
     def _on_note(self, node: str, name: str, value: Any, tags: dict) -> None:
         self._record(node, name, value, tags)
 
-    def _on_compute_done(self, node_id: str, outbox: list[Message]) -> None:
-        if not self._is_up(node_id, None):
+    def _on_compute_done(
+        self, node_id: str, outbox: list[Message], life: int = 0
+    ) -> None:
+        if not self._is_up(node_id, None) or life != self._life.get(node_id, 0):
             self._record(
                 node_id, "message.dropped_offline", None, {"pending": len(outbox)}
             )
             return
-        for msg in outbox:
-            self._transmit(msg)
+        self._done(node_id, outbox)
+
+    def _on_kill(self, node_id: str, back: float) -> None:
+        """The process dies: its timers and unfinished work go with it."""
+        self._down[node_id] = back
+        self._life[node_id] = self._life.get(node_id, 0) + 1
+        self._busy_until[node_id] = self.now
+        for key in [k for k in self._timers if k[0] == node_id]:
+            del self._timers[key]
+        self._record(node_id, "node.killed", None, {"back": back})
+
+    def _on_revive(self, node_id: str, restarted: bool) -> None:
+        del self._down[node_id]
+        for hook in self.on_revive:
+            hook(node_id, restarted)
+        self._on_start(node_id)
 
     # --- internals ---------------------------------------------------------
 
@@ -368,7 +442,7 @@ class SimRuntime:
 
     def _is_up(self, node_id: str, round: int | None, t: float | None = None) -> bool:
         t = self.now if t is None else t
-        if self._host_down_until(node_id, t) is not None:
+        if node_id in self._down or self._host_down_until(node_id, t) is not None:
             return False
         model = self._availability[node_id]
         return model is None or model.is_up(
@@ -382,6 +456,9 @@ class SimRuntime:
 
     def _back_at(self, node_id: str) -> float | None:
         """When an offline node is up again; None if it never is (a crash)."""
+        if node_id in self._down:
+            back = self._down[node_id]
+            return None if math.isinf(back) else back
         up_again = getattr(self._availability[node_id], "up_again", None)
         if self._host_of.get(node_id) not in self._offline:
             return None if up_again is None else up_again(self.now)
@@ -422,10 +499,17 @@ class SimRuntime:
         if busy > 0:
             end = self._run_on_host(node_id, busy)
             self._busy_until[node_id] = end
-            self._push(end, "compute_done", (node_id, ctx.outbox))
+            life = self._life.get(node_id, 0)
+            self._push(end, "compute_done", (node_id, ctx.outbox, life))
         else:
-            for msg in ctx.outbox:
-                self._transmit(msg)
+            self._done(node_id, ctx.outbox)
+
+    def _done(self, node_id: str, outbox: list[Message]) -> None:
+        """A handler's work is done: the hooks, then what it sent leaves."""
+        for hook in self.after_handle:
+            hook(node_id)
+        for msg in outbox:
+            self._transmit(msg)
 
     def _run_on_host(self, node_id: str, busy: float) -> float:
         """When a job of ``busy`` seconds ends: it starts now, or when a CPU of

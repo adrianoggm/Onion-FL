@@ -41,7 +41,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Observability | ✅ | `runs/<run_id>/` with signed events, summary and final model. Diagnostics at every aggregator; analysis API with mean ± CI over seeds; HTML report; Prometheus and OpenTelemetry sinks; Grafana dashboard |
 | CLI | ✅ | `onion_fl data · topology · plan · run · node · ceiling · fidelity · calibrate · report · baseline · schema · serve` |
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
-| Continual learning | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`), and objectives on the rows still waiting for their label (`pseudo_label`, `consistency`), with an audit of every pseudo-label. Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. A promotion policy keeps each round's model as a challenger until the validation streams promote it, with rollback. Each stream edge updates `warm`, `frozen` or `scratch`, the baselines of the continual benchmark, and `scripts/continuum_benchmark.py` measures it. The Studio shows the versions and their lineage, and its signed controls pause, resume, promote and roll back a live simulation. |
+| Continual learning | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`), and objectives on the rows still waiting for their label (`pseudo_label`, `consistency`), with an audit of every pseudo-label. Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. A promotion policy keeps each round's model as a challenger until the validation streams promote it, with rollback. Each stream edge updates `warm`, `frozen` or `scratch`, the baselines of the continual benchmark, and `scripts/continuum_benchmark.py` measures it. Streams and continual runs also run on real processes; on the `distributed` backend each edge keeps its state on its machine and resumes it when its host restarts, and hosts may join late (C9, so far on containers acting as machines). The Studio shows the versions and their lineage, and its signed controls pause, resume, promote and roll back a live simulation. |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned: gRPC [#196](https://github.com/adrianoggm/Onion-FL/issues/196), Flower [#204](https://github.com/adrianoggm/Onion-FL/issues/204), distributed backend [#199](https://github.com/adrianoggm/Onion-FL/issues/199) (they replace E5 #104 and E6 #105) |
 | Tests | ✅ | 1764 tests. With the datasets in `data/` and a local broker, 1761 pass and 3 skip: SWEET (2) and the optional Parquet reader. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
@@ -666,6 +666,22 @@ Source: [results/pilot_deadline_coupling/](results/pilot_deadline_coupling/INDEX
 - **With the deadline, the factorised predictor and its FLOSS variant pick the true winner in all five cells** (4 fogs, FedAdam), with or without coupling.
 - **In the FedBuff-style regime, both predictors pick wrongly in all five cells** (regret 2.1–3.1 times the best time), `rho = 0` included. The pre-registered count over the coupled cells (4 of 8) says "the gap exists", but the failure comes from the regime, not from the coupling: the predictors do not see the quorum, and FedAdam collapses under buffering.
 - **The ex ante diagnostic does not separate the cells** (AUC 0.50 for every score). The scores cannot see the regime that decides the outcome.
+
+### Distributed continuum on containers acting as machines (C9)
+
+Source: [results/continuum_distributed/](results/continuum_distributed/INDEX.md), commit `ab5e66f`. C8's warm start behind champion/challenger, on five Docker containers reached over SSH (**not real hardware**: the acceptance on real machines is pending), against its simulation; means over 3 seeds. A third mode kills the process of the host of 13 SWELL edges at 60 s, starts it again 15 s later from its edges' saved state, and starts the host of 5 more edges at 90 s.
+
+| Mode | Rounds | Prequential SWELL | Trainings | MB sent | Late updates |
+|---|---|---|---|---|---|
+| simulation | 18 | 0.372 | 193 | 214.5 | 0 |
+| distributed | 18 | 0.352 | 186 | 208.5 | 15 |
+| distributed, with failures | 18 | 0.341 | 134 | 162.2 | 26 |
+| simulation, with the same failures | 18 | 0.327 | 146 | 180.9 | 0 |
+
+- Every edge of every run trains exactly the labelled rows it trains in the simulation; the 39 restarted edges came back with their state, and no row was lost or trained twice.
+- Without failures, the runs differ in round 1, where 14–16 edges miss the fogs' 6 s deadline with their first training. The failures cost the rounds without the down edges.
+- The `sim` backend reproduces the failures with the same keys (`start_in`, `checkpoints`, `restarts`, `joins`). Every edge trains the same rows as on the machines, but a simulated process restarts at once, while a real one took 12–16 s to rebuild its scenario, so the simulation misses fewer rounds and sends more bytes.
+- The final model is the initial one in every mode (no challenger is promoted, as in C8), except the simulation with failures in seed 2, which promoted one; so it says little about fidelity.
 
 ### Before the redesign
 
