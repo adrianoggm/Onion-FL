@@ -14,9 +14,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from onion_fl.data.contract import DataError
-from onion_fl.data.ingest import readers
+from onion_fl.data.contract import DataError, SubjectData
+from onion_fl.data.ingest import DatasetSpec, ingest, readers, steps
 from onion_fl.data.partition import partition_labels
+from onion_fl.data.roles import RolesConfig, split_subjects
 
 LABELS = np.repeat(np.arange(10), 200)  # 2,000 rows, 200 per class
 
@@ -105,6 +106,20 @@ def test_labels_outside_the_classes_are_refused():
         partition_labels(np.array([0, 10]), "iid", 2, n_classes=10, seed=0)
 
 
+@pytest.mark.parametrize(
+    "params, match",
+    [
+        ({"scheme": "iid", "clients": 2, "alpha": 0.5}, "alpha"),
+        ({"scheme": "dirichlet_label", "clients": 2}, "alpha"),
+        ({"scheme": "label_skew", "clients": 2, "alpha": 1.0, "k": 1}, "alpha"),
+        ({"scheme": "iid", "clients": 2, "test_subject": "client_x"}, "prefix"),
+    ],
+)
+def test_the_step_takes_only_its_scheme_parameter(params, match):
+    with pytest.raises(ValueError, match=match):
+        steps.create("partition", params)
+
+
 # --- the CIFAR reader and the step on a format fixture ------------------------------
 
 
@@ -161,3 +176,75 @@ def test_the_reader_checks_the_shape(tmp_path: Path):
 
     with pytest.raises(DataError, match="shape"):
         readers.create("cifar_pickle").read(path)
+
+
+def cifar_like(root: Path, **partition) -> DatasetSpec:
+    return DatasetSpec(
+        name="demo",
+        root=str(root),
+        source={"reader": "cifar_pickle", "path": "*_batch*"},
+        steps=[
+            {"label": {"task": "object", "column": "y", "n_classes": 4}},
+            {
+                "partition": {
+                    "scheme": "iid",
+                    "clients": 3,
+                    "test": {"column": "batch", "values": ["test_batch"]},
+                    **partition,
+                }
+            },
+            {"features": {"regex": "^x_\\d+$"}},
+        ],
+    )
+
+
+def test_partition_runs_on_the_files_joined(tmp_path: Path):
+    write_batch(tmp_path / "data_batch_1", [0, 1, 2, 3] * 3)
+    write_batch(tmp_path / "data_batch_2", [3, 2, 1, 0] * 3)
+    write_batch(tmp_path / "test_batch", [0, 1, 2, 3], shade=7)
+
+    subjects = {s.subject: s for s in ingest(cifar_like(tmp_path))}
+
+    assert sorted(subjects) == ["client_0", "client_1", "client_2", "test"]
+    assert [subjects[f"client_{i}"].n_samples for i in range(3)] == [8, 8, 8]
+    test = subjects["test"]
+    assert test.y.tolist() == [0, 1, 2, 3]  # the official test, in its order
+    assert np.all(test.X[:, 1] == pytest.approx(7 / 255))
+    for data in subjects.values():
+        assert data.feature_names == [f"x_{i}" for i in range(3072)]  # no batch, no y
+
+
+def test_partition_needs_a_label_and_makes_the_subjects(tmp_path: Path):
+    write_batch(tmp_path / "data_batch_1", [0, 1])
+    spec = cifar_like(tmp_path)
+    no_label = spec.model_copy(update={"steps": spec.steps[1:]})
+    with_subject = spec.model_copy(
+        update={"steps": [{"subject": {"column": "batch"}}, *spec.steps]}
+    )
+
+    with pytest.raises(DataError, match="label step"):
+        ingest(no_label)
+    with pytest.raises(DataError, match="subject"):
+        ingest(with_subject)
+
+
+def test_the_official_test_subject_is_reserved_by_an_override():
+    def subject(name: str, n: int) -> SubjectData:
+        return SubjectData(
+            X=np.arange(2 * n, dtype=np.float32).reshape(n, 2),
+            y=np.arange(n) % 2,
+            dataset="cifar10",
+            subject=name,
+            task="object",
+            n_classes=2,
+            feature_names=["x_0", "x_1"],
+        )
+
+    raw = [subject("client_0", 4), subject("client_1", 4), subject("test", 6)]
+    split = split_subjects(
+        raw, RolesConfig(test=0.2, overrides={"cifar10": {"test": ["test"]}})
+    )
+
+    assert split.roles["cifar10"]["test"] == ["test"]
+    assert split.roles["cifar10"]["train"] == ["client_0", "client_1"]
+    assert [c.id for c in split.clients] == ["cifar10-client_0", "cifar10-client_1"]

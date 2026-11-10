@@ -44,6 +44,7 @@ from pydantic import (
 
 from onion_fl.core.registry import Registry
 from onion_fl.data.contract import DataError, SubjectData, natural_key
+from onion_fl.data.partition import partition_labels
 from onion_fl.learning.model import NAME
 
 
@@ -884,6 +885,98 @@ class LabelStep:
         return df.assign(label=rule.apply(df[rule.column]))
 
 
+class TestRows(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    column: str = Field(description="Columna que marca la partición oficial")
+    values: list[str] = Field(
+        min_length=1, description="Valores de esa columna que son el test oficial"
+    )
+
+
+class PartitionParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scheme: Literal["iid", "dirichlet_label", "label_skew"] = Field(
+        description="iid, dirichlet_label (Dir(α) por clase) o label_skew (k clases)"
+    )
+    clients: PositiveInt = Field(description="Número de clientes (sujetos)")
+    alpha: PositiveFloat | None = Field(
+        None, description="Concentración α de dirichlet_label"
+    )
+    k: PositiveInt | None = Field(None, description="Clases por cliente de label_skew")
+    seed: int = Field(
+        0, description="Semilla de la partición, aparte de la del entrenamiento"
+    )
+    min_size: PositiveInt = Field(
+        10, description="Filas mínimas por cliente en dirichlet_label"
+    )
+    test: TestRows | None = Field(
+        None, description="Filas del test oficial: un sujeto aparte, sin partir"
+    )
+    test_subject: str = "test"
+    prefix: str = Field("client_", description="Prefijo de los sujetos cliente")
+
+    @model_validator(mode="after")
+    def _parameter(self) -> PartitionParams:
+        if (self.scheme == "dirichlet_label") != (self.alpha is not None):
+            raise ValueError("alpha goes with dirichlet_label, and only with it")
+        if (self.scheme == "label_skew") != (self.k is not None):
+            raise ValueError("k goes with label_skew, and only with it")
+        if self.test_subject.startswith(self.prefix):
+            raise ValueError("test_subject cannot start with the client prefix")
+        return self
+
+
+@steps.register(
+    "partition",
+    title="Partición en clientes",
+    description="Reparte un dataset sin sujetos en clientes: iid, Dir(α) por clase o k clases.",
+    params=PartitionParams,
+    explain=(
+        "Como NIID-Bench (Li et al., 2022). La partición es sintética, los datos "
+        "no: depende solo de las etiquetas, del esquema, de α o k y de su semilla, "
+        "así que es idéntica en todos los escenarios. Las filas del test oficial "
+        "forman un sujeto aparte, que data.roles.overrides reserva como test. "
+        "Trabaja sobre la tabla entera, no fichero a fichero."
+    ),
+)
+class PartitionStep:
+    whole_table = True  # ingest joins the files before this step
+
+    def __init__(self, **params: Any) -> None:
+        self.p = PartitionParams.model_validate(params)
+
+    def apply(self, df: pd.DataFrame, ctx: IngestContext | None) -> pd.DataFrame:
+        p = self.p
+        if "label" not in df.columns or ctx is None or ctx.n_classes is None:
+            raise DataError("partition splits by label: put a label step before it")
+        if "subject" in df.columns:
+            raise DataError("partition makes the subjects: drop the subject step")
+        test = np.zeros(len(df), dtype=bool)
+        if p.test is not None:
+            _require(df, [p.test.column], "partition")
+            test = df[p.test.column].astype(str).isin(p.test.values).to_numpy()
+            ctx.meta_columns.add(p.test.column)
+        train = np.flatnonzero(~test & df["label"].notna().to_numpy())
+        parts = partition_labels(
+            df["label"].to_numpy()[train],
+            p.scheme,
+            p.clients,
+            n_classes=ctx.n_classes,
+            seed=p.seed,
+            alpha=p.alpha,
+            k=p.k,
+            min_size=p.min_size,
+        )
+        order = np.concatenate([train[part] for part in parts] + [np.flatnonzero(test)])
+        names = np.concatenate(
+            [np.repeat(f"{p.prefix}{i}", len(part)) for i, part in enumerate(parts)]
+            + [np.repeat(p.test_subject, int(test.sum()))]
+        ).astype(object)
+        return df.iloc[order].reset_index(drop=True).assign(subject=names)
+
+
 class FeaturesParams(BaseModel):
     include: list[str] | None = Field(None, description="Lista exacta de features")
     exclude: list[str] = Field(default_factory=list)
@@ -1041,10 +1134,16 @@ def ingest(
     ctx = IngestContext(
         root=Path(_fill(str(root or spec.root), resolved)), options=resolved
     )
+    # Steps up to the first whole-table one (partition) run file by file; that
+    # one and the rest run once on the files joined.
+    cut = next(
+        (i for i, (_, s) in enumerate(active) if getattr(s, "whole_table", False)),
+        len(active),
+    )
     frames, first = [], None
     for path, subject in source_files(source, ctx.root):
         df = read_file(reader, source, path, subject)
-        for _, step in active:
+        for _, step in active[:cut]:
             df = step.apply(df, ctx)
         if first is None:
             first = (path, list(df.columns))
@@ -1057,6 +1156,9 @@ def ingest(
             )
         frames.append(df)
     df = pd.concat(frames, ignore_index=True)
+    del frames
+    for _, step in active[cut:]:
+        df = step.apply(df, ctx)
     ran = {name for name, _ in active}
 
     if "subject" not in df.columns:
