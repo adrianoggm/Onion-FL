@@ -104,6 +104,12 @@ def _send_idle(node: Any, round: int, scores: Mapping[str, float], ctx) -> None:
     )
 
 
+def _mass(contribution: Contribution) -> float:
+    """What a contribution weighs in the aggregate: its largest per-key weight
+    (the samples behind it, discounted by staleness for a late one)."""
+    return float(max(contribution.weights.values(), default=0.0))
+
+
 def _counted(key: str) -> bool:
     """Status keys that count toward a trigger since the last round."""
     return key == "fresh" or key.endswith(".detected")
@@ -160,8 +166,9 @@ class _Collector(Node):
         self.round, self.open, self.opened_at = 0, False, 0.0
         self.participants: list[str] = []
         self.responses: dict[str, tuple[Contribution, Mapping[str, float]]] = {}
+        # Late updates as they arrived, weighted by their age when they join.
         self.stale: dict[str, Contribution] = {}
-        self.stale_age: dict[str, float] = {}  # rounds behind, plus what it carried
+        self.stale_carried: dict[str, float] = {}  # the staleness each one carried
         self.stale_round: dict[str, int] = {}  # the round each buffered update is from
         self.sent_history: dict[int, State] = {}  # what was sent down, per round
         self.owed: dict[str, list[int]] = {}  # rounds each child has not answered
@@ -201,6 +208,24 @@ class _Collector(Node):
 
     def _late_child(self, ctx: Context) -> None:
         """A child said hello after registration ended (``register_timeout``)."""
+
+    def adopt(self, child: str) -> None:
+        """Take a child moved here (failover, I1 §9). It enters the rounds opened
+        after its hello, never the one open: no edge changes zone mid-round."""
+        self.children.add(child)
+
+    def release(self, child: str) -> None:
+        """Let go of a child moved to another parent (failover, I1 §9). What it
+        sent and this node has not combined yet is dropped, as late from its old
+        parent, and the quorum counts the children left."""
+        self.children.discard(child)
+        self.registered.pop(child, None)
+        self.bootstrapped.discard(child)
+        self.owed.pop(child, None)
+        self.responses.pop(child, None)
+        for held in (self.stale, self.stale_carried, self.stale_round):
+            held.pop(child, None)
+        self.participants = [c for c in self.participants if c != child]
 
     def _finish_registration(self, ctx: Context) -> None:
         self.ready = True
@@ -268,7 +293,7 @@ class _Collector(Node):
         # What was heard for the round before is not for this one (continuum C6).
         self._heard = {k: v for k, v in self._heard.items() if not _counted(k)}
         self.round, self.open, self.opened_at = round, True, ctx.now()
-        self.responses, self.late, self.quorum_at = {}, 0, None
+        self.responses, self.quorum_at = {}, None
         # A round a child owes stops counting once its update would be dropped: a
         # lost message must not keep the child waiting for good.
         self.owed = {
@@ -356,32 +381,46 @@ class _Collector(Node):
         target: int,
         metrics: Mapping[str, float],
     ) -> bool:
-        """Hold a late update for round ``target``, weighted by its staleness."""
-        factor = self.staleness.weight(target - round)
-        if factor is None or not contribution.state:
+        """Hold a late update; ``target`` is the earliest round it can join, so one
+        already too old for it is dropped now. Its age, and so its weight, is
+        counted in global rounds when it joins: the parent may skip this node."""
+        if self.staleness.weight(target - round) is None or not contribution.state:
             return False
-        weights = {k: w * factor for k, w in contribution.weights.items()}
-        self.stale[src] = Contribution(src, contribution.state, weights)
-        carried = float((metrics or {}).get("staleness", 0.0))
-        self.stale_age[src] = target - round + carried
+        self.stale[src] = contribution
+        self.stale_carried[src] = float((metrics or {}).get("staleness", 0.0))
         self.stale_round[src] = round
         return True
+
+    def _keep_stale(self, sources: Iterable[str]) -> None:
+        """Forget every buffered update but those of ``sources``."""
+        kept = set(sources)
+        self.stale = {s: c for s, c in self.stale.items() if s in kept}
+        self.stale_carried = {s: a for s, a in self.stale_carried.items() if s in kept}
+        self.stale_round = {s: r for s, r in self.stale_round.items() if s in kept}
+
+    def _factor(self, source: str) -> float | None:
+        """A buffered update's staleness factor in the current round; None: too old."""
+        return self.staleness.weight(self.round - self.stale_round[source])
 
     def _reached(self) -> bool:
         """A buffering round (FedBuff-style) closes on K updates, late ones included."""
         if not self.close_at_quorum:
             return False
         fresh = {s for s, (c, _) in self.responses.items() if c.state}
-        count = len(fresh) + sum(1 for s in self.stale if s not in fresh)
+        count = len(fresh) + sum(
+            1 for s in self.stale if s not in fresh and self._factor(s) is not None
+        )
         return count >= max(quorum_needed(self.quorum, len(self.participants)), 1)
 
     def _rebased(self, source: str) -> Contribution | None:
         """A late update as its change from the model it trained on, applied to the
-        model sent this round: an old model would pull the aggregate back. None
-        when that model is gone; the update is then dropped, never used as is."""
+        model sent this round (an old model would pull the aggregate back), with
+        its weights times its staleness factor. None when that model is gone or the
+        update is too old by now; it is then dropped, never used as is."""
         item = self.stale[source]
-        base = self.sent_history.get(self.stale_round.get(source, -1))
-        if base is None:
+        factor = self._factor(source)
+        base = self.sent_history.get(self.stale_round[source])
+        if base is None or factor is None:
             return None
         state = dict(item.state)
         for key, value in item.state.items():
@@ -390,7 +429,8 @@ class _Collector(Node):
             delta = np.asarray(value, np.float64) - np.asarray(base[key], np.float64)
             moved = np.asarray(self.sent[key], np.float64) + delta
             state[key] = moved.astype(np.asarray(value).dtype)
-        return Contribution(item.source, state, item.weights)
+        weights = {k: w * factor for k, w in item.weights.items()}
+        return Contribution(item.source, state, weights)
 
     def _update(self, msg: Message, ctx: Context) -> None:
         r = msg.round
@@ -494,11 +534,19 @@ class _Collector(Node):
             ctx.emit(
                 "update.unrebased", float(len(lost)), sources=lost, round=self.round
             )
-        # Staleness of what is combined: rounds behind here plus what each carried.
+        # Staleness of what is combined: rounds behind here plus what each carried,
+        # weighted as each contribution enters the aggregate.
         age = {s: float(self.responses[s][1].get("staleness", 0.0)) for s in fresh}
-        age |= {s: self.stale_age[s] for s in late}
+        age |= {
+            s: self.round - self.stale_round[s] + self.stale_carried[s] for s in late
+        }
         ages = [age[s] for s in sorted(age)]
-        self.stale, self.stale_age, self.stale_round = {}, {}, {}
+        mass = {s: _mass(c) for s, c in fresh.items()} | {
+            s: _mass(rebased[s]) for s in late
+        }
+        masses = [mass[s] for s in sorted(age)]
+        # A round that fails its quorum keeps them for the next, a round older.
+        self._keep_stale(late)
         needed = quorum_needed(self.quorum, len(self.participants) - len(idle))
         count = len(fresh) + (len(stale) if self.close_at_quorum else 0)
         tags = {
@@ -523,6 +571,7 @@ class _Collector(Node):
                 self._children_scores([*reports.values(), *scored], ctx)
             self._failed(ctx)
             return
+        self._keep_stale([])
         given = [*fresh.values(), *stale]
         aggregated = self.aggregator.aggregate(
             given, source=self.id, reference=self.sent, rng=child_rng(ctx.rng)
@@ -539,7 +588,9 @@ class _Collector(Node):
         metrics = _train_metrics(reports)
         reports += scored  # idle children scored what arrived
         if any(ages):  # absent means 0, so synchronous runs send nothing new
-            metrics["staleness"] = float(np.mean(ages))
+            weighted = sum(masses) > 0
+            mean = np.average(ages, weights=masses if weighted else None)
+            metrics["staleness"] = float(mean)
         if self.aggregate_children:
             metrics |= self._children_scores(reports, ctx)
         ctx.emit("round.closed", ctx.now() - self.opened_at, stale=len(stale), **tags)
@@ -564,6 +615,9 @@ class _Collector(Node):
     def _diagnose(
         self, fresh, aggregated: State, reports, ctx: Context, failed: bool
     ) -> None:
+        # Late updates since the last diagnosed round, those that arrived between
+        # two rounds included (they would be lost if the count restarted on open).
+        late, self.late = self.late, 0
         if not self.diagnostics:
             return
         view = RoundView(
@@ -583,7 +637,7 @@ class _Collector(Node):
             },
             reports=reports,
             participants=self.participants,
-            late=self.late,
+            late=late,
             quorum_failed=failed,
             time_to_quorum=self.quorum_at,
         )
@@ -1160,6 +1214,9 @@ class Aggregator(_Greeter, _Collector):
         if msg.src != self.parent or msg.kind != "global_model" or msg.round is None:
             _reject(ctx, msg, "unexpected sender or kind")
             return
+        if getattr(self, "_hello_meta", None) not in (None, self._meta()):
+            # it lost children (failover): the parent counts what is below now
+            self._say_hello(self._meta(), ctx)
         self.received = dict(msg.payload.state)
         self.whole.update(self.received)
         bootstrap = bool(msg.meta.get("bootstrap"))
@@ -1331,6 +1388,17 @@ class Edge(_Greeter, Node):
         self.val_data, self.evaluate = val_data, evaluate
         self.eval_every, self.eval_models = eval_every, tuple(eval_models)
         self.tags = dict(tags or {})
+
+    def reparent(self, parent: str, ctx: Context) -> None:
+        """Move under ``parent`` (failover, I1 §9) and say hello to it. The data
+        stay: they belong to the logical client. The first model the new parent
+        sends is whole, with its zone's groups."""
+        previous, self.parent = self.parent, parent
+        ctx.emit(
+            "edge.reparented", parent=parent, previous=previous, round=self._seen_round
+        )
+        if hasattr(self, "_hello_meta"):  # started: otherwise its start says hello
+            self._say_hello(self._hello_meta, ctx)
 
     def on_start(self, ctx: Context) -> None:
         role = "validator" if self.validates else "evaluator"
@@ -1606,6 +1674,10 @@ class Edge(_Greeter, Node):
         return name is not None
 
     def _train(self, msg: Message, ctx: Context) -> None:
+        if msg.round <= self._seen_round:  # a round it took under its old parent
+            _reject(ctx, msg, "round already taken under another parent")
+            _send_idle(self, msg.round, {}, ctx)
+            return
         self._seen_round = msg.round
         received = dict(msg.payload.state)
         # The trainer is anchored to the model it shares: the first model a child

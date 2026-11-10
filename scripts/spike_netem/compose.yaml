@@ -1,0 +1,50 @@
+# I9 spike, option A: 1 cloud, 2 fogs and 4 edges, one container per host and
+# one Docker network per physical link, so each link is a pair of interfaces
+# that tc can shape on its own. measure.py applies the shaping and measures.
+name: onionfl-spike
+
+x-host: &host
+  image: onionfl-spike-netem:latest
+  cap_add: [NET_ADMIN]
+  init: true
+
+services:
+  cloud:
+    <<: *host
+    networks:
+      f1_cloud: {ipv4_address: 10.194.5.3}
+      f2_cloud: {ipv4_address: 10.194.6.3}
+  fog1:
+    <<: *host
+    sysctls: {net.ipv4.ip_forward: 1}
+    networks:
+      e1_f1: {ipv4_address: 10.194.1.3}
+      e2_f1: {ipv4_address: 10.194.2.3}
+      f1_cloud: {ipv4_address: 10.194.5.2}
+  fog2:
+    <<: *host
+    sysctls: {net.ipv4.ip_forward: 1}
+    networks:
+      e3_f2: {ipv4_address: 10.194.3.3}
+      e4_f2: {ipv4_address: 10.194.4.3}
+      f2_cloud: {ipv4_address: 10.194.6.2}
+  e1:
+    <<: *host
+    networks: {e1_f1: {ipv4_address: 10.194.1.2}}
+  e2:
+    <<: *host
+    networks: {e2_f1: {ipv4_address: 10.194.2.2}}
+  e3:
+    <<: *host
+    networks: {e3_f2: {ipv4_address: 10.194.3.2}}
+  e4:
+    <<: *host
+    networks: {e4_f2: {ipv4_address: 10.194.4.2}}
+
+networks:
+  e1_f1: {ipam: {config: [{subnet: 10.194.1.0/24, gateway: 10.194.1.1}]}}
+  e2_f1: {ipam: {config: [{subnet: 10.194.2.0/24, gateway: 10.194.2.1}]}}
+  e3_f2: {ipam: {config: [{subnet: 10.194.3.0/24, gateway: 10.194.3.1}]}}
+  e4_f2: {ipam: {config: [{subnet: 10.194.4.0/24, gateway: 10.194.4.1}]}}
+  f1_cloud: {ipam: {config: [{subnet: 10.194.5.0/24, gateway: 10.194.5.1}]}}
+  f2_cloud: {ipam: {config: [{subnet: 10.194.6.0/24, gateway: 10.194.6.1}]}}
