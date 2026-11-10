@@ -317,6 +317,32 @@ def test_prepare_pins_each_host_to_the_cpus_it_was_calibrated_on(
         EmulatedBackend(project="onionfl-test", pin=short).prepare(scenario)
 
 
+def test_the_broker_and_the_clients_turn_nagle_off_unless_asked(
+    workspace: Path,  # noqa: F811
+) -> None:
+    """Nagle held the tail of back-to-back messages a round trip (#198)."""
+    config = parse_experiment(on_lab(workspace))
+    (scenario,) = scenarios(config)
+    for nodelay in (True, False):
+        backend = EmulatedBackend(project="onionfl-test", nodelay=nodelay)
+        prepared = backend.prepare(scenario)
+        broker = prepared.emulation.compose["services"]["broker"]
+        conf = prepared.folder / "mosquitto.conf"
+        document = json.loads((prepared.run.path / "scenario.json").read_text("utf-8"))
+        prepared.run.finish(status="failed")  # nothing ran
+
+        assert document["nodelay"] is nodelay  # the node processes' clients
+        assert prepared.run.meta["emulation"]["nodelay"] is nodelay
+        if nodelay:
+            assert "set_tcp_nodelay true" in conf.read_text("utf-8")
+            assert broker["command"][-1].endswith("/mosquitto.conf")
+        else:  # the broker as every run before #198 had it
+            assert not conf.exists()
+            assert broker["command"] == ["mosquitto", "-c", "/mosquitto-no-auth.conf"]
+    # The default keeps the config_ids of the runs before it.
+    assert "nodelay" not in parse_experiment(on_lab(workspace)).dump()["backend"]
+
+
 def test_the_image_takes_the_ranges_of_pyproject() -> None:
     dockerfile = (
         ROOT / "src" / "onion_fl" / "infrastructure" / "emulated.Dockerfile"

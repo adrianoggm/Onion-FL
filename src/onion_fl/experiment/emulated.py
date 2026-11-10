@@ -268,6 +268,10 @@ def prepare_emulated(scenario: Scenario, params: EmulatedParams) -> EmulatedPlan
             volumes=volumes,
             setup=folder.resolve().as_posix(),
         )
+        if params.nodelay:  # Nagle off on the broker too, as on the clients
+            from onion_fl.experiment.calibrate import broker_nodelay
+
+            broker_nodelay(emulation, folder)
         cpusets = {}
         if params.pin is not None:  # the CPUs the calibration's session pinned
             from onion_fl.experiment.calibrate import pin
@@ -281,6 +285,7 @@ def prepare_emulated(scenario: Scenario, params: EmulatedParams) -> EmulatedPlan
             raw,
             groups=load,
             broker=emulation.broker,
+            nodelay=params.nodelay,
             initial="emulation/initial.npz",
         )
         (folder / "compose.yaml").write_text(
@@ -296,6 +301,7 @@ def prepare_emulated(scenario: Scenario, params: EmulatedParams) -> EmulatedPlan
             "project": emulation.project,
             "image": params.image,
             "broker_image": params.broker_image,
+            "nodelay": params.nodelay,
             **lay.summary(),
             "shaping": emulation.shaping,
         } | ({"cpusets": cpusets} if cpusets else {})

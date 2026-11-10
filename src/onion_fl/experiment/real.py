@@ -196,7 +196,8 @@ def write_scenario(
     run: Run, scenario: Scenario, config: Mapping[str, Any], **launcher: Any
 ) -> Path:
     """``scenario.json``: what every node process rebuilds. ``launcher`` adds
-    what the processes take from the launcher (``groups``, ``broker``)."""
+    what the processes take from the launcher (``groups``, ``broker``,
+    ``nodelay``)."""
     document = {
         "name": scenario.name,
         "seed": scenario.seed,
@@ -314,6 +315,7 @@ def run_node(
         epoch=epoch,
         heartbeat_s=chosen.config.runtime.heartbeat,
         broker=launcher.get("broker"),
+        nodelay=launcher.get("nodelay"),
     )
     federation = build_scenario(chosen, topology, split, placement, runtime=runtime)
     if "initial" in launcher:
@@ -354,7 +356,8 @@ def _launcher(config: str | Path) -> dict[str, Any]:
     if path.suffix != ".json":
         return {}
     doc = json.loads(path.read_text(encoding="utf-8"))
-    return {k: doc[k] for k in ("groups", "broker", "initial") if k in doc}
+    keys = ("groups", "broker", "nodelay", "initial")
+    return {k: doc[k] for k in keys if k in doc}
 
 
 def take_initial(federation: Any, path: str | Path) -> None:

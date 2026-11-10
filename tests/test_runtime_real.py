@@ -169,6 +169,34 @@ def test_mqtt_starts_only_once_every_inbox_is_subscribed(fake_paho) -> None:
     assert transport._listening.is_set()
 
 
+def test_mqtt_turns_nagle_off_on_both_connections(fake_paho) -> None:
+    """Every socket paho opens, reconnections included, gets TCP_NODELAY (#198)."""
+    transports.create("mqtt", {}).start()
+
+    assert len(fake_paho.instances) == 2
+    for client in fake_paho.instances:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            client.on_socket_open(client, None, sock)
+            assert sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY)
+
+
+def test_mqtt_keeps_nagle_when_the_link_asks(fake_paho) -> None:
+    transports.create("mqtt", {"nodelay": False}).start()
+
+    assert all(not hasattr(c, "on_socket_open") for c in fake_paho.instances)
+
+
+def test_the_launcher_can_set_nagle_on_every_mqtt_link() -> None:
+    """As it sets the broker: the emulated backend decides both for its lab."""
+    rt = RealRuntime("run-nd", broker="10.0.0.3:1883", nodelay=False)
+    plain = RealRuntime("run-nd")
+
+    forced = rt._transport({"name": "mqtt", "qos": 1})
+    assert forced.params.nodelay is False and forced.params.broker == "10.0.0.3:1883"
+    assert plain._transport("mqtt").params.nodelay is True
+    assert rt._transport("memory") is not forced
+
+
 @pytest.mark.parametrize("params", [{"qos": 3}, {"broker": "no-port:x"}])
 def test_mqtt_params_are_validated(params) -> None:
     with pytest.raises(ValueError):

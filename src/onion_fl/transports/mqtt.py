@@ -13,8 +13,16 @@ its edges), and with one connection a burst of large messages then flows both
 ways on the same socket at once. Docker Desktop's port forwarding on Windows
 stalls for good once about 1 MB is in flight each way (#192); each connection
 carrying one direction avoids it, and costs nothing elsewhere.
+
+Both connections turn Nagle's algorithm off (``TCP_NODELAY``) unless the link
+says ``nodelay: false``. With Nagle, the last partial segment of a message
+waits until the previous one is acknowledged: a round trip whenever messages
+leave closer together than that, as an edge host's updates or a fog's models
+do. On the emulated lab it added 11 to 35 ms to an update and up to 50 ms to
+a burst of control messages (#198).
 """
 
+import socket
 import threading
 from collections.abc import Callable
 from typing import Any
@@ -33,6 +41,11 @@ class MqttParams(BaseModel):
     reconnect_min: float = Field(1.0, gt=0, description="Primer reintento (s)")
     reconnect_max: float = Field(30.0, gt=0, description="Reintento máximo (s)")
     connect_timeout: float = Field(10.0, gt=0)
+    nodelay: bool = Field(
+        True,
+        description="TCP_NODELAY en las dos conexiones (sin Nagle); false lo deja",
+        exclude_if=lambda v: v,  # the default keeps existing ids
+    )
 
     @field_validator("broker")
     @classmethod
@@ -102,6 +115,8 @@ class MqttTransport:
         client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
         for name, callback in callbacks.items():
             setattr(client, name, callback)
+        if self.params.nodelay:  # on every socket, reconnections included
+            client.on_socket_open = _no_delay
         client.reconnect_delay_set(self.params.reconnect_min, self.params.reconnect_max)
         client.connect_async(self.host, self.port, self.params.keepalive)
         client.loop_start()
@@ -133,3 +148,8 @@ class MqttTransport:
             if client is not None:
                 client.loop_stop()
                 client.disconnect()
+
+
+def _no_delay(client: Any, userdata: Any, sock: Any) -> None:
+    """paho's ``on_socket_open``: send each segment at once (no Nagle)."""
+    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)

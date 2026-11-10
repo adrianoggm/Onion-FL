@@ -153,7 +153,8 @@ class LinksSpec(Strict):
     nodelay: bool = Field(
         False,
         description="TCP_NODELAY en los clientes y en el broker (sin Nagle); "
-        "por defecto, como en las ejecuciones FL, ninguno lo activa",
+        "por defecto no, como en las sesiones de b55104b3 (las ejecuciones FL "
+        "lo activan desde #198)",
     )
 
 

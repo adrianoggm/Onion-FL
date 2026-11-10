@@ -97,9 +97,11 @@ class RealRuntime:
         heartbeat_s: float | None = 10.0,
         epoch: float | None = None,
         broker: str | None = None,
+        nodelay: bool | None = None,
     ) -> None:
         self.run_id, self.seed = run_id, seed
         self.broker = broker  # host:port of every MQTT link, whatever they say
+        self.nodelay = nodelay  # and their TCP_NODELAY, when given
         self.hosted = None if hosted is None else set(hosted)
         self.listeners = list(listeners or [])
         self.heartbeat_s = heartbeat_s
@@ -159,11 +161,13 @@ class RealRuntime:
         """Scheduled network changes are the emulator's, never the runtime's."""
 
     def _transport(self, spec: str | Mapping[str, Any]) -> Any:
-        if self.broker is not None:
-            name = spec if isinstance(spec, str) else spec.get("name", "mqtt")
-            if name == "mqtt":
-                spec = {**({} if isinstance(spec, str) else spec), "name": "mqtt"}
+        name = spec if isinstance(spec, str) else spec.get("name", "mqtt")
+        if name == "mqtt" and (self.broker, self.nodelay) != (None, None):
+            spec = {**({} if isinstance(spec, str) else spec), "name": "mqtt"}
+            if self.broker is not None:
                 spec["broker"] = self.broker
+            if self.nodelay is not None:
+                spec["nodelay"] = self.nodelay
         key = json.dumps(spec, sort_keys=True)
         if key not in self._transports:
             self._transports[key] = create(transports, spec)

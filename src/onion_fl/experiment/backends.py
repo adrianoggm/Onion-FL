@@ -163,6 +163,12 @@ class EmulatedParams(BaseModel):
         description="CPUs fijas de cada contenedor, como en la sesión de calibración",
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
+    nodelay: bool = Field(
+        True,
+        description="TCP_NODELAY en los clientes MQTT y en el broker (sin Nagle); "
+        "false reproduce las ejecuciones anteriores a #198",
+        exclude_if=lambda v: v,  # the default keeps existing config_ids
+    )
 
     @field_validator("subnet")
     @classmethod
