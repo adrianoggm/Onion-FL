@@ -1,0 +1,45 @@
+# The continual benchmark's process metrics (issue #163, continuum C8): the
+# four baselines that update (scratch, warm, warm + replay, warm + replay +
+# semi-supervised), each with its settings from continuum_benchmark.yaml,
+# behind a champion_challenger promotion (C7). Each round's model is a
+# challenger until the validation streams promote it. The policy keeps its
+# defaults but min_samples, set to 20 labels because a tenth of the validation
+# streams' rows is labelled; it is not tuned. Scored on the test subjects.
+#
+#   onion_fl run experiments/continuum_benchmark_promotion.yaml --workers 4
+name: continuum_benchmark_promotion
+description: Benchmark continuo detrás de una promoción champion/challenger - challengers promovidos y rechazados.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+rounds: 60                 # an upper bound: the run ends at the last label
+stream:
+  bootstrap: 20m
+  batch_size: 1
+  speed: 60
+labels: {fraction: 0.1, delay: 10m}
+continual: {memory: none}
+unlabelled: none
+promotion: {name: champion_challenger, metric: macro_f1, min_samples: 20}
+continuum:
+  trigger: {name: schedule, every: 10m}
+  status_every: 10m
+evaluation:
+  metrics: [loss, accuracy, macro_f1, confusion_matrix]
+  aggregators: {every: 1}
+  global: {every: 1}
+seeds: [0, 1, 2]
+sweep:
+  continual, unlabelled:
+    - [{update: scratch, memory: none}, none]
+    - [{memory: none}, none]
+    - [{memory: {name: reservoir, capacity: 512}, replay_ratio: 0.25}, none]
+    - [{memory: {name: reservoir, capacity: 512}, replay_ratio: 0.25}, {name: consistency, noise: 0.1}]

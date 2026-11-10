@@ -39,17 +39,18 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Simulation | ✅ | Virtual clock; links with latency, jitter, bandwidth and loss; compute and availability models; deterministic for a seed |
 | Real runs | ✅ | One process per aggregator over MQTT; a manual `onion_fl node` start for several machines. Verified locally against Mosquitto: 3 processes, every message delivered, latencies measured, and the same final model as the simulation |
 | Observability | ✅ | `runs/<run_id>/` with signed events, summary and final model. Diagnostics at every aggregator; analysis API with mean ± CI over seeds; HTML report; Prometheus and OpenTelemetry sinks; Grafana dashboard |
-| CLI | ✅ | `onion_fl data · topology · plan · run · node · ceiling · report · baseline · schema · serve` |
+| CLI | ✅ | `onion_fl data · topology · plan · run · node · ceiling · fidelity · report · baseline · schema · serve` |
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
-| Continuum | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, and a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`). Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. A promotion policy keeps each round's model as a challenger until the validation streams promote it, with rollback. Semi-supervision is next (C5, [#160](https://github.com/adrianoggm/Onion-FL/issues/160)); the Studio's view and controls of the versions are [#203](https://github.com/adrianoggm/Onion-FL/issues/203) |
-| gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
-| Tests | ✅ | 1178 tests. With SWELL, WESAD and a local broker, 1174 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
+| Continual learning | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`), and objectives on the rows still waiting for their label (`pseudo_label`, `consistency`), with an audit of every pseudo-label. Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. A promotion policy keeps each round's model as a challenger until the validation streams promote it, with rollback. Each stream edge updates `warm`, `frozen` or `scratch`, the baselines of the continual benchmark, and `scripts/continuum_benchmark.py` measures it. The Studio shows the versions and their lineage, and its signed controls pause, resume, promote and roll back a live simulation. |
+| gRPC and Flower transports, distributed deployment | ❌ | Planned: gRPC [#196](https://github.com/adrianoggm/Onion-FL/issues/196), Flower [#204](https://github.com/adrianoggm/Onion-FL/issues/204), distributed backend [#199](https://github.com/adrianoggm/Onion-FL/issues/199) (they replace E5 #104 and E6 #105) |
+| Tests | ✅ | 1518 tests. With SWELL, WESAD and a local broker, 1514 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
 
-- **Thirteen experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the comparison of two model families, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, and a FedAvg reference on 200 FEMNIST writers. Each has three seeds, so many intervals overlap.
+- **Fifteen experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the comparison of two model families, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, the selection of the unlabelled objectives (a null result: nothing could be chosen), the continual benchmark (five baselines chosen on validation, then run on test, with sweeps and a promotion run) and a FedAvg reference on 200 FEMNIST writers. Most have three seeds, so many intervals overlap.
   - The reference run and the mixing sweep have no strong result. On SWELL, no model beats always predicting "stress" on the held-out subjects. On WESAD, the federated model reaches 0.77 accuracy where centralised logistic regression reaches 0.91.
   - In the technique comparisons, the clearest effects are on WESAD: FedDyn and SCAFFOLD beat FedAvg under drift, the adaptive server optimizers beat it too, and a strong sign-flip attack collapses FedAvg while norm clipping holds.
+  - On the streams, no continual baseline learns to tell the classes apart on held-out subjects: every model that keeps updating ends predicting one class. The baselines differ only in how fast they follow the class that is arriving, and replay and the unlabelled rows add nothing measurable at a tenth of the labels.
 - **Checking the data found real problems,** now fixed. 999 means "missing" in the SWELL physiology file, for 53% of the heart-rate values, and both the old and the new loaders read it as a value. The facial and physiology joins and the WESAD chest signals `Resp` and `Temp` failed to load. The SWELL posture file has every date a month early, so posture is left out.
 - **Tests that need data** skip without `data/` ([docs/RULES.md](docs/RULES.md)). Protocol tests use a stub trainer that learns nothing.
 - **Legacy numbers stay legacy.** [§7](#7-results) lists the baselines from before the redesign with their caveats. Some of them predate the `blok` leak fix.
@@ -79,7 +80,8 @@ The data is not in git. Download each dataset from its source and place it where
 |---|---|---|---|
 | SWELL-KW | [DANS](https://doi.org/10.17026/dans-x55-69zp), open access: the 11 files of `3 - Feature dataset/per sensor` (18 MB; download the two `.tab` files in their original format, CSV) | `data/SWELL/3 - Feature dataset/per sensor/` | `datasets/swell.yaml` (computer file; facial and physiology as options), `datasets/swell_physiology.yaml` |
 | SWEET | — | `data/SWEET/{sample_subjects,selection1/users,selection2/users}/<user>/` | `datasets/sweet.yaml` |
-| WESAD | [University of Siegen](https://uni-siegen.sciebo.de/s/HGdUkoNlW1Ub0Gx) (`WESAD.zip`, 2.2 GB; publications must cite Schmidt et al., 2018); extract the `S<n>/S<n>.pkl` files (13 GB) into `data/` | `data/WESAD/S<n>/S<n>.pkl` | `datasets/wesad.yaml` |
+| WESAD | [University of Siegen](https://uni-siegen.sciebo.de/s/HGdUkoNlW1Ub0Gx) (`WESAD.zip`, 2.2 GB; publications must cite Schmidt et al., 2018); extract the `S<n>/S<n>.pkl` files (13 GB) into `data/` | `data/WESAD/S<n>/S<n>.pkl` | `datasets/wesad.yaml`, `datasets/wesad_e4.yaml` (wrist at the native E4 rates, with the harmonized E4 features) |
+| PhysioNet Wearable Device | [PhysioNet](https://physionet.org/content/wearable-device-dataset/1.0.1/) ("Wearable Device Dataset from Induced Stress and Structured Exercise Sessions", v1.0.1, ODC-By 1.0, open access; cite the dataset and PhysioNet): the official zip (`wearable-device-dataset-1.0.1.zip`, 73 MB; 259 MB extracted), checked against the project's `SHA256SUMS.txt`, or `wget -r -N -c -np https://physionet.org/files/wearable-device-dataset/1.0.1/`. Extract the contents of its top folder into `data/PhysioNetE4/` | `data/PhysioNetE4/Wearable_Dataset/{STRESS,AEROBIC,ANAEROBIC}/<session>/*.csv` | `datasets/physionet_e4.yaml` (Empatica E4 at native rates, harmonized E4 features; one subject per participant) |
 | FEMNIST | [LEAF](https://github.com/TalwalkarLab/leaf) (Caldas et al., 2018; BSD-2): `./preprocess.sh` in `leaf/data/femnist` downloads NIST SD19 and first writes `data/all_data/all_data_<k>.json`, every writer before LEAF's sampling (about 3,600); copy those files. A shorter route is the Flower Datasets copy, [flwrlabs/femnist](https://huggingface.co/datasets/flwrlabs/femnist) (one 201 MB Parquet file): `scripts/femnist_from_flower.py` writes the 200 declared writers in the same format (it needs pyarrow and Pillow, not dependencies of Onion-FL; the command is in the script) | `data/FEMNIST/all_data/*.json` | `datasets/femnist.yaml` (200 fixed writers) |
 
 ### Run
@@ -93,7 +95,7 @@ onion_fl report experiments/mix_ab.yaml --by topology_id --by scenario
 onion_fl baseline experiments/mix_ab.yaml     # LR, RF, XGBoost on the same test subjects
 ```
 
-For a real run over MQTT, start the stack (`just docker-up`, [docker/README.md](docker/README.md)), point the links at the broker and run `onion_fl run <experiment> --mode real`.
+For a real run over MQTT, start the stack (`just docker-up`, [docker/README.md](docker/README.md)), point the links at the broker and run `onion_fl run <experiment> --backend local` (`--mode real` is its alias).
 
 ### Studio
 
@@ -105,7 +107,7 @@ onion_fl serve                                  # http://127.0.0.1:8765
 The Studio reads and writes the same files as the command line (`topologies/`, `experiments/`, `runs/`). It has five areas:
 - **Topologies:** the library, the graph and an editor that validates as you type.
 - **Experiments:** scenarios, the dry-run plan (composition per fog, groups per link, a stream's pace, warnings) and a launch button.
-- **Runs:** status, identity, the rounds and their triggers, the drift detected, metrics per level and live events.
+- **Runs:** status, identity, the rounds and their triggers, the drift detected, metrics per level and live events; with versions, their lineage and scores, the rows and drift per edge, and the operator's controls.
 - **Compare:** mean ± CI over seeds, by topology, scenario or dataset.
 - **Tutorial:** every plugin explained, with previews of sharing, placement and network profiles.
 
@@ -176,6 +178,7 @@ sweep: {data.placement.alpha: [0.0, 0.5, 1.0]}
 - **Paired values.** A key `a,b` sweeps several paths together: `learning.sharing,learning.trainer.name: [[fedper, fedrep], [fedavg, ditto]]` gives one scenario per pair. A whole plugin can be a value; its scenario is named `name(k=v,…)`.
 - **Random search.** `search: {budget: 16, seed: 0, space: {learning.trainer.lr: {low: 1.0e-4, high: 1.0e-1, log: true}, learning.trainer.local_epochs: [1, 2, 4]}}` turns each swept scenario into `budget` trials, drawn from the search's own seed; a path is either swept or searched. Each trial keeps the search seed and its index, so they are part of its `config_id`. Unset, it stays out of the `config_id`.
 - **Noise ceiling.** `onion_fl ceiling <experiment> --replicas R` runs R replicas of every swept scenario, each with its own seed (`--paired` gives the scenarios of a replica the same seed), and with a search keeps each one's best trial (`--resample` also redraws the search per replica). It prints the top-1 agreement and the selection regret between replicas, with the agreement expected by chance (1/K). The score is the last `--metric` of the root, pooled over datasets unless `--series` picks one, and the trials are chosen on that score too: for a search, set `evaluation.global.subjects: val`.
+- **Fidelity.** `onion_fl fidelity <runs A> <runs B>` compares the runs of a backend under test (B, for example `sim`) with those of a reference (A, for example `local`) on the same experiment, pairing them by configuration and seed. It reports functional fidelity (final model, protocol events per node, bytes per link), the relative error of round, compute and link times with bootstrap intervals, and decision fidelity per `--metric` (Kendall's τ-b, top-1 agreement, selection regret, the probability of top-1 agreement from a bootstrap paired by seed), each next to the noise ceiling (`--ceiling` with the output of `onion_fl ceiling`, or the seeds of A). It warns when every configuration ties on a metric. `--csv` and `--html` write the report.
 - **Aggregator, attack and privacy.** `learning.aggregator` sets the aggregator of the leaf aggregators (the fogs over the edges). `attack` makes a seeded fraction of each dataset's edges malicious, and `privacy` adds local DP at every edge. Unset, they stay out of the `config_id`.
 - **Server optimizer.** `learning.server_optimizer` sets the root's optimizer. Pairs such as `scaffold`, `fednova` and `feddyn` are checked against the trainer before the first scenario runs.
 - **Buffering and selection.**
@@ -187,15 +190,19 @@ sweep: {data.placement.alpha: [0.0, 0.5, 1.0]}
   - A seeded fraction of the rows is labelled, each label arriving after the delay.
   - Every arrival is scored by the model the edge was serving before it can train (`prequential` and `prequential_labelled`), and each round trains on what became trainable since the edge's previous round.
   - Validation subjects stream for evaluation only; test subjects never reach an edge.
-  - Rounds come every `round_every` of data time until the streams end, or when a continuum trigger fires (below), and `data.arrived` and `data.labelled` record the volume.
+  - Rounds come every `round_every` of data time until the streams end, or when a trigger fires (below), and `data.arrived` and `data.labelled` record the volume.
   - Real mode, `init: run`, `local_val`, a local scaler and participation other than `all` are refused with a stream for now.
 - **Replay.** `continual: {memory: {name: reservoir, capacity: 512}, replay_ratio: 0.5}` gives every streaming edge a memory of rows it already trained on.
   - Each training adds a sample from the memory to its new rows, so that a fraction `replay_ratio` of it is replayed.
   - A row enters the memory only after its first successful training. The edge is still weighted by its new rows, and `memory: none` runs exactly as without `continual`.
-- **Triggers.** A `continuum` block replaces `stream.round_every`:
+- **Unlabelled rows.** `unlabelled: {name: pseudo_label, threshold: 0.9, weight: 0.5}` (or `{name: consistency, noise: 0.1}`) lets every streaming edge learn from the rows whose label has not arrived.
+  - The objective sees their features only, with the model as received, and adds a weighted term to each labelled batch. An edge with no new labelled rows stays idle.
+  - `diagnostic.unlabelled` reports the rows seen and accepted, the confidence and, in simulation, the accuracy of the pseudo-labels; the bundle keeps each one's class, confidence and the round whose model generated it.
+  - Ditto, APFL and FedRep are refused (their own loops add no term), and so is `unlabelled` without a stream.
+- **Triggers.** `continual.trigger` replaces `stream.round_every`:
 
   ```yaml
-  continuum:
+  continual:
     trigger: {name: any, of: [{name: schedule, every: 30m}, {name: drift, kind: prior}]}
     edge_trigger: {name: volume, samples: 64}   # an edge trains once it has 64 new rows
     status_every: 5m
@@ -206,6 +213,7 @@ sweep: {data.placement.alpha: [0.0, 0.5, 1.0]}
   - Drift (`data`, `prior` or `performance`) is detected per edge, per zone and for the federation, and reported as `drift.detected`. `trigger.fired` names what opened each round.
   - A schedule must be a multiple of `status_every`. One whose `every` and `status_every` equal the old `round_every` gives C3's model, as long as each round closes within its period.
   - `run.finished` says whether the last label (`horizon`) or the `rounds` cap ended the run.
+  - Before M1 ([#193](https://github.com/adrianoggm/Onion-FL/issues/193)) the triggers were a `continuum` block of their own. It still loads for one version, with a deprecation warning, and gives the same `config_id`: the committed experiments keep it, so their scenarios keep their names. The package `onion_fl.continuum` is now `onion_fl.continual`, with the old name as an alias.
 - **Champion and challenger.** `promotion` keeps each round's model as a challenger until the validation streams decide on it:
 
   ```yaml
@@ -214,7 +222,14 @@ sweep: {data.placement.alpha: [0.0, 0.5, 1.0]}
 
   - The edges serve the champion only. A validator per validation subject, under the root, scores both on the labels that came since the champion was promoted (or within `window`), and on every earlier one, the history included.
   - The challenger is promoted unless it loses more than `min_delta` on the recent window, forgets more than `max_forgetting` on the earlier labels, or has fewer than `min_samples` recent labels to be judged. A rejection leaves the champion and its server state as they were. The test subjects never decide.
-  - `version.candidate`, `version.promoted`, `version.rejected` and `version.rollback` carry the decision's scores. An operator's control message to the coordinator (`{rollback: v}`, `null` for the previous champion, or `{promote: v}`) changes the champion. Only the configured operator ids may send it, and only the configured validators decide; a missing or non-finite score never promotes. Authenticating the operator on the transport, the Studio and the API are [#203](https://github.com/adrianoggm/Onion-FL/issues/203).
+  - `version.candidate`, `version.promoted`, `version.rejected` and `version.rollback` carry the decision's scores. An operator's control message to the coordinator (`{rollback: v}`, `null` for the previous champion, or `{promote: v}`) changes the champion. Only the configured operator ids may send it, and only the configured validators decide; a missing or non-finite score never promotes.
+  - **Operators.** A YAML file of operator ids and tokens (`alice: <16 characters or more>`), named by `ONIONFL_OPERATORS` or `onion_fl serve --operators`, says who may give orders. Each order is signed for its run with the operator's token, and the coordinator refuses an unsigned, forged or replayed one on any transport. Without the file, no order is taken.
+  - **Live control.** A simulation with operators reads its inbox as it runs: in the Studio, a run's page pauses and resumes it, and promotes or rolls back a version, at once or at a virtual time. `onion_fl run --paused` (or "en pausa" in the Studio) starts it paused. The same controls are an HTTP API:
+
+    ```bash
+    curl -X POST localhost:8765/api/runs/<run_id>/control -H "Authorization: Bearer $TOKEN" \
+         -H "Content-Type: application/json" -d '{"order": "rollback", "at": 12}'
+    ```
   - The bundle's model is the champion, and its lineage lists every version.
 - **Edge validation.** `data.roles.local_val_split: class_tail` holds out the last rows of each class instead of the last rows of the recording, which are usually a single condition.
 - **Downloadable data.** `experiments/mix_swell_wesad.yaml` runs the same sweep with SWELL and WESAD, the two datasets that can be downloaded. It trains for 10 local epochs: with one, the model only learns the majority class ([§7](#7-results)).
@@ -239,9 +254,10 @@ Each run writes `runs/<run_id>/`:
 | **SWELL-KW** | `binary` (N vs T, I, R), `binary_no_r` | One row per minute and subject | The computer file by default; facial and physiology are optional joins (posture is left out: its file has every date a month early). 999 is missing in facial and physiology. `swell_physiology.yaml` is physiology only |
 | **SWEET** | `binary` (stress ≥ 2), `ordinal` (1–5), `three_class` | One self-report matched to the feature minute | `selection` option: `sample_subjects`, `selection1/users`, `selection2/users`; subjects with fewer than 5 samples are dropped |
 | **WESAD** | `binary` (baseline vs stress), `three_class` (+ amusement) | 60 s windows, 50% overlap, five statistics per channel | `location`: wrist (default) or chest; `signals` option |
+| **PhysioNet Wearable Device** | `binary` (baseline and rests vs stress tasks, task `stress_binary`), `three_class` (+ exercise, task `stress_vs_exercise`) | 60 s windows, 50% overlap, five statistics per E4 channel | Labels from the protocol tags; the sessions that `data_constraints.txt` flags as invalid, incomplete or split are dropped or cut, as the descriptor documents. The 30 s stages give no 60 s windows (`window_seconds` option) |
 | **FEMNIST** | `character` (62 classes: 0-9, A-Z, a-z) | One 28x28 image per row, 784 pixels in [0, 1] | One subject per writer: a fixed subsample of 200 writers (44,451 images) declared in the descriptor; the writer id is never a feature |
 
-Missing values stay missing in the cache. Imputation, scaling and the removal of constant features are fitted on the training subjects only. The descriptors record in their comments what was found in the published files, for example the keys that join the SWELL modalities. `tests/test_datasets_descriptors.py` compares each descriptor with the loader from before the redesign, and it runs as soon as `data/` is present. It passes for SWELL (computer file) and WESAD (chest, subject S2).
+Missing values stay missing in the cache. Imputation, scaling and the removal of constant features are fitted on the training subjects only. A dataset can set its own in `data.roles.overrides`, for example `femnist: {scaler: none, drop_constant: false}` to keep the raw pixels (`experiments/mix_swell_femnist.yaml`). A descriptor whose features are token indices declares `tokens: true`, and an experiment that would scale it is refused. The descriptors record in their comments what was found in the published files, for example the keys that join the SWELL modalities. `tests/test_datasets_descriptors.py` compares each descriptor with the loader from before the redesign, and it runs as soon as `data/` is present. It passes for SWELL (computer file) and WESAD (chest, subject S2).
 
 ---
 
@@ -265,7 +281,7 @@ Every runtime event is enriched into one schema and written to `events.jsonl`, t
 - **Analysis.** `load_runs("runs/").compare(level="fog", metric="accuracy", by=["topology_id"])` gives the mean ± 95% CI over seeds per round, plus the spread across the nodes of the level. The runs of a group are pooled, so for a sweep over one topology add `scenario` or `config_id` to `by`. `onion_fl report` builds an HTML page from it. With `target=0.8`, `compare` gives the time to target instead: the mean first instant the metric reaches it, with a bootstrap interval, and how many runs never did (censored at their duration); `time_to_target` has the per-run rows.
 - **Studio.** `onion_fl serve` gives the same views in the browser, and follows running runs live.
 - **Live.**
-  - The `prometheus` sink serves `onionfl_*` series on port 9464 for the Grafana dashboard. One server per process holds the runs of a sweep, told apart by `run_id`, so it needs `--workers 1`.
+  - The `prometheus` sink serves `onionfl_*` series on port 9464 for the Grafana dashboard. One server per process holds the runs of a sweep, told apart by `run_id`, so it needs `--workers 1`. With versions and streams it adds the champion, the version decisions and their scores, the rows arrived per edge and the drifts detected, in the dashboard's Continuum row.
   - The `otel` sink creates one span per send and per receive, linked by the message id. It exports them to the collector of the Docker stack.
   - A real run feeds both when the launcher merges the node processes' events, once the run has ended.
 
@@ -469,7 +485,40 @@ Source: [results/continuum_triggers/](results/continuum_triggers/INDEX.md), comm
   - C8 combines triggers (`any`), with a `performance` drift or a schedule.
 - **Volume** opens rounds when rows pile up, not at the switches, and its prequential score drops.
 - **Every final model predicts stress for every test row**, so the test scores cannot tell the triggers apart; C8 tunes the training on validation.
+
+### New framework: unlabelled rows on the streams
+
+Source: [results/continuum_unlabelled/](results/continuum_unlabelled/INDEX.md), commit `07fb2c8`. The streams above with a tenth of the rows labelled, 10 minutes late, and nine configurations: `none`, `pseudo_label` (threshold 0.8/0.9/0.95 × weight 0.5/1.0) and `consistency` (noise 0.05/0.1). Mean ± 95% CI over 3 seeds:
+
+| Configuration | Validation SWELL (final model) | Prequential SWELL | Pseudo-label accuracy SWELL | Pseudo-label accuracy WESAD |
+|---|---|---|---|---|
+| none | 0.400 ± 0.000 | 0.800 ± 0.019 | — | — |
+| pseudo_label, best and worst | 0.400 ± 0.000 | 0.770 ± 0.014 (0.95/0.5) to 0.657 ± 0.025 (0.8/1.0) | 0.85–0.99 | 0.000 |
+| consistency | 0.400 ± 0.000 | 0.797 ± 0.016 | — | — |
+
+- **A null result: no setting could be chosen.** Every final model predicts stress for every validation row, so the selection ties and the test comparison was not run.
+- **On SWELL the pseudo-labels are accurate and still lower the prequential score**, more as the threshold falls and the weight rises.
+- **On WESAD every accepted pseudo-label is wrong**: the served model is confident in the class the stream left. The audit shows it.
+- **Consistency changes almost nothing.** The settings C8 chooses on validation should give the selection a model that is not constant.
 - **These runs replace two earlier ones.** In the first, the statistic measured against the history never fired. In the second, statuses in flight counted toward the next round. Both are explained in the INDEX.
+
+### New framework: the continual benchmark
+
+Source: [results/continuum_benchmark/](results/continuum_benchmark/INDEX.md), commit `3bb359b`. The streams of the unlabelled runs (a tenth of the rows labelled, 10 minutes late, a round every 10 minutes of data), with five baselines. Each baseline's learning rate, epochs, memory and objective were chosen on the validation streams before the test runs. Mean ± 95% CI over 5 seeds, on the test subjects:
+
+| Baseline | Prequential SWELL | Final SWELL | Final WESAD | Forgetting WESAD | SWELL recovery (rounds) | Sample-epochs |
+|---|---|---|---|---|---|---|
+| frozen (v0 only) | 0.319 ± 0.115 | 0.302 ± 0.092 | 0.463 ± 0.147 | 0.000 | never | 35 |
+| retrain from scratch | 0.546 ± 0.096 | 0.405 ± 0.003 | 0.262 ± 0.000 | 0.318 ± 0.148 | 7.4 ± 2.3 | 12,600 |
+| warm start | 0.795 ± 0.018 | 0.404 ± 0.000 | 0.262 ± 0.000 | 0.405 ± 0.243 | 3.2 ± 0.6 | 2,890 |
+| warm + replay | 0.724 ± 0.024 | 0.411 ± 0.020 | 0.262 ± 0.000 | 0.458 ± 0.124 | 4.2 ± 0.6 | 3,470 |
+| warm + replay + consistency | 0.728 ± 0.024 | 0.372 ± 0.088 | 0.312 ± 0.140 | 0.436 ± 0.187 | 4.2 ± 0.6 | 3,470 |
+
+- **Adaptation, not learning.** Every updating baseline ends predicting one class on the test subjects. What separates them is how fast they follow SWELL's switch to the stress blocks. Warm start is the fastest, and retraining from scratch is no ceiling: it is slower and costs 4.4× the compute.
+- **No retention.** On WESAD, whose stream is stress-only after t₀, every updating baseline forgets the other class. Frozen's better WESAD score comes from a v0 that leans to WESAD's test majority.
+- **Memory and unlabelled rows add nothing measurable here.** At a tenth of the labels a replay memory has at most a row to replay per training, so the memory type and capacity cannot be told apart.
+- **Sweeps.** More labels do not raise either score, while a longer label delay lowers the prequential one. A prior-drift trigger keeps most of the schedule's prequential score at 38% of its bytes.
+- **Champion and challenger almost never promote** with these validation streams, so the served model stays the initial weights. In every run, the first trained model was rejected because no validation label had arrived yet.
 
 ### New framework: FEMNIST FedAvg reference
 
@@ -583,14 +632,15 @@ The workflows run only on release PRs into `main`, to save CI minutes; task PRs 
 - **SWELL posture is not loaded:** the per-minute Kinect file has every date one month early, so its rows only align with the other modalities by position.
 - **Global evaluation with personal or zone heads.** With `fedper` or `zone` sharing, the global model has no trained heads. Use the edge and zone scores.
 - **Lossy links need deadlines.** The simulator drops messages on lossy profiles (`wifi`, `4g`, `lora`) without retransmitting them. An aggregator without a `deadline` then waits for a lost update for ever, and the run ends `incomplete`. `onion_fl plan` and the Studio warn about it.
-- **The Studio is local.** It listens on `127.0.0.1` with no authentication; don't expose it.
-- **Security.** MQTT runs without TLS or authentication, the broker sees every update, and there is no secure aggregation or differential privacy.
+- **The Studio is local.** It listens on `127.0.0.1` over plain HTTP. Only its orders need an operator's token; everything else is open, so don't expose it.
+- **Live control is for simulations.** A real run's coordinator checks signed orders, but nothing yet delivers an operator's order over MQTT, and the Studio refuses orders to it.
+- **Security.** MQTT runs without TLS or authentication, the broker sees every update, and there is no secure aggregation ([#227](https://github.com/adrianoggm/Onion-FL/issues/227)). Differential privacy exists as plugins (`dp_fedavg`, `local_dp`), with the caveats of the privacy results above.
 - **Real-run latency** across machines needs NTP-synchronised clocks.
 - **Manual deployments** across machines need the same data and cache on each machine, because every process rebuilds the scenario.
 - **Compute in simulation** is modelled as samples per second (or the measured wall time), not as a device profile.
 - **Hundreds to a few thousand edges.** The simulator was measured up to 4,000 edges on one machine: time and memory grow linearly (about 11 ms per edge and round for a 113k-parameter model, and 1.2 MiB per edge), but only with the `npz` codec and without the `divergence` diagnostic, which is quadratic in the children of an aggregator. With JSON links each round is 10 to 16 times slower ([results/sim_scale/](results/sim_scale/INDEX.md)).
-- **Streams before C5 and C7.**
-  - Each round trains on the rows it has not used yet, plus a replay sample when `continual` is set. The replay settings are not tuned.
+- **Streams before C7.**
+  - Each round trains on the rows it has not used yet, plus a replay sample when `continual` is set and an unlabelled term when `unlabelled` is. Neither is tuned, and pseudo-labelled rows never enter the replay memory.
   - Rounds are synchronous: FedAsync and FedBuff are not yet consumption policies of a continuous federation. Only `data`, `prior` and `performance` drift are detected.
   - Every edge must take part in every round: `close_at_quorum` and time-based availability are outside the temporal guarantee.
   - A stream run cannot be continued (`init: run`) or run for real yet.
@@ -603,8 +653,8 @@ The workflows run only on release PRs into `main`, to save CI minutes; task PRs 
 |---|---|
 | v0.3.0 | ✅ Onion-FL Studio: topology library and editor, run monitor, comparisons between topologies and scenarios, tutorial with dry-run previews, `onion_fl serve` ([#103](https://github.com/adrianoggm/Onion-FL/issues/103)) |
 | v0.4.0 | ✅ Federated learning techniques as plugins, with comparisons on real data: personalisation ([#147](https://github.com/adrianoggm/Onion-FL/issues/147)), non-IID drift ([#148](https://github.com/adrianoggm/Onion-FL/issues/148)), robustness, attacks and privacy ([#149](https://github.com/adrianoggm/Onion-FL/issues/149)), server optimizers and buffering ([#150](https://github.com/adrianoggm/Onion-FL/issues/150)) |
-| v0.7.0 | In progress: continual federated learning in simulation ([spec](docs/superpowers/specs/2026-10-04-onion-fl-continuum-design.md)). Model bundle and continuation ([#157](https://github.com/adrianoggm/Onion-FL/issues/157)) ✅, streams with delayed labels ([#158](https://github.com/adrianoggm/Onion-FL/issues/158)) ✅, replay memory ([#159](https://github.com/adrianoggm/Onion-FL/issues/159)) ✅, triggers and continuous federation ([#161](https://github.com/adrianoggm/Onion-FL/issues/161)) ✅, then semi-supervision, versions and the benchmark ([#160](https://github.com/adrianoggm/Onion-FL/issues/160), [#162](https://github.com/adrianoggm/Onion-FL/issues/162), [#163](https://github.com/adrianoggm/Onion-FL/issues/163)) |
-| Later | gRPC and Flower transports and richer network emulation (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104)); real distributed deployment (E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)); secure aggregation and TLS |
+| v0.7.0 | In progress: continual federated learning in simulation ([spec](docs/superpowers/specs/2026-10-04-onion-fl-continuum-design.md)). Model bundle and continuation ([#157](https://github.com/adrianoggm/Onion-FL/issues/157)) ✅, streams with delayed labels ([#158](https://github.com/adrianoggm/Onion-FL/issues/158)) ✅, replay memory ([#159](https://github.com/adrianoggm/Onion-FL/issues/159)) ✅, triggers and continuous federation ([#161](https://github.com/adrianoggm/Onion-FL/issues/161)) ✅, semi-supervision ([#160](https://github.com/adrianoggm/Onion-FL/issues/160)) ✅, versions, promotion and rollback ([#162](https://github.com/adrianoggm/Onion-FL/issues/162)) ✅, and the benchmark ([#163](https://github.com/adrianoggm/Onion-FL/issues/163)) ✅ |
+| Later | gRPC ([#196](https://github.com/adrianoggm/Onion-FL/issues/196)) and Flower ([#204](https://github.com/adrianoggm/Onion-FL/issues/204)) transports, network emulation ([#195](https://github.com/adrianoggm/Onion-FL/issues/195)), real distributed deployment ([#199](https://github.com/adrianoggm/Onion-FL/issues/199)); secure aggregation and TLS ([#227](https://github.com/adrianoggm/Onion-FL/issues/227)) |
 
 ---
 

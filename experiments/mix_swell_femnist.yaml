@@ -1,0 +1,45 @@
+# SWELL features and FEMNIST raw pixels in one federation (issue #246): SWELL
+# is standardised with its training bag, as everywhere; FEMNIST keeps its grey
+# levels in [0, 1] and every pixel, even those constant in the training bag
+# (the white border), through data.roles.overrides. Each dataset has its own
+# adapter, so the trunk sees both. A small check, not a reference.
+#
+#   onion_fl plan experiments/mix_swell_femnist.yaml
+#   onion_fl run experiments/mix_swell_femnist.yaml
+name: mix_swell_femnist
+description: SWELL escalado y FEMNIST en píxeles crudos (sin escalar) en dos fogs.
+topology:
+  name: two_fogs_swell_femnist
+  levels: [global, fog, edge]
+  root: {id: cloud, aggregator: fedavg, server_optimizer: replace}
+  fog:
+    defaults:
+      aggregator: fedavg
+      quorum: 1.0
+      link_up: {transport: mqtt, codec: npz, profile: lan}
+    nodes:
+      - {id: fog_swell, home: swell}
+      - {id: fog_femnist, home: femnist}
+  edge:
+    link_up: {transport: mqtt, codec: npz, profile: lan}
+data:
+  datasets:
+    swell: {}
+    femnist: {}
+  roles:
+    test: 0.2
+    scaler: global
+    seed: 0
+    overrides:
+      femnist: {scaler: none, drop_constant: false}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, local_epochs: 1, batch_size: 32, lr: 0.001}
+  init: random
+rounds: 3
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  global: {every: 1}
+seeds: [0]
