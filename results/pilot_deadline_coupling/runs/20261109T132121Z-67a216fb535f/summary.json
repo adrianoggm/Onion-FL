@@ -1,0 +1,24 @@
+{
+  "rounds": 20,
+  "finished": true,
+  "t_virtual_end": 82.39781444535198,
+  "wall_seconds": 812.0004033999994,
+  "messages": {
+    "sent": 8643,
+    "bytes": 3316727712,
+    "dropped": 0
+  },
+  "quorum_failed": 0,
+  "final": {
+    "global/*": {
+      "round": 20,
+      "accuracy": 0.4933641084824005,
+      "loss": 2.325728280589716
+    },
+    "global/femnist": {
+      "round": 20,
+      "accuracy": 0.4933641084824005,
+      "loss": 2.325728280589716
+    }
+  }
+}

@@ -78,6 +78,13 @@ class Profile(Strict):
     train_rate: float | None = Field(
         None, gt=0, description="Muestras entrenadas por segundo"
     )
+    train_sigma: float | None = Field(
+        None,
+        ge=0,
+        description="Dispersión de la tasa de entrenamiento: desviación típica "
+        "de su logaritmo (lognormal, de media la de train_rate)",
+        exclude_if=lambda v: v is None,  # the ids from before it stay
+    )
     aggregate_rate: float | None = Field(
         None, gt=0, description="Bytes de actualización combinados por segundo"
     )

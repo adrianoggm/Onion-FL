@@ -1,0 +1,178 @@
+# Pilot of line A (issue #213, capabilities spec §5): does the factorised
+# predictor choose the wrong configuration when a deadline couples who takes
+# part with how much their data weigh? The design and the stopping criteria are
+# in results/pilot_deadline_coupling/PREREGISTRATION.md, committed before any run.
+#
+# One configuration = a federation (flat, 2 fogs, 4 fogs) x an algorithm (FedAvg,
+# FedAdam). Each is swept in three regimes (synchronous control, deadline with
+# drop, FedBuff-style buffering) and five data-device couplings. The topologies
+# are inline and share a name per federation, so a run's control (the same
+# design, synchronous and without coupling) is found by control_id. Not every
+# cell of the sweep is run: scripts/pilot_deadline_coupling.py chooses them.
+#
+#   onion_fl plan experiments/pilot_deadline_coupling.yaml
+#   python scripts/pilot_deadline_coupling.py run --step 0 --workers 8
+name: pilot_deadline_coupling
+description: Piloto de la línea A; ¿elige mal el predictor factorizado cuando un deadline acopla participación y peso de los datos?
+topology:  # the synchronous four fogs; every sweep value replaces it
+  name: pilot_dc_four_fogs
+  levels: [global, fog, edge]
+  root: {id: cloud, aggregator: fedavg, server_optimizer: replace}
+  fog:
+    defaults:
+      aggregator: fedavg
+      link_up: {transport: mqtt, codec: npz}
+    nodes: [{id: fog_0}, {id: fog_1}, {id: fog_2}, {id: fog_3}]
+  edge: {link_up: {transport: mqtt, codec: npz}}
+data:
+  datasets:
+    femnist: {}
+  roles: {test: 0.2, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 1.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 128, trunk_hidden: [128], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, local_epochs: 1, batch_size: 32, lr: 0.001}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy]
+  global: {every: 1}
+infrastructure:
+  name: pilot_deadline_coupling
+  assignment:
+    root: cloud-1
+    aggregators: {fog_0: fog-1, fog_1: fog-2, fog_2: fog-3, fog_3: fog-4}
+    edges:
+      name: coupled
+      mix: {fast: 0.34, medium: 0.33, slow: 0.33}
+      statistic: samples
+      rho: 0.0
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+sweep:
+  # federation x regime. The deadline (1 s) is on the node the edges answer to;
+  # with fogs the cloud stays synchronous. FedBuff-style: close as soon as a
+  # quarter of the participants answered, late updates joining a later round
+  # weighted by (1 + staleness)^-0.5, the deadline only as a cap.
+  topology,infrastructure.assignment.aggregators:
+    # flat: the root takes evaluators only, so the star is one aggregator, hub,
+    # on the cloud's own host; it talks to the coordinator for free
+    - - name: pilot_dc_flat
+        levels: [global, fog, edge]
+        root: {id: cloud, aggregator: fedavg, server_optimizer: replace}
+        fog:
+          defaults:
+            aggregator: fedavg
+            link_up: {transport: mqtt, codec: npz}
+          nodes: [{id: hub}]
+        edge: {link_up: {transport: mqtt, codec: npz}}
+      - {hub: cloud-1}
+    - - name: pilot_dc_flat
+        levels: [global, fog, edge]
+        root: {id: cloud, aggregator: fedavg, server_optimizer: replace}
+        fog:
+          defaults:
+            aggregator: fedavg
+            deadline: 1s
+            quorum: 1
+            link_up: {transport: mqtt, codec: npz}
+          nodes: [{id: hub}]
+        edge: {link_up: {transport: mqtt, codec: npz}}
+      - {hub: cloud-1}
+    - - name: pilot_dc_flat
+        levels: [global, fog, edge]
+        root: {id: cloud, aggregator: fedavg, server_optimizer: replace}
+        fog:
+          defaults:
+            aggregator: fedavg
+            deadline: 1s
+            quorum: 0.25
+            close_at_quorum: true
+            staleness: {name: next_round, weighting: {name: polynomial, a: 0.5}}
+            link_up: {transport: mqtt, codec: npz}
+          nodes: [{id: hub}]
+        edge: {link_up: {transport: mqtt, codec: npz}}
+      - {hub: cloud-1}
+    - - name: pilot_dc_two_fogs
+        levels: [global, fog, edge]
+        root: {id: cloud, aggregator: fedavg, server_optimizer: replace}
+        fog:
+          defaults:
+            aggregator: fedavg
+            link_up: {transport: mqtt, codec: npz}
+          nodes: [{id: fog_0}, {id: fog_1}]
+        edge: {link_up: {transport: mqtt, codec: npz}}
+      - {fog_0: fog-1, fog_1: fog-2}
+    - - name: pilot_dc_two_fogs
+        levels: [global, fog, edge]
+        root: {id: cloud, aggregator: fedavg, server_optimizer: replace}
+        fog:
+          defaults:
+            aggregator: fedavg
+            deadline: 1s
+            quorum: 1
+            link_up: {transport: mqtt, codec: npz}
+          nodes: [{id: fog_0}, {id: fog_1}]
+        edge: {link_up: {transport: mqtt, codec: npz}}
+      - {fog_0: fog-1, fog_1: fog-2}
+    - - name: pilot_dc_two_fogs
+        levels: [global, fog, edge]
+        root: {id: cloud, aggregator: fedavg, server_optimizer: replace}
+        fog:
+          defaults:
+            aggregator: fedavg
+            deadline: 1s
+            quorum: 0.25
+            close_at_quorum: true
+            staleness: {name: next_round, weighting: {name: polynomial, a: 0.5}}
+            link_up: {transport: mqtt, codec: npz}
+          nodes: [{id: fog_0}, {id: fog_1}]
+        edge: {link_up: {transport: mqtt, codec: npz}}
+      - {fog_0: fog-1, fog_1: fog-2}
+    - - name: pilot_dc_four_fogs
+        levels: [global, fog, edge]
+        root: {id: cloud, aggregator: fedavg, server_optimizer: replace}
+        fog:
+          defaults:
+            aggregator: fedavg
+            link_up: {transport: mqtt, codec: npz}
+          nodes: [{id: fog_0}, {id: fog_1}, {id: fog_2}, {id: fog_3}]
+        edge: {link_up: {transport: mqtt, codec: npz}}
+      - {fog_0: fog-1, fog_1: fog-2, fog_2: fog-3, fog_3: fog-4}
+    - - name: pilot_dc_four_fogs
+        levels: [global, fog, edge]
+        root: {id: cloud, aggregator: fedavg, server_optimizer: replace}
+        fog:
+          defaults:
+            aggregator: fedavg
+            deadline: 1s
+            quorum: 1
+            link_up: {transport: mqtt, codec: npz}
+          nodes: [{id: fog_0}, {id: fog_1}, {id: fog_2}, {id: fog_3}]
+        edge: {link_up: {transport: mqtt, codec: npz}}
+      - {fog_0: fog-1, fog_1: fog-2, fog_2: fog-3, fog_3: fog-4}
+    - - name: pilot_dc_four_fogs
+        levels: [global, fog, edge]
+        root: {id: cloud, aggregator: fedavg, server_optimizer: replace}
+        fog:
+          defaults:
+            aggregator: fedavg
+            deadline: 1s
+            quorum: 0.25
+            close_at_quorum: true
+            staleness: {name: next_round, weighting: {name: polynomial, a: 0.5}}
+            link_up: {transport: mqtt, codec: npz}
+          nodes: [{id: fog_0}, {id: fog_1}, {id: fog_2}, {id: fog_3}]
+        edge: {link_up: {transport: mqtt, codec: npz}}
+      - {fog_0: fog-1, fog_1: fog-2, fog_2: fog-3, fog_3: fog-4}
+  # the two algorithms, of different families: FedAvg and FedAdam (Reddi et al.,
+  # 2021) at the library's default server rate 0.01, not tuned
+  learning.server_optimizer: [replace, fedadam]
+  # rho = 0 is the naive simulation; |rho| = 0.6 on the samples (FedAvg's weight)
+  # and on the label divergence
+  infrastructure.assignment.edges.statistic,infrastructure.assignment.edges.rho:
+    - [samples, 0.0]
+    - [samples, -0.6]
+    - [samples, 0.6]
+    - [label_divergence, -0.6]
+    - [label_divergence, 0.6]

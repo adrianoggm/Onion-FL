@@ -1,0 +1,179 @@
+{
+ "run_id": "20261109T122227Z-f6f7fc42c27d",
+ "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+ "config_id": "b675056ea193ff10ef43ab5969055d60ab49685c4c80d017c080e90fe477fbb2",
+ "backend": "sim",
+ "infrastructure_id": "10a39546e2e3476b646a1559ebf347a995314f30e42c8f4bc07ef0064c28f039",
+ "data_id": "7d8238e25baf310766da9c287196bd4e42a45a3a709873d21edc89830d10ad20",
+ "code_version": {
+  "commit": "a0af5e30aff9f9d51509262a27339667e6083df5",
+  "dirty": false
+ },
+ "seed": 0,
+ "scenario": "infrastructure.assignment.edges.statistic,infrastructure.assignment.edges.rho=samples,-0.6,learning.server_optimizer=replace,topology,infrastructure.assignment.aggregators=pilot_dc_flat(edge={'link_up': {'transport': 'mqtt', 'codec': 'npz'}},fog={'defaults': {'aggregator': 'fedavg', 'deadline': '1s', 'quorum': 1, 'link_up': {'transport': 'mqtt', 'codec': 'npz'}}, 'nodes': [{'id': 'hub'}]},levels=['global', 'fog', 'edge'],root={'id': 'cloud', 'aggregator': 'fedavg', 'server_optimizer': 'replace'}),{'hub': 'cloud-1'}",
+ "started_at": "2026-11-09T12:22:28.265511+00:00",
+ "status": "finished",
+ "config": {
+  "name": "pilot_deadline_coupling",
+  "description": "Piloto de la l\u00ednea A; \u00bfelige mal el predictor factorizado cuando un deadline acopla participaci\u00f3n y peso de los datos?",
+  "topology": {
+   "name": "pilot_dc_flat",
+   "levels": [
+    "global",
+    "fog",
+    "edge"
+   ],
+   "root": {
+    "id": "cloud",
+    "aggregator": "fedavg",
+    "server_optimizer": "replace"
+   },
+   "fog": {
+    "defaults": {
+     "aggregator": "fedavg",
+     "deadline": "1s",
+     "quorum": 1,
+     "link_up": {
+      "transport": "mqtt",
+      "codec": "npz"
+     }
+    },
+    "nodes": [
+     {
+      "id": "hub"
+     }
+    ]
+   },
+   "edge": {
+    "link_up": {
+     "transport": "mqtt",
+     "codec": "npz"
+    }
+   }
+  },
+  "data": {
+   "datasets": {
+    "femnist": {
+     "descriptor": null,
+     "options": {}
+    }
+   },
+   "roles": {
+    "test": 0.2,
+    "val": 0.0,
+    "overrides": {},
+    "seed": 0,
+    "local_val": 0.0,
+    "subjects_per_client": 1,
+    "scaler": "global",
+    "impute": "mean",
+    "drop_constant": true
+   },
+   "placement": {
+    "name": "mixing",
+    "alpha": 1.0
+   }
+  },
+  "learning": {
+   "model": {
+    "name": "modular_mlp",
+    "adapter_width": 128,
+    "trunk_hidden": [
+     128
+    ],
+    "dropout": 0.2
+   },
+   "sharing": "fedavg",
+   "trainer": {
+    "name": "standard",
+    "local_epochs": 1,
+    "batch_size": 32,
+    "lr": 0.001
+   },
+   "init": "random",
+   "server_optimizer": "replace"
+  },
+  "rounds": 20,
+  "evaluation": {
+   "metrics": [
+    "loss",
+    "accuracy"
+   ],
+   "edge": {
+    "every": null,
+    "models": [
+     "received",
+     "local"
+    ]
+   },
+   "aggregators": {
+    "every": null,
+    "aggregate_children": true,
+    "holdout": true
+   },
+   "global": {
+    "every": 1
+   }
+  },
+  "runtime": {
+   "mode": "sim",
+   "timeout": 3600.0,
+   "heartbeat": 10.0,
+   "codec": null
+  },
+  "sinks": [],
+  "paths": {
+   "topologies": "topologies",
+   "datasets": "datasets",
+   "runs": "runs",
+   "cache": "data/cache"
+  },
+  "infrastructure": {
+   "name": "pilot_deadline_coupling",
+   "assignment": {
+    "root": "cloud-1",
+    "aggregators": {
+     "hub": "cloud-1"
+    },
+    "edges": {
+     "name": "coupled",
+     "mix": {
+      "fast": 0.34,
+      "medium": 0.33,
+      "slow": 0.33
+     },
+     "statistic": "samples",
+     "rho": -0.6
+    },
+    "services": {}
+   }
+  }
+ },
+ "diagnostic": {
+  "statistic": "label_divergence",
+  "covariance": -0.0001727612272739952,
+  "D": -0.22215993043673674,
+  "statistics": {
+   "label_divergence": {
+    "covariance": -0.0001727612272739952,
+    "D": -0.22215993043673674
+   },
+   "gradient_norm": {
+    "covariance": -0.0001971101087291326,
+    "D": -0.12923070107149692
+   }
+  },
+  "participation": 0.5789450470043013,
+  "floss": {
+   "participation": 0.4753209979477635,
+   "rounds_factor": 2.1038414131031034
+  },
+  "deadlines": [
+   "hub"
+  ],
+  "unknown": [],
+  "seconds": 3.5198935999997047
+ },
+ "finished_at": "2026-11-09T12:34:15.898656+00:00",
+ "run_hash": "6e231b46fcc6d14576c22aad30a22c4c96500d54c0a5321f2b5f352138064811"
+}

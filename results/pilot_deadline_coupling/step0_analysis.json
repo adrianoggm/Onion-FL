@@ -1,0 +1,4720 @@
+{
+ "step0": {
+  "target": [
+   "accuracy",
+   0.35
+  ],
+  "gate": {
+   "deadline": {
+    "passed": true,
+    "split_half": {
+     "splits": 126,
+     "top1": 0.9206349206349206,
+     "top1_chance": 0.16666666666666666,
+     "regret_relative_mean": 0.005130755933486438,
+     "regret_relative_p95": 9.107546561804651e-05
+    },
+    "single_run": {
+     "top1": 0.4666666666666667,
+     "regret_relative_mean": 0.040682539998257376
+    },
+    "means": [
+     10.644688167999998,
+     10.04164844,
+     11.260373540799996,
+     10.623639044799997,
+     10.373593217599995,
+     9.783819313599997
+    ],
+    "censored": 0
+   },
+   "fedbuff": {
+    "passed": true,
+    "split_half": {
+     "splits": 126,
+     "top1": 1.0,
+     "top1_chance": 0.16666666666666666,
+     "regret_relative_mean": 0.0,
+     "regret_relative_p95": 0.0
+    },
+    "single_run": {
+     "top1": 0.6444444444444445,
+     "regret_relative_mean": 0.014695848186762861
+    },
+    "means": [
+     6.206976038429078,
+     6.206976038429078,
+     2.730810094570888,
+     9.069036018771172,
+     2.5922559491000827,
+     8.927070382609845
+    ],
+    "censored": 40
+   }
+  },
+  "control": {
+   "means": [
+    58.94287533590384,
+    57.813876722512134,
+    58.507622361503856,
+    57.38935890011216,
+    57.049564107103855,
+    55.96686313371215
+   ],
+   "single_run_top1": 0.6
+  },
+  "identifiable": true
+ },
+ "runs": [
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T083722Z-b606eeebb578",
+   "run_hash": "f1d20957eca8fc21bf196965550725506b761852916607eb61d5edb7c3843ec1",
+   "config_id": "046c7eb9585a09d123d320ff238a454ecaef5cfa3a7284d2ae8a96c767cfda9b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 0,
+   "time_to_target": 9.64590356,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 82.40404288073363,
+   "final_accuracy": {
+    "global/*": 0.5037507212925563,
+    "global/femnist": 0.5037507212925563
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.03229346895443529,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T084805Z-b91cb104eb25",
+   "run_hash": "84224f660d606150215e21384101f85df9691c4683d786edc22cdabe32395a12",
+   "config_id": "046c7eb9585a09d123d320ff238a454ecaef5cfa3a7284d2ae8a96c767cfda9b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 1,
+   "time_to_target": 9.673259239999998,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 94.01449734967042,
+   "final_accuracy": {
+    "global/*": 0.5015579919215234,
+    "global/femnist": 0.5015579919215234
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.030529220320806145,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T085010Z-2a61ee8d6673",
+   "run_hash": "08577950e9816bbf9da45a6ce3e45c473b4b5782fbfd0a4c03154a21d512f6b3",
+   "config_id": "046c7eb9585a09d123d320ff238a454ecaef5cfa3a7284d2ae8a96c767cfda9b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 2,
+   "time_to_target": 9.698335279999998,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 87.25688542325544,
+   "final_accuracy": {
+    "global/*": 0.5130986728216965,
+    "global/femnist": 0.5130986728216965
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.028961701322521488,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T085010Z-c0ec6ae46a7e",
+   "run_hash": "72b7717c1db49dd03aab1c97d351e7b3f1aab73f98910618635e827c5cb03b74",
+   "config_id": "046c7eb9585a09d123d320ff238a454ecaef5cfa3a7284d2ae8a96c767cfda9b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 3,
+   "time_to_target": 9.6823778,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 83.56610986264222,
+   "final_accuracy": {
+    "global/*": 0.5066358915175996,
+    "global/femnist": 0.5066358915175996
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.02556846911899792,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T085010Z-50e7c6e173d2",
+   "run_hash": "87b4df7a98c1e1f9e4261cef99cd5fcd832bcec34dc8d3dcaa1091963c6abdae",
+   "config_id": "046c7eb9585a09d123d320ff238a454ecaef5cfa3a7284d2ae8a96c767cfda9b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 4,
+   "time_to_target": 10.880706479999997,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 95.0427168100835,
+   "final_accuracy": {
+    "global/*": 0.49936526255049046,
+    "global/femnist": 0.49936526255049046
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.028047384817029876,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T085010Z-c6739bd3a35c",
+   "run_hash": "e35e8bae6af06f432b7666036720bd3f82fef8958dfca523afa97b60c0553dbe",
+   "config_id": "046c7eb9585a09d123d320ff238a454ecaef5cfa3a7284d2ae8a96c767cfda9b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 5,
+   "time_to_target": 12.069916599999999,
+   "rounds_to_target": 10,
+   "censored": false,
+   "time": 86.1182736578103,
+   "final_accuracy": {
+    "global/*": 0.502596653202539,
+    "global/femnist": 0.502596653202539
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.02914547269052324,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T085315Z-e8289e9c44ad",
+   "run_hash": "331e9702a57067063da3be39dfb62f1412768ad55812decf5411ccbc25f0f367",
+   "config_id": "046c7eb9585a09d123d320ff238a454ecaef5cfa3a7284d2ae8a96c767cfda9b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 6,
+   "time_to_target": 9.67553888,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 90.47058517483357,
+   "final_accuracy": {
+    "global/*": 0.5074437391806117,
+    "global/femnist": 0.5074437391806117
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.026747758834485713,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T085852Z-bac371330dd3",
+   "run_hash": "25698f9d048c82edbf459acda13de37122a8233823a96c599a4ccf789cfc56aa",
+   "config_id": "046c7eb9585a09d123d320ff238a454ecaef5cfa3a7284d2ae8a96c767cfda9b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 7,
+   "time_to_target": 9.705174199999998,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 95.42465579101406,
+   "final_accuracy": {
+    "global/*": 0.5035199076745528,
+    "global/femnist": 0.5035199076745528
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.03172710024846814,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T090124Z-dd9d5b38799a",
+   "run_hash": "0fb175fadaa08de5083e61d8e324e6b89f8b2b67e528169002633c70ab221bd2",
+   "config_id": "046c7eb9585a09d123d320ff238a454ecaef5cfa3a7284d2ae8a96c767cfda9b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 8,
+   "time_to_target": 9.705174199999998,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 86.33530992534983,
+   "final_accuracy": {
+    "global/*": 0.505597230236584,
+    "global/femnist": 0.505597230236584
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.02290414171322121,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T090128Z-a60a5d3021db",
+   "run_hash": "8ccf697d05549f643fef4947c56726fcf3a4f6cfa5a858545d13db77bf887d4d",
+   "config_id": "046c7eb9585a09d123d320ff238a454ecaef5cfa3a7284d2ae8a96c767cfda9b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 9,
+   "time_to_target": 9.68009816,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 81.7102706663015,
+   "final_accuracy": {
+    "global/*": 0.5042123485285632,
+    "global/femnist": 0.5042123485285632
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.025833261782622487,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T110516Z-7482b7a11ecd",
+   "run_hash": "0045be625b37d52eccd7998d260ce8f7e38dc93c8d9631b63036ba040f63c515",
+   "config_id": "584a8ae52520e8e325dd7e6811882c2b459ffe84eb9c36ff6b72742b0511d43c",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 0,
+   "time_to_target": 10.85107116,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 82.40404304073363,
+   "final_accuracy": {
+    "global/*": 0.4753606462781304,
+    "global/femnist": 0.4753606462781304
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.03229346895443529,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T112450Z-fbd04e0d6586",
+   "run_hash": "a4bfc74747a9850db6721a6f4b5cf2d0e21e5bc5354ce06910ba6078714c2531",
+   "config_id": "584a8ae52520e8e325dd7e6811882c2b459ffe84eb9c36ff6b72742b0511d43c",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 1,
+   "time_to_target": 9.673259239999998,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 94.01449734967042,
+   "final_accuracy": {
+    "global/*": 0.4787074437391806,
+    "global/femnist": 0.4787074437391806
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.030529220320806145,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T112845Z-066825c41840",
+   "run_hash": "a9135a87f28eab1040c7bd0bd679c8ba406d2595160759a1e4023ed30cb0b401",
+   "config_id": "584a8ae52520e8e325dd7e6811882c2b459ffe84eb9c36ff6b72742b0511d43c",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 2,
+   "time_to_target": 10.901223239999998,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 87.25688526325544,
+   "final_accuracy": {
+    "global/*": 0.4742065781881131,
+    "global/femnist": 0.4742065781881131
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.028961701322521488,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T112846Z-0add74dece6b",
+   "run_hash": "d8d2fb34c7c800cb5030e1c79c14157d1608d71ef7db5f0fae43db351e0fd4e6",
+   "config_id": "584a8ae52520e8e325dd7e6811882c2b459ffe84eb9c36ff6b72742b0511d43c",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 3,
+   "time_to_target": 9.6823778,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 83.56610986264222,
+   "final_accuracy": {
+    "global/*": 0.4789382573571841,
+    "global/femnist": 0.4789382573571841
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.02556846911899792,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T112846Z-6fa5730a1cb9",
+   "run_hash": "7f6200832562228442b3785ed02289b54cbac2f5577a8ddb25790e7bd65b8836",
+   "config_id": "584a8ae52520e8e325dd7e6811882c2b459ffe84eb9c36ff6b72742b0511d43c",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 4,
+   "time_to_target": 10.880706479999997,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 95.0427166500835,
+   "final_accuracy": {
+    "global/*": 0.47547605308713214,
+    "global/femnist": 0.47547605308713214
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.028047384817029876,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T112850Z-99c37ede8cd4",
+   "run_hash": "37b88b086f7f949ac5e6fa5ca55afc7fd9cb4adff7703fed4047597d92321a3c",
+   "config_id": "584a8ae52520e8e325dd7e6811882c2b459ffe84eb9c36ff6b72742b0511d43c",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 5,
+   "time_to_target": 10.86930828,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 86.1182734978103,
+   "final_accuracy": {
+    "global/*": 0.45643392960184653,
+    "global/femnist": 0.45643392960184653
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.02914547269052324,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T112850Z-0f570d57c67f",
+   "run_hash": "c433e300191c6ab4c50fda84f82f89a05d30870fcdcda82004bff52e62c764fc",
+   "config_id": "584a8ae52520e8e325dd7e6811882c2b459ffe84eb9c36ff6b72742b0511d43c",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 6,
+   "time_to_target": 10.873867559999999,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 90.47058517483357,
+   "final_accuracy": {
+    "global/*": 0.4683208309290248,
+    "global/femnist": 0.4683208309290248
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.026747758834485713,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T113757Z-dc7ff7ae256e",
+   "run_hash": "9f8e58cd17feb7e5fd544cb7860bb209747dbe56a2bf16c8672c1e95e585760e",
+   "config_id": "584a8ae52520e8e325dd7e6811882c2b459ffe84eb9c36ff6b72742b0511d43c",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 7,
+   "time_to_target": 12.122348319999997,
+   "rounds_to_target": 10,
+   "censored": false,
+   "time": 95.42465563101406,
+   "final_accuracy": {
+    "global/*": 0.4638199653779573,
+    "global/femnist": 0.4638199653779573
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.03172710024846814,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T114148Z-ca4b6277ea6b",
+   "run_hash": "97f110f6c868b40822673e52597244ed53ba531cd4d974a7666290142de82bae",
+   "config_id": "584a8ae52520e8e325dd7e6811882c2b459ffe84eb9c36ff6b72742b0511d43c",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 8,
+   "time_to_target": 10.912621439999997,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 86.33530976534983,
+   "final_accuracy": {
+    "global/*": 0.4700519330640508,
+    "global/femnist": 0.4700519330640508
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.02290414171322121,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T114150Z-ad618a2a60e2",
+   "run_hash": "19cb907cfb96ce50c48b99f2c92cd902a0b0b1682b319fc8d6d0834285098ece",
+   "config_id": "584a8ae52520e8e325dd7e6811882c2b459ffe84eb9c36ff6b72742b0511d43c",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 9,
+   "time_to_target": 9.68009816,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 81.7102706663015,
+   "final_accuracy": {
+    "global/*": 0.4766301211771495,
+    "global/femnist": 0.4766301211771495
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.025833261782622487,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T094350Z-73eadc430fc3",
+   "run_hash": "3df836c1ae700a76430a6b1de5a7595d5a8255b32af1b2c81e54bcd29ee6eb1a",
+   "config_id": "271e9eb412be1cffc2fc19bb89ab911b4686156f6b3da3d6afeb80333058b0b1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 0,
+   "time_to_target": 9.407158583999998,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 82.32932333673364,
+   "final_accuracy": {
+    "global/*": 0.5043277553375649,
+    "global/femnist": 0.5043277553375649
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.029152985550412232,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T120605Z-a2a4c6f1de18",
+   "run_hash": "289a9ae869d77f8ad802425b60b7f037b92b7240a3b8f9071fe3e147775b25f0",
+   "config_id": "271e9eb412be1cffc2fc19bb89ab911b4686156f6b3da3d6afeb80333058b0b1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 1,
+   "time_to_target": 9.439073551999996,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 93.93977764567042,
+   "final_accuracy": {
+    "global/*": 0.502135025966532,
+    "global/femnist": 0.502135025966532
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02791597094455676,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T120605Z-6f24f89b1d20",
+   "run_hash": "a78c79cc323367857a804ed431f6b3d8cae0d9e06c6469cd9e3d2d2a01b79939",
+   "config_id": "271e9eb412be1cffc2fc19bb89ab911b4686156f6b3da3d6afeb80333058b0b1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 2,
+   "time_to_target": 9.411717855999996,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 87.18216571925544,
+   "final_accuracy": {
+    "global/*": 0.5133294864396999,
+    "global/femnist": 0.5133294864396999
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.026673056154764178,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T120605Z-6e524cf84354",
+   "run_hash": "24ecc62d15fbca1e59f8ee754710e4364d53e7cb26bf90a013c0cf63a9c472a9",
+   "config_id": "271e9eb412be1cffc2fc19bb89ab911b4686156f6b3da3d6afeb80333058b0b1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 3,
+   "time_to_target": 9.420836399999995,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 83.49139007864223,
+   "final_accuracy": {
+    "global/*": 0.5072129255626082,
+    "global/femnist": 0.5072129255626082
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.023242025684499665,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T120605Z-b488d6cb4356",
+   "run_hash": "3a96468364575e3f1469b2ba292601906cb24a8c6c92009442734c1dd677fa2d",
+   "config_id": "271e9eb412be1cffc2fc19bb89ab911b4686156f6b3da3d6afeb80333058b0b1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 4,
+   "time_to_target": 10.600384223999997,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 94.9679971060835,
+   "final_accuracy": {
+    "global/*": 0.4982111944604732,
+    "global/femnist": 0.4982111944604732
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.025300982067267826,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T120605Z-dc5e0bda02c6",
+   "run_hash": "7bf6b7719113c4434561a0cf2a70aa064746fd745b8efd53b679227ea000a824",
+   "config_id": "271e9eb412be1cffc2fc19bb89ab911b4686156f6b3da3d6afeb80333058b0b1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 5,
+   "time_to_target": 11.761694871999996,
+   "rounds_to_target": 10,
+   "censored": false,
+   "time": 86.04355403381031,
+   "final_accuracy": {
+    "global/*": 0.5039815349105597,
+    "global/femnist": 0.5039815349105597
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02642340022859008,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T120605Z-b1e5016f1b98",
+   "run_hash": "5ebf1c072b4caa17af76f4644b1b457722bc4f08011f64af043ce62f2fd99504",
+   "config_id": "271e9eb412be1cffc2fc19bb89ab911b4686156f6b3da3d6afeb80333058b0b1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 6,
+   "time_to_target": 9.379802919999998,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 90.39586539083358,
+   "final_accuracy": {
+    "global/*": 0.5066358915175996,
+    "global/femnist": 0.5066358915175996
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.024701846222644628,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T120605Z-4dca13dbe809",
+   "run_hash": "00db6abf4cc760b63c86e6463141ab6922cc32d7a3a878ce89a7b118052333dc",
+   "config_id": "271e9eb412be1cffc2fc19bb89ab911b4686156f6b3da3d6afeb80333058b0b1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 7,
+   "time_to_target": 9.466429215999998,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 95.34993608701406,
+   "final_accuracy": {
+    "global/*": 0.5052510098095787,
+    "global/femnist": 0.5052510098095787
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02859728069082725,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T120605Z-994acdc7f393",
+   "run_hash": "8dcb5808e1a64eedcd0f014860e57b90f9c4aa3eabbd12219bf6ac2cef28c264",
+   "config_id": "271e9eb412be1cffc2fc19bb89ab911b4686156f6b3da3d6afeb80333058b0b1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 8,
+   "time_to_target": 9.534818415999997,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 86.26059022134983,
+   "final_accuracy": {
+    "global/*": 0.5039815349105597,
+    "global/femnist": 0.5039815349105597
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02116104135281317,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T121600Z-9f1753249517",
+   "run_hash": "dc5dc5a8a7e3ac38c6ddea41f377fde462cf93b2c0c6f710bb8f015f5d1e4c35",
+   "config_id": "271e9eb412be1cffc2fc19bb89ab911b4686156f6b3da3d6afeb80333058b0b1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 9,
+   "time_to_target": 9.416277095999996,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 81.6355511223015,
+   "final_accuracy": {
+    "global/*": 0.5024812463935372,
+    "global/femnist": 0.5024812463935372
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02430308611645747,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T081159Z-186f1be63105",
+   "run_hash": "2f716c4329b526c7a82c2da0f80c11d033b57eb99ecb784f104a5c197d588446",
+   "config_id": "7d951b2e9975bb4443c7a8c5a47ca76d8f208103cb9e312d9b4258c1cb52d6fa",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 0,
+   "time_to_target": 10.582147095999996,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 82.32932325673364,
+   "final_accuracy": {
+    "global/*": 0.47582227351413736,
+    "global/femnist": 0.47582227351413736
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.029152985550412232,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T081926Z-bbf66bfa082b",
+   "run_hash": "386999d8030c608b6d11348c8818fbc02460a6cd3c757719fae9035828ed8ce2",
+   "config_id": "7d951b2e9975bb4443c7a8c5a47ca76d8f208103cb9e312d9b4258c1cb52d6fa",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 1,
+   "time_to_target": 9.439073535999997,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 93.93977756567043,
+   "final_accuracy": {
+    "global/*": 0.4783612233121754,
+    "global/femnist": 0.4783612233121754
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02791597094455676,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T081926Z-607a41670bdc",
+   "run_hash": "d461d5c8688c09205876697d407d7ea23ebef7d9b4f436d622687e95c81c3055",
+   "config_id": "7d951b2e9975bb4443c7a8c5a47ca76d8f208103cb9e312d9b4258c1cb52d6fa",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 2,
+   "time_to_target": 10.582147095999996,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 87.18216571925544,
+   "final_accuracy": {
+    "global/*": 0.47397576457010965,
+    "global/femnist": 0.47397576457010965
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.026673056154764178,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T081926Z-7ec3019d6b1c",
+   "run_hash": "42a49e2aa3af7b81bddd89b0cd5f5d4ad0fb0312d89e3a9b689cc4e407604157",
+   "config_id": "7d951b2e9975bb4443c7a8c5a47ca76d8f208103cb9e312d9b4258c1cb52d6fa",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 3,
+   "time_to_target": 9.420836383999994,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 83.49139007864223,
+   "final_accuracy": {
+    "global/*": 0.4796306982111945,
+    "global/femnist": 0.4796306982111945
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.023242025684499665,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T081926Z-5a0245d099a1",
+   "run_hash": "dcc3e03fa030cc6c1255a2c2e6ad6be19e5778372e7aa85d147f09e1b660bd8c",
+   "config_id": "7d951b2e9975bb4443c7a8c5a47ca76d8f208103cb9e312d9b4258c1cb52d6fa",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 4,
+   "time_to_target": 10.600384207999996,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 94.9679971060835,
+   "final_accuracy": {
+    "global/*": 0.4757068667051356,
+    "global/femnist": 0.4757068667051356
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.025300982067267826,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T081944Z-80b61066049a",
+   "run_hash": "e894f117be34c033a33507e03fd83d7db345c14a52646fe05b9d02b4ec9d4519",
+   "config_id": "7d951b2e9975bb4443c7a8c5a47ca76d8f208103cb9e312d9b4258c1cb52d6fa",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 5,
+   "time_to_target": 10.586706375999995,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 86.0435541138103,
+   "final_accuracy": {
+    "global/*": 0.4586266589728794,
+    "global/femnist": 0.4586266589728794
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02642340022859008,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T082045Z-07aeba6ca9de",
+   "run_hash": "0d1cc6ef610ee300d6949e22065fcefba4bed52cf442d5c34af6a6c2d26448cf",
+   "config_id": "7d951b2e9975bb4443c7a8c5a47ca76d8f208103cb9e312d9b4258c1cb52d6fa",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 6,
+   "time_to_target": 10.550232167999994,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 90.39586547083357,
+   "final_accuracy": {
+    "global/*": 0.46866705135603,
+    "global/femnist": 0.46866705135603
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.024701846222644628,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T082736Z-e537fbb78e4f",
+   "run_hash": "07d308806f0269c391bb47090ab47964cafa3655cb95cda9f5d16d24c5f86925",
+   "config_id": "7d951b2e9975bb4443c7a8c5a47ca76d8f208103cb9e312d9b4258c1cb52d6fa",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 7,
+   "time_to_target": 11.830084095999993,
+   "rounds_to_target": 10,
+   "censored": false,
+   "time": 95.34993608701406,
+   "final_accuracy": {
+    "global/*": 0.464396999422966,
+    "global/femnist": 0.464396999422966
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02859728069082725,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T082735Z-f55989e3744d",
+   "run_hash": "3d7bf0e982baaa15790598fe4d2eac291169cdd42bd9f52fac49a5bc2001a443",
+   "config_id": "7d951b2e9975bb4443c7a8c5a47ca76d8f208103cb9e312d9b4258c1cb52d6fa",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 8,
+   "time_to_target": 10.728044063999997,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 86.26059014134984,
+   "final_accuracy": {
+    "global/*": 0.47374495095210617,
+    "global/femnist": 0.47374495095210617
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02116104135281317,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T082736Z-082d1b8a907b",
+   "run_hash": "9435160d26b1611adb78a604958a80ac5da27e4cfdd1e7e2d8b06c9875b6efc4",
+   "config_id": "7d951b2e9975bb4443c7a8c5a47ca76d8f208103cb9e312d9b4258c1cb52d6fa",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 9,
+   "time_to_target": 9.416277151999996,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 81.6355511223015,
+   "final_accuracy": {
+    "global/*": 0.476399307559146,
+    "global/femnist": 0.476399307559146
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02430308611645747,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T091021Z-89b1e31a9ebb",
+   "run_hash": "92fd7a8695d883cbf535f3d1d14f0e8ccff7fcc6cabb0edfd726b063cad46d30",
+   "config_id": "5eb2f8b8ec33b4eb5b1fee52a150c1bd5759c8252ab66817f6205e8ed8aee3e0",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 0,
+   "time_to_target": 10.236947808,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 82.32932333673364,
+   "final_accuracy": {
+    "global/*": 0.5050201961915753,
+    "global/femnist": 0.5050201961915753
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.029152985550412232,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T092050Z-fe3dad9749c0",
+   "run_hash": "42345ae6d1b7aa0d19e98a4edac273281d6ab8bd67dadcc8e34e4322f0a2ee28",
+   "config_id": "5eb2f8b8ec33b4eb5b1fee52a150c1bd5759c8252ab66817f6205e8ed8aee3e0",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 1,
+   "time_to_target": 10.200473631999998,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 93.93977764567042,
+   "final_accuracy": {
+    "global/*": 0.5002885170225043,
+    "global/femnist": 0.5002885170225043
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02791597094455676,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T092146Z-702bc4fff1a3",
+   "run_hash": "e8995d860f08ba30ba7e5b702a789f40089f378ec5211fc3f4ed8109cdfba2e0",
+   "config_id": "5eb2f8b8ec33b4eb5b1fee52a150c1bd5759c8252ab66817f6205e8ed8aee3e0",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 2,
+   "time_to_target": 10.255184983999998,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 87.18216571925544,
+   "final_accuracy": {
+    "global/*": 0.512867859203693,
+    "global/femnist": 0.512867859203693
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.026673056154764178,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T092147Z-dbf8ae56dca3",
+   "run_hash": "0fe0ac75273354d0977dfa6029597a5e91a5b5543b223135dee080aaa93fa997",
+   "config_id": "5eb2f8b8ec33b4eb5b1fee52a150c1bd5759c8252ab66817f6205e8ed8aee3e0",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 3,
+   "time_to_target": 10.246066351999998,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 83.49139007864223,
+   "final_accuracy": {
+    "global/*": 0.508136180034622,
+    "global/femnist": 0.508136180034622
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.023242025684499665,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T092203Z-c39ebd69c55d",
+   "run_hash": "ad9be817e2bdced0bd192e4169e4d3c2e29f3c78db4ad83139391a3ca8c16ff9",
+   "config_id": "5eb2f8b8ec33b4eb5b1fee52a150c1bd5759c8252ab66817f6205e8ed8aee3e0",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 4,
+   "time_to_target": 11.466647703999996,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 94.9679971060835,
+   "final_accuracy": {
+    "global/*": 0.4979803808424697,
+    "global/femnist": 0.4979803808424697
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.025300982067267826,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T092256Z-2a0797228ac5",
+   "run_hash": "49562b9970c356e9ec45b337d06b6d27d0cd81faaa8e9a99d7fda6edecec283d",
+   "config_id": "5eb2f8b8ec33b4eb5b1fee52a150c1bd5759c8252ab66817f6205e8ed8aee3e0",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 5,
+   "time_to_target": 12.837685535999997,
+   "rounds_to_target": 10,
+   "censored": false,
+   "time": 86.0435541138103,
+   "final_accuracy": {
+    "global/*": 0.505135603000577,
+    "global/femnist": 0.505135603000577
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02642340022859008,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T092256Z-3dd3a5ab343b",
+   "run_hash": "ef6a45c2d423cf0daa4c02a7d066af18355ce722c3cb4dc916fce49fb27bba73",
+   "config_id": "5eb2f8b8ec33b4eb5b1fee52a150c1bd5759c8252ab66817f6205e8ed8aee3e0",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 6,
+   "time_to_target": 10.205032903999998,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 90.39586547083357,
+   "final_accuracy": {
+    "global/*": 0.5073283323716099,
+    "global/femnist": 0.5073283323716099
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.024701846222644628,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T093017Z-47c715e729fc",
+   "run_hash": "c1f72e5ba86c1a81e74ce71e57cd1b02e1fc2c6d2a08dedc2531e9c9d7c62d5c",
+   "config_id": "5eb2f8b8ec33b4eb5b1fee52a150c1bd5759c8252ab66817f6205e8ed8aee3e0",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 7,
+   "time_to_target": 10.250625711999998,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 95.34993608701406,
+   "final_accuracy": {
+    "global/*": 0.5061742642815926,
+    "global/femnist": 0.5061742642815926
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02859728069082725,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T093104Z-5a1f2fceb042",
+   "run_hash": "2460f8d0d3600a17572328030256c3e38f20d9aa7747cbc68dfafd5273561d68",
+   "config_id": "5eb2f8b8ec33b4eb5b1fee52a150c1bd5759c8252ab66817f6205e8ed8aee3e0",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 8,
+   "time_to_target": 10.236947983999995,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 86.26059022134983,
+   "final_accuracy": {
+    "global/*": 0.5059434506635891,
+    "global/femnist": 0.5059434506635891
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02116104135281317,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T093112Z-29e5ef1464b9",
+   "run_hash": "f711eaeb8a6312bd3e7ede456a0d21284eaae86db4bbd09e139da6af5585bc19",
+   "config_id": "5eb2f8b8ec33b4eb5b1fee52a150c1bd5759c8252ab66817f6205e8ed8aee3e0",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 9,
+   "time_to_target": 10.300777831999998,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 81.6355511223015,
+   "final_accuracy": {
+    "global/*": 0.5039815349105597,
+    "global/femnist": 0.5039815349105597
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02430308611645747,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T074136Z-7512ba0d1239",
+   "run_hash": "9e8c1111e27c425c0be7bda641259ac07f61ac4243eeb0ee054b4e65c3fe2921",
+   "config_id": "3373c866fac3a15815e749cf9170a841bdcf6b95a9655f50e8abd28a2157c528",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 0,
+   "time_to_target": 11.525918415999998,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 82.32932333673364,
+   "final_accuracy": {
+    "global/*": 0.47628390075014426,
+    "global/femnist": 0.47628390075014426
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.029152985550412232,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T075049Z-ee35715b4bd2",
+   "run_hash": "3b18554f837624866eff6e4fd00a0917c401cf1f8a9f6b6f7b803020ae7c3154",
+   "config_id": "3373c866fac3a15815e749cf9170a841bdcf6b95a9655f50e8abd28a2157c528",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 1,
+   "time_to_target": 10.200473607999998,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 93.93977764567042,
+   "final_accuracy": {
+    "global/*": 0.4785920369301789,
+    "global/femnist": 0.4785920369301789
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02791597094455676,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T075331Z-c9a36368e40e",
+   "run_hash": "3e9d1b8ee78ae2388ea09679bb7cee710e7a78e78b270a0fbe9f3a24cd72d3e5",
+   "config_id": "3373c866fac3a15815e749cf9170a841bdcf6b95a9655f50e8abd28a2157c528",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 2,
+   "time_to_target": 11.521359128,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 87.18216563925544,
+   "final_accuracy": {
+    "global/*": 0.4745527986151183,
+    "global/femnist": 0.4745527986151183
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.026673056154764178,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T075331Z-0d789363c388",
+   "run_hash": "edaeda2800bdec834e7cd8e4ecfb351f0dc2b2554cb271b1180ff56ed034fff6",
+   "config_id": "3373c866fac3a15815e749cf9170a841bdcf6b95a9655f50e8abd28a2157c528",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 3,
+   "time_to_target": 10.246066367999997,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 83.49139007864223,
+   "final_accuracy": {
+    "global/*": 0.4812463935372187,
+    "global/femnist": 0.4812463935372187
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.023242025684499665,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T075331Z-0a9f9c10540a",
+   "run_hash": "519d3856dd4bb0dce58fba83a36eda503ef211ef6a98444802b6bfc5515e27b5",
+   "config_id": "3373c866fac3a15815e749cf9170a841bdcf6b95a9655f50e8abd28a2157c528",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 4,
+   "time_to_target": 11.466647695999999,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 94.9679971060835,
+   "final_accuracy": {
+    "global/*": 0.4761684939411425,
+    "global/femnist": 0.4761684939411425
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.025300982067267826,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T075332Z-09062c2afbe4",
+   "run_hash": "e23481d47005f524f28d9d0c4031a3405c508edfc4dafa251908ec5775794822",
+   "config_id": "3373c866fac3a15815e749cf9170a841bdcf6b95a9655f50e8abd28a2157c528",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 5,
+   "time_to_target": 11.553274231999998,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 86.0435541138103,
+   "final_accuracy": {
+    "global/*": 0.4593190998268898,
+    "global/femnist": 0.4593190998268898
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02642340022859008,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T075332Z-09afbd73b300",
+   "run_hash": "9e251005db9d799c51fafa327c9e381b8a4319b15d7937b37d59495470d3c3d7",
+   "config_id": "3373c866fac3a15815e749cf9170a841bdcf6b95a9655f50e8abd28a2157c528",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 6,
+   "time_to_target": 11.471207023999998,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 90.39586539083358,
+   "final_accuracy": {
+    "global/*": 0.46993652625504906,
+    "global/femnist": 0.46993652625504906
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.024701846222644628,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T075955Z-74666c0abc57",
+   "run_hash": "c6943d218ed6aefe8cd0870eed3c5f4555377764e9449b35e967f498478c625d",
+   "config_id": "3373c866fac3a15815e749cf9170a841bdcf6b95a9655f50e8abd28a2157c528",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 7,
+   "time_to_target": 12.796651903999999,
+   "rounds_to_target": 10,
+   "censored": false,
+   "time": 95.34993600701407,
+   "final_accuracy": {
+    "global/*": 0.4654356607039815,
+    "global/femnist": 0.4654356607039815
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02859728069082725,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T080202Z-18fd51405d09",
+   "run_hash": "1587c84ebe39009c1b848ea0253ece88814a74801d125a5f050aaf61caea6cb8",
+   "config_id": "3373c866fac3a15815e749cf9170a841bdcf6b95a9655f50e8abd28a2157c528",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 8,
+   "time_to_target": 11.521359239999997,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 86.26059022134983,
+   "final_accuracy": {
+    "global/*": 0.47466820542412,
+    "global/femnist": 0.47466820542412
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02116104135281317,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "deadline",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T080202Z-4c1f522fa931",
+   "run_hash": "6a331f39e6a26c44448e91f7fdf1f389a46a6b0038e899004b02b08ca9bc2853",
+   "config_id": "3373c866fac3a15815e749cf9170a841bdcf6b95a9655f50e8abd28a2157c528",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 9,
+   "time_to_target": 10.300777791999996,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 81.6355510423015,
+   "final_accuracy": {
+    "global/*": 0.47743796884016154,
+    "global/femnist": 0.47743796884016154
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02430308611645747,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T090133Z-e196f51ca3c9",
+   "run_hash": "bf51ae1063d45806a1961c1703d40931e2936373959386a3ccb1de835d582548",
+   "config_id": "ef0468570fb091f5e20c4121674d5ccbf155b7977832b8c3c46e98438cd0c62b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 0,
+   "time_to_target": 6.727152085487308,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 6.727152085487308,
+   "final_accuracy": {
+    "global/*": 0.08413156376226197,
+    "global/femnist": 0.08413156376226197
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.03229346895443529,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T090137Z-0205c7d24ded",
+   "run_hash": "d0376d7b8ac9c89256ffc9b3ba4f47f761ddc0308f10e7be88170550368adb2c",
+   "config_id": "ef0468570fb091f5e20c4121674d5ccbf155b7977832b8c3c46e98438cd0c62b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 1,
+   "time_to_target": 6.453166098263993,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 6.453166098263993,
+   "final_accuracy": {
+    "global/*": 0.06878245816503174,
+    "global/femnist": 0.06878245816503174
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.030529220320806145,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T090224Z-a6a4b614ad9b",
+   "run_hash": "30857f151963f4168f7031a5c1f45270b799de094e4b2f3272663258bccbbc4d",
+   "config_id": "ef0468570fb091f5e20c4121674d5ccbf155b7977832b8c3c46e98438cd0c62b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 2,
+   "time_to_target": 7.065693467871945,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 7.065693467871945,
+   "final_accuracy": {
+    "global/*": 0.05239469128678592,
+    "global/femnist": 0.05239469128678592
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.028961701322521488,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T090231Z-067d9ba1b6d6",
+   "run_hash": "efefb7556fae9925d32da543eea87e3ac44007c0225ac5e1af101a1b1c1afb9d",
+   "config_id": "ef0468570fb091f5e20c4121674d5ccbf155b7977832b8c3c46e98438cd0c62b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 3,
+   "time_to_target": 6.3403752611952795,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 6.3403752611952795,
+   "final_accuracy": {
+    "global/*": 0.09613387189844201,
+    "global/femnist": 0.09613387189844201
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.02556846911899792,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T090326Z-a8e07c7a9b57",
+   "run_hash": "9a05e354344a76cfd181ae82b20130c6c93a409260e58a7abafa42cbd5be8397",
+   "config_id": "ef0468570fb091f5e20c4121674d5ccbf155b7977832b8c3c46e98438cd0c62b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 4,
+   "time_to_target": 7.22395512446691,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 7.22395512446691,
+   "final_accuracy": {
+    "global/*": 0.10144258511252163,
+    "global/femnist": 0.10144258511252163
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.028047384817029876,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T090336Z-a7bc1676f74a",
+   "run_hash": "59b9d15209a8125cf6f428e70ba07940617cd752a6d6f9271deb6d27149ed98d",
+   "config_id": "ef0468570fb091f5e20c4121674d5ccbf155b7977832b8c3c46e98438cd0c62b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 5,
+   "time_to_target": 6.433020031669219,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 6.433020031669219,
+   "final_accuracy": {
+    "global/*": 0.08874783612233121,
+    "global/femnist": 0.08874783612233121
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.02914547269052324,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T090445Z-6fc234c4ae9a",
+   "run_hash": "c0336f8ee2e3fc887f6bd5a4d1dd489578781581e1a41cf3316f93448e7a789c",
+   "config_id": "ef0468570fb091f5e20c4121674d5ccbf155b7977832b8c3c46e98438cd0c62b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 6,
+   "time_to_target": 6.269053221305701,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 6.269053221305701,
+   "final_accuracy": {
+    "global/*": 0.059319099826889786,
+    "global/femnist": 0.059319099826889786
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.026747758834485713,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T090930Z-d90e037c6925",
+   "run_hash": "1e9886d06cb353e178aa3a477d1965f6680fca33b4cd982f8b5411b630b124b0",
+   "config_id": "ef0468570fb091f5e20c4121674d5ccbf155b7977832b8c3c46e98438cd0c62b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 7,
+   "time_to_target": 5.0321614396936365,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 5.0321614396936365,
+   "final_accuracy": {
+    "global/*": 0.06174264281592614,
+    "global/femnist": 0.06174264281592614
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.03172710024846814,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T090930Z-f563fa680af7",
+   "run_hash": "1d0dfb4c2e137202db6157f846d2ff56f52777e3bcdf6e8f19653f364fda4466",
+   "config_id": "ef0468570fb091f5e20c4121674d5ccbf155b7977832b8c3c46e98438cd0c62b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 8,
+   "time_to_target": 6.068062435638284,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 6.068062435638284,
+   "final_accuracy": {
+    "global/*": 0.06762839007501442,
+    "global/femnist": 0.06762839007501442
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.02290414171322121,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T090930Z-838be4bdb541",
+   "run_hash": "3ce64615f30c5e6db90ccef1323ce29a9a80c228ac6ef04edc80627eaa4c2aef",
+   "config_id": "ef0468570fb091f5e20c4121674d5ccbf155b7977832b8c3c46e98438cd0c62b",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 9,
+   "time_to_target": 4.457121218698503,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 4.457121218698503,
+   "final_accuracy": {
+    "global/*": 0.07259088286208887,
+    "global/femnist": 0.07259088286208887
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.025833261782622487,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T114156Z-529372bfb80d",
+   "run_hash": "a22d939ecc10b35bddaa346811e52a0455196ea6dcad42f07eeb6dfe38205157",
+   "config_id": "e39746a616e2219733b3cb1c67486a73eef680acbe8c3057ca83fadebd9334b9",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 0,
+   "time_to_target": 6.727152085487308,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 6.727152085487308,
+   "final_accuracy": {
+    "global/*": 0.0879399884593191,
+    "global/femnist": 0.0879399884593191
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.03229346895443529,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T114213Z-c25e67795092",
+   "run_hash": "2d37e3419b3ad481fec6e1e6978858d7883fb70aec21909ad2cc4c2b82233f5c",
+   "config_id": "e39746a616e2219733b3cb1c67486a73eef680acbe8c3057ca83fadebd9334b9",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 1,
+   "time_to_target": 6.453166098263993,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 6.453166098263993,
+   "final_accuracy": {
+    "global/*": 0.11159838430467398,
+    "global/femnist": 0.11159838430467398
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.030529220320806145,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T114217Z-f7f02f5d6b96",
+   "run_hash": "82f6fd195b84b9dea43e8e58882628407c0b8b30a842278e295c62392eeeaa36",
+   "config_id": "e39746a616e2219733b3cb1c67486a73eef680acbe8c3057ca83fadebd9334b9",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 2,
+   "time_to_target": 7.065693467871945,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 7.065693467871945,
+   "final_accuracy": {
+    "global/*": 0.15002885170225044,
+    "global/femnist": 0.15002885170225044
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.028961701322521488,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T114258Z-f9ac926d73da",
+   "run_hash": "5b36ce685ccd4b55c0d81397a4fc70ff53c21ee2dbf5ddadfb0e156d834b9548",
+   "config_id": "e39746a616e2219733b3cb1c67486a73eef680acbe8c3057ca83fadebd9334b9",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 3,
+   "time_to_target": 6.3403752611952795,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 6.3403752611952795,
+   "final_accuracy": {
+    "global/*": 0.19619157530294287,
+    "global/femnist": 0.19619157530294287
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.02556846911899792,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T114319Z-8d8eabafef72",
+   "run_hash": "f69a71d8710a5dd37cce70eb877523e38656c66e23d8ba1dd552aa51549e55d5",
+   "config_id": "e39746a616e2219733b3cb1c67486a73eef680acbe8c3057ca83fadebd9334b9",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 4,
+   "time_to_target": 7.22395512446691,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 7.22395512446691,
+   "final_accuracy": {
+    "global/*": 0.1328332371609925,
+    "global/femnist": 0.1328332371609925
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.028047384817029876,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T114326Z-653714dd23a6",
+   "run_hash": "2f675b5809c20615283ed3af698067b0930ae1f106a67622b3ecd9f8a5c7404b",
+   "config_id": "e39746a616e2219733b3cb1c67486a73eef680acbe8c3057ca83fadebd9334b9",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 5,
+   "time_to_target": 6.433020031669219,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 6.433020031669219,
+   "final_accuracy": {
+    "global/*": 0.07743796884016158,
+    "global/femnist": 0.07743796884016158
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.02914547269052324,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T114405Z-af928048679c",
+   "run_hash": "98b946d74dd6082d7611173d9c91910dac3617a00ecfda16c253d9312c4aa1a2",
+   "config_id": "e39746a616e2219733b3cb1c67486a73eef680acbe8c3057ca83fadebd9334b9",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 6,
+   "time_to_target": 6.269053221305701,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 6.269053221305701,
+   "final_accuracy": {
+    "global/*": 0.06728216964800923,
+    "global/femnist": 0.06728216964800923
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.026747758834485713,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T114424Z-894d7e1d847a",
+   "run_hash": "8e06c787489899e2ca3cd870e673c5e869099f5a36c00b88f73476baa107adca",
+   "config_id": "e39746a616e2219733b3cb1c67486a73eef680acbe8c3057ca83fadebd9334b9",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 7,
+   "time_to_target": 5.0321614396936365,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 5.0321614396936365,
+   "final_accuracy": {
+    "global/*": 0.08078476630121177,
+    "global/femnist": 0.08078476630121177
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.03172710024846814,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T114433Z-8f199ba32cda",
+   "run_hash": "b1d5d70afd4e9a662b3c5c024989bf2a5948e85e799d0b6cea975a206e525847",
+   "config_id": "e39746a616e2219733b3cb1c67486a73eef680acbe8c3057ca83fadebd9334b9",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 8,
+   "time_to_target": 6.068062435638284,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 6.068062435638284,
+   "final_accuracy": {
+    "global/*": 0.08528563185227929,
+    "global/femnist": 0.08528563185227929
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.02290414171322121,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T115121Z-df964c487e62",
+   "run_hash": "9563f837cd350739d8921004ba94c6f0192f240f9df32ab82ff7eaeb706aae53",
+   "config_id": "e39746a616e2219733b3cb1c67486a73eef680acbe8c3057ca83fadebd9334b9",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 9,
+   "time_to_target": 4.457121218698503,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 4.457121218698503,
+   "final_accuracy": {
+    "global/*": 0.06231967686093479,
+    "global/femnist": 0.06231967686093479
+   },
+   "diagnostic": {
+    "D": -0.0823376062694736,
+    "D_gradient_norm": -0.025833261782622487,
+    "participation": 0.5762828405498543,
+    "floss_rounds_factor": 1.8258789131753677,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T121601Z-e8a944c96b8f",
+   "run_hash": "0d6155839269f9b7771e4171868b578f035d47067a44994b672187df207cb0da",
+   "config_id": "6163de728dd41b5e96822e9d522d05b47193d2ee365f1e25a25aeb21454c64d1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 0,
+   "time_to_target": 7.699102304170032,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 7.699102304170032,
+   "final_accuracy": {
+    "global/*": 0.14748990190421235,
+    "global/femnist": 0.14748990190421235
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.029152985550412232,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T121605Z-27233b2c8489",
+   "run_hash": "df1cdeb662a6412c6c07dd121f9ebe7e2414895ad5845d42f932045b8e30c7f2",
+   "config_id": "6163de728dd41b5e96822e9d522d05b47193d2ee365f1e25a25aeb21454c64d1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 1,
+   "time_to_target": 6.523111236371534,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 6.523111236371534,
+   "final_accuracy": {
+    "global/*": 0.1536064627813041,
+    "global/femnist": 0.1536064627813041
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02791597094455676,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T121608Z-279c02535694",
+   "run_hash": "33572f0ca00745b0309494fa3e41624ef7416e7c2118c476007c6e8b83befb87",
+   "config_id": "6163de728dd41b5e96822e9d522d05b47193d2ee365f1e25a25aeb21454c64d1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 2,
+   "time_to_target": 7.97878512191128,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 7.97878512191128,
+   "final_accuracy": {
+    "global/*": 0.10340450086555107,
+    "global/femnist": 0.10340450086555107
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.026673056154764178,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T121608Z-c31ae9421cb4",
+   "run_hash": "6c89cd6d5e34987a4938006ac191f26da11f98e63d390b3693d19e6157b4c6ee",
+   "config_id": "6163de728dd41b5e96822e9d522d05b47193d2ee365f1e25a25aeb21454c64d1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 3,
+   "time_to_target": 16.618737707443486,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 16.618737707443486,
+   "final_accuracy": {
+    "global/*": 0.123600692440854,
+    "global/femnist": 0.123600692440854
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.023242025684499665,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T121608Z-d8cc9de7f40f",
+   "run_hash": "98f6cde545c7e476e6dba83d1c77db711d2d87f26df83297d1a4e4dcee986388",
+   "config_id": "6163de728dd41b5e96822e9d522d05b47193d2ee365f1e25a25aeb21454c64d1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 4,
+   "time_to_target": 7.149235580466909,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 7.149235580466909,
+   "final_accuracy": {
+    "global/*": 0.11159838430467398,
+    "global/femnist": 0.11159838430467398
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.025300982067267826,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T121617Z-ae111a56bd74",
+   "run_hash": "318124eb9f238fafc3888c0a16e3111e0215b2ea96e6306076c179d85cbd6453",
+   "config_id": "6163de728dd41b5e96822e9d522d05b47193d2ee365f1e25a25aeb21454c64d1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 5,
+   "time_to_target": 8.245328383995476,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 8.245328383995476,
+   "final_accuracy": {
+    "global/*": 0.19769186381996537,
+    "global/femnist": 0.19769186381996537
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02642340022859008,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T121620Z-68df9b54ad68",
+   "run_hash": "f1b297db10bd104e0e448f51d549ff594d310bddfc19f6513a5cdc90b63e5ee5",
+   "config_id": "6163de728dd41b5e96822e9d522d05b47193d2ee365f1e25a25aeb21454c64d1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 6,
+   "time_to_target": 8.543781014886186,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 8.543781014886186,
+   "final_accuracy": {
+    "global/*": 0.10386612810155799,
+    "global/femnist": 0.10386612810155799
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.024701846222644628,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T121812Z-2bd816a41495",
+   "run_hash": "1a5d7fed41044182eee69e5acac28c8992840f0c084429ea37a6a0da4043e37f",
+   "config_id": "6163de728dd41b5e96822e9d522d05b47193d2ee365f1e25a25aeb21454c64d1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 7,
+   "time_to_target": 9.654069470211166,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 9.654069470211166,
+   "final_accuracy": {
+    "global/*": 0.16860934795152915,
+    "global/femnist": 0.16860934795152915
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02859728069082725,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T121813Z-cfe32dd944bf",
+   "run_hash": "8dabf8bb3c08d94cd460f4be39a6f560c666bd540ca955be99b7f2e1752cdbe6",
+   "config_id": "6163de728dd41b5e96822e9d522d05b47193d2ee365f1e25a25aeb21454c64d1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 8,
+   "time_to_target": 8.034255973070614,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 8.034255973070614,
+   "final_accuracy": {
+    "global/*": 0.06878245816503174,
+    "global/femnist": 0.06878245816503174
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02116104135281317,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T121815Z-a2286d40a2a9",
+   "run_hash": "b3ad9cf9d56c99b940a9a339c0860cf82eeee466f9350f4875ee9c7087d58124",
+   "config_id": "6163de728dd41b5e96822e9d522d05b47193d2ee365f1e25a25aeb21454c64d1",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 9,
+   "time_to_target": 8.82429703357175,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 8.82429703357175,
+   "final_accuracy": {
+    "global/*": 0.11252163877668782,
+    "global/femnist": 0.11252163877668782
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02430308611645747,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T082739Z-2b90a9b529cc",
+   "run_hash": "65b4948f17c3c2f8ce3174f049bf4c1793aad09533e8eb233dfd609b34455855",
+   "config_id": "e6aa9b2f9aa359c104cc26e6cfe7dde2826875551e687e212e9c5ea512686d47",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 0,
+   "time_to_target": 2.5825972859606123,
+   "rounds_to_target": 15,
+   "censored": false,
+   "time": 7.6991025441700325,
+   "final_accuracy": {
+    "global/*": 0.39596076168493943,
+    "global/femnist": 0.39596076168493943
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.029152985550412232,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T082751Z-cfe39eae590e",
+   "run_hash": "23c921ba4e1c0c5e825432e9070bd53c069c94c943365a81bacef229ecc96b55",
+   "config_id": "e6aa9b2f9aa359c104cc26e6cfe7dde2826875551e687e212e9c5ea512686d47",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 1,
+   "time_to_target": 2.7724337641329493,
+   "rounds_to_target": 17,
+   "censored": false,
+   "time": 6.523111396371534,
+   "final_accuracy": {
+    "global/*": 0.4296595499134449,
+    "global/femnist": 0.4296595499134449
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02791597094455676,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T082843Z-9cb5f8c01ebc",
+   "run_hash": "e0a3a053fc1776d46f1d53bb5a9b913409b063669c9d8820efe4757355fccbd6",
+   "config_id": "e6aa9b2f9aa359c104cc26e6cfe7dde2826875551e687e212e9c5ea512686d47",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 2,
+   "time_to_target": 2.542459017623429,
+   "rounds_to_target": 15,
+   "censored": false,
+   "time": 7.978785121911281,
+   "final_accuracy": {
+    "global/*": 0.416733987305251,
+    "global/femnist": 0.416733987305251
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.026673056154764178,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T082927Z-f0d3a1872003",
+   "run_hash": "30d629858c4f1acdf2a470f394d39bd643a206bd80e7af18f72c449ac4b44c45",
+   "config_id": "e6aa9b2f9aa359c104cc26e6cfe7dde2826875551e687e212e9c5ea512686d47",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 3,
+   "time_to_target": 2.562433010796838,
+   "rounds_to_target": 16,
+   "censored": false,
+   "time": 16.618737867443485,
+   "final_accuracy": {
+    "global/*": 0.361800346220427,
+    "global/femnist": 0.361800346220427
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.023242025684499665,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T082942Z-44a202decded",
+   "run_hash": "d3733032b4ade0e7e2530c719438ee0ba580eb259167697553e1b2e7be3a1b11",
+   "config_id": "e6aa9b2f9aa359c104cc26e6cfe7dde2826875551e687e212e9c5ea512686d47",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 4,
+   "time_to_target": 2.812023017849239,
+   "rounds_to_target": 18,
+   "censored": false,
+   "time": 7.149235580466909,
+   "final_accuracy": {
+    "global/*": 0.37495672244662437,
+    "global/femnist": 0.37495672244662437
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.025300982067267826,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T083031Z-95be808132da",
+   "run_hash": "4b15999bd78fb847b223496e904acbd3fb54f370372bc4b9caaeafb549ec9679",
+   "config_id": "e6aa9b2f9aa359c104cc26e6cfe7dde2826875551e687e212e9c5ea512686d47",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 5,
+   "time_to_target": 2.8613250292506245,
+   "rounds_to_target": 19,
+   "censored": false,
+   "time": 8.245328383995476,
+   "final_accuracy": {
+    "global/*": 0.3713791113675707,
+    "global/femnist": 0.3713791113675707
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02642340022859008,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T083112Z-dffd273fd007",
+   "run_hash": "0336943f9ef0ec7f3217bd66808d728ae02281402e5238b253d41caf76ad9925",
+   "config_id": "e6aa9b2f9aa359c104cc26e6cfe7dde2826875551e687e212e9c5ea512686d47",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 6,
+   "time_to_target": 2.620463399642391,
+   "rounds_to_target": 15,
+   "censored": false,
+   "time": 8.543781094886185,
+   "final_accuracy": {
+    "global/*": 0.39019042123485287,
+    "global/femnist": 0.39019042123485287
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.024701846222644628,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T083125Z-ab0a5a9ccb8a",
+   "run_hash": "873fa18105371086674fca6c2709b8c12b481f9a20304d63b1354d4edd90c325",
+   "config_id": "e6aa9b2f9aa359c104cc26e6cfe7dde2826875551e687e212e9c5ea512686d47",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 7,
+   "time_to_target": 2.5135531685214283,
+   "rounds_to_target": 15,
+   "censored": false,
+   "time": 9.654069390211166,
+   "final_accuracy": {
+    "global/*": 0.39676860934795155,
+    "global/femnist": 0.39676860934795155
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02859728069082725,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T083436Z-03162255f05e",
+   "run_hash": "dc347214e7b7c93032ca8a06e4b27dc7ffaa2f8062235e170c4ba181b383ed0b",
+   "config_id": "e6aa9b2f9aa359c104cc26e6cfe7dde2826875551e687e212e9c5ea512686d47",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 8,
+   "time_to_target": 2.41271430663337,
+   "rounds_to_target": 15,
+   "censored": false,
+   "time": 8.034256053070614,
+   "final_accuracy": {
+    "global/*": 0.3945758799769186,
+    "global/femnist": 0.3945758799769186
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02116104135281317,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T083436Z-4741c57f3bab",
+   "run_hash": "51ad78c2a744468f6b216a0b0fbb62308365aaa4ec980def7dc7b545f341fb5c",
+   "config_id": "e6aa9b2f9aa359c104cc26e6cfe7dde2826875551e687e212e9c5ea512686d47",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 9,
+   "time_to_target": 2.2425574905899444,
+   "rounds_to_target": 15,
+   "censored": false,
+   "time": 8.824297193571748,
+   "final_accuracy": {
+    "global/*": 0.4140796306982112,
+    "global/femnist": 0.4140796306982112
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02430308611645747,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T093116Z-add2d3d5cd36",
+   "run_hash": "047d603a06aad4ad8e0db3523193ff3cd1c9508d8245d508e660bf3a7850b383",
+   "config_id": "80c1a35b8dafca749360e645ce23b1223db9d1cb555b228de0be964c4e5b58f2",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 0,
+   "time_to_target": 7.615192037615908,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 7.615192037615908,
+   "final_accuracy": {
+    "global/*": 0.15072129255626082,
+    "global/femnist": 0.15072129255626082
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.029152985550412232,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T093203Z-6773184622c1",
+   "run_hash": "31b3ff69c37a830fa4b7cd833420e7e799917150ec0808820e8424c7709ca2fc",
+   "config_id": "80c1a35b8dafca749360e645ce23b1223db9d1cb555b228de0be964c4e5b58f2",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 1,
+   "time_to_target": 6.5974483398070625,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 6.5974483398070625,
+   "final_accuracy": {
+    "global/*": 0.1584535487593768,
+    "global/femnist": 0.1584535487593768
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02791597094455676,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T093203Z-86307ddbf9ff",
+   "run_hash": "e58d78dc459dc334dd9e3a47501dc39093e36de279c593b1f0c504d6b444cd7e",
+   "config_id": "80c1a35b8dafca749360e645ce23b1223db9d1cb555b228de0be964c4e5b58f2",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 2,
+   "time_to_target": 7.9368358953541245,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 7.9368358953541245,
+   "final_accuracy": {
+    "global/*": 0.13017888055395269,
+    "global/femnist": 0.13017888055395269
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.026673056154764178,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T093325Z-d3d106f118a3",
+   "run_hash": "be7bf3996cd9cfa07ae5bffa5494de2485721dbe09dbbf0e092df9493912e073",
+   "config_id": "80c1a35b8dafca749360e645ce23b1223db9d1cb555b228de0be964c4e5b58f2",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 3,
+   "time_to_target": 16.617864336978506,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 16.617864336978506,
+   "final_accuracy": {
+    "global/*": 0.10098095787651472,
+    "global/femnist": 0.10098095787651472
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.023242025684499665,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T093421Z-3e9c32bc114e",
+   "run_hash": "939109b83863c438876d001720a6a17b7bec74e0205864d855589ceb99ac916f",
+   "config_id": "80c1a35b8dafca749360e645ce23b1223db9d1cb555b228de0be964c4e5b58f2",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 4,
+   "time_to_target": 8.686990184464003,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 8.686990184464003,
+   "final_accuracy": {
+    "global/*": 0.09244085401038661,
+    "global/femnist": 0.09244085401038661
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.025300982067267826,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T093426Z-c34277150877",
+   "run_hash": "3150ae1dea606325e3aa36d3a14832c6a136a0bd9d3784df2635ee4a185fba3e",
+   "config_id": "80c1a35b8dafca749360e645ce23b1223db9d1cb555b228de0be964c4e5b58f2",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 5,
+   "time_to_target": 8.226986766253406,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 8.226986766253406,
+   "final_accuracy": {
+    "global/*": 0.15164454702827468,
+    "global/femnist": 0.15164454702827468
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02642340022859008,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T094123Z-2242cf8ad5ec",
+   "run_hash": "b565c9e3875162b613f00cfb2515c428b5279a551ede244f2097864cdf6ffd1d",
+   "config_id": "80c1a35b8dafca749360e645ce23b1223db9d1cb555b228de0be964c4e5b58f2",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 6,
+   "time_to_target": 8.492451919850778,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 8.492451919850778,
+   "final_accuracy": {
+    "global/*": 0.12960184650894402,
+    "global/femnist": 0.12960184650894402
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.024701846222644628,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T094124Z-7fa4dfcd934b",
+   "run_hash": "4d88c50fdcffae81d301576bb19a505130f5b401a2e4f68cae887590161f0ed6",
+   "config_id": "80c1a35b8dafca749360e645ce23b1223db9d1cb555b228de0be964c4e5b58f2",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 7,
+   "time_to_target": 9.57788167361812,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 9.57788167361812,
+   "final_accuracy": {
+    "global/*": 0.1425274091171379,
+    "global/femnist": 0.1425274091171379
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02859728069082725,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T094124Z-4c2ac33742b1",
+   "run_hash": "5b5c37f64d2770e964aae51990c0d8ed6c553171aed0239d7c04a04aaacf301f",
+   "config_id": "80c1a35b8dafca749360e645ce23b1223db9d1cb555b228de0be964c4e5b58f2",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 8,
+   "time_to_target": 8.139638112728258,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 8.139638112728258,
+   "final_accuracy": {
+    "global/*": 0.09567224466243508,
+    "global/femnist": 0.09567224466243508
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02116104135281317,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T094124Z-35e622434661",
+   "run_hash": "99766f678d939df16f30c16cb9d73130bf8b93f6b27a00f13d601feac17db1d4",
+   "config_id": "80c1a35b8dafca749360e645ce23b1223db9d1cb555b228de0be964c4e5b58f2",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 9,
+   "time_to_target": 8.799070921041555,
+   "rounds_to_target": 20,
+   "censored": true,
+   "time": 8.799070921041555,
+   "final_accuracy": {
+    "global/*": 0.08378534333525678,
+    "global/femnist": 0.08378534333525678
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02430308611645747,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T080208Z-5cbaab12f643",
+   "run_hash": "081d3f4de49175e32b98c107e4a152e86dc085088e8bff38b9bb58590bd1aa49",
+   "config_id": "6920fcdd595aa5199a0445c6d6a21d4df6a8264f5297eea87e12fff822eebeaf",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 0,
+   "time_to_target": 2.6268887296816077,
+   "rounds_to_target": 15,
+   "censored": false,
+   "time": 7.6151921176159085,
+   "final_accuracy": {
+    "global/*": 0.3926139642238892,
+    "global/femnist": 0.3926139642238892
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.029152985550412232,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T080212Z-e5404289cf9d",
+   "run_hash": "34743483a2e849f8c998a0cdbbb083ab557cd5f77794a8823e70932686413f9c",
+   "config_id": "6920fcdd595aa5199a0445c6d6a21d4df6a8264f5297eea87e12fff822eebeaf",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 1,
+   "time_to_target": 2.710122943867456,
+   "rounds_to_target": 16,
+   "censored": false,
+   "time": 6.597448499807062,
+   "final_accuracy": {
+    "global/*": 0.4156953260242354,
+    "global/femnist": 0.4156953260242354
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02791597094455676,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T080218Z-ffa0847ddaa1",
+   "run_hash": "37c6cb9139f0e520623ebc0c2bc21c2d97b19392d62c04e3f2bfc027559e47b7",
+   "config_id": "6920fcdd595aa5199a0445c6d6a21d4df6a8264f5297eea87e12fff822eebeaf",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 2,
+   "time_to_target": 2.610120143676421,
+   "rounds_to_target": 16,
+   "censored": false,
+   "time": 7.936836055354124,
+   "final_accuracy": {
+    "global/*": 0.4341604154645124,
+    "global/femnist": 0.4341604154645124
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.026673056154764178,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T080403Z-3eb4fd1d5c89",
+   "run_hash": "457f61fc6519b335287bc0445a0d59b5eba0b210f09ffd5965797935a2837b1a",
+   "config_id": "6920fcdd595aa5199a0445c6d6a21d4df6a8264f5297eea87e12fff822eebeaf",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 3,
+   "time_to_target": 2.56155956033186,
+   "rounds_to_target": 15,
+   "censored": false,
+   "time": 16.617864336978506,
+   "final_accuracy": {
+    "global/*": 0.3844200807847663,
+    "global/femnist": 0.3844200807847663
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.023242025684499665,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T080406Z-20f1299d6e2b",
+   "run_hash": "a4f7919406ad88e97026ace0108ac3932533c83c22e233efa6bc2c54732d81be",
+   "config_id": "6920fcdd595aa5199a0445c6d6a21d4df6a8264f5297eea87e12fff822eebeaf",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 4,
+   "time_to_target": 3.001792840651338,
+   "rounds_to_target": 17,
+   "censored": false,
+   "time": 8.686990184464003,
+   "final_accuracy": {
+    "global/*": 0.37080207732256204,
+    "global/femnist": 0.37080207732256204
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.025300982067267826,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T080412Z-9a3c8195a7b4",
+   "run_hash": "9f79f78397c0260725f09e414c9b086f7221e786e6d8b1899f5799e72f730c7a",
+   "config_id": "6920fcdd595aa5199a0445c6d6a21d4df6a8264f5297eea87e12fff822eebeaf",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 5,
+   "time_to_target": 3.190347310140431,
+   "rounds_to_target": 18,
+   "censored": false,
+   "time": 8.226986846253405,
+   "final_accuracy": {
+    "global/*": 0.3645701096364686,
+    "global/femnist": 0.3645701096364686
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02642340022859008,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T080553Z-afc1685677c5",
+   "run_hash": "7df11ec6395c33ae4d1f6f989c194d26078d7d8242fcd95401f9fc33307cea77",
+   "config_id": "6920fcdd595aa5199a0445c6d6a21d4df6a8264f5297eea87e12fff822eebeaf",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 6,
+   "time_to_target": 2.880148746396988,
+   "rounds_to_target": 17,
+   "censored": false,
+   "time": 8.492451919850778,
+   "final_accuracy": {
+    "global/*": 0.3989613387189844,
+    "global/femnist": 0.3989613387189844
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.024701846222644628,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T080559Z-8a794c1b3f1a",
+   "run_hash": "7b4573bd0b5b0d7b2b10f6e7d1fc7fd8f07605aed1ae5ee7fecb495b8fe2c451",
+   "config_id": "6920fcdd595aa5199a0445c6d6a21d4df6a8264f5297eea87e12fff822eebeaf",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 7,
+   "time_to_target": 2.5781181255599788,
+   "rounds_to_target": 15,
+   "censored": false,
+   "time": 9.57788175361812,
+   "final_accuracy": {
+    "global/*": 0.41096364685516446,
+    "global/femnist": 0.41096364685516446
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02859728069082725,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T080606Z-db48b03c0c7b",
+   "run_hash": "eee9b2b1f85e1cd56aa7692b39ad507f32f0c010aa6d8dd9dc4718f479ce7c1c",
+   "config_id": "6920fcdd595aa5199a0445c6d6a21d4df6a8264f5297eea87e12fff822eebeaf",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 8,
+   "time_to_target": 2.5146349381328026,
+   "rounds_to_target": 14,
+   "censored": false,
+   "time": 8.139638432728256,
+   "final_accuracy": {
+    "global/*": 0.40611656087709175,
+    "global/femnist": 0.40611656087709175
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02116104135281317,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "fedbuff",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T080950Z-d39888782b86",
+   "run_hash": "06ca04bbcd8bf83590b659847ab2165a2ef94dc5bcb8677b51a51277fa7246bc",
+   "config_id": "6920fcdd595aa5199a0445c6d6a21d4df6a8264f5297eea87e12fff822eebeaf",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 9,
+   "time_to_target": 2.63436760727,
+   "rounds_to_target": 16,
+   "censored": false,
+   "time": 8.799071081041555,
+   "final_accuracy": {
+    "global/*": 0.40992498557414886,
+    "global/femnist": 0.40992498557414886
+   },
+   "diagnostic": {
+    "D": -0.08261450658792492,
+    "D_gradient_norm": -0.02430308611645747,
+    "participation": 0.6103544446358324,
+    "floss_rounds_factor": 1.7191551325747854,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T083436Z-9d2c924bebfe",
+   "run_hash": "8999bd8f97e0b0e84c9522f8b97576a8bc05f04f23daa2d5a883db6ce42e9c74",
+   "config_id": "84709c7a91413000c8c635e87fa81a166224e143ec70cc9782c6f6aff8abb4cf",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 0,
+   "time_to_target": 55.47560000109719,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 135.68177518117525,
+   "final_accuracy": {
+    "global/*": 0.5083669936526255,
+    "global/femnist": 0.5083669936526255
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T083436Z-bd52cd3fbfe9",
+   "run_hash": "d3589d9cc723b15e420a51852eb16d97e7fa703ef8883c8e9b4c27c007a7fa1f",
+   "config_id": "84709c7a91413000c8c635e87fa81a166224e143ec70cc9782c6f6aff8abb4cf",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 1,
+   "time_to_target": 51.90182048864383,
+   "rounds_to_target": 7,
+   "censored": false,
+   "time": 147.45520011075794,
+   "final_accuracy": {
+    "global/*": 0.49659549913444895,
+    "global/femnist": 0.49659549913444895
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T083436Z-0f5b3d58e56b",
+   "run_hash": "554aae879a4d1aa4d71edd4ecfe1e24c49ea20755abe392a7514a790045ed043",
+   "config_id": "84709c7a91413000c8c635e87fa81a166224e143ec70cc9782c6f6aff8abb4cf",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 2,
+   "time_to_target": 55.047387796781614,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 150.22956076798556,
+   "final_accuracy": {
+    "global/*": 0.5185227928447779,
+    "global/femnist": 0.5185227928447779
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T083436Z-feb90246cf0a",
+   "run_hash": "3424419f2f67c345f1c615953474640216f6699c61dfd935c6b169650b3b07dc",
+   "config_id": "84709c7a91413000c8c635e87fa81a166224e143ec70cc9782c6f6aff8abb4cf",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 3,
+   "time_to_target": 60.97785805830606,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 148.10417770499203,
+   "final_accuracy": {
+    "global/*": 0.5139065204847086,
+    "global/femnist": 0.5139065204847086
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedadam",
+   "run_id": "20261109T083718Z-2be6ae81a5d1",
+   "run_hash": "1a1e2fc9a3c347c0215f2d3b8849231b5fac1f05379926fd9c66e3b7334ddbdb",
+   "config_id": "84709c7a91413000c8c635e87fa81a166224e143ec70cc9782c6f6aff8abb4cf",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 4,
+   "time_to_target": 65.666717267732,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 147.4599527517305,
+   "final_accuracy": {
+    "global/*": 0.4933641084824005,
+    "global/femnist": 0.4933641084824005
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T110516Z-d03b97b4b46d",
+   "run_hash": "38f2278b1c2aa2ef6e1c448f53813ee18e769add789602ea78992dd85cac4de9",
+   "config_id": "39880fac1d0b7458fa79a924b47f1fce701a04f2dce225ef4baf23821ceb7a3e",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 0,
+   "time_to_target": 61.1205945080557,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 135.68177534117527,
+   "final_accuracy": {
+    "global/*": 0.48540103866128104,
+    "global/femnist": 0.48540103866128104
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T110516Z-2de222e2aaa1",
+   "run_hash": "1defb01899cd1bfbc334b593a7e0f6e4b0ac3f009260b1f0f180af2131fe2d49",
+   "config_id": "39880fac1d0b7458fa79a924b47f1fce701a04f2dce225ef4baf23821ceb7a3e",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 1,
+   "time_to_target": 51.90182048864383,
+   "rounds_to_target": 7,
+   "censored": false,
+   "time": 147.45519995075796,
+   "final_accuracy": {
+    "global/*": 0.4882862088863243,
+    "global/femnist": 0.4882862088863243
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T110516Z-8076cbc01e44",
+   "run_hash": "32a6031a57820865d96a79e32109f6e957433a2d3fc5a64dd636ea38b6fd5387",
+   "config_id": "39880fac1d0b7458fa79a924b47f1fce701a04f2dce225ef4baf23821ceb7a3e",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 2,
+   "time_to_target": 55.047387636781615,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 150.22956092798557,
+   "final_accuracy": {
+    "global/*": 0.48228505481823425,
+    "global/femnist": 0.48228505481823425
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T110516Z-356f1ba4a6ea",
+   "run_hash": "849fff171604706605ac6e16ad5abd13a681fbb2e3d4a8a1e875dea9d4223bc6",
+   "config_id": "39880fac1d0b7458fa79a924b47f1fce701a04f2dce225ef4baf23821ceb7a3e",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 3,
+   "time_to_target": 60.977857578306065,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 148.10417658499202,
+   "final_accuracy": {
+    "global/*": 0.4924408540103866,
+    "global/femnist": 0.4924408540103866
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_flat",
+   "algorithm": "fedavg",
+   "run_id": "20261106T110516Z-5e66cfa87d0a",
+   "run_hash": "b8cdd7e380963b36de6136ccb63c94c55072be42c377f4d70a75a3d364b30495",
+   "config_id": "39880fac1d0b7458fa79a924b47f1fce701a04f2dce225ef4baf23821ceb7a3e",
+   "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 4,
+   "time_to_target": 65.666716467732,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 147.4599514717305,
+   "final_accuracy": {
+    "global/*": 0.48413156376226196,
+    "global/femnist": 0.48413156376226196
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T094123Z-c7905474f208",
+   "run_hash": "38e19b28f3ed9c94bf5b26910767867fa3537384962a529c88eb5c79251867b4",
+   "config_id": "a4bb0b9798f3d8bd121c3b7e7c4804dd908f3fcdf5e25d99f8263aa47c53b0dc",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 0,
+   "time_to_target": 53.62858667309721,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 131.06185666917528,
+   "final_accuracy": {
+    "global/*": 0.5082515868436238,
+    "global/femnist": 0.5082515868436238
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T094124Z-69a6aee59882",
+   "run_hash": "fb5b329717356f01b165b07d34658b48fd063a216843d9b79d16edb689b65ffb",
+   "config_id": "a4bb0b9798f3d8bd121c3b7e7c4804dd908f3fcdf5e25d99f8263aa47c53b0dc",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 1,
+   "time_to_target": 50.28629639264384,
+   "rounds_to_target": 7,
+   "censored": false,
+   "time": 142.83528057475795,
+   "final_accuracy": {
+    "global/*": 0.49636468551644547,
+    "global/femnist": 0.49636468551644547
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T094342Z-03419269b892",
+   "run_hash": "306338613524e35c9778291e29ac3b498952583bc32246bd399d9a2a2f397be5",
+   "config_id": "a4bb0b9798f3d8bd121c3b7e7c4804dd908f3fcdf5e25d99f8263aa47c53b0dc",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 2,
+   "time_to_target": 53.20037443678163,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 145.60964151198553,
+   "final_accuracy": {
+    "global/*": 0.5184073860357761,
+    "global/femnist": 0.5184073860357761
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T094343Z-d0b0a3d7f535",
+   "run_hash": "d34be983385634f1cecf8e7a5d2940d553981853f4c5b1dbb45f311f2b7fcbf8",
+   "config_id": "a4bb0b9798f3d8bd121c3b7e7c4804dd908f3fcdf5e25d99f8263aa47c53b0dc",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 3,
+   "time_to_target": 59.13084438630609,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 143.48425814499205,
+   "final_accuracy": {
+    "global/*": 0.5136757068667052,
+    "global/femnist": 0.5136757068667052
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T094346Z-f36b7bc358fd",
+   "run_hash": "1a8d85e9406168faaa5458b3f4e554ab2c8b9f7a8124be3005202b72a6d99e03",
+   "config_id": "a4bb0b9798f3d8bd121c3b7e7c4804dd908f3fcdf5e25d99f8263aa47c53b0dc",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 4,
+   "time_to_target": 63.588213779732,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 142.8400332157305,
+   "final_accuracy": {
+    "global/*": 0.4939411425274091,
+    "global/femnist": 0.4939411425274091
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T080950Z-bd3c24a9d4c7",
+   "run_hash": "6a62b38792f07588c461fb5f859d5d1877673a891889d53fe106d31af3a55a5a",
+   "config_id": "2fa7cd5a0f50382aa4e8baaef9400c8b1e87557d9a035dbecd052245af43b227",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 0,
+   "time_to_target": 59.042090964055724,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 131.06185620517527,
+   "final_accuracy": {
+    "global/*": 0.4855164454702827,
+    "global/femnist": 0.4855164454702827
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T080950Z-281e5e1c4e79",
+   "run_hash": "eaf6b30f53fd95ed2b6c252efa263905e1ba8998d6bb9fcd7dd78e156a1e9e0b",
+   "config_id": "2fa7cd5a0f50382aa4e8baaef9400c8b1e87557d9a035dbecd052245af43b227",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 1,
+   "time_to_target": 50.286296584643836,
+   "rounds_to_target": 7,
+   "censored": false,
+   "time": 142.83528083075794,
+   "final_accuracy": {
+    "global/*": 0.4882862088863243,
+    "global/femnist": 0.4882862088863243
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T080950Z-e5a04a6bfc1b",
+   "run_hash": "2de8506365c47d384705b1fb5113e7e24da1b2aae131cac8523a57861e61c6ae",
+   "config_id": "2fa7cd5a0f50382aa4e8baaef9400c8b1e87557d9a035dbecd052245af43b227",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 2,
+   "time_to_target": 53.20037474878163,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 145.6096419999855,
+   "final_accuracy": {
+    "global/*": 0.48228505481823425,
+    "global/femnist": 0.48228505481823425
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T080950Z-444959c6546c",
+   "run_hash": "de55bf3d0f24d7ce8a72cf4398c6304fb8db0fe755d042b97d79a73c32c051f3",
+   "config_id": "2fa7cd5a0f50382aa4e8baaef9400c8b1e87557d9a035dbecd052245af43b227",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 3,
+   "time_to_target": 59.13084413830609,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 143.48425788899206,
+   "final_accuracy": {
+    "global/*": 0.49221004039238314,
+    "global/femnist": 0.49221004039238314
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_four_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T080950Z-8cb8f156fd0c",
+   "run_hash": "4385c651a50d350c5681228d5e8d3cf37080aebd207a5d278e66f76b5f3dc86b",
+   "config_id": "2fa7cd5a0f50382aa4e8baaef9400c8b1e87557d9a035dbecd052245af43b227",
+   "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 4,
+   "time_to_target": 63.588214099732006,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 142.8400334717305,
+   "final_accuracy": {
+    "global/*": 0.48413156376226196,
+    "global/femnist": 0.48413156376226196
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T090930Z-1af676d1471f",
+   "run_hash": "bc5c7023c7f6ab67a295708f89eaf66fb7fad0558117054159076d9cc9fe56e8",
+   "config_id": "675f6774edbd364f908361d1afc5169b4f0fcabc927857d9e863a316f04ee6ef",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 0,
+   "time_to_target": 55.05108215309721,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 134.61809582117513,
+   "final_accuracy": {
+    "global/*": 0.5083669936526255,
+    "global/femnist": 0.5083669936526255
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T090930Z-1cc3b49cdc11",
+   "run_hash": "5635537ace56b4af1109334aa95fcb79819e330417998c372dacabdcbe60fcc0",
+   "config_id": "675f6774edbd364f908361d1afc5169b4f0fcabc927857d9e863a316f04ee6ef",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 1,
+   "time_to_target": 51.53098041664384,
+   "rounds_to_target": 7,
+   "censored": false,
+   "time": 146.39152031075784,
+   "final_accuracy": {
+    "global/*": 0.49659549913444895,
+    "global/femnist": 0.49659549913444895
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T090930Z-d9277141a54b",
+   "run_hash": "0059f28bf37038c32b5e0f1a1bb4f82c5c0117bcfd39090c84d315afb68200d8",
+   "config_id": "675f6774edbd364f908361d1afc5169b4f0fcabc927857d9e863a316f04ee6ef",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 2,
+   "time_to_target": 54.62287017278163,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 149.16588067198546,
+   "final_accuracy": {
+    "global/*": 0.5185227928447779,
+    "global/femnist": 0.5185227928447779
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T091020Z-eecfdfa01433",
+   "run_hash": "d281774aad0d13467f463dd262cd3b0eee152fb7cbfca2da3b89b125006e23bd",
+   "config_id": "675f6774edbd364f908361d1afc5169b4f0fcabc927857d9e863a316f04ee6ef",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 3,
+   "time_to_target": 60.55334001030609,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 147.0404976409919,
+   "final_accuracy": {
+    "global/*": 0.5135603000577034,
+    "global/femnist": 0.5135603000577034
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedadam",
+   "run_id": "20261109T091020Z-00b6c5540002",
+   "run_hash": "2356f6bf17b6f612fd02d08e5cf1705057f1f951400f8a33c5b0f2b08a137ce9",
+   "config_id": "675f6774edbd364f908361d1afc5169b4f0fcabc927857d9e863a316f04ee6ef",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 4,
+   "time_to_target": 65.18852174773201,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 146.39627308773038,
+   "final_accuracy": {
+    "global/*": 0.4934795152914022,
+    "global/femnist": 0.4934795152914022
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T074136Z-669309f024a9",
+   "run_hash": "af5ea0a5f9bc9f2ba370e9fbdc19504fb757bb457d0eab740c3cc160c194845d",
+   "config_id": "38b48c17dfda56aa676c0917bc3afdd735838a0c770a5af330bad95ff3f7915d",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 0,
+   "time_to_target": 60.64239925205573,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 134.61809624517514,
+   "final_accuracy": {
+    "global/*": 0.48540103866128104,
+    "global/femnist": 0.48540103866128104
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T074136Z-c804afeebe63",
+   "run_hash": "ec279d2d13e94e9060cdc147397f38fb1940dba9794f4bd401e090c86353f732",
+   "config_id": "38b48c17dfda56aa676c0917bc3afdd735838a0c770a5af330bad95ff3f7915d",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 1,
+   "time_to_target": 51.530980344643844,
+   "rounds_to_target": 7,
+   "censored": false,
+   "time": 146.39152059075778,
+   "final_accuracy": {
+    "global/*": 0.4882862088863243,
+    "global/femnist": 0.4882862088863243
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T074136Z-cff09a966d1d",
+   "run_hash": "0c768591716ed498bc799423bdf4a281f5bff96c9b3fd58e3ecd7ac905e2ac6d",
+   "config_id": "38b48c17dfda56aa676c0917bc3afdd735838a0c770a5af330bad95ff3f7915d",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 2,
+   "time_to_target": 54.62287042078163,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 149.16588163198543,
+   "final_accuracy": {
+    "global/*": 0.48263127524523947,
+    "global/femnist": 0.48263127524523947
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T074136Z-023d0b132c28",
+   "run_hash": "5db30226c0a7916715b92eaaafa2952042e8157f5a5f6a4d53406cde061f4fab",
+   "config_id": "38b48c17dfda56aa676c0917bc3afdd735838a0c770a5af330bad95ff3f7915d",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 3,
+   "time_to_target": 60.55334011430609,
+   "rounds_to_target": 8,
+   "censored": false,
+   "time": 147.04049734499188,
+   "final_accuracy": {
+    "global/*": 0.4923254472013849,
+    "global/femnist": 0.4923254472013849
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  },
+  {
+   "regime": "sync",
+   "statistic": "samples",
+   "rho": 0.0,
+   "federation": "pilot_dc_two_fogs",
+   "algorithm": "fedavg",
+   "run_id": "20261109T074136Z-dc291847b4c0",
+   "run_hash": "9b6bd84e0ce7397a964475dc629a9690c736917e6c03b68d6d069fcd1f22a18f",
+   "config_id": "38b48c17dfda56aa676c0917bc3afdd735838a0c770a5af330bad95ff3f7915d",
+   "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+   "code": {
+    "commit": "b7f0f2f5bc3a518bd0b49427861b781278d10aec",
+    "dirty": false
+   },
+   "seed": 4,
+   "time_to_target": 65.188521675732,
+   "rounds_to_target": 9,
+   "censored": false,
+   "time": 146.39627285573036,
+   "final_accuracy": {
+    "global/*": 0.48413156376226196,
+    "global/femnist": 0.48413156376226196
+   },
+   "diagnostic": {
+    "D": 0.0,
+    "D_gradient_norm": 0.0,
+    "participation": 1.0,
+    "floss_rounds_factor": 1.0,
+    "error": null
+   }
+  }
+ ]
+}
