@@ -391,6 +391,19 @@ Source: [results/techniques_server/](results/techniques_server/INDEX.md), `topol
 - **In these runs, FedAdagrad, FedYogi and FedAdam beat FedAvg on WESAD**; the intervals do not overlap. On SWELL they overlap.
 - **FedBuff-style buffering finishes 20 rounds in 43% less simulated time**, but its per-round score on SWELL is lower; time-to-accuracy is not compared yet. It is a hierarchical adaptation (the fogs buffer, the cloud stays synchronous), not the FedBuff or FedAsync protocol.
 
+### New framework: contribution scores under noisy edges
+
+Source: [results/contribution_noise/](results/contribution_noise/INDEX.md), `topology_id` `ff55fe4d…`, commit `f257ac4`. It is `experiments/contribution_noise.yaml`: SWELL + WESAD on four fogs at α = 0.5, FedAvg, 10 rounds, 5 seeds; in each dataset a seeded 20% of the edges flip their labels or send Gaussian noise (σ = 0.01). The fogs' `contribution` diagnostic is compared against the known noisy edges: AUC = P(honest edge scores above a noisy one) within a fog and round, mean ± 95% CI over seeds.
+
+| Noisy edges | Shapley AUC | Leave-one-out AUC |
+|---|---|---|
+| Gaussian noise | 0.772 ± 0.054 | 0.780 ± 0.052 |
+| Label flipping | 0.697 ± 0.238 | 0.704 ± 0.240 |
+
+- **Edges that send noise score below the honest ones in every seed.**
+- **Flipped labels score lower on average, but one seed of five goes the other way** (AUC 0.43); the interval includes 0.5.
+- **Permutation importance on the val subjects** (`onion_fl explain`) puts `snkeystrokes` first on SWELL and `bvp_0_median` far ahead on WESAD; the INDEX lists the caveats.
+
 ### New framework: continuing a trained model
 
 Source: [results/continuum_warm_start/](results/continuum_warm_start/INDEX.md), commit `63b0e47`. A federation trained on SWELL only for 20 rounds is continued with SWELL + WESAD (`learning.init: {name: run}`): rounds 21–40, SWELL's frozen preprocessing, WESAD's adapter fresh. Global macro-F1, mean ± 95% CI over 3 seeds:
