@@ -506,6 +506,10 @@ class PathsConfig(Strict):
     datasets: str = "datasets"
     runs: str = "runs"
     cache: str = "data/cache"
+    calibrations: str = Field(
+        "calibrations",
+        exclude_if=lambda v: v == "calibrations",  # keeps existing config_ids
+    )
 
 
 class ExperimentConfig(Strict):

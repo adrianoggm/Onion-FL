@@ -15,6 +15,11 @@ from __future__ import annotations
     onion_fl fidelity <runs A | predictor> <runs B | predictor[:floss]>
                       [--metric NAME]... [--target METRIC=VALUE] [--control RUNS]
                       [--no-predictor] [--ceiling FILE] [--csv FILE] [--html FILE]
+    onion_fl calibrate measure <spec.yaml> --out <session> [--image IMAGE]
+                       [--project NAME] [--subnet CIDR]
+    onion_fl calibrate fit <session>... [--out calibrations] [--infrastructure-out FILE]
+    onion_fl calibrate check <session> --infrastructure FILE [--calibrations DIR]
+                       [--out FILE]
     onion_fl report <experiment.yaml | runs_dir>... [--out FILE] [--metric NAME]... [--by TAG]...
     onion_fl baseline <experiment.yaml> [--models lr rf xgboost] [--cv K | --seeds 0 1 2]
                       [--seed S]
@@ -230,6 +235,43 @@ def cmd_fidelity(args: argparse.Namespace) -> int:
         write_csv(result, args.csv)
     if args.html:
         write_html(result, args.html)
+    _print_json(result)
+    return 0
+
+
+def cmd_calibrate(args: argparse.Namespace) -> int:
+    from onion_fl.experiment import calibrate
+
+    if args.step == "measure":
+        given = {"image": args.image, "project": args.project, "subnet": args.subnet}
+        params = {k: v for k, v in given.items() if v is not None}
+        print(calibrate.measure(args.spec, args.out, params))
+        return 0
+    if args.step == "fit":
+        from onion_fl.infrastructure.calibration import load_calibration
+
+        folder = calibrate.fit(args.sessions, args.out)
+        if args.infrastructure_out:
+            meta, _ = calibrate.read_session(args.sessions[0])
+            spec = calibrate.CalibrationSpec.model_validate(meta["spec"])
+            source = Path(spec.infrastructure)
+            if source.suffix not in (".yaml", ".yml"):
+                source = Path(spec.paths.infrastructures) / f"{source}.yaml"
+            raw = calibrate.calibrated_infrastructure(
+                source, load_calibration(args.out, folder.name)
+            )
+            head = (
+                f"# {source.name} with the profiles and links that calibration\n"
+                f"# {folder.name} measured citing it (onion_fl calibrate fit).\n"
+            )
+            Path(args.infrastructure_out).write_text(
+                head + yaml.safe_dump(raw, sort_keys=False), encoding="utf-8"
+            )
+        print(folder)
+        return 0
+    result = calibrate.check(args.session, args.infrastructure, args.calibrations)
+    if args.out:
+        Path(args.out).write_text(json.dumps(result, indent=2), encoding="utf-8")
     _print_json(result)
     return 0
 
@@ -468,6 +510,31 @@ def parser() -> argparse.ArgumentParser:
     fidelity.add_argument("--csv", help="also write the result as CSV rows")
     fidelity.add_argument("--html", help="also write an HTML report")
     fidelity.set_defaults(func=cmd_fidelity)
+
+    cal = sub.add_parser(
+        "calibrate", help="microbenchmarks that calibrate profiles and links"
+    )
+    steps = cal.add_subparsers(dest="step", required=True)
+    measure = steps.add_parser("measure", help="run the microbenchmarks of a spec")
+    measure.add_argument("spec")
+    measure.add_argument("--out", required=True, help="a new session folder")
+    measure.add_argument("--image")
+    measure.add_argument("--project", help="prefix of the containers and networks")
+    measure.add_argument("--subnet")
+    fit = steps.add_parser("fit", help="sign the calibration of sessions of a spec")
+    fit.add_argument("sessions", nargs="+", help="sessions of one spec (3 or more)")
+    fit.add_argument("--out", default="calibrations")
+    fit.add_argument(
+        "--infrastructure-out", help="write the infrastructure citing the calibration"
+    )
+    check = steps.add_parser(
+        "check", help="predict another session with a calibrated infrastructure"
+    )
+    check.add_argument("session")
+    check.add_argument("--infrastructure", required=True)
+    check.add_argument("--calibrations", default="calibrations")
+    check.add_argument("--out", help="also write the result to this file")
+    cal.set_defaults(func=cmd_calibrate)
 
     report = sub.add_parser("report", help="HTML report comparing runs")
     report.add_argument(

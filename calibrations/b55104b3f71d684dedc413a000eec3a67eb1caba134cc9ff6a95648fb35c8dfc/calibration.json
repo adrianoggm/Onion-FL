@@ -1,0 +1,1625 @@
+{
+  "backend": "emulated",
+  "calibration_id": "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc",
+  "code": {
+    "commit": "d3d050e95e06f6b390630184cda88b4c9a1d9d1f",
+    "dirty": false
+  },
+  "created_at": "2026-11-06T09:06:08.700255+00:00",
+  "environment": {
+    "docker": {
+      "docker": "28.3.2",
+      "kernel": "6.6.87.2-microsoft-standard-WSL2",
+      "memory": 16559267840,
+      "ncpu": 24,
+      "os": "Docker Desktop (containerized)"
+    },
+    "image": {
+      "id": "sha256:a826e66ea506c34a6105933b94102ed2a9824ed42e896164763a2c1851aa5a8f",
+      "name": "onionfl-a197b-emulated:latest",
+      "pins": {
+        "numpy": "2.4.6",
+        "pandas": "2.3.3",
+        "scikit-learn": "1.9.1",
+        "scipy": "1.17.1",
+        "torch": "2.14.1"
+      }
+    },
+    "machine": {
+      "platform": "Windows-10-10.0.26300-SP0",
+      "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel"
+    }
+  },
+  "infrastructure_id": "da875674ad22d77f7aabcc6d9ac2fe642e9e8be204889668bb4adc5f238df43e",
+  "links": {
+    "field|fog_a": {
+      "bandwidth_down": {
+        "high": 49129522.76729725,
+        "low": 46816651.634182215,
+        "n": 1416,
+        "sessions": [
+          48357395.459292196,
+          47578831.21537266,
+          47869242.26125407,
+          48034421.64003085
+        ],
+        "value": 47959146.70164784
+      },
+      "bandwidth_up": {
+        "high": 49129522.76729725,
+        "low": 46816651.634182215,
+        "n": 1416,
+        "sessions": [
+          48357395.459292196,
+          47578831.21537266,
+          47869242.26125407,
+          48034421.64003085
+        ],
+        "value": 47959146.70164784
+      },
+      "derived": [
+        "bandwidth_up",
+        "bandwidth_down"
+      ],
+      "latency": {
+        "high": 0.011025336198200278,
+        "low": 0.009373546754923296,
+        "n": 1416,
+        "sessions": [
+          0.010511717958301968,
+          0.009986246642010414,
+          0.01009685656050846,
+          0.010076957067862904
+        ],
+        "value": 0.010165948275619867
+      },
+      "loss": {
+        "high": 0.016016659084771664,
+        "low": 0.0,
+        "n": 236,
+        "value": 0.0
+      },
+      "pairs": [
+        "cloud-1>field-edge_device-1",
+        "field-edge_device-1>cloud-1",
+        "field-edge_device-1>fog-a",
+        "field-edge_device-1>fog-b",
+        "fog-a>field-edge_device-1",
+        "fog-b>field-edge_device-1"
+      ]
+    },
+    "fog_a|dc": {
+      "bandwidth_down": {
+        "high": 9898973.076275596,
+        "low": 9258749.596921723,
+        "n": 1888,
+        "sessions": [
+          9471093.091378685,
+          9526751.3813824,
+          9659930.391309176,
+          9637536.363509541
+        ],
+        "value": 9573511.005890455
+      },
+      "bandwidth_up": {
+        "high": 10340774.300555538,
+        "low": 8694749.919667458,
+        "n": 1888,
+        "sessions": [
+          9834253.416513942,
+          9365683.94580801,
+          9387032.14906114,
+          9349989.22522168
+        ],
+        "value": 9482111.922934385
+      },
+      "derived": [],
+      "latency": {
+        "high": 0.04080939610450766,
+        "low": 0.04044880537630059,
+        "n": 1888,
+        "sessions": [
+          0.04063615969369443,
+          0.040691828226720864,
+          0.04061773054934053,
+          0.04056917912997873
+        ],
+        "value": 0.04062870069982044
+      },
+      "loss": {
+        "high": 0.016016659084771664,
+        "low": 0.0,
+        "n": 236,
+        "value": 0.0
+      },
+      "pairs": [
+        "cloud-1>field-edge_device-1",
+        "cloud-1>fog-a",
+        "field-edge_device-1>cloud-1",
+        "field-edge_device-1>fog-a",
+        "field-edge_device-1>fog-b",
+        "fog-a>cloud-1",
+        "fog-a>field-edge_device-1",
+        "fog-b>field-edge_device-1"
+      ]
+    },
+    "fog_b|dc": {
+      "bandwidth_down": {
+        "high": 9875532.41145041,
+        "low": 9302532.275480859,
+        "n": 944,
+        "sessions": [
+          9519181.363304319,
+          9582957.668780912,
+          9538568.082124995,
+          9699314.76793588
+        ],
+        "value": 9584751.378886923
+      },
+      "bandwidth_up": {
+        "high": 10157118.613898914,
+        "low": 9326322.638987727,
+        "n": 944,
+        "sessions": [
+          9874951.54282589,
+          9591153.330962889,
+          9716575.218568921,
+          9750859.420493374
+        ],
+        "value": 9732860.076857628
+      },
+      "derived": [],
+      "latency": {
+        "high": 0.060863165155416434,
+        "low": 0.06050108774558847,
+        "n": 944,
+        "sessions": [
+          0.06075139872010345,
+          0.060684817131879905,
+          0.06063336056685907,
+          0.060657913164901364
+        ],
+        "value": 0.06068185639498921
+      },
+      "loss": {
+        "high": 0.016016659084771664,
+        "low": 0.0,
+        "n": 236,
+        "value": 0.0
+      },
+      "pairs": [
+        "cloud-1>fog-b",
+        "field-edge_device-1>fog-b",
+        "fog-b>cloud-1",
+        "fog-b>field-edge_device-1"
+      ]
+    }
+  },
+  "measurements_sha256": "2c8eca76400ff62f5f62d76276ee408e72a64549bbdb1fb356496df36bc2a31e",
+  "notes": [
+    "session 0: cloud-1 to itself through the broker: 0.61 ms, the transport's own one-way latency, which the links absorb",
+    "session 1: cloud-1 to itself through the broker: 0.53 ms, the transport's own one-way latency, which the links absorb",
+    "session 2: cloud-1 to itself through the broker: 0.53 ms, the transport's own one-way latency, which the links absorb",
+    "session 3: cloud-1 to itself through the broker: 0.50 ms, the transport's own one-way latency, which the links absorb"
+  ],
+  "paths": {
+    "cloud-1>field-edge_device-1@100": {
+      "high": 0.0517024977726651,
+      "low": 0.05045205114192291,
+      "n": 56,
+      "sessions": [
+        0.05133180958884103,
+        0.051031061581202915,
+        0.05099071775163923,
+        0.0509411096572876
+      ],
+      "value": 0.051073447717886196
+    },
+    "cloud-1>field-edge_device-1@1000": {
+      "high": 0.05302601269207803,
+      "low": 0.050989137273705736,
+      "n": 60,
+      "sessions": [
+        0.05242427190144857,
+        0.05186888376871745,
+        0.05189844767252604,
+        0.051801172892252605
+      ],
+      "value": 0.05199760225465814
+    },
+    "cloud-1>field-edge_device-1@10000": {
+      "high": 0.06016469473888457,
+      "low": 0.058753039278456674,
+      "n": 60,
+      "sessions": [
+        0.05942692756652832,
+        0.059737205505371094,
+        0.059380356470743814,
+        0.059275213877360025
+      ],
+      "value": 0.059454677470910905
+    },
+    "cloud-1>field-edge_device-1@5000": {
+      "high": 0.05623392061209525,
+      "low": 0.054611067025724214,
+      "n": 60,
+      "sessions": [
+        0.05575175285339355,
+        0.055254618326822914,
+        0.0553707758585612,
+        0.055290476481119795
+      ],
+      "value": 0.05541655355276425
+    },
+    "cloud-1>fog-a@100": {
+      "high": 0.04195531354456457,
+      "low": 0.040148413840385165,
+      "n": 56,
+      "sessions": [
+        0.041399904659816196,
+        0.04104741982051304,
+        0.04084123883928571,
+        0.040881480489458354
+      ],
+      "value": 0.041041921141563235
+    },
+    "cloud-1>fog-a@1000": {
+      "high": 0.04211345576487271,
+      "low": 0.04115869880879043,
+      "n": 60,
+      "sessions": [
+        0.0417181650797526,
+        0.041775782903035484,
+        0.04154057502746582,
+        0.04149948755900065
+      ],
+      "value": 0.041633340505221474
+    },
+    "cloud-1>fog-a@10000": {
+      "high": 0.05059495540478174,
+      "low": 0.04791229166066293,
+      "n": 60,
+      "sessions": [
+        0.0498021920522054,
+        0.049048360188802084,
+        0.0490843137105306,
+        0.04901089668273926
+      ],
+      "value": 0.04923535579146491
+    },
+    "cloud-1>fog-a@5000": {
+      "high": 0.045715212292726945,
+      "low": 0.044301495119873566,
+      "n": 60,
+      "sessions": [
+        0.045297463734944664,
+        0.044902960459391274,
+        0.04494702021280925,
+        0.044865083694458005
+      ],
+      "value": 0.0450028027381654
+    },
+    "cloud-1>fog-b@100": {
+      "high": 0.061819906781303766,
+      "low": 0.060218355738722466,
+      "n": 56,
+      "sessions": [
+        0.061336943081447055,
+        0.06100126675197056,
+        0.0608635459627424,
+        0.06085499695369175
+      ],
+      "value": 0.06101387660435298
+    },
+    "cloud-1>fog-b@1000": {
+      "high": 0.06281922721294844,
+      "low": 0.06078558165086519,
+      "n": 60,
+      "sessions": [
+        0.062215264638264975,
+        0.061734549204508465,
+        0.06162665685017903,
+        0.06160167058308919
+      ],
+      "value": 0.061794039073335624
+    },
+    "cloud-1>fog-b@10000": {
+      "high": 0.07000344602387201,
+      "low": 0.06829722589386973,
+      "n": 60,
+      "sessions": [
+        0.06949938138326009,
+        0.06908995310465495,
+        0.06899158159891765,
+        0.06900062561035156
+      ],
+      "value": 0.06914507333456017
+    },
+    "cloud-1>fog-b@5000": {
+      "high": 0.06591195977094985,
+      "low": 0.06414358002525435,
+      "n": 60,
+      "sessions": [
+        0.06538483301798502,
+        0.06497591336568197,
+        0.06483182907104493,
+        0.06489588419596354
+      ],
+      "value": 0.06502175840585417
+    },
+    "field-edge_device-1>cloud-1@100": {
+      "high": 0.05183451961329475,
+      "low": 0.05054429412213467,
+      "n": 56,
+      "sessions": [
+        0.051348720278058736,
+        0.05128470488956997,
+        0.05117189884185791,
+        0.05093700545174735
+      ],
+      "value": 0.0511853417006659
+    },
+    "field-edge_device-1>cloud-1@1000": {
+      "high": 0.0580285656953082,
+      "low": 0.047507849307437414,
+      "n": 60,
+      "sessions": [
+        0.05476646423339844,
+        0.05179352760314941,
+        0.05174978574117025,
+        0.05177447001139323
+      ],
+      "value": 0.05250535548474492
+    },
+    "field-edge_device-1>cloud-1@10000": {
+      "high": 0.0605052628117528,
+      "low": 0.05910989788915068,
+      "n": 60,
+      "sessions": [
+        0.060085360209147134,
+        0.059703731536865236,
+        0.05978307723999023,
+        0.0596428394317627
+      ],
+      "value": 0.05980351082134672
+    },
+    "field-edge_device-1>cloud-1@5000": {
+      "high": 0.05632327668616936,
+      "low": 0.05474852769341324,
+      "n": 60,
+      "sessions": [
+        0.05586160024007161,
+        0.05539517402648926,
+        0.055417346954345706,
+        0.055448484420776364
+      ],
+      "value": 0.055530320307346684
+    },
+    "field-edge_device-1>fog-a@100": {
+      "high": 0.0917791728710227,
+      "low": 0.09074532506708619,
+      "n": 56,
+      "sessions": [
+        0.09137375014168876,
+        0.09114292689732142,
+        0.09139878409249443,
+        0.09112802573612758
+      ],
+      "value": 0.09126078498768929
+    },
+    "field-edge_device-1>fog-a@1000": {
+      "high": 0.09315782412174689,
+      "low": 0.0924736200155649,
+      "n": 60,
+      "sessions": [
+        0.09281241099039714,
+        0.0927603562672933,
+        0.09295132954915365,
+        0.0927364190419515
+      ],
+      "value": 0.09281509160320453
+    },
+    "field-edge_device-1>fog-a@10000": {
+      "high": 0.10838976344329716,
+      "low": 0.10768149583593975,
+      "n": 60,
+      "sessions": [
+        0.10815684000651042,
+        0.10807509422302246,
+        0.10794382095336914,
+        0.10796457926432292
+      ],
+      "value": 0.10803504922421195
+    },
+    "field-edge_device-1>fog-a@5000": {
+      "high": 0.1001423756837226,
+      "low": 0.09942094763434603,
+      "n": 60,
+      "sessions": [
+        0.09993089040120443,
+        0.09971516927083333,
+        0.09972257614135742,
+        0.09975555737813314
+      ],
+      "value": 0.09978100966030756
+    },
+    "field-edge_device-1>fog-b@100": {
+      "high": 0.11184102703665268,
+      "low": 0.11081608836338054,
+      "n": 56,
+      "sessions": [
+        0.11148289271763392,
+        0.11128003256661552,
+        0.11115101405552455,
+        0.11139585290636335
+      ],
+      "value": 0.11132737819038467
+    },
+    "field-edge_device-1>fog-b@1000": {
+      "high": 0.1133347867992324,
+      "low": 0.11247286983411221,
+      "n": 60,
+      "sessions": [
+        0.11306845347086589,
+        0.11286768913269044,
+        0.11277899742126465,
+        0.11289707819620769
+      ],
+      "value": 0.11290300582069074
+    },
+    "field-edge_device-1>fog-b@10000": {
+      "high": 0.12840735403973202,
+      "low": 0.12777389961148602,
+      "n": 60,
+      "sessions": [
+        0.12809370358784994,
+        0.12819259961446125,
+        0.1280993620554606,
+        0.12797536849975585
+      ],
+      "value": 0.12809023524238397
+    },
+    "field-edge_device-1>fog-b@5000": {
+      "high": 0.12047428014139754,
+      "low": 0.11926950361301286,
+      "n": 60,
+      "sessions": [
+        0.11988415718078613,
+        0.11973969141642253,
+        0.11975305875142415,
+        0.12010496457417806
+      ],
+      "value": 0.11987037828671242
+    },
+    "fog-a>cloud-1@100": {
+      "high": 0.04137962922105127,
+      "low": 0.04028812491261922,
+      "n": 56,
+      "sessions": [
+        0.04105167729513986,
+        0.040813956941877096,
+        0.04071063654763358,
+        0.040745513779776435
+      ],
+      "value": 0.04083022986581856
+    },
+    "fog-a>cloud-1@1000": {
+      "high": 0.04211934669749534,
+      "low": 0.04114317142149358,
+      "n": 60,
+      "sessions": [
+        0.04181445439656575,
+        0.04154871304829915,
+        0.04164624214172363,
+        0.041504859924316406
+      ],
+      "value": 0.0416283977752732
+    },
+    "fog-a>cloud-1@10000": {
+      "high": 0.0494769297705076,
+      "low": 0.04867748297141945,
+      "n": 60,
+      "sessions": [
+        0.049238936106363936,
+        0.04906117121378581,
+        0.048999818166097005,
+        0.04900277455647786
+      ],
+      "value": 0.04907557851296304
+    },
+    "fog-a>cloud-1@5000": {
+      "high": 0.045325717883185526,
+      "low": 0.04460301049727597,
+      "n": 60,
+      "sessions": [
+        0.045107094446818034,
+        0.044870758056640626,
+        0.04492341677347819,
+        0.04495072364807129
+      ],
+      "value": 0.04496291216703265
+    },
+    "fog-a>field-edge_device-1@100": {
+      "high": 0.09267572032259888,
+      "low": 0.09015057422147045,
+      "n": 56,
+      "sessions": [
+        0.09144086497170585,
+        0.0918940646307809,
+        0.0911534343447004,
+        0.09113141468593053
+      ],
+      "value": 0.09140442770167476
+    },
+    "fog-a>field-edge_device-1@1000": {
+      "high": 0.09404980050513191,
+      "low": 0.09191279269979072,
+      "n": 60,
+      "sessions": [
+        0.09342417716979981,
+        0.0928126335144043,
+        0.09286955197652182,
+        0.09279572168986003
+      ],
+      "value": 0.09297515698983713
+    },
+    "fog-a>field-edge_device-1@10000": {
+      "high": 0.1087616507848253,
+      "low": 0.10695114595395715,
+      "n": 60,
+      "sessions": [
+        0.10786029497782389,
+        0.10820910135904947,
+        0.1076968510945638,
+        0.107645050684611
+      ],
+      "value": 0.10785259935338215
+    },
+    "fog-a>field-edge_device-1@5000": {
+      "high": 0.10045156831664122,
+      "low": 0.09903817370317784,
+      "n": 60,
+      "sessions": [
+        0.10003298123677572,
+        0.09968636830647787,
+        0.0996675968170166,
+        0.09958311716715494
+      ],
+      "value": 0.09974236748593923
+    },
+    "fog-b>cloud-1@100": {
+      "high": 0.0617150491793993,
+      "low": 0.06046941041800256,
+      "n": 56,
+      "sessions": [
+        0.061344657625470846,
+        0.06106001990182059,
+        0.060960854802812846,
+        0.06099144050053188
+      ],
+      "value": 0.06108905497547256
+    },
+    "fog-b>cloud-1@1000": {
+      "high": 0.06224286236524701,
+      "low": 0.06101920889345073,
+      "n": 60,
+      "sessions": [
+        0.061886103947957356,
+        0.06153055826822917,
+        0.06155269940694173,
+        0.06154335339864095
+      ],
+      "value": 0.061627998675856006
+    },
+    "fog-b>cloud-1@10000": {
+      "high": 0.06981223270990644,
+      "low": 0.06850384647307561,
+      "n": 60,
+      "sessions": [
+        0.06941148440043131,
+        0.06916550000508627,
+        0.06901206970214843,
+        0.06903146107991537
+      ],
+      "value": 0.06915494538716706
+    },
+    "fog-b>cloud-1@5000": {
+      "high": 0.06532675225743212,
+      "low": 0.06468216897448363,
+      "n": 60,
+      "sessions": [
+        0.06513249079386393,
+        0.06497648557027182,
+        0.06498575210571289,
+        0.06492010752360027
+      ],
+      "value": 0.06500366165124434
+    },
+    "fog-b>field-edge_device-1@100": {
+      "high": 0.11171266056818356,
+      "low": 0.11083684937962549,
+      "n": 56,
+      "sessions": [
+        0.1114570243018014,
+        0.11121187891278948,
+        0.11119348662240165,
+        0.11123338767460414
+      ],
+      "value": 0.11127389331371931
+    },
+    "fog-b>field-edge_device-1@1000": {
+      "high": 0.11380941193917138,
+      "low": 0.11223093877856068,
+      "n": 60,
+      "sessions": [
+        0.11325182914733886,
+        0.11290369033813477,
+        0.11314779917399088,
+        0.11276701291402182
+      ],
+      "value": 0.11301741964745583
+    },
+    "fog-b>field-edge_device-1@10000": {
+      "high": 0.12811976541056103,
+      "low": 0.12743593825130428,
+      "n": 60,
+      "sessions": [
+        0.127857240041097,
+        0.12785086631774903,
+        0.1277465343475342,
+        0.12765504519144694
+      ],
+      "value": 0.1277773943764383
+    },
+    "fog-b>field-edge_device-1@5000": {
+      "high": 0.1209938494320696,
+      "low": 0.11812013592448602,
+      "n": 60,
+      "sessions": [
+        0.11973093350728353,
+        0.11980924606323243,
+        0.11970764795939128,
+        0.11894764900207519
+      ],
+      "value": 0.11954835816916456
+    }
+  },
+  "profiles": {
+    "cloud_vm": {
+      "aggregate": {
+        "high": 240611101.93989733,
+        "low": 92291150.22669937,
+        "n": 1538,
+        "sessions": [
+          131485962.08201556,
+          159175916.1853647,
+          174408743.02005997,
+          135091008.1195461
+        ],
+        "value": 149017701.4832357
+      },
+      "cpus": 2,
+      "memory": 4294967296.0,
+      "train": {}
+    },
+    "edge_device": {
+      "cpus": 1,
+      "memory": 2147483648.0,
+      "train": {
+        "0ed95108ec44feea": {
+          "high": 86255.96281245083,
+          "low": 3347.6962382643346,
+          "n": 201,
+          "sessions": [
+            12863.829252449763,
+            20398.134590570415,
+            29535.879384601165,
+            10758.698012173722
+          ],
+          "value": 16992.90329034771
+        },
+        "f81f0235a3520d08": {
+          "high": 32269.127646989517,
+          "low": 7953.431223819359,
+          "n": 214,
+          "sessions": [
+            14715.813803666902,
+            13131.337669467084,
+            20832.740449363857,
+            16362.281244701917
+          ],
+          "value": 16020.308592314286
+        }
+      }
+    },
+    "fog_small": {
+      "aggregate": {
+        "high": 241051472.30024123,
+        "low": 92230355.25031278,
+        "n": 3076,
+        "sessions": [
+          131151498.57710946,
+          160109775.36892593,
+          173943467.73210156,
+          135321907.27891114
+        ],
+        "value": 149104872.2338146
+      },
+      "cpus": 1,
+      "memory": 2147483648.0,
+      "train": {}
+    }
+  },
+  "sessions": [
+    {
+      "code": {
+        "commit": "d3d050e95e06f6b390630184cda88b4c9a1d9d1f",
+        "dirty": false
+      },
+      "cpusets": {
+        "broker": "20-23",
+        "host-cloud-1": "2,4",
+        "host-field-edge-device-1": "6",
+        "host-field-edge-device-2": "8",
+        "host-field-edge-device-3": "10",
+        "host-field-edge-device-4": "12",
+        "host-field-edge-device-5": "14",
+        "host-fog-a": "16",
+        "host-fog-b": "18",
+        "router-dc": "20-23",
+        "router-field": "20-23",
+        "router-fog-a": "20-23",
+        "router-fog-b": "20-23"
+      },
+      "duration_s": 847.837,
+      "load": [
+        {
+          "at": 1793955976.1049228,
+          "machine": {
+            "busy_percent": 96.0,
+            "frequency_mhz": 2056.0,
+            "performance_percent": 131.0
+          },
+          "phase": "train 0ed95108ec44feea before",
+          "vm_loadavg": [
+            3.39,
+            2.49,
+            3.74
+          ]
+        },
+        {
+          "at": 1793956013.7454014,
+          "machine": {
+            "busy_percent": 72.0,
+            "frequency_mhz": 2056.0,
+            "performance_percent": 134.0
+          },
+          "phase": "train 0ed95108ec44feea after",
+          "vm_loadavg": [
+            4.34,
+            2.8,
+            3.81
+          ]
+        },
+        {
+          "at": 1793956015.228779,
+          "machine": {
+            "busy_percent": 61.0,
+            "frequency_mhz": 2171.0,
+            "performance_percent": 126.0
+          },
+          "phase": "train f81f0235a3520d08 before",
+          "vm_loadavg": [
+            4.0,
+            2.76,
+            3.79
+          ]
+        },
+        {
+          "at": 1793956040.1339166,
+          "machine": {
+            "busy_percent": 43.0,
+            "frequency_mhz": 2114.0,
+            "performance_percent": 167.0
+          },
+          "phase": "train f81f0235a3520d08 after",
+          "vm_loadavg": [
+            3.07,
+            2.63,
+            3.72
+          ]
+        },
+        {
+          "at": 1793956041.271441,
+          "machine": {
+            "busy_percent": 62.0,
+            "frequency_mhz": 2026.0,
+            "performance_percent": 146.0
+          },
+          "phase": "aggregate before",
+          "vm_loadavg": [
+            2.98,
+            2.62,
+            3.71
+          ]
+        },
+        {
+          "at": 1793956073.204082,
+          "machine": {
+            "busy_percent": 56.0,
+            "frequency_mhz": 2056.0,
+            "performance_percent": 151.0
+          },
+          "phase": "aggregate after",
+          "vm_loadavg": [
+            2.76,
+            2.58,
+            3.66
+          ]
+        },
+        {
+          "at": 1793956074.592042,
+          "machine": {
+            "busy_percent": 57.0,
+            "frequency_mhz": 2114.0,
+            "performance_percent": 154.0
+          },
+          "phase": "links before",
+          "vm_loadavg": [
+            2.76,
+            2.58,
+            3.66
+          ]
+        },
+        {
+          "at": 1793956804.2268896,
+          "machine": {
+            "busy_percent": 30.0,
+            "frequency_mhz": 2114.0,
+            "performance_percent": 170.0
+          },
+          "phase": "links after",
+          "vm_loadavg": [
+            4.51,
+            4.13,
+            3.71
+          ]
+        }
+      ],
+      "measurements_sha256": "a7b5a7992e02eba3de6c674a7adc9c7d95825b5745345c48cfe116e234ffc609",
+      "started_at": "2026-11-06T09:06:08.700255+00:00"
+    },
+    {
+      "code": {
+        "commit": "d3d050e95e06f6b390630184cda88b4c9a1d9d1f",
+        "dirty": false
+      },
+      "cpusets": {
+        "broker": "20-23",
+        "host-cloud-1": "2,4",
+        "host-field-edge-device-1": "6",
+        "host-field-edge-device-2": "8",
+        "host-field-edge-device-3": "10",
+        "host-field-edge-device-4": "12",
+        "host-field-edge-device-5": "14",
+        "host-fog-a": "16",
+        "host-fog-b": "18",
+        "router-dc": "20-23",
+        "router-field": "20-23",
+        "router-fog-a": "20-23",
+        "router-fog-b": "20-23"
+      },
+      "duration_s": 839.891,
+      "load": [
+        {
+          "at": 1793956836.9366891,
+          "machine": {
+            "busy_percent": 64.0,
+            "frequency_mhz": 2024.0,
+            "performance_percent": 139.0
+          },
+          "phase": "train 0ed95108ec44feea before",
+          "vm_loadavg": [
+            5.53,
+            4.45,
+            3.83
+          ]
+        },
+        {
+          "at": 1793956861.6771162,
+          "machine": {
+            "busy_percent": 67.0,
+            "frequency_mhz": 2085.0,
+            "performance_percent": 144.0
+          },
+          "phase": "train 0ed95108ec44feea after",
+          "vm_loadavg": [
+            5.49,
+            4.53,
+            3.87
+          ]
+        },
+        {
+          "at": 1793956863.1107488,
+          "machine": {
+            "busy_percent": 37.0,
+            "frequency_mhz": 2085.0,
+            "performance_percent": 153.0
+          },
+          "phase": "train f81f0235a3520d08 before",
+          "vm_loadavg": [
+            5.49,
+            4.53,
+            3.87
+          ]
+        },
+        {
+          "at": 1793956887.7409759,
+          "machine": {
+            "busy_percent": 72.0,
+            "frequency_mhz": 1999.0,
+            "performance_percent": 142.0
+          },
+          "phase": "train f81f0235a3520d08 after",
+          "vm_loadavg": [
+            4.93,
+            4.47,
+            3.87
+          ]
+        },
+        {
+          "at": 1793956889.1784656,
+          "machine": {
+            "busy_percent": 74.0,
+            "frequency_mhz": 2054.0,
+            "performance_percent": 144.0
+          },
+          "phase": "aggregate before",
+          "vm_loadavg": [
+            4.93,
+            4.47,
+            3.87
+          ]
+        },
+        {
+          "at": 1793956920.965882,
+          "machine": {
+            "busy_percent": 32.0,
+            "frequency_mhz": 2026.0,
+            "performance_percent": 154.0
+          },
+          "phase": "aggregate after",
+          "vm_loadavg": [
+            5.52,
+            4.66,
+            3.96
+          ]
+        },
+        {
+          "at": 1793956922.0803719,
+          "machine": {
+            "busy_percent": 38.0,
+            "frequency_mhz": 2142.0,
+            "performance_percent": 157.0
+          },
+          "phase": "links before",
+          "vm_loadavg": [
+            5.24,
+            4.62,
+            3.94
+          ]
+        },
+        {
+          "at": 1793957648.8950276,
+          "machine": {
+            "busy_percent": 47.0,
+            "frequency_mhz": 2171.0,
+            "performance_percent": 173.0
+          },
+          "phase": "links after",
+          "vm_loadavg": [
+            5.26,
+            5.01,
+            4.5
+          ]
+        }
+      ],
+      "measurements_sha256": "d3743db2e4ebae9c574c3048b3fb4040bc9146072d5e24302047fb1fb26924e3",
+      "started_at": "2026-11-06T09:20:27.176562+00:00"
+    },
+    {
+      "code": {
+        "commit": "d3d050e95e06f6b390630184cda88b4c9a1d9d1f",
+        "dirty": false
+      },
+      "cpusets": {
+        "broker": "20-23",
+        "host-cloud-1": "2,4",
+        "host-field-edge-device-1": "6",
+        "host-field-edge-device-2": "8",
+        "host-field-edge-device-3": "10",
+        "host-field-edge-device-4": "12",
+        "host-field-edge-device-5": "14",
+        "host-fog-a": "16",
+        "host-fog-b": "18",
+        "router-dc": "20-23",
+        "router-field": "20-23",
+        "router-fog-a": "20-23",
+        "router-fog-b": "20-23"
+      },
+      "duration_s": 848.054,
+      "load": [
+        {
+          "at": 1793958519.3544867,
+          "machine": {
+            "busy_percent": 38.0,
+            "frequency_mhz": 2056.0,
+            "performance_percent": 175.0
+          },
+          "phase": "train 0ed95108ec44feea before",
+          "vm_loadavg": [
+            4.83,
+            4.24,
+            4.44
+          ]
+        },
+        {
+          "at": 1793958542.6616163,
+          "machine": {
+            "busy_percent": 25.0,
+            "frequency_mhz": 2114.0,
+            "performance_percent": 158.0
+          },
+          "phase": "train 0ed95108ec44feea after",
+          "vm_loadavg": [
+            4.51,
+            4.21,
+            4.43
+          ]
+        },
+        {
+          "at": 1793958543.8048203,
+          "machine": {
+            "busy_percent": 51.0,
+            "frequency_mhz": 2114.0,
+            "performance_percent": 162.0
+          },
+          "phase": "train f81f0235a3520d08 before",
+          "vm_loadavg": [
+            4.55,
+            4.22,
+            4.43
+          ]
+        },
+        {
+          "at": 1793958567.1430144,
+          "machine": {
+            "busy_percent": 38.0,
+            "frequency_mhz": 2028.0,
+            "performance_percent": 160.0
+          },
+          "phase": "train f81f0235a3520d08 after",
+          "vm_loadavg": [
+            5.11,
+            4.37,
+            4.48
+          ]
+        },
+        {
+          "at": 1793958568.2707121,
+          "machine": {
+            "busy_percent": 39.0,
+            "frequency_mhz": 2085.0,
+            "performance_percent": 147.0
+          },
+          "phase": "aggregate before",
+          "vm_loadavg": [
+            5.5,
+            4.47,
+            4.51
+          ]
+        },
+        {
+          "at": 1793958599.9024353,
+          "machine": {
+            "busy_percent": 9.0,
+            "frequency_mhz": 2110.0,
+            "performance_percent": 163.0
+          },
+          "phase": "aggregate after",
+          "vm_loadavg": [
+            4.81,
+            4.38,
+            4.47
+          ]
+        },
+        {
+          "at": 1793958600.9698792,
+          "machine": {
+            "busy_percent": 36.0,
+            "frequency_mhz": 2142.0,
+            "performance_percent": 166.0
+          },
+          "phase": "links before",
+          "vm_loadavg": [
+            4.81,
+            4.38,
+            4.47
+          ]
+        },
+        {
+          "at": 1793959326.7211366,
+          "machine": {
+            "busy_percent": 17.0,
+            "frequency_mhz": 2026.0,
+            "performance_percent": 155.0
+          },
+          "phase": "links after",
+          "vm_loadavg": [
+            2.49,
+            3.5,
+            3.9
+          ]
+        }
+      ],
+      "measurements_sha256": "07ba35908d8cc95a139b0ab2792b96a1c88871f994aafebdee232c851a2b99e6",
+      "started_at": "2026-11-06T09:48:32.657917+00:00"
+    },
+    {
+      "code": {
+        "commit": "d3d050e95e06f6b390630184cda88b4c9a1d9d1f",
+        "dirty": false
+      },
+      "cpusets": {
+        "broker": "20-23",
+        "host-cloud-1": "2,4",
+        "host-field-edge-device-1": "6",
+        "host-field-edge-device-2": "8",
+        "host-field-edge-device-3": "10",
+        "host-field-edge-device-4": "12",
+        "host-field-edge-device-5": "14",
+        "host-fog-a": "16",
+        "host-fog-b": "18",
+        "router-dc": "20-23",
+        "router-field": "20-23",
+        "router-fog-a": "20-23",
+        "router-fog-b": "20-23"
+      },
+      "duration_s": 827.143,
+      "load": [
+        {
+          "at": 1793959375.7295969,
+          "machine": {
+            "busy_percent": 23.0,
+            "frequency_mhz": 2054.0,
+            "performance_percent": 157.0
+          },
+          "phase": "train 0ed95108ec44feea before",
+          "vm_loadavg": [
+            3.02,
+            3.55,
+            3.91
+          ]
+        },
+        {
+          "at": 1793959400.4260693,
+          "machine": {
+            "busy_percent": 50.0,
+            "frequency_mhz": 2200.0,
+            "performance_percent": 142.0
+          },
+          "phase": "train 0ed95108ec44feea after",
+          "vm_loadavg": [
+            4.38,
+            3.84,
+            4.0
+          ]
+        },
+        {
+          "at": 1793959401.7307625,
+          "machine": {
+            "busy_percent": 42.0,
+            "frequency_mhz": 2028.0,
+            "performance_percent": 149.0
+          },
+          "phase": "train f81f0235a3520d08 before",
+          "vm_loadavg": [
+            4.38,
+            3.84,
+            4.0
+          ]
+        },
+        {
+          "at": 1793959425.8189356,
+          "machine": {
+            "busy_percent": 42.0,
+            "frequency_mhz": 2085.0,
+            "performance_percent": 173.0
+          },
+          "phase": "train f81f0235a3520d08 after",
+          "vm_loadavg": [
+            4.84,
+            4.01,
+            4.05
+          ]
+        },
+        {
+          "at": 1793959426.8822365,
+          "machine": {
+            "busy_percent": 12.0,
+            "frequency_mhz": 2083.0,
+            "performance_percent": 160.0
+          },
+          "phase": "aggregate before",
+          "vm_loadavg": [
+            4.84,
+            4.01,
+            4.05
+          ]
+        },
+        {
+          "at": 1793959458.2695563,
+          "machine": {
+            "busy_percent": 52.0,
+            "frequency_mhz": 2142.0,
+            "performance_percent": 154.0
+          },
+          "phase": "aggregate after",
+          "vm_loadavg": [
+            4.18,
+            3.91,
+            4.02
+          ]
+        },
+        {
+          "at": 1793959459.5986724,
+          "machine": {
+            "busy_percent": 45.0,
+            "frequency_mhz": 2083.0,
+            "performance_percent": 170.0
+          },
+          "phase": "links before",
+          "vm_loadavg": [
+            3.85,
+            3.85,
+            3.99
+          ]
+        },
+        {
+          "at": 1793960184.8348615,
+          "machine": {
+            "busy_percent": 36.0,
+            "frequency_mhz": 1993.0,
+            "performance_percent": 156.0
+          },
+          "phase": "links after",
+          "vm_loadavg": [
+            1.95,
+            1.78,
+            2.65
+          ]
+        }
+      ],
+      "measurements_sha256": "725b1639672b7643db39ab46942c55e7e6d9e625ab946d08b71f7c3bedda9661",
+      "started_at": "2026-11-06T10:02:48.811880+00:00"
+    }
+  ],
+  "spec": {
+    "aggregate": {
+      "batch": 100,
+      "hosts": [
+        "fog-a",
+        "fog-b",
+        "cloud-1"
+      ],
+      "seconds": 5.0,
+      "updates": [
+        10,
+        20
+      ],
+      "workload": 0
+    },
+    "clients": {
+      "field-edge_device-1": [
+        "swell-3",
+        "swell-4",
+        "swell-5",
+        "swell-6"
+      ],
+      "field-edge_device-2": [
+        "swell-7",
+        "swell-8",
+        "swell-9",
+        "swell-10"
+      ],
+      "field-edge_device-3": [
+        "swell-11",
+        "swell-13",
+        "swell-14",
+        "swell-15"
+      ],
+      "field-edge_device-4": [
+        "swell-16",
+        "swell-17",
+        "swell-20",
+        "swell-21"
+      ],
+      "field-edge_device-5": [
+        "swell-22",
+        "swell-23",
+        "swell-24",
+        "swell-25"
+      ]
+    },
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": "datasets/swell_physiology.yaml",
+          "options": {}
+        }
+      },
+      "placement": {
+        "alpha": 0.0,
+        "name": "mixing"
+      },
+      "roles": {
+        "drop_constant": true,
+        "impute": "mean",
+        "local_val": 0.0,
+        "overrides": {},
+        "scaler": "global",
+        "seed": 0,
+        "subjects_per_client": 1,
+        "test": 0.2,
+        "val": 0.0
+      }
+    },
+    "description": "Training, aggregation and MQTT paths of the small emulated lab.",
+    "emulation": {
+      "broker_image": "eclipse-mosquitto:2",
+      "image": "onionfl-a197b-emulated:latest",
+      "max_containers": 64,
+      "project": "onionfl-a197b",
+      "ready_timeout": 120.0,
+      "subnet": "10.197.0.0/16"
+    },
+    "hosts": {
+      "cloud-1": "cloud_vm",
+      "field-edge_device-1": "edge_device",
+      "field-edge_device-2": "edge_device",
+      "field-edge_device-3": "edge_device",
+      "field-edge_device-4": "edge_device",
+      "field-edge_device-5": "edge_device",
+      "fog-a": "fog_small",
+      "fog-b": "fog_small"
+    },
+    "infrastructure": "emulated_lab",
+    "lead": 20.0,
+    "links": {
+      "fit_up_to": 10000,
+      "gap": 0.5,
+      "nodelay": false,
+      "pairs": [
+        [
+          "fog-a",
+          "cloud-1"
+        ],
+        [
+          "fog-b",
+          "cloud-1"
+        ],
+        [
+          "field-edge_device-1",
+          "cloud-1"
+        ],
+        [
+          "field-edge_device-1",
+          "fog-a"
+        ],
+        [
+          "field-edge_device-1",
+          "fog-b"
+        ],
+        [
+          "cloud-1",
+          "cloud-1"
+        ]
+      ],
+      "qos": 1,
+      "repeats": 15,
+      "sizes": [
+        100,
+        1000,
+        5000,
+        10000,
+        30000,
+        100000
+      ],
+      "wait": 30.0
+    },
+    "name": "emulated_lab",
+    "paths": {
+      "cache": "data/cache",
+      "datasets": "datasets",
+      "runs": "runs",
+      "topologies": "topologies"
+    },
+    "pin": {
+      "cpus": [
+        2,
+        4,
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        18
+      ],
+      "others": "20-23"
+    },
+    "seed": 0,
+    "train": {
+      "hosts": [
+        "field-edge_device-1",
+        "field-edge_device-2",
+        "field-edge_device-3",
+        "field-edge_device-4",
+        "field-edge_device-5"
+      ],
+      "jobs": 14,
+      "per_host": 4,
+      "warmup": 2
+    },
+    "workloads": [
+      {
+        "model": {
+          "adapter_width": 32,
+          "name": "modular_mlp",
+          "trunk_hidden": [
+            16
+          ]
+        },
+        "trainer": {
+          "batch_size": 32,
+          "local_epochs": 5,
+          "lr": 0.01,
+          "name": "standard"
+        }
+      },
+      {
+        "model": {
+          "adapter_width": 64,
+          "name": "modular_mlp",
+          "trunk_hidden": [
+            64,
+            32
+          ]
+        },
+        "trainer": {
+          "batch_size": 32,
+          "local_epochs": 5,
+          "lr": 0.01,
+          "name": "standard"
+        }
+      }
+    ]
+  },
+  "transport": {
+    "loopback_goodput_bps": {
+      "high": 8200198081.414763,
+      "low": 156521992.98958898,
+      "n": 236,
+      "sessions": [
+        720591410.2188286,
+        683613785.2658474,
+        1704277079.4562993,
+        1962272550.5014572
+      ],
+      "value": 1132921597.734125
+    },
+    "loopback_latency_s": {
+      "high": 0.0007227996382182065,
+      "low": 0.00040223567791488745,
+      "n": 236,
+      "sessions": [
+        0.0006050787855018963,
+        0.000529120114180896,
+        0.0005305792448585556,
+        0.0004976002350835914
+      ],
+      "value": 0.0005391992233630679
+    }
+  },
+  "valid_up_to": 10000,
+  "workloads": {
+    "0ed95108ec44feea": {
+      "batch_size": 32,
+      "flops_per_sample": 4140.0,
+      "model": {
+        "adapter_width": 32,
+        "name": "modular_mlp",
+        "trunk_hidden": [
+          16
+        ]
+      },
+      "shapes": {
+        "adapter.swell.0.bias": [
+          32
+        ],
+        "adapter.swell.0.weight": [
+          32,
+          3
+        ],
+        "head.stress_binary.bias": [
+          2
+        ],
+        "head.stress_binary.weight": [
+          2,
+          16
+        ],
+        "trunk.0.bias": [
+          16
+        ],
+        "trunk.0.weight": [
+          16,
+          32
+        ]
+      },
+      "trainer": {
+        "batch_size": 32,
+        "local_epochs": 5,
+        "lr": 0.01,
+        "name": "standard"
+      }
+    },
+    "f81f0235a3520d08": {
+      "batch_size": 32,
+      "flops_per_sample": 39372.0,
+      "model": {
+        "adapter_width": 64,
+        "name": "modular_mlp",
+        "trunk_hidden": [
+          64,
+          32
+        ]
+      },
+      "shapes": {
+        "adapter.swell.0.bias": [
+          64
+        ],
+        "adapter.swell.0.weight": [
+          64,
+          3
+        ],
+        "head.stress_binary.bias": [
+          2
+        ],
+        "head.stress_binary.weight": [
+          2,
+          32
+        ],
+        "trunk.0.bias": [
+          64
+        ],
+        "trunk.0.weight": [
+          64,
+          64
+        ],
+        "trunk.3.bias": [
+          32
+        ],
+        "trunk.3.weight": [
+          32,
+          64
+        ]
+      },
+      "trainer": {
+        "batch_size": 32,
+        "local_epochs": 5,
+        "lr": 0.01,
+        "name": "standard"
+      }
+    }
+  }
+}

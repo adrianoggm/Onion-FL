@@ -232,6 +232,9 @@ Fidelidad de un backend B (más barato) frente a uno A (más cercano a lo físic
   - Usan cargas distintas de las de calibración (otra topología, otro modelo u otro dataset).
   - Cambiar los perfiles después de ver una validación exige una calibración nueva y declararlo en el INDEX, como en la regla de C6.
 - **Regla de `docs/RULES.md` (§3):** no se valida la fidelidad con los mismos datos y configuraciones con los que se calibró.
+- **Intervalo de una calibración (decisión de I12, #197).** Una calibración se ajusta con k ≥ 3 sesiones independientes, cada una en su propia emulación con CPUs fijas (`pin`). Cada valor es la media geométrica de las sesiones y su intervalo es el de predicción al 95 % del valor de una sesión más, `exp(m ± t₀.₉₇₅,ₖ₋₁·s·√(1 + 1/k))` sobre los logaritmos. El bootstrap dentro de una sesión no sirve para esto: en la primera calibración tres sesiones de una hora no solaparon sus intervalos.
+  - La aceptación («un perfil calibrado reproduce sus microbenchmarks dentro de su IC») se comprueba en sesiones que el ajuste no vio: cada tasa, campo de enlace y retardo de camino que miden cae dentro del intervalo calibrado, y la predicción del simulador para cada camino también.
+  - El modelo de caminos vale hasta `valid_up_to` bytes (el mayor tamaño ajustado). Más allá, el *slow start* tras una conexión ociosa no es lineal, y una ejecución que lo supera queda marcada `outside_calibration` y fuera de la fidelidad.
 
 ## 14. Continual learning en este plan
 
