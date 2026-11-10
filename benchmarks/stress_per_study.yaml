@@ -1,0 +1,39 @@
+# onion-bench-stress (issue #244), E4 track: learning per study.
+#
+# Each study alone, FedAvg over its own edges under one fog: what a study
+# learns without the other three. Roles are drawn per dataset with their own
+# stream, so the test subjects are those of benchmarks/stress.yaml.
+#
+#   onion_fl run benchmarks/stress_per_study.yaml --workers 6
+name: stress_e4_per_study
+description: onion-bench-stress, pista E4. FedAvg dentro de cada estudio, sin los otros tres.
+topology: one_fog
+data:
+  datasets:
+    wesad_e4: {}
+  roles:
+    test: 0.25
+    val: 0.1
+    local_val: 0.2
+    local_val_split: class_tail
+    scaler: local
+    drop_constant: false
+    seed: 0
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 5, batch_size: 32, lr: 0.03}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  aggregators: {every: 20}
+  global: {every: 1}
+seeds: [0, 1, 2, 3, 4]
+sweep:
+  data.datasets:
+    - {wesad_e4: {}}
+    - {physionet_e4: {}}
+    - {nurse_stress: {}}
+    - {stress_predict: {}}

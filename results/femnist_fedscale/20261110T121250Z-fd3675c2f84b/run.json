@@ -1,0 +1,1104 @@
+{
+  "run_id": "20261110T121250Z-fd3675c2f84b",
+  "topology_id": "18086603f5b1b16c80d6f511ca71272027578268e89353a6f8052f07f69b6322",
+  "config_id": "d93fc2177303c5c6cac4570d5beea97ad47f0cb48b4c7a5e9d150a61c8ce96a9",
+  "backend": "sim",
+  "infrastructure_id": "84cd172bdff7bbb813b9a2ea8aa8236394abec5a2124763cbad3f6723eaae7e9",
+  "data_id": "7d8238e25baf310766da9c287196bd4e42a45a3a709873d21edc89830d10ad20",
+  "code_version": {
+    "commit": "87603c394355129f3b4060879c1156096d1e8ad6",
+    "dirty": false
+  },
+  "seed": 0,
+  "scenario": "base",
+  "host": "2INNDESLP100930",
+  "pid": 60888,
+  "started_at": "2026-11-10T12:12:50.418753+00:00",
+  "status": "finished",
+  "config": {
+    "name": "femnist_fedscale",
+    "description": "FEMNIST con perfiles de dispositivos reales de FedScale (c\u00f3mputo, ancho de banda y disponibilidad).",
+    "topology": "femnist_fedscale",
+    "data": {
+      "datasets": {
+        "femnist": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.0,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.0,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 1.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 128,
+        "trunk_hidden": [
+          128
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "local_epochs": 1,
+        "batch_size": 32,
+        "lr": 0.001
+      },
+      "init": "random"
+    },
+    "rounds": 20,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": null,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": null,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    },
+    "infrastructure": {
+      "name": "fedscale_field",
+      "assignment": {
+        "root": "cloud-1",
+        "aggregators": {
+          "fog_0": "fog-1"
+        },
+        "edges": {
+          "name": "one_per_device",
+          "seed": 0
+        },
+        "services": {}
+      }
+    }
+  },
+  "device_traces": {
+    "field": {
+      "source": "https://github.com/SymbioticLab/FedScale",
+      "commit": "7ec441c2afa99510535adebe155d89fa8bb2c637",
+      "license": "Apache-2.0",
+      "sources": {
+        "client_device_capacity": "477f61049443987318fc5667cafa059b3b420eb0e03ccb5ceb3262d20e059e53",
+        "client_behave_trace": "d0b6f81a01f0ea5f7ec432583f5afe93b1e72424db4c1affa88c484f15901662"
+      },
+      "files": {
+        "capacity.csv": "c76bca575147e4b50df757228a9c2f7471878b9a1066e0e5f441c28ba9457b9e",
+        "behaviour.jsonl": "8677d515141ace065577e0c84c12bca529aef5820da2d8752c7b2fb75254cede"
+      },
+      "units": {
+        "computation": "ms per sample (inference)",
+        "communication": "kbit/s",
+        "active, inactive, finish_time": "s",
+        "train_rate": "samples/s = 1000 / (3 * computation)",
+        "bandwidth": "bit/s = 1000 * communication"
+      },
+      "rates": "trace",
+      "seed": 0,
+      "devices": 160,
+      "availability": true,
+      "clients": [
+        {
+          "profile": "fedscale_field_1",
+          "capacity_client": 70376,
+          "availability_client": 57613,
+          "model": "SM-A105M"
+        },
+        {
+          "profile": "fedscale_field_2",
+          "capacity_client": 246701,
+          "availability_client": 19234,
+          "model": "LM-X210"
+        },
+        {
+          "profile": "fedscale_field_3",
+          "capacity_client": 386794,
+          "availability_client": 3176,
+          "model": "SM-J500G"
+        },
+        {
+          "profile": "fedscale_field_4",
+          "capacity_client": 4300,
+          "availability_client": 71063,
+          "model": "vivo 1812"
+        },
+        {
+          "profile": "fedscale_field_5",
+          "capacity_client": 120288,
+          "availability_client": 103788,
+          "model": "SM-N920C"
+        },
+        {
+          "profile": "fedscale_field_6",
+          "capacity_client": 165238,
+          "availability_client": 34682,
+          "model": "CPH1803"
+        },
+        {
+          "profile": "fedscale_field_7",
+          "capacity_client": 258194,
+          "availability_client": 38685,
+          "model": "SM-G610F"
+        },
+        {
+          "profile": "fedscale_field_8",
+          "capacity_client": 303205,
+          "availability_client": 3647,
+          "model": "SM-J610G"
+        },
+        {
+          "profile": "fedscale_field_9",
+          "capacity_client": 333734,
+          "availability_client": 34788,
+          "model": "vivo 1727"
+        },
+        {
+          "profile": "fedscale_field_10",
+          "capacity_client": 399555,
+          "availability_client": 31812,
+          "model": "vivo 1904"
+        },
+        {
+          "profile": "fedscale_field_11",
+          "capacity_client": 80229,
+          "availability_client": 2288,
+          "model": "LG-M700"
+        },
+        {
+          "profile": "fedscale_field_12",
+          "capacity_client": 176299,
+          "availability_client": 47582,
+          "model": "vivo 1904"
+        },
+        {
+          "profile": "fedscale_field_13",
+          "capacity_client": 94945,
+          "availability_client": 89785,
+          "model": "CPH1923"
+        },
+        {
+          "profile": "fedscale_field_14",
+          "capacity_client": 153321,
+          "availability_client": 71028,
+          "model": "vivo 1716"
+        },
+        {
+          "profile": "fedscale_field_15",
+          "capacity_client": 418267,
+          "availability_client": 97307,
+          "model": "SM-G610M"
+        },
+        {
+          "profile": "fedscale_field_16",
+          "capacity_client": 249372,
+          "availability_client": 33285,
+          "model": "vivo 1820"
+        },
+        {
+          "profile": "fedscale_field_17",
+          "capacity_client": 385295,
+          "availability_client": 68240,
+          "model": "RMX1941"
+        },
+        {
+          "profile": "fedscale_field_18",
+          "capacity_client": 43080,
+          "availability_client": 78250,
+          "model": "RMX1941"
+        },
+        {
+          "profile": "fedscale_field_19",
+          "capacity_client": 132930,
+          "availability_client": 64953,
+          "model": "CPH1909"
+        },
+        {
+          "profile": "fedscale_field_20",
+          "capacity_client": 479147,
+          "availability_client": 5020,
+          "model": "Redmi Note 5A"
+        },
+        {
+          "profile": "fedscale_field_21",
+          "capacity_client": 498399,
+          "availability_client": 37050,
+          "model": "Redmi Note 5A"
+        },
+        {
+          "profile": "fedscale_field_22",
+          "capacity_client": 92544,
+          "availability_client": 58052,
+          "model": "CPH1909"
+        },
+        {
+          "profile": "fedscale_field_23",
+          "capacity_client": 284479,
+          "availability_client": 77981,
+          "model": "SM-A105G"
+        },
+        {
+          "profile": "fedscale_field_24",
+          "capacity_client": 469679,
+          "availability_client": 6016,
+          "model": "CPH1969"
+        },
+        {
+          "profile": "fedscale_field_25",
+          "capacity_client": 481673,
+          "availability_client": 15846,
+          "model": "i55C"
+        },
+        {
+          "profile": "fedscale_field_26",
+          "capacity_client": 342428,
+          "availability_client": 95809,
+          "model": "Moto G (5)"
+        },
+        {
+          "profile": "fedscale_field_27",
+          "capacity_client": 460897,
+          "availability_client": 3315,
+          "model": "LM-X410.F"
+        },
+        {
+          "profile": "fedscale_field_28",
+          "capacity_client": 309562,
+          "availability_client": 25643,
+          "model": "SM-G532G"
+        },
+        {
+          "profile": "fedscale_field_29",
+          "capacity_client": 407007,
+          "availability_client": 71958,
+          "model": "Moto C Plus"
+        },
+        {
+          "profile": "fedscale_field_30",
+          "capacity_client": 183825,
+          "availability_client": 86789,
+          "model": "DUB-LX3"
+        },
+        {
+          "profile": "fedscale_field_31",
+          "capacity_client": 476836,
+          "availability_client": 63046,
+          "model": "SM-G610M"
+        },
+        {
+          "profile": "fedscale_field_32",
+          "capacity_client": 300188,
+          "availability_client": 44395,
+          "model": "SM-A105M"
+        },
+        {
+          "profile": "fedscale_field_33",
+          "capacity_client": 158014,
+          "availability_client": 56143,
+          "model": "Redmi Note 4"
+        },
+        {
+          "profile": "fedscale_field_34",
+          "capacity_client": 297383,
+          "availability_client": 56184,
+          "model": "SM-J400M"
+        },
+        {
+          "profile": "fedscale_field_35",
+          "capacity_client": 312632,
+          "availability_client": 8000,
+          "model": "Redmi 4A"
+        },
+        {
+          "profile": "fedscale_field_36",
+          "capacity_client": 90671,
+          "availability_client": 19016,
+          "model": "Redmi Note 4"
+        },
+        {
+          "profile": "fedscale_field_37",
+          "capacity_client": 247194,
+          "availability_client": 61504,
+          "model": "SM-J610G"
+        },
+        {
+          "profile": "fedscale_field_38",
+          "capacity_client": 297374,
+          "availability_client": 19145,
+          "model": "SM-A600G"
+        },
+        {
+          "profile": "fedscale_field_39",
+          "capacity_client": 399352,
+          "availability_client": 53559,
+          "model": "Mi A1"
+        },
+        {
+          "profile": "fedscale_field_40",
+          "capacity_client": 285966,
+          "availability_client": 59114,
+          "model": "RMX1911"
+        },
+        {
+          "profile": "fedscale_field_41",
+          "capacity_client": 323904,
+          "availability_client": 19809,
+          "model": "Redmi 5A"
+        },
+        {
+          "profile": "fedscale_field_42",
+          "capacity_client": 202927,
+          "availability_client": 37319,
+          "model": "SM-A105M"
+        },
+        {
+          "profile": "fedscale_field_43",
+          "capacity_client": 298079,
+          "availability_client": 41411,
+          "model": "SM-J710GN"
+        },
+        {
+          "profile": "fedscale_field_44",
+          "capacity_client": 238637,
+          "availability_client": 69678,
+          "model": "RMX1941"
+        },
+        {
+          "profile": "fedscale_field_45",
+          "capacity_client": 520,
+          "availability_client": 10826,
+          "model": "CPH1901"
+        },
+        {
+          "profile": "fedscale_field_46",
+          "capacity_client": 145910,
+          "availability_client": 29632,
+          "model": "ASUS_X00TD"
+        },
+        {
+          "profile": "fedscale_field_47",
+          "capacity_client": 242671,
+          "availability_client": 55817,
+          "model": "BAC-L03"
+        },
+        {
+          "profile": "fedscale_field_48",
+          "capacity_client": 338529,
+          "availability_client": 49258,
+          "model": "SM-A305F"
+        },
+        {
+          "profile": "fedscale_field_49",
+          "capacity_client": 133132,
+          "availability_client": 64581,
+          "model": "Redmi Note 5A Prime"
+        },
+        {
+          "profile": "fedscale_field_50",
+          "capacity_client": 146376,
+          "availability_client": 62521,
+          "model": "SM-A107M"
+        },
+        {
+          "profile": "fedscale_field_51",
+          "capacity_client": 221393,
+          "availability_client": 11262,
+          "model": "MITO_A69"
+        },
+        {
+          "profile": "fedscale_field_52",
+          "capacity_client": 283427,
+          "availability_client": 98877,
+          "model": "SM-G570Y"
+        },
+        {
+          "profile": "fedscale_field_53",
+          "capacity_client": 381080,
+          "availability_client": 73046,
+          "model": "vivo 1806"
+        },
+        {
+          "profile": "fedscale_field_54",
+          "capacity_client": 159057,
+          "availability_client": 60496,
+          "model": "vivo 1723"
+        },
+        {
+          "profile": "fedscale_field_55",
+          "capacity_client": 57854,
+          "availability_client": 58596,
+          "model": "CPH1909"
+        },
+        {
+          "profile": "fedscale_field_56",
+          "capacity_client": 452597,
+          "availability_client": 104145,
+          "model": "Moto G (5)"
+        },
+        {
+          "profile": "fedscale_field_57",
+          "capacity_client": 465638,
+          "availability_client": 85317,
+          "model": "RMX1805"
+        },
+        {
+          "profile": "fedscale_field_58",
+          "capacity_client": 269203,
+          "availability_client": 61932,
+          "model": "SM-A305F"
+        },
+        {
+          "profile": "fedscale_field_59",
+          "capacity_client": 388750,
+          "availability_client": 3633,
+          "model": "SM-J410G"
+        },
+        {
+          "profile": "fedscale_field_60",
+          "capacity_client": 54206,
+          "availability_client": 75660,
+          "model": "SM-J700M"
+        },
+        {
+          "profile": "fedscale_field_61",
+          "capacity_client": 332734,
+          "availability_client": 406,
+          "model": "SM-J730G"
+        },
+        {
+          "profile": "fedscale_field_62",
+          "capacity_client": 295872,
+          "availability_client": 27566,
+          "model": "MYA-L03"
+        },
+        {
+          "profile": "fedscale_field_63",
+          "capacity_client": 59315,
+          "availability_client": 57750,
+          "model": "CPH1803"
+        },
+        {
+          "profile": "fedscale_field_64",
+          "capacity_client": 42123,
+          "availability_client": 75912,
+          "model": "SM-J250F"
+        },
+        {
+          "profile": "fedscale_field_65",
+          "capacity_client": 288319,
+          "availability_client": 42979,
+          "model": "CPH1723"
+        },
+        {
+          "profile": "fedscale_field_66",
+          "capacity_client": 456343,
+          "availability_client": 85717,
+          "model": "A37f"
+        },
+        {
+          "profile": "fedscale_field_67",
+          "capacity_client": 423884,
+          "availability_client": 62936,
+          "model": "vivo 1807"
+        },
+        {
+          "profile": "fedscale_field_68",
+          "capacity_client": 118246,
+          "availability_client": 58897,
+          "model": "Redmi 6A"
+        },
+        {
+          "profile": "fedscale_field_69",
+          "capacity_client": 48410,
+          "availability_client": 6784,
+          "model": "POT-LX3"
+        },
+        {
+          "profile": "fedscale_field_70",
+          "capacity_client": 285283,
+          "availability_client": 82055,
+          "model": "Redmi Note 4X"
+        },
+        {
+          "profile": "fedscale_field_71",
+          "capacity_client": 357383,
+          "availability_client": 92074,
+          "model": "vivo 1820"
+        },
+        {
+          "profile": "fedscale_field_72",
+          "capacity_client": 46069,
+          "availability_client": 226,
+          "model": "Moto G (5) Plus"
+        },
+        {
+          "profile": "fedscale_field_73",
+          "capacity_client": 17874,
+          "availability_client": 81869,
+          "model": "moto e5 play"
+        },
+        {
+          "profile": "fedscale_field_74",
+          "capacity_client": 150719,
+          "availability_client": 35345,
+          "model": "SM-G930F"
+        },
+        {
+          "profile": "fedscale_field_75",
+          "capacity_client": 450630,
+          "availability_client": 12123,
+          "model": "SM-A750GN"
+        },
+        {
+          "profile": "fedscale_field_76",
+          "capacity_client": 271523,
+          "availability_client": 102465,
+          "model": "MAR-LX3A"
+        },
+        {
+          "profile": "fedscale_field_77",
+          "capacity_client": 136471,
+          "availability_client": 105900,
+          "model": "CPH1909"
+        },
+        {
+          "profile": "fedscale_field_78",
+          "capacity_client": 397225,
+          "availability_client": 29657,
+          "model": "vivo 1820"
+        },
+        {
+          "profile": "fedscale_field_79",
+          "capacity_client": 124349,
+          "availability_client": 25230,
+          "model": "RMX1941"
+        },
+        {
+          "profile": "fedscale_field_80",
+          "capacity_client": 474787,
+          "availability_client": 61884,
+          "model": "Redmi Note 5A"
+        },
+        {
+          "profile": "fedscale_field_81",
+          "capacity_client": 406773,
+          "availability_client": 75627,
+          "model": "CPH1931"
+        },
+        {
+          "profile": "fedscale_field_82",
+          "capacity_client": 370551,
+          "availability_client": 107435,
+          "model": "SM-A107F"
+        },
+        {
+          "profile": "fedscale_field_83",
+          "capacity_client": 254037,
+          "availability_client": 21373,
+          "model": "Redmi Note 6 Pro"
+        },
+        {
+          "profile": "fedscale_field_84",
+          "capacity_client": 463768,
+          "availability_client": 7367,
+          "model": "Redmi Note 7"
+        },
+        {
+          "profile": "fedscale_field_85",
+          "capacity_client": 402837,
+          "availability_client": 76923,
+          "model": "Redmi Note 4"
+        },
+        {
+          "profile": "fedscale_field_86",
+          "capacity_client": 427465,
+          "availability_client": 1052,
+          "model": "SM-J111F"
+        },
+        {
+          "profile": "fedscale_field_87",
+          "capacity_client": 86865,
+          "availability_client": 95224,
+          "model": "vivo 1901"
+        },
+        {
+          "profile": "fedscale_field_88",
+          "capacity_client": 368393,
+          "availability_client": 11119,
+          "model": "Redmi 5"
+        },
+        {
+          "profile": "fedscale_field_89",
+          "capacity_client": 173237,
+          "availability_client": 57620,
+          "model": "Redmi Note 5A"
+        },
+        {
+          "profile": "fedscale_field_90",
+          "capacity_client": 219531,
+          "availability_client": 93250,
+          "model": "SM-G950N"
+        },
+        {
+          "profile": "fedscale_field_91",
+          "capacity_client": 301146,
+          "availability_client": 98751,
+          "model": "SM-J700M"
+        },
+        {
+          "profile": "fedscale_field_92",
+          "capacity_client": 167501,
+          "availability_client": 100346,
+          "model": "CAM-L23"
+        },
+        {
+          "profile": "fedscale_field_93",
+          "capacity_client": 211557,
+          "availability_client": 70946,
+          "model": "Lenovo A6020a46"
+        },
+        {
+          "profile": "fedscale_field_94",
+          "capacity_client": 317452,
+          "availability_client": 45954,
+          "model": "LM-X410.F"
+        },
+        {
+          "profile": "fedscale_field_95",
+          "capacity_client": 183753,
+          "availability_client": 11445,
+          "model": "Redmi S2"
+        },
+        {
+          "profile": "fedscale_field_96",
+          "capacity_client": 497791,
+          "availability_client": 31899,
+          "model": "XT1563"
+        },
+        {
+          "profile": "fedscale_field_97",
+          "capacity_client": 66094,
+          "availability_client": 22344,
+          "model": "RMX1941"
+        },
+        {
+          "profile": "fedscale_field_98",
+          "capacity_client": 34269,
+          "availability_client": 28093,
+          "model": "SM-A705MN"
+        },
+        {
+          "profile": "fedscale_field_99",
+          "capacity_client": 104364,
+          "availability_client": 24785,
+          "model": "SM-J730G"
+        },
+        {
+          "profile": "fedscale_field_100",
+          "capacity_client": 484652,
+          "availability_client": 3751,
+          "model": "SM-G532M"
+        },
+        {
+          "profile": "fedscale_field_101",
+          "capacity_client": 155825,
+          "availability_client": 42139,
+          "model": "SM-A105M"
+        },
+        {
+          "profile": "fedscale_field_102",
+          "capacity_client": 17506,
+          "availability_client": 6458,
+          "model": "Redmi Note 4X"
+        },
+        {
+          "profile": "fedscale_field_103",
+          "capacity_client": 42709,
+          "availability_client": 18747,
+          "model": "SM-J700M"
+        },
+        {
+          "profile": "fedscale_field_104",
+          "capacity_client": 496519,
+          "availability_client": 65938,
+          "model": "SM-A500F"
+        },
+        {
+          "profile": "fedscale_field_105",
+          "capacity_client": 452986,
+          "availability_client": 17830,
+          "model": "SM-J415G"
+        },
+        {
+          "profile": "fedscale_field_106",
+          "capacity_client": 91553,
+          "availability_client": 104355,
+          "model": "moto e5"
+        },
+        {
+          "profile": "fedscale_field_107",
+          "capacity_client": 336825,
+          "availability_client": 24510,
+          "model": "RMX1941"
+        },
+        {
+          "profile": "fedscale_field_108",
+          "capacity_client": 223486,
+          "availability_client": 69207,
+          "model": "SM-J330G"
+        },
+        {
+          "profile": "fedscale_field_109",
+          "capacity_client": 204639,
+          "availability_client": 86906,
+          "model": "SM-J700M"
+        },
+        {
+          "profile": "fedscale_field_110",
+          "capacity_client": 488827,
+          "availability_client": 53900,
+          "model": "vivo 1814"
+        },
+        {
+          "profile": "fedscale_field_111",
+          "capacity_client": 81382,
+          "availability_client": 14114,
+          "model": "vivo 1814"
+        },
+        {
+          "profile": "fedscale_field_112",
+          "capacity_client": 468787,
+          "availability_client": 9537,
+          "model": "ASUS_X00ID"
+        },
+        {
+          "profile": "fedscale_field_113",
+          "capacity_client": 318664,
+          "availability_client": 36914,
+          "model": "CPH1803"
+        },
+        {
+          "profile": "fedscale_field_114",
+          "capacity_client": 212512,
+          "availability_client": 63192,
+          "model": "Moto G (5S) Plus"
+        },
+        {
+          "profile": "fedscale_field_115",
+          "capacity_client": 239192,
+          "availability_client": 75896,
+          "model": "vivo 1915"
+        },
+        {
+          "profile": "fedscale_field_116",
+          "capacity_client": 427505,
+          "availability_client": 10653,
+          "model": "2014817"
+        },
+        {
+          "profile": "fedscale_field_117",
+          "capacity_client": 17205,
+          "availability_client": 78421,
+          "model": "XT1706"
+        },
+        {
+          "profile": "fedscale_field_118",
+          "capacity_client": 101265,
+          "availability_client": 81390,
+          "model": "vivo 1902"
+        },
+        {
+          "profile": "fedscale_field_119",
+          "capacity_client": 164068,
+          "availability_client": 26160,
+          "model": "SM-M205G"
+        },
+        {
+          "profile": "fedscale_field_120",
+          "capacity_client": 3810,
+          "availability_client": 51336,
+          "model": "POLYTRON R250A"
+        },
+        {
+          "profile": "fedscale_field_121",
+          "capacity_client": 499702,
+          "availability_client": 21608,
+          "model": "CPH1803"
+        },
+        {
+          "profile": "fedscale_field_122",
+          "capacity_client": 411240,
+          "availability_client": 48406,
+          "model": "vivo 1606"
+        },
+        {
+          "profile": "fedscale_field_123",
+          "capacity_client": 360849,
+          "availability_client": 35905,
+          "model": "CPH1803"
+        },
+        {
+          "profile": "fedscale_field_124",
+          "capacity_client": 392876,
+          "availability_client": 40224,
+          "model": "Redmi Note 5A"
+        },
+        {
+          "profile": "fedscale_field_125",
+          "capacity_client": 297728,
+          "availability_client": 102853,
+          "model": "vivo 1904"
+        },
+        {
+          "profile": "fedscale_field_126",
+          "capacity_client": 296545,
+          "availability_client": 64022,
+          "model": "SM-G610F"
+        },
+        {
+          "profile": "fedscale_field_127",
+          "capacity_client": 149353,
+          "availability_client": 63484,
+          "model": "SM-A205F"
+        },
+        {
+          "profile": "fedscale_field_128",
+          "capacity_client": 370284,
+          "availability_client": 12315,
+          "model": "A51w"
+        },
+        {
+          "profile": "fedscale_field_129",
+          "capacity_client": 244541,
+          "availability_client": 26530,
+          "model": "SM-N9600"
+        },
+        {
+          "profile": "fedscale_field_130",
+          "capacity_client": 415128,
+          "availability_client": 36152,
+          "model": "SM-J700M"
+        },
+        {
+          "profile": "fedscale_field_131",
+          "capacity_client": 76928,
+          "availability_client": 66143,
+          "model": "Redmi 4"
+        },
+        {
+          "profile": "fedscale_field_132",
+          "capacity_client": 259083,
+          "availability_client": 76475,
+          "model": "CPH1923"
+        },
+        {
+          "profile": "fedscale_field_133",
+          "capacity_client": 195320,
+          "availability_client": 76285,
+          "model": "vivo 1902"
+        },
+        {
+          "profile": "fedscale_field_134",
+          "capacity_client": 448778,
+          "availability_client": 48806,
+          "model": "SM-A205G"
+        },
+        {
+          "profile": "fedscale_field_135",
+          "capacity_client": 15518,
+          "availability_client": 60877,
+          "model": "CPH1803"
+        },
+        {
+          "profile": "fedscale_field_136",
+          "capacity_client": 46798,
+          "availability_client": 29410,
+          "model": "Redmi 6 Pro"
+        },
+        {
+          "profile": "fedscale_field_137",
+          "capacity_client": 496840,
+          "availability_client": 34599,
+          "model": "SM-A730F"
+        },
+        {
+          "profile": "fedscale_field_138",
+          "capacity_client": 203092,
+          "availability_client": 107594,
+          "model": "XT1032"
+        },
+        {
+          "profile": "fedscale_field_139",
+          "capacity_client": 51840,
+          "availability_client": 21288,
+          "model": "Redmi 5 Plus"
+        },
+        {
+          "profile": "fedscale_field_140",
+          "capacity_client": 11200,
+          "availability_client": 60221,
+          "model": "RMX1911"
+        },
+        {
+          "profile": "fedscale_field_141",
+          "capacity_client": 16138,
+          "availability_client": 65882,
+          "model": "SM-A105M"
+        },
+        {
+          "profile": "fedscale_field_142",
+          "capacity_client": 379042,
+          "availability_client": 82225,
+          "model": "SM-J700M"
+        },
+        {
+          "profile": "fedscale_field_143",
+          "capacity_client": 383078,
+          "availability_client": 58413,
+          "model": "SM-G610M"
+        },
+        {
+          "profile": "fedscale_field_144",
+          "capacity_client": 115917,
+          "availability_client": 21556,
+          "model": "Moto G (5S) Plus"
+        },
+        {
+          "profile": "fedscale_field_145",
+          "capacity_client": 73995,
+          "availability_client": 2769,
+          "model": "SM-A305G"
+        },
+        {
+          "profile": "fedscale_field_146",
+          "capacity_client": 21733,
+          "availability_client": 34876,
+          "model": "Lenovo P70-A"
+        },
+        {
+          "profile": "fedscale_field_147",
+          "capacity_client": 180660,
+          "availability_client": 30265,
+          "model": "Redmi S2"
+        },
+        {
+          "profile": "fedscale_field_148",
+          "capacity_client": 52563,
+          "availability_client": 20222,
+          "model": "SM-J710MN"
+        },
+        {
+          "profile": "fedscale_field_149",
+          "capacity_client": 23469,
+          "availability_client": 74139,
+          "model": "SM-J500M"
+        },
+        {
+          "profile": "fedscale_field_150",
+          "capacity_client": 420848,
+          "availability_client": 39444,
+          "model": "Redmi 6A"
+        },
+        {
+          "profile": "fedscale_field_151",
+          "capacity_client": 174574,
+          "availability_client": 6437,
+          "model": "vivo 1606"
+        },
+        {
+          "profile": "fedscale_field_152",
+          "capacity_client": 349596,
+          "availability_client": 60514,
+          "model": "CPH1909"
+        },
+        {
+          "profile": "fedscale_field_153",
+          "capacity_client": 168370,
+          "availability_client": 38270,
+          "model": "SM-J260G"
+        },
+        {
+          "profile": "fedscale_field_154",
+          "capacity_client": 12628,
+          "availability_client": 14870,
+          "model": "ANE-LX3"
+        },
+        {
+          "profile": "fedscale_field_155",
+          "capacity_client": 53918,
+          "availability_client": 8071,
+          "model": "RMX1941"
+        },
+        {
+          "profile": "fedscale_field_156",
+          "capacity_client": 47536,
+          "availability_client": 57875,
+          "model": "CPH1801"
+        },
+        {
+          "profile": "fedscale_field_157",
+          "capacity_client": 351450,
+          "availability_client": 30816,
+          "model": "mito A39"
+        },
+        {
+          "profile": "fedscale_field_158",
+          "capacity_client": 333226,
+          "availability_client": 2927,
+          "model": "Lenovo A6000"
+        },
+        {
+          "profile": "fedscale_field_159",
+          "capacity_client": 490106,
+          "availability_client": 36488,
+          "model": "Redmi 7A"
+        },
+        {
+          "profile": "fedscale_field_160",
+          "capacity_client": 232414,
+          "availability_client": 48881,
+          "model": "SM-A105M"
+        }
+      ]
+    }
+  },
+  "finished_at": "2026-11-10T12:18:27.433318+00:00",
+  "run_hash": "7abcb32702d1472f97eebff8d452f14c40234695c0c7a92dd2b5d706906fcb89"
+}

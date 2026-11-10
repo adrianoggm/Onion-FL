@@ -1,0 +1,117 @@
+{
+  "run_id": "20261110T142157Z-0bb02e0b0a8b",
+  "topology_id": "ff55fe4d2ce1a807f764bcc5205a8d2d4d43ab3d533163a1d13e173a9a6725fa",
+  "config_id": "b8bb7eec26b63ad301d835d1e21143602396dae701ec5a1c4b421d597aef1144",
+  "backend": "sim",
+  "infrastructure_id": null,
+  "data_id": "9fd573754157d68b111f037ecd891bdb62abcbff1d5e5e818da789dde470257c",
+  "code_version": {
+    "commit": "e9652160eb99de1182ce8cf8133594d44b870b62",
+    "dirty": false
+  },
+  "seed": 4,
+  "scenario": "topology,learning.sharing,learning.trainer,learning.server_optimizer=four_fogs_swell_wesad_lossless,fedavg,standard(batch_size=32,local_epochs=10,lr=0.1,optimizer=sgd),replace",
+  "started_at": "2026-11-10T14:21:57.628031+00:00",
+  "status": "finished",
+  "config": {
+    "name": "stress_lab",
+    "description": "onion-bench-stress, pista de laboratorio (SWELL y WESAD). FedAvg plano y jer\u00e1rquico, personalizaci\u00f3n y deriva.",
+    "topology": "four_fogs_swell_wesad_lossless",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        },
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.2,
+        "local_val_split": "class_tail",
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.1
+      },
+      "init": "random",
+      "server_optimizer": "replace"
+    },
+    "rounds": 20,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": 20,
+        "models": [
+          "received",
+          "local",
+          "personal",
+          "finetuned"
+        ],
+        "finetune": {
+          "name": "standard",
+          "optimizer": "sgd",
+          "local_epochs": 2,
+          "batch_size": 32,
+          "lr": 0.03
+        }
+      },
+      "aggregators": {
+        "every": 20,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    }
+  },
+  "finished_at": "2026-11-10T14:22:47.173310+00:00",
+  "run_hash": "f34dcd028349aa0229fcaed146a3b6e9930d6ee7cc1e3c29a63c6147e05732a8"
+}

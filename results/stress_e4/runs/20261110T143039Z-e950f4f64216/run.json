@@ -1,0 +1,126 @@
+{
+  "run_id": "20261110T143039Z-e950f4f64216",
+  "topology_id": "5f5cd72e08bee8d683bb0ae25f3aa9a4d16dc21bab82fa6ecb0a86b2c837a7cd",
+  "config_id": "4e62c7ca61f0737abebc7a64200c1f736b8a400c48d2d18e30664e4f5300b88c",
+  "backend": "sim",
+  "infrastructure_id": null,
+  "data_id": "a5610d4e619b550eb87ac696065cecf9c33f0dd949459ba93dec386b7e55c305",
+  "code_version": {
+    "commit": "e9652160eb99de1182ce8cf8133594d44b870b62",
+    "dirty": false
+  },
+  "seed": 0,
+  "scenario": "learning.sharing,learning.trainer,learning.server_optimizer=fedavg,scaffold(batch_size=32,local_epochs=5,lr=0.3,optimizer=sgd),scaffold",
+  "started_at": "2026-11-10T14:30:39.314849+00:00",
+  "status": "finished",
+  "config": {
+    "name": "stress_e4_select",
+    "description": "onion-bench-stress, pista E4. Selecci\u00f3n del lr de cada t\u00e9cnica con los sujetos de validaci\u00f3n.",
+    "topology": "stress_e4_studies",
+    "data": {
+      "datasets": {
+        "wesad_e4": {
+          "descriptor": null,
+          "options": {}
+        },
+        "physionet_e4": {
+          "descriptor": null,
+          "options": {}
+        },
+        "nurse_stress": {
+          "descriptor": null,
+          "options": {}
+        },
+        "stress_predict": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.25,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.2,
+        "local_val_split": "class_tail",
+        "subjects_per_client": 1,
+        "scaler": "local",
+        "impute": "mean",
+        "drop_constant": false
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "scaffold",
+        "optimizer": "sgd",
+        "local_epochs": 5,
+        "batch_size": 32,
+        "lr": 0.3
+      },
+      "init": "random",
+      "server_optimizer": "scaffold"
+    },
+    "rounds": 20,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": 20,
+        "models": [
+          "received",
+          "local",
+          "personal",
+          "finetuned"
+        ],
+        "finetune": {
+          "name": "standard",
+          "optimizer": "sgd",
+          "local_epochs": 2,
+          "batch_size": 32,
+          "lr": 0.03
+        }
+      },
+      "aggregators": {
+        "every": 20,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 20,
+        "subjects": "val"
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    }
+  },
+  "finished_at": "2026-11-10T14:34:11.066369+00:00",
+  "run_hash": "d88e06eb9713f159ca5e178ed45a5aa1e40f3a40f754b00452e91c3d7cd4ad3d"
+}

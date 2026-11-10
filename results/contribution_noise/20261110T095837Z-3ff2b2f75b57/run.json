@@ -1,0 +1,114 @@
+{
+  "run_id": "20261110T095837Z-3ff2b2f75b57",
+  "topology_id": "ff55fe4d2ce1a807f764bcc5205a8d2d4d43ab3d533163a1d13e173a9a6725fa",
+  "config_id": "1c2bcf0acfca9848a29da55e15d89f20b28260aadf136b88b72d05ba5098cb7d",
+  "backend": "sim",
+  "infrastructure_id": null,
+  "data_id": "9fd573754157d68b111f037ecd891bdb62abcbff1d5e5e818da789dde470257c",
+  "code_version": {
+    "commit": "f257ac401bed43b1624629e2572cabba40548457",
+    "dirty": false
+  },
+  "seed": 4,
+  "scenario": "attack=gaussian(fraction=0.2,sigma=0.01)",
+  "host": "2INNDESLP100930",
+  "pid": 8264,
+  "started_at": "2026-11-10T09:58:37.911786+00:00",
+  "status": "finished",
+  "config": {
+    "name": "contribution_noise",
+    "description": "Puntuaci\u00f3n de contribuciones con edges ruidosos sobre SWELL y WESAD.",
+    "topology": "four_fogs_swell_wesad_lossless",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        },
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.2,
+        "local_val_split": "class_tail",
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.5
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.3
+      },
+      "init": "random"
+    },
+    "rounds": 10,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": null,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": null,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    },
+    "attack": {
+      "name": "gaussian",
+      "fraction": 0.2,
+      "sigma": 0.01
+    }
+  },
+  "finished_at": "2026-11-10T10:00:54.914234+00:00",
+  "run_hash": "626e66fb36d160e43285d0b1554c0fa3aad9c6347b1cb438fd0465d3ddc72c3d"
+}

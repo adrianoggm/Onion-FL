@@ -1,0 +1,103 @@
+{
+  "run_id": "20261110T141520Z-be1cb3c9877f",
+  "topology_id": "18086603f5b1b16c80d6f511ca71272027578268e89353a6f8052f07f69b6322",
+  "config_id": "3198fabf649883d5b633eac6a129b3905d32d9fcc6e6a6333b174b80a1e3ea53",
+  "backend": "sim",
+  "infrastructure_id": null,
+  "data_id": "321e8a45c0811998f41ae80baa6dc36be4baa3f8d883ae4620241ce28e31a2f3",
+  "code_version": {
+    "commit": "4d34d9f253b10358d026d2a56ad99b4db3bda699",
+    "dirty": false
+  },
+  "seed": 4,
+  "scenario": "data.datasets={'wesad_e4': {}}",
+  "started_at": "2026-11-10T14:15:21.017296+00:00",
+  "status": "finished",
+  "config": {
+    "name": "stress_e4_per_study",
+    "description": "onion-bench-stress, pista E4. FedAvg dentro de cada estudio, sin los otros tres.",
+    "topology": "one_fog",
+    "data": {
+      "datasets": {
+        "wesad_e4": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.25,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.2,
+        "local_val_split": "class_tail",
+        "subjects_per_client": 1,
+        "scaler": "local",
+        "impute": "mean",
+        "drop_constant": false
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 5,
+        "batch_size": 32,
+        "lr": 0.03
+      },
+      "init": "random"
+    },
+    "rounds": 20,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": null,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": 20,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    }
+  },
+  "finished_at": "2026-11-10T14:15:27.263526+00:00",
+  "run_hash": "c4bb536a0b259368a95cc06029d068b4964eeb33a03cc2469344e350766926e1"
+}
