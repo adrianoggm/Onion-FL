@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from onion_fl.experiment.cli import main
+from onion_fl.experiment.cli import main, parser
 
 TOPOLOGY = {
     "name": "two_fogs",
@@ -254,6 +254,11 @@ def test_baseline_reports_a_missing_experiment(capsys, tmp_path: Path) -> None:
     code, _, err = run(capsys, "baseline", str(tmp_path / "missing.yaml"))
 
     assert code == 2 and "missing.yaml" in err
+
+
+def test_baseline_takes_the_seed_of_its_models_and_folds() -> None:
+    assert parser().parse_args(["baseline", "e.yaml"]).seed == 0
+    assert parser().parse_args(["baseline", "e.yaml", "--seed", "3"]).seed == 3
 
 
 # --- the shipped examples -------------------------------------------------------------------

@@ -13,6 +13,7 @@ from __future__ import annotations
                      [--resample] [--paired] [--workers N]
     onion_fl report <experiment.yaml | runs_dir>... [--out FILE] [--metric NAME]... [--by TAG]...
     onion_fl baseline <experiment.yaml> [--models lr rf xgboost] [--cv K | --seeds 0 1 2]
+                      [--seed S]
     onion_fl schema [--out FILE]
     onion_fl serve [--root .] [--host 127.0.0.1] [--port 8765]
 
@@ -221,13 +222,19 @@ def cmd_baseline(args: argparse.Namespace) -> int:
     elif args.cv:
         _print_json(
             {
-                m: cross_validate(subjects, m, k=args.cv, roles=config.data.roles)
+                m: cross_validate(
+                    subjects, m, k=args.cv, seed=args.seed, roles=config.data.roles
+                )
                 for m in args.models
             }
         )
     else:
         _print_json(
-            evaluate(split_subjects(subjects, config.data.roles), models=args.models)
+            evaluate(
+                split_subjects(subjects, config.data.roles),
+                models=args.models,
+                seed=args.seed,
+            )
         )
     return 0
 
@@ -361,6 +368,9 @@ def parser() -> argparse.ArgumentParser:
         type=int,
         nargs="+",
         help="repeat with each seed drawing the test subjects; mean and 95%% CI",
+    )
+    baseline.add_argument(
+        "--seed", type=int, default=0, help="seed of the models and of the folds"
     )
     baseline.set_defaults(func=cmd_baseline)
 

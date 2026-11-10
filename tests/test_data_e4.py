@@ -686,3 +686,111 @@ def test_excel_reads_the_declared_missing_texts(tmp_path: Path) -> None:
     out = readers.create("excel", {"na_values": ["na"]}).read(tmp_path / "survey.xlsx")
 
     assert out["level"].tolist()[0] == 2 and pd.isna(out["level"].iloc[1])
+
+
+def test_a_subject_left_out_by_a_select_adds_no_rows(tmp_path: Path) -> None:
+    e4_session(tmp_path / "S1")
+    e4_session(tmp_path / "S2")
+    _intervals(tmp_path, [("S1", START, START + 10, "rest")])
+    spec = e4_spec(
+        tmp_path,
+        {"reader": "empatica_e4_csv", "path": "{subject}/EDA.csv"},
+        [
+            {"select": {"query": "subject != 'S2'"}},
+            {
+                "intervals": {
+                    "source": {"reader": "csv", "path": "protocol.csv"},
+                    "by": ["subject"],
+                }
+            },
+        ],
+    )
+
+    (data,) = ingest(spec)  # no warning from an empty frame (filterwarnings=error)
+
+    assert data.subject == "S1" and data.y.tolist() == [0, 0, 0, 0]
+
+
+# --- stress_predict_time_logs (issue #242) -----------------------------------------
+
+
+def time_logs(path: Path, rows: list[tuple[str, list[str], str]]) -> Path:
+    """Time_logs.xlsx's layout: a two-row header, a (Start, End) pair per phase."""
+    pytest.importorskip("openpyxl")
+    import datetime as dt
+
+    phases = ["Consent", "Baseline/Questionniare", "Stroop Test", "Relax"]
+    phases += ["Interview", "Relax", "Hyperventilation", "Relax"]
+    phases += ["Questionniare", "Relax/Baseline"]
+    head = ["S. ID.", "Start Time", "End Time", "Session ID"]
+    head += [x for p in phases for x in (p, None)] + [None, "Date"]
+    sub = [None] * 4 + ["Start", "End"] * len(phases) + [None, None]
+    body = []
+    for subject, clock, day in rows:
+        times = [dt.time(*map(int, c.split(":"))) for c in clock]
+        body.append(
+            [subject, times[0], times[-1], 1]
+            + times
+            + ["Day 1", dt.datetime.fromisoformat(day)]
+        )
+    _sheet(path, [head, sub, *body])
+    return path
+
+
+def _sheet(path: Path, rows: list[list]) -> None:
+    from openpyxl import Workbook
+
+    book = Workbook()
+    for row in rows:
+        book.active.append(row)
+    book.save(path)
+
+
+def unix(text: str) -> float:
+    return (pd.Timestamp(text) - pd.Timestamp(0)).total_seconds()
+
+
+MORNING = [  # 20 clock times: 10 phases, the last ones after noon on a 12-hour clock
+    "11:00", "11:05", "11:05", "11:15", "11:15", "11:20", "11:20", "11:25",
+    "11:25", "11:35", "11:35", "11:40", "11:40", "11:42", "11:42", "11:47",
+    "11:47", "11:52", "12:52", "01:02",
+]  # fmt: skip
+
+
+def test_time_logs_give_one_row_per_phase_in_unix_seconds(tmp_path: Path) -> None:
+    path = time_logs(tmp_path / "logs.xlsx", [("S02", MORNING, "2022-02-07")])
+
+    out = readers.create("stress_predict_time_logs", {}).read(path)
+
+    assert out.columns.tolist() == ["subject", "phase", "start", "end"]
+    assert out["phase"].tolist()[:3] == ["consent", "baseline", "stroop"]
+    stroop = out.set_index("phase").loc["stroop"]
+    assert (stroop.start, stroop.end) == (
+        unix("2022-02-07 11:15"),
+        unix("2022-02-07 11:20"),
+    )
+    last = out.set_index("phase").loc["relax_4"]  # 12:52 to 01:02 is past noon
+    assert (last.start, last.end) == (
+        unix("2022-02-07 12:52"),
+        unix("2022-02-07 13:02"),
+    )
+
+
+def test_time_logs_end_a_phase_where_the_next_begins(tmp_path: Path) -> None:
+    clock = list(MORNING)
+    clock[3] = "11:16"  # the baseline ends a minute after the Stroop test starts
+    path = time_logs(tmp_path / "logs.xlsx", [("S33", clock, "2022-03-09")])
+
+    out = readers.create("stress_predict_time_logs", {}).read(path)
+
+    baseline = out.set_index("phase").loc["baseline"]
+    assert baseline.end == unix("2022-03-09 11:15")
+
+
+def test_time_logs_need_the_phase_columns(tmp_path: Path) -> None:
+    pytest.importorskip("openpyxl")
+    path = tmp_path / "logs.xlsx"
+    _sheet(path, [["S. ID.", "Date"], ["", "Start"], ["S02", None]])
+
+    with pytest.raises(DataError, match=r"\(Start, End\) pairs"):
+        readers.create("stress_predict_time_logs", {}).read(path)

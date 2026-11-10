@@ -22,7 +22,16 @@ def descriptor(name: str):
 
 @pytest.mark.parametrize(
     "name",
-    ["swell", "sweet", "wesad", "wesad_e4", "physionet_e4", "nurse_stress", "femnist"],
+    [
+        "swell",
+        "sweet",
+        "wesad",
+        "wesad_e4",
+        "physionet_e4",
+        "nurse_stress",
+        "stress_predict",
+        "femnist",
+    ],
 )
 def test_descriptors_are_valid(name: str) -> None:
     spec = descriptor(name)
@@ -46,6 +55,7 @@ def test_descriptors_are_valid(name: str) -> None:
         ("physionet_e4", {"signals": "EDA,HR", "window_seconds": 30}),
         ("physionet_e4", {"label": "three_class"}),
         ("nurse_stress", {"label": "high", "signals": "EDA,TEMP,HR"}),
+        ("stress_predict", {"signals": "BVP,EDA", "window_seconds": 30}),
     ],
 )
 def test_descriptor_options_are_valid(name: str, options: dict) -> None:
@@ -436,3 +446,69 @@ def test_wesad_windows_are_timed_in_order() -> None:
         steps = np.diff(data.t)
         assert data.t[0] == 0 and np.all(steps > 0), data.subject
         assert np.isclose(steps.min(), 30.0), data.subject  # 60 s windows, half overlap
+
+
+# --- Stress-Predict (issue #242) ----------------------------------------------------
+
+STRESS_PREDICT = Path("data/StressPredict")
+E4_HARMONIZED = [  # the names wesad_e4.yaml gives too
+    f"{channel}_{stat}"
+    for channel in ["acc_x", "acc_y", "acc_z", "bvp", "eda", "temp"]
+    for stat in ["mean", "std", "min", "max", "median"]
+]
+
+
+@pytest.mark.skipif(
+    not STRESS_PREDICT.exists(), reason="data/StressPredict not available"
+)
+def test_stress_predict_labels_match_the_authors_csv() -> None:
+    """Time_logs.xlsx against the authors' labels, second by second.
+
+    The authors took the boundaries from the button presses, to the second, so
+    the minute resolution of the time log leaves 3.7% of the seconds different
+    (2026-11-10: 107,315 seconds with a class, 3,952 of them different).
+    """
+    pytest.importorskip("openpyxl")
+    import pandas as pd
+
+    from onion_fl.data.ingest import readers
+
+    spec = descriptor("stress_predict")
+    (label,) = [s["label"] for s in spec.steps if "label" in s]
+    logs = readers.create("stress_predict_time_logs", {}).read(
+        STRESS_PREDICT / "Processed_data/Time_logs.xlsx"
+    )
+    csv = pd.read_csv(
+        STRESS_PREDICT / "Processed_data/Improved_All_Combined_hr_rsp_binary.csv"
+    )
+    subjects = csv["Participant"].map(lambda p: f"S{p:02d}").to_numpy()
+    seconds = csv["Time(sec)"].to_numpy(np.float64)
+    ours = np.full(len(csv), np.nan)
+    for phase in logs.itertuples():
+        inside = (subjects == phase.subject) & (seconds >= phase.start)
+        inside &= seconds < phase.end
+        ours[inside] = label["map"].get(phase.phase, np.nan)
+
+    # The CSV has every subject but S01, which the descriptor leaves out.
+    assert sorted(set(subjects)) == sorted(set(logs["subject"]) - {"S01"})
+    held = ~np.isnan(ours)
+    assert held.mean() > 0.95  # the rest falls between two phases
+    assert (ours[held] == csv["Label"].to_numpy()[held]).mean() > 0.96
+
+
+SAMPLE = Path("data/samples/stress_predict")  # scripts/stress_predict_sample.py
+
+
+@pytest.mark.skipif(not SAMPLE.exists(), reason="data/samples/stress_predict missing")
+def test_stress_predict_reads_the_harmonized_e4_features() -> None:
+    pytest.importorskip("openpyxl")
+
+    subjects = ingest(descriptor("stress_predict"), root=SAMPLE)
+
+    assert [s.subject for s in subjects] == ["S02", "S03", "S04"]
+    counts = [np.bincount(s.y.astype(int)).tolist() for s in subjects]
+    assert counts == [[76, 35], [69, 31], [80, 34]]  # as on the whole dataset
+    for data in subjects:
+        assert data.n_classes == 2 and data.feature_names == E4_HARMONIZED
+        assert data.t[0] == 0 and np.isclose(np.diff(data.t).min(), 30.0)
+        assert not np.isnan(data.X).any()
