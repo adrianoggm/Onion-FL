@@ -14,6 +14,7 @@ of its ``config_id``, and its ``configuration`` is the swept scenario's name.
 """
 
 import copy
+from collections.abc import Mapping
 from dataclasses import dataclass
 from itertools import product
 from typing import Any
@@ -22,10 +23,13 @@ import numpy as np
 
 from onion_fl.core.ids import config_id
 from onion_fl.experiment.config import (
+    PACE,
+    REPLAY,
     ConfigError,
     ExperimentConfig,
     SearchConfig,
     parse_experiment,
+    to_continuum,
 )
 
 
@@ -76,7 +80,42 @@ def _trials(resolved: dict[str, Any]) -> list[tuple[dict[str, Any], str | None]]
     return out
 
 
+def _set_continual(tree: dict[str, Any], head: str, value: Any) -> None:
+    """Set the whole ``continual`` section, or the legacy ``continuum`` one.
+
+    The section has two parts: the replay part (memory, replay_ratio, update),
+    the whole section before M1 (#193), and the triggers, once ``continuum``.
+    A value replaces the parts it names, so the sweeps written before M1 keep
+    their scenarios: ``continuum`` names the triggers only, and a value under
+    ``continual`` that names no trigger is its replay part (null removes it).
+    """
+    if head == "continuum":
+        named = PACE
+    elif isinstance(value, Mapping) and value.keys() & set(PACE):
+        named = (*REPLAY, *PACE) if value.keys() & set(REPLAY) else PACE
+    else:
+        named = REPLAY
+    current = tree.get("continual") or {}
+    out = {k: v for k, v in current.items() if k not in named}
+    if value is not None:
+        if not isinstance(value, Mapping):
+            raise ConfigError(f"sweep {head}: each value must be a mapping or null")
+        out |= value
+        if named == REPLAY:
+            out.setdefault("memory", "none")  # the replay part, given (see replays)
+    if out:
+        tree["continual"] = out
+    else:
+        tree.pop("continual", None)
+
+
 def _set(tree: dict[str, Any], path: str, value: Any) -> None:
+    head, _, rest = path.partition(".")
+    if head in ("continual", "continuum"):
+        if not rest:
+            _set_continual(tree, head, value)
+            return
+        path = f"continual.{rest}"  # continuum.trigger is continual.trigger
     parts = path.split(".")
     node = tree
     for i, part in enumerate(parts[:-1]):
@@ -93,8 +132,9 @@ def _set(tree: dict[str, Any], path: str, value: Any) -> None:
 
 
 def identity(config: ExperimentConfig) -> dict[str, Any]:
-    """What a scenario is: the validated config without its seeds and sweep."""
-    out = config.dump()
+    """What a scenario is: the validated config without its seeds and sweep, in
+    the layout config_ids are signed with (``to_continuum``)."""
+    out = to_continuum(config.dump())
     out.pop("sweep")
     out.pop("seeds")
     return out

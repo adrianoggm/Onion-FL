@@ -52,7 +52,7 @@ Punto de partida, ya implementado:
 
 - `TrainResult` gana `steps`, los pasos locales de optimización, que el edge envía como métrica `train_steps`.
 - `_train_metrics` reduce todas las métricas `train_*` por media ponderada por ejemplos. También suma `train_edges`, los edges que entrenaron, y `train_edges/<grupo>`, los que enviaron cada grupo, a medida que el informe sube por el árbol.
-- El colector añade `staleness`, la antigüedad media en rondas de las contribuciones que combina (0 si todas son de la ronda), y el coordinador `edges_total`, los edges registrados, y `edges_total/<grupo>`, los que tienen cada grupo; cada edge anuncia sus grupos en el `hello`.
+- El colector añade `staleness`, la antigüedad media en rondas de las contribuciones que combina (0 si todas son de la ronda), ponderada por lo que pesa cada una en el agregado (sus muestras, con el factor de antigüedad si es tardía; #167), y el coordinador `edges_total`, los edges registrados, y `edges_total/<grupo>`, los que tienen cada grupo; cada edge anuncia sus grupos en el `hello`.
 - El optimizador de servidor pasa a ser `apply(global_state, aggregated, stats)`, donde `stats` son esas métricas de la ronda. Los optimizadores actuales lo ignoran.
 
 ### 3.3 Referencia para los agregadores

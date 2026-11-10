@@ -7,8 +7,9 @@ same experiment: ``A`` is the reference (closer to the physical system), ``B``
 the cheaper backend under test. A run of ``A`` and one of ``B`` are a pair
 when they ran the same configuration with the same seed: the same
 ``design_id``, the ``config_id`` of the config without what only says where
-and how it ran (``backend``, ``runtime.mode``, ``timeout``, ``heartbeat`` and
-``paths``).
+and how it ran (``backend``, ``runtime.mode``, ``timeout``, ``heartbeat``,
+``paths`` and the ``transport`` of the links of an inline topology). So
+``A`` and ``B`` can also be one backend over two transports, MQTT and gRPC.
 
 Three levels:
 
@@ -32,8 +33,13 @@ Three levels:
 
 Every regret and top-1 is shown next to the **noise ceiling** (spec N6): the
 same quantities between replicas of ``A``, from ``onion_fl ceiling`` output
-when given, else between the seeds of ``A`` (paired replicas). A place is
-kept for the **factorised predictor** (A7), which fills it later. When every
+when given, else between the seeds of ``A`` (paired replicas). On ``time``
+and ``time_to_target`` they are also shown next to the **factorised
+predictor** (``onion_fl.experiment.predictor``, issue #211) against ``A``,
+plain and with its FLOSS-style correction: a backend that does not decide
+better than that analytic model adds nothing. The predictor can also be a side
+itself (``onion_fl fidelity predictor <runs>``): it has no runs, so it is
+compared with the folder's runs on the decision level only. When every
 configuration ties on a metric (constant predictors, C3–C5), the decision on
 it does not inform, and the result says so.
 """
@@ -52,6 +58,7 @@ from scipy import stats
 from onion_fl.core.ids import config_id
 from onion_fl.experiment.backends import ALIASES
 from onion_fl.experiment.ceiling import LOWER_IS_BETTER, ceiling, final_score
+from onion_fl.experiment.predictor import PREDICTED, VARIANTS, predictions
 from onion_fl.observability.events import read_events
 from onion_fl.observability.run import verify_run
 
@@ -68,6 +75,16 @@ RUNTIME_ONLY = ("mode", "timeout", "heartbeat")
 BOOTSTRAP = 2000
 MIN_SEEDS = 5  # for decision fidelity (I1 §12, §17)
 RTOL, ATOL = 1e-6, 1e-7  # as test_runtime_equivalence
+PREDICTORS = {"predictor": "factorised", "predictor:floss": "floss"}  # as a side
+
+
+def _without_transport(value: Any) -> Any:
+    """A topology without the transport of its links (only ``LinkSpec`` has one)."""
+    if isinstance(value, Mapping):
+        return {k: _without_transport(v) for k, v in value.items() if k != "transport"}
+    if isinstance(value, list):
+        return [_without_transport(v) for v in value]
+    return value
 
 
 def design_id(config: Mapping[str, Any]) -> str:
@@ -76,7 +93,10 @@ def design_id(config: Mapping[str, Any]) -> str:
     runtime = {
         k: v for k, v in (design.get("runtime") or {}).items() if k not in RUNTIME_ONLY
     }
-    return config_id(design | {"runtime": runtime})
+    design |= {"runtime": runtime}
+    if isinstance(design.get("topology"), Mapping):
+        design["topology"] = _without_transport(design["topology"])
+    return config_id(design)
 
 
 @dataclass(frozen=True)
@@ -471,6 +491,104 @@ def _ceiling_for(
     }
 
 
+def _table_of(
+    cells: Mapping[tuple[str, int], Cell],
+    designs: Sequence[str],
+    seeds: Sequence[int],
+    metric: str,
+    series: str | None,
+    target: tuple[str, float] | None,
+) -> np.ndarray:
+    """Scores ``seeds x designs`` of one side."""
+    return np.array(
+        [[score(cells[(d, s)], metric, series, target) for d in designs] for s in seeds]
+    )
+
+
+def _decide(
+    metric: str,
+    table_a: np.ndarray,
+    table_b: np.ndarray,
+    lower: bool,
+    noise_ceiling: Mapping[str, Any] | None,
+    resamples: int,
+    seed: int,
+    warnings: list[str],
+) -> dict[str, Any]:
+    """The decision fidelity on one metric, next to the noise ceiling."""
+    result = decision(table_a, table_b, minimize=lower, resamples=resamples, seed=seed)
+    for side, table in (("A", table_a), ("B", table_b)):
+        if ties(table.mean(axis=0)):
+            warnings.append(
+                f"every configuration ties on {metric} in {side} (a constant "
+                "predictor?): the decision on it does not inform; decide on a "
+                "system metric too"
+            )
+    noise = _ceiling_for(metric, table_a, lower, noise_ceiling)
+    return result | {
+        "minimize": lower,
+        "scores": {
+            "a": table_a.mean(axis=0).tolist(),
+            "b": table_b.mean(axis=0).tolist(),
+        },
+        "ceiling": noise,
+        "top1_below_ceiling": None
+        if noise is None
+        else bool(result["top1"] < noise["top1"]),
+        "regret_above_ceiling": None
+        if noise is None
+        else bool(result["regret"] > noise["regret"]),
+        "predictor": None,  # filled by the factorised predictor when it scores it
+    }
+
+
+def _predicted_table(
+    predicted: Mapping[tuple[str, int], Any],
+    designs: Sequence[str],
+    seeds: Sequence[int],
+    variant: str,
+    metric: str,
+) -> np.ndarray | None:
+    """The predictor's scores ``seeds x designs``; None when one is missing."""
+    try:
+        return np.array(
+            [[predicted[(d, s)][variant][metric] for d in designs] for s in seeds],
+            float,
+        )
+    except KeyError:
+        return None
+
+
+def _predictor_slot(
+    metric: str,
+    table_a: np.ndarray,
+    predicted: Mapping[tuple[str, int], Any],
+    designs: Sequence[str],
+    seeds: Sequence[int],
+    decided: Mapping[str, Any],
+    resamples: int,
+    seed: int,
+) -> dict[str, Any] | None:
+    """How each variant of the predictor decides against A, and whether B beats it."""
+    if metric not in PREDICTED:
+        return None
+    out = {}
+    for variant in VARIANTS:
+        table = _predicted_table(predicted, designs, seeds, variant, metric)
+        if table is None:
+            return None
+        result = decision(table_a, table, minimize=True, resamples=resamples, seed=seed)
+        out[variant] = {
+            k: result[k]
+            for k in ("tau_b", "top1", "p_top1", "regret", "regret_relative")
+        } | {
+            "scores": table.mean(axis=0).tolist(),
+            # a backend that does not decide better than the predictor adds nothing
+            "b_regret_below": bool(decided["regret"] < result["regret"]),
+        }
+    return out
+
+
 def fidelity(
     a: str | Path,
     b: str | Path,
@@ -482,8 +600,35 @@ def fidelity(
     minimize: Sequence[str] = (),
     resamples: int = BOOTSTRAP,
     seed: int = 0,
+    control: str | Path | None = None,
+    predictor: bool = True,
 ) -> dict[str, Any]:
-    """Functional, performance and decision fidelity of the runs of ``b`` against ``a``."""
+    """Functional, performance and decision fidelity of the runs of ``b`` against ``a``.
+
+    Either side may be ``predictor`` (or ``predictor:floss``): the factorised
+    predictor, which has no runs, then decides on the configurations of the
+    other, its reference (decision level only). Otherwise, with ``predictor``,
+    each decision on ``time`` or ``time_to_target`` also shows how both
+    variants of the predictor decide against ``a``. Its rounds to target come
+    from the runs of ``control`` (default: those of ``a``).
+    """
+    if str(a) in PREDICTORS and str(b) in PREDICTORS:
+        raise ValueError("fidelity: compare the predictor with runs, not with itself")
+    if str(a) in PREDICTORS or str(b) in PREDICTORS:
+        token, runs = (str(a), b) if str(a) in PREDICTORS else (str(b), a)
+        return _against_predictor(
+            runs,
+            token,
+            metrics,
+            series,
+            target,
+            experiment,
+            noise_ceiling,
+            minimize,
+            resamples,
+            seed,
+            control,
+        )
     cells_a, warn_a = load_cells(a, experiment)
     cells_b, warn_b = load_cells(b, experiment)
     warnings = [f"A {w}" for w in warn_a] + [f"B {w}" for w in warn_b]
@@ -553,48 +698,36 @@ def fidelity(
     if len(designs) < 2:
         warnings.append("one configuration only: there is no ranking to compare")
     decisions = {}
+    tables_a = {}
     for metric in metrics:
         lower = metric in minimize or metric in LOWER_IS_BETTER or metric in SYSTEM
         if not seeds:
             continue
-        table_a = np.array(
-            [
-                [score(cells_a[(d, s)], metric, series, target) for d in designs]
-                for s in seeds
-            ]
+        table_a = tables_a[metric] = _table_of(
+            cells_a, designs, seeds, metric, series, target
         )
-        table_b = np.array(
-            [
-                [score(cells_b[(d, s)], metric, series, target) for d in designs]
-                for s in seeds
-            ]
+        table_b = _table_of(cells_b, designs, seeds, metric, series, target)
+        decisions[metric] = _decide(
+            metric, table_a, table_b, lower, noise_ceiling, resamples, seed, warnings
         )
-        result = decision(
-            table_a, table_b, minimize=lower, resamples=resamples, seed=seed
+    if predictor and any(m in PREDICTED for m in decisions):
+        predicted, more = predictions(
+            {k: cells_a[k] for k in keys},
+            load_cells(control, experiment)[0] if control is not None else cells_a,
+            target,
         )
-        for side, table in (("A", table_a), ("B", table_b)):
-            if ties(table.mean(axis=0)):
-                warnings.append(
-                    f"every configuration ties on {metric} in {side} (a constant "
-                    "predictor?): the decision on it does not inform; decide on a "
-                    "system metric too"
-                )
-        noise = _ceiling_for(metric, table_a, lower, noise_ceiling)
-        decisions[metric] = result | {
-            "minimize": lower,
-            "scores": {
-                "a": table_a.mean(axis=0).tolist(),
-                "b": table_b.mean(axis=0).tolist(),
-            },
-            "ceiling": noise,
-            "top1_below_ceiling": None
-            if noise is None
-            else bool(result["top1"] < noise["top1"]),
-            "regret_above_ceiling": None
-            if noise is None
-            else bool(result["regret"] > noise["regret"]),
-            "predictor": None,  # the factorised predictor (A7) goes here
-        }
+        warnings += more
+        for metric, decided in decisions.items():
+            decided["predictor"] = _predictor_slot(
+                metric,
+                tables_a[metric],
+                predicted,
+                designs,
+                seeds,
+                decided,
+                resamples,
+                seed,
+            )
     return {
         "a": str(a),
         "b": str(b),
@@ -624,6 +757,85 @@ def fidelity(
     }
 
 
+def _against_predictor(
+    runs: str | Path,
+    token: str,
+    metrics: Sequence[str],
+    series: str | None,
+    target: tuple[str, float] | None,
+    experiment: str | None,
+    noise_ceiling: Mapping[str, Any] | None,
+    minimize: Sequence[str],
+    resamples: int,
+    seed: int,
+    control: str | Path | None,
+) -> dict[str, Any]:
+    """Decision fidelity of a variant of the predictor against a folder of runs."""
+    cells, warn = load_cells(runs, experiment)
+    warnings = [f"A {w}" for w in warn]
+    for cell in cells.values():
+        if not verify_run(cell.path):
+            warnings.append(f"{cell.path.name}: its files do not match its run_hash")
+    twins = load_cells(control, experiment)[0] if control is not None else cells
+    predicted, more = predictions(cells, twins, target)
+    warnings += more
+    keys = sorted(predicted)
+    if not keys:
+        raise ValueError(f"the predictor could not score any run of {runs}")
+    designs = sorted({k[0] for k in keys})
+    seeds = sorted(
+        s for s in {k[1] for k in keys} if all((d, s) in predicted for d in designs)
+    )
+    if len(seeds) < MIN_SEEDS:
+        warnings.append(
+            f"{len(seeds)} seed(s) complete for every configuration; decision "
+            f"fidelity asks for at least {MIN_SEEDS} (I1 §12)"
+        )
+    if len(designs) < 2:
+        warnings.append("one configuration only: there is no ranking to compare")
+    decisions = {}
+    for metric in metrics:
+        if metric not in PREDICTED:
+            warnings.append(
+                f"the predictor scores {' and '.join(PREDICTED)} only; {metric} is "
+                "left out"
+            )
+            continue
+        if not seeds:
+            continue
+        lower = metric in minimize or metric in LOWER_IS_BETTER or metric in SYSTEM
+        table_a = _table_of(cells, designs, seeds, metric, series, target)
+        table_b = _predicted_table(predicted, designs, seeds, PREDICTORS[token], metric)
+        if table_b is None:
+            raise ValueError(f"{metric} needs a target, metric=value")
+        decisions[metric] = _decide(
+            metric, table_a, table_b, lower, noise_ceiling, resamples, seed, warnings
+        )
+    return {
+        "a": str(runs),
+        "b": token,
+        "backends": {"a": sorted({cells[k].backend for k in keys}), "b": [token]},
+        "configurations": [
+            {
+                "design_id": d,
+                "scenario": cells[next(k for k in keys if k[0] == d)].scenario,
+            }
+            for d in designs
+        ],
+        "seeds": seeds,
+        "functional": None,  # the predictor has no runs: decision only
+        "performance": {},
+        "decision": decisions,
+        "predictions": [
+            {"design_id": k[0], "seed": k[1], "run_id": cells[k].meta.get("run_id")}
+            | predicted[k]
+            for k in keys
+        ],
+        "warnings": warnings,
+        "pairs": [],
+    }
+
+
 def _identity(cell: Cell) -> dict[str, Any]:
     meta = cell.meta
     return {
@@ -645,6 +857,8 @@ def rows(result: Mapping[str, Any]) -> list[dict[str, Any]]:
     """The result as flat rows: one per level, metric and statistic."""
     out = []
     for name in ("model", "protocol", "bytes", "complete"):
+        if result["functional"] is None:  # against the predictor: no runs of B
+            break
         out.append(
             {"level": "functional", "metric": name, "statistic": "match"}
             | {"value": result["functional"][name]}
@@ -671,6 +885,12 @@ def rows(result: Mapping[str, Any]) -> list[dict[str, Any]]:
                 {"level": "decision", "metric": metric, "statistic": stat}
                 | {"value": dec[stat], "ci_low": low, "ci_high": high, "ceiling": ceil}
             )
+        for variant, pred in (dec["predictor"] or {}).items():
+            for stat in ("tau_b", "top1", "p_top1", "regret", "regret_relative"):
+                out.append(
+                    {"level": "decision", "metric": metric}
+                    | {"statistic": f"predictor.{variant}.{stat}", "value": pred[stat]}
+                )
     return out
 
 
@@ -753,8 +973,31 @@ def write_html(result: Mapping[str, Any], path: str | Path) -> Path:
                 regret_ci[1],
                 noise.get("regret"),
                 noise.get("source"),
-                dec["predictor"],
             ]
+            + [
+                (dec["predictor"] or {}).get(variant, {}).get(stat)
+                for variant in VARIANTS
+                for stat in ("top1", "regret")
+            ]
+        )
+    if func is None:
+        functional = "<p>None: B is the factorised predictor, which has no runs.</p>"
+    else:
+        functional = (
+            f"<p>Complete: {_cell(func['complete'])} (model {_cell(func['model'])}, "
+            f"protocol {_cell(func['protocol'])}, bytes {_cell(func['bytes'])}).</p>"
+        ) + _table(
+            [
+                "scenario",
+                "seed",
+                "model",
+                "max |Δ|",
+                "protocol",
+                "bytes",
+                "control A",
+                "control B",
+            ],
+            functional_rows,
         )
     run_rows = [
         [side.upper(), p[side]["run_id"], p[side]["backend"], p[side]["config_id"]]
@@ -774,26 +1017,10 @@ section {{ margin-bottom: 2rem; }}
 <h1>Onion-FL fidelity</h1>
 <p>B ({html.escape(", ".join(result["backends"]["b"]))}, {html.escape(result["b"])})
 against A ({html.escape(", ".join(result["backends"]["a"]))},
-{html.escape(result["a"])}): {func["pairs"]} pairs, seeds {result["seeds"]}.</p>
+{html.escape(result["a"])}): {len(result["pairs"])} pairs, seeds {result["seeds"]}.</p>
 {f"<h2>Warnings</h2><ul>{warnings}</ul>" if warnings else ""}
 <section><h2>Functional</h2>
-<p>Complete: {_cell(func["complete"])} (model {_cell(func["model"])}, protocol
-{_cell(func["protocol"])}, bytes {_cell(func["bytes"])}).</p>
-{
-        _table(
-            [
-                "scenario",
-                "seed",
-                "model",
-                "max |Δ|",
-                "protocol",
-                "bytes",
-                "control A",
-                "control B",
-            ],
-            functional_rows,
-        )
-    }</section>
+{functional}</section>
 <section><h2>Performance</h2>
 <p>Relative error (B − A) / A, mean per pair, then over pairs; 95 % bootstrap
 interval of the absolute one.</p>
@@ -814,8 +1041,10 @@ interval of the absolute one.</p>
     }</section>
 <section><h2>Decision</h2>
 <p>Rankings of the mean over seeds; intervals from a bootstrap paired by seed.
-Each top-1 and regret is shown next to the noise ceiling; the factorised
-predictor (A7) is not computed yet.</p>
+Each top-1 and regret is shown next to the noise ceiling and, on time
+metrics, next to the factorised predictor (rounds to target × time per round,
+plain and with the FLOSS-style participation correction) against A: a backend
+that does not decide better than it adds nothing.</p>
 {
         _table(
             [
@@ -831,7 +1060,10 @@ predictor (A7) is not computed yet.</p>
                 "ci high",
                 "ceiling regret",
                 "ceiling from",
-                "predictor (A7)",
+                "predictor top-1",
+                "predictor regret",
+                "FLOSS top-1",
+                "FLOSS regret",
             ],
             dec_rows,
         )

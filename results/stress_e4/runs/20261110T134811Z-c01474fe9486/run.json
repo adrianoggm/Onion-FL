@@ -1,0 +1,126 @@
+{
+  "run_id": "20261110T134811Z-c01474fe9486",
+  "topology_id": "c4bb911054361bbdd154eb316e5c696d01f80480335e860f409ebbc2e01a9314",
+  "config_id": "35ed0341a42228483195027be73cfd9bc31280157821e21854cbd4b9269b4d3c",
+  "backend": "sim",
+  "infrastructure_id": null,
+  "data_id": "a5610d4e619b550eb87ac696065cecf9c33f0dd949459ba93dec386b7e55c305",
+  "code_version": {
+    "commit": "4d34d9f253b10358d026d2a56ad99b4db3bda699",
+    "dirty": false
+  },
+  "seed": 2,
+  "scenario": "topology,learning.model.adapters,learning.sharing,learning.trainer,learning.server_optimizer=stress_e4_flat,shared,fedavg,standard(batch_size=32,local_epochs=5,lr=0.03,optimizer=sgd),replace",
+  "started_at": "2026-11-10T13:48:12.084511+00:00",
+  "status": "finished",
+  "config": {
+    "name": "stress_e4",
+    "description": "onion-bench-stress, pista E4. FedAvg plano y jer\u00e1rquico, adaptadores por dataset o compartidos, personalizaci\u00f3n y deriva.",
+    "topology": "stress_e4_flat",
+    "data": {
+      "datasets": {
+        "wesad_e4": {
+          "descriptor": null,
+          "options": {}
+        },
+        "physionet_e4": {
+          "descriptor": null,
+          "options": {}
+        },
+        "nurse_stress": {
+          "descriptor": null,
+          "options": {}
+        },
+        "stress_predict": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.25,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.2,
+        "local_val_split": "class_tail",
+        "subjects_per_client": 1,
+        "scaler": "local",
+        "impute": "mean",
+        "drop_constant": false
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2,
+        "adapters": "shared"
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 5,
+        "batch_size": 32,
+        "lr": 0.03
+      },
+      "init": "random",
+      "server_optimizer": "replace"
+    },
+    "rounds": 20,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": 20,
+        "models": [
+          "received",
+          "local",
+          "personal",
+          "finetuned"
+        ],
+        "finetune": {
+          "name": "standard",
+          "optimizer": "sgd",
+          "local_epochs": 2,
+          "batch_size": 32,
+          "lr": 0.03
+        }
+      },
+      "aggregators": {
+        "every": 20,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    }
+  },
+  "finished_at": "2026-11-10T13:50:57.351958+00:00",
+  "run_hash": "45d0ed3c235c4133a343dc3afc4831cbe348f4b9bb2fe592938a4fb79e3a909b"
+}

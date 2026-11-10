@@ -30,6 +30,7 @@ Every error names its path (``learning.trainer: ...``). Plugin references are
 ``"name"`` or ``{name: ..., **params}`` and each plugin validates its params.
 """
 
+import warnings
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
@@ -42,14 +43,18 @@ from pydantic import (
     NonNegativeInt,
     PositiveInt,
     ValidationError,
+    ValidationInfo,
     field_validator,
+    model_serializer,
     model_validator,
 )
 
 from onion_fl.baselines import baseline_models
-from onion_fl.continuum.drift import detectors
-from onion_fl.continuum.memory import memories
-from onion_fl.continuum.triggers import Schedule, drift_detectors, leaves, triggers
+from onion_fl.continual.drift import detectors
+from onion_fl.continual.memory import memories
+from onion_fl.continual.promotion import promotions
+from onion_fl.continual.triggers import Schedule, drift_detectors, leaves, triggers
+from onion_fl.continual.unlabelled import objectives
 from onion_fl.core.codec import codecs
 from onion_fl.core.registry import PluginError, Registry
 from onion_fl.data.ingest import readers, steps
@@ -65,6 +70,7 @@ from onion_fl.data.stream import (
 from onion_fl.experiment.backends import backend_name
 from onion_fl.infrastructure.assignment import assignments
 from onion_fl.infrastructure.backends import backends
+from onion_fl.infrastructure.failover import failovers
 from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.attacks import attacks
 from onion_fl.learning.metrics import metrics
@@ -73,6 +79,7 @@ from onion_fl.learning.privacy import privacies
 from onion_fl.learning.sharing import sharing
 from onion_fl.learning.trainers import inits, trainers
 from onion_fl.observability.diagnostics import diagnostics
+from onion_fl.observability.explain import explainers
 from onion_fl.roles.policies import (
     create,
     participations,
@@ -85,6 +92,8 @@ from onion_fl.transports import transports
 
 PluginRef = str | dict[str, Any]
 SINKS = ("prometheus", "otel")
+REPLAY = ("memory", "replay_ratio", "update")  # the parts of a continual section
+PACE = ("trigger", "edge_trigger", "status_every")  # its triggers, once continuum
 
 REGISTRIES: dict[str, Registry] = {
     "codec": codecs,
@@ -100,6 +109,7 @@ REGISTRIES: dict[str, Registry] = {
     "init": inits,
     "metric": metrics,
     "diagnostic": diagnostics,
+    "explainer": explainers,
     "participation": participations,
     "staleness": stalenesses,
     "stale_weighting": stale_weightings,
@@ -110,10 +120,13 @@ REGISTRIES: dict[str, Registry] = {
     "attack": attacks,
     "privacy": privacies,
     "memory": memories,
+    "unlabelled": objectives,
     "trigger": triggers,
     "detector": detectors,
+    "promotion": promotions,
     "assignment": assignments,
     "backend": backends,
+    "failover": failovers,
 }
 
 
@@ -143,13 +156,18 @@ class ContinualConfig(Strict):
         lt=1,
         description="Fracción de cada entrenamiento que sale de la memoria",
     )
-
-    _memory = field_validator("memory")(lambda v: _plugin(memories, v))
-
-
-class ContinuumConfig(Strict):
-    trigger: PluginRef = Field(
-        description="Disparador federativo: cuándo abre ronda el coordinador"
+    update: Literal["warm", "frozen", "scratch"] = Field(
+        "warm",
+        description="Cómo se actualiza cada edge: warm sigue desde el modelo "
+        "recibido, frozen solo entrena v0 con el histórico y scratch reentrena "
+        "desde los pesos iniciales con todas sus filas etiquetadas",
+        exclude_if=lambda v: v == "warm",  # unset, it keeps existing config_ids
+    )
+    trigger: PluginRef | None = Field(
+        None,
+        description="Disparador federativo: cuándo abre ronda el coordinador; sin "
+        "él, las rondas van a ritmo fijo (stream.round_every)",
+        exclude_if=lambda v: v is None,
     )
     edge_trigger: PluginRef | None = Field(
         None,
@@ -161,13 +179,47 @@ class ContinuumConfig(Strict):
         300.0, description="Tiempo de datos entre los mensajes de estado"
     )
 
-    _trigger = field_validator("trigger")(lambda v: _plugin(triggers, v))
-    _edge_trigger = field_validator("edge_trigger")(
+    _memory = field_validator("memory")(lambda v: _plugin(memories, v))
+    _trigger = field_validator("trigger", "edge_trigger")(
         lambda v: v if v is None else _plugin(triggers, v)
     )
 
+    @property
+    def replays(self) -> bool:
+        """Whether the section gives the replay part (memory, replay_ratio,
+        update): it was the whole ``continual`` section before M1, so it signs
+        the config only when given, or when there is no trigger."""
+        return self.trigger is None or bool(self.model_fields_set & set(REPLAY))
+
+    @model_serializer(mode="wrap")
+    def _parts(self, handler: Any) -> dict[str, Any]:
+        out = handler(self)
+        for key in (() if self.replays else REPLAY) + (
+            PACE if self.trigger is None else ()
+        ):
+            out.pop(key, None)
+        return out
+
     @model_validator(mode="after")
-    def _fits(self) -> ContinuumConfig:
+    def _warm_only(self) -> ContinualConfig:
+        name = self.memory if isinstance(self.memory, str) else self.memory["name"]
+        if self.update != "warm" and name != "none":
+            raise ValueError(
+                f"continual.update: {self.update} trains no rows twice from "
+                "memory; a replay memory needs warm"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _fits(self) -> ContinualConfig:
+        if self.trigger is None:
+            given = sorted(self.model_fields_set & {"edge_trigger", "status_every"})
+            if given:
+                raise ValueError(
+                    f"continual.{given[0]}: it goes with a federated trigger; set "
+                    "continual.trigger too"
+                )
+            return self
         federated = create(triggers, self.trigger)
         local = (
             None if self.edge_trigger is None else create(triggers, self.edge_trigger)
@@ -175,18 +227,68 @@ class ContinuumConfig(Strict):
         try:
             drift_detectors(federated, local)
         except ValueError as exc:
-            raise ValueError(f"continuum: {exc}") from None
+            raise ValueError(f"continual: {exc}") from None
         # The coordinator checks its trigger at each status tick, so a schedule
         # between two ticks would wait for the next one.
         for schedule in (t for t in leaves(federated) if isinstance(t, Schedule)):
             ticks = schedule.every / self.status_every
             if ticks < 1 - 1e-9 or abs(ticks - round(ticks)) > 1e-9:
                 raise ValueError(
-                    f"continuum.trigger: a schedule every {schedule.every:g} s is "
+                    f"continual.trigger: a schedule every {schedule.every:g} s is "
                     f"checked every status_every ({self.status_every:g} s), so it "
                     "would fire later; make every a multiple of status_every"
                 )
         return self
+
+
+def from_continuum(raw: Mapping[str, Any]) -> tuple[dict[str, Any], bool]:
+    """A raw config in the form after M1 (#193), and whether it was in the old one.
+
+    Before M1 the triggers were a ``continuum`` section of their own
+    (``continuum: {trigger, edge_trigger, status_every}``); they now live in
+    ``continual`` next to the replay memory. An old ``continual`` section, even
+    an empty one, keeps its replay part explicit, so the config_id stays.
+    """
+    if "continuum" not in raw:
+        return dict(raw), False
+    out = dict(raw)
+    old = out.pop("continuum")
+    if old is None:
+        return out, True
+    if not isinstance(old, Mapping):
+        raise ValueError("continuum: it must be a mapping (now continual)")
+    continual = out.get("continual")
+    if continual is None:
+        out["continual"] = dict(old)
+        return out, True
+    if not isinstance(continual, Mapping):
+        return out, True  # continual's own validation names the error
+    if clash := sorted(set(continual) & set(PACE)):
+        raise ValueError(
+            f"continuum: continual.{clash[0]} is given too; the triggers go in "
+            "continual only"
+        )
+    out["continual"] = {"memory": "none"} | dict(continual) | dict(old)
+    return out, True
+
+
+def to_continuum(dumped: dict[str, Any]) -> dict[str, Any]:
+    """The layout a config is signed with: the triggers under ``continuum``.
+
+    It is the layout before M1 (#193), so every config_id stays the same in
+    either form; ``run.json`` records it, and ``from_continuum`` reads it back.
+    """
+    continual = dumped.get("continual")
+    if not continual or "trigger" not in continual:
+        return dumped
+    out = dict(dumped)
+    out["continuum"] = {k: continual[k] for k in PACE if k in continual}
+    replay = {k: v for k, v in continual.items() if k not in PACE}
+    if replay:
+        out["continual"] = replay
+    else:
+        del out["continual"]
+    return out
 
 
 class DatasetUse(Strict):
@@ -330,6 +432,16 @@ class InfrastructureConfig(Strict):
         description="infrastructures/<nombre>.yaml, una ruta, o en línea"
     )
     assignment: AssignmentConfig
+    failover: PluginRef | None = Field(
+        None,
+        description="Adónde va un edge cuyo agregador cae (none, por defecto, "
+        "nearest_alive, explicit)",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+
+    _failover = field_validator("failover")(
+        lambda v: v if v is None else _plugin(failovers, v)
+    )
 
 
 class Range(Strict):
@@ -386,6 +498,11 @@ class PathsConfig(Strict):
         "infrastructures",
         exclude_if=lambda v: v == "infrastructures",  # keeps existing config_ids
     )
+    device_traces: str = Field(
+        "data",
+        exclude_if=lambda v: v == "data",  # keeps existing config_ids
+        description="Carpeta de las trazas de dispositivos importadas (FedScale/)",
+    )
     datasets: str = "datasets"
     runs: str = "runs"
     cache: str = "data/cache"
@@ -437,12 +554,19 @@ class ExperimentConfig(Strict):
     )
     continual: ContinualConfig | None = Field(
         None,
-        description="Memoria de replay de los edges de un stream",
+        description="Aprendizaje continuo de un stream: memoria de replay, forma de "
+        "actualizar los edges y disparadores en vez de rondas a ritmo fijo",
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
-    continuum: ContinuumConfig | None = Field(
+    unlabelled: PluginRef | None = Field(
         None,
-        description="Federación continua: disparadores en vez de rondas a ritmo fijo",
+        description="Cómo aprende cada edge de un stream de sus filas aún sin etiqueta",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+    promotion: PluginRef | None = Field(
+        None,
+        description="Champion y challenger: el modelo de cada ronda solo llega a "
+        "los edges si la validación lo promueve",
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
 
@@ -463,6 +587,14 @@ class ExperimentConfig(Strict):
     _attack = field_validator("attack")(
         lambda v: v if v is None else _plugin(attacks, v)
     )
+    _unlabelled = field_validator("unlabelled")(
+        lambda v: v if v is None else _plugin(objectives, v)
+    )
+
+    _promotion = field_validator("promotion")(
+        lambda v: v if v is None else _plugin(promotions, v)
+    )
+
     _backend = field_validator("backend")(
         lambda v: v if v is None else _plugin(backends, v)
     )
@@ -477,6 +609,23 @@ class ExperimentConfig(Strict):
     @property
     def simulated(self) -> bool:
         return backend_name(self.backend_ref) == "sim"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _continuum(cls, raw: Any, info: ValidationInfo) -> Any:
+        """The old ``continuum`` section (before M1, #193), read for one version."""
+        if not isinstance(raw, Mapping):
+            return raw
+        out, old = from_continuum(raw)
+        if old and not (info.context or {}).get("signed"):
+            warnings.warn(
+                "continuum: the triggers are now continual.trigger, "
+                "continual.edge_trigger and continual.status_every; the continuum "
+                "section goes in a later version",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return out
 
     @field_validator("sweep")
     @classmethod
@@ -546,24 +695,58 @@ class ExperimentConfig(Strict):
         return self
 
     @model_validator(mode="after")
+    def _promotion_fits(self) -> ExperimentConfig:
+        """A challenger is validated on the validation streams, by an evaluation
+        metric (continuum C7)."""
+        if self.promotion is None:
+            return self
+        if self.stream is None:
+            raise ValueError(
+                "promotion: a challenger is validated on the validation streams; "
+                "set stream too"
+            )
+        metric = getattr(create(promotions, self.promotion), "metric", None)
+        if metric in metrics.names() and metric not in self.evaluation.metrics:
+            raise ValueError(
+                f"promotion: it compares {metric!r}, which evaluation.metrics "
+                "does not compute; add it there"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _stream_fits(self) -> ExperimentConfig:
         """What a stream cannot do yet (continuum C3) is refused before any run."""
         if self.labels is not None and self.stream is None:
             raise ValueError("labels: they belong to a stream; set stream too")
+        triggered = self.continual is not None and self.continual.trigger is not None
+        if triggered and self.stream is None:
+            raise ValueError("continual: triggers pace a stream; set stream too")
         if self.continual is not None and self.stream is None:
             raise ValueError(
                 "continual: a replay memory keeps rows of a stream; set stream too"
             )
-        if self.continuum is not None and self.stream is None:
-            raise ValueError("continuum: triggers pace a stream; set stream too")
+        if self.unlabelled is not None and self.stream is None:
+            raise ValueError(
+                "unlabelled: it learns from the rows of a stream still waiting for "
+                "their label; set stream too"
+            )
+        update = "warm" if self.continual is None else self.continual.update
+        objective = self.unlabelled
+        if isinstance(objective, dict):
+            objective = objective["name"]
+        if update != "warm" and objective not in (None, "none"):
+            raise ValueError(
+                f"unlabelled: continual.update {update} has no training on the "
+                "pool to add it to; use warm"
+            )
         if self.stream is None:
             return self
         paced = self.stream.round_every is not None
-        if paced == (self.continuum is not None):
+        if paced == triggered:
             raise ValueError(
-                "stream.round_every: a continuum trigger paces the rounds instead"
+                "stream.round_every: continual.trigger paces the rounds instead"
                 if paced
-                else "stream.round_every: set it, or let a continuum trigger pace "
+                else "stream.round_every: set it, or let continual.trigger pace "
                 "the rounds"
             )
         roles, init, ref = self.data.roles, self.learning.init, self.data.placement
@@ -590,7 +773,7 @@ class ExperimentConfig(Strict):
                 "a stream scores test-then-train instead",
             ),
             (
-                roles.scaler == "local",
+                "local" in roles.scalers(),
                 "data.roles.scaler: local would refit on rows after the bootstrap",
             ),
             (
@@ -622,9 +805,13 @@ def _format(exc: ValidationError) -> str:
     return "\n".join(lines)
 
 
-def parse_experiment(raw: Mapping[str, Any]) -> ExperimentConfig:
+def parse_experiment(
+    raw: Mapping[str, Any], *, signed: bool = False
+) -> ExperimentConfig:
+    """``signed``: ``raw`` is a run's recorded config (``run.json``), whose layout
+    keeps the triggers under ``continuum`` on purpose (``to_continuum``)."""
     try:
-        return ExperimentConfig.model_validate(dict(raw))
+        return ExperimentConfig.model_validate(dict(raw), context={"signed": signed})
     except ValidationError as exc:
         raise ConfigError(_format(exc)) from None
 

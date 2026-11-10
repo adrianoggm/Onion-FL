@@ -1,0 +1,30 @@
+{
+  "dataset": "nurse_stress",
+  "task": "stress_binary",
+  "n_subjects": 15,
+  "n_samples": 63913,
+  "n_features": 30,
+  "class_counts": [
+    54299,
+    9614
+  ],
+  "samples_per_subject": {
+    "5C": 2420,
+    "6B": 3160,
+    "6D": 155,
+    "7A": 7970,
+    "7E": 2859,
+    "8B": 1819,
+    "15": 2774,
+    "83": 8164,
+    "94": 5861,
+    "BG": 3078,
+    "CE": 4135,
+    "DF": 6342,
+    "E4": 7511,
+    "EG": 2005,
+    "F5": 5660
+  },
+  "missing": {},
+  "warnings": []
+}

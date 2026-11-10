@@ -121,7 +121,7 @@ def test_traffic_is_counted_per_node_and_kind(prometheus) -> None:
     assert updates == 2 and size > 0
 
 
-NO_TAGS = {"metric": "", "datasets": "", "dst": ""}
+NO_TAGS = {"metric": "", "datasets": "", "dst": "", "child": ""}
 
 
 def test_diagnostics_are_exported_per_group(prometheus) -> None:
@@ -135,6 +135,18 @@ def test_diagnostics_are_exported_per_group(prometheus) -> None:
     assert value == pytest.approx(0.0)  # both edges add the same constant
 
 
+def test_contributions_are_exported_per_child(prometheus) -> None:
+    sink, run = prometheus
+    tags = NO_TAGS | {"name": "contribution_shapley", "group": "trunk"}
+
+    for edge in ("e1", "e2"):
+        value = sink.registry.get_sample_value(
+            "onionfl_diagnostic",
+            labels(run, "fog", "fog_0", **(tags | {"child": edge})),
+        )
+        assert value == pytest.approx(1 - 2**-0.5)  # equal deltas: v(N) = 2 − √2
+
+
 def test_diagnostics_keep_apart_what_their_tags_tell_apart() -> None:
     sink = PrometheusSink(registry=CollectorRegistry())
     node = {"run_id": "r", "topology_id": "t", "level": "fog", "node": "fog_0"}
@@ -145,12 +157,14 @@ def test_diagnostics_keep_apart_what_their_tags_tell_apart() -> None:
         ("dataset_conflict", {"group": "trunk", "datasets": "a|c"}),
         ("communication", {"src": "fog_0", "dst": "cloud"}),
         ("communication", {"src": "fog_0", "dst": "e1"}),
+        ("contribution_shapley", {"group": "trunk", "child": "e1"}),
+        ("contribution_shapley", {"group": "trunk", "child": "e2"}),
     ]:
         event = {"kind": "diagnostic", "name": f"diagnostic.{name}", "tags": tags}
         sink.write(node | event | {"value": 1.0})
 
     (family,) = [f for f in sink.registry.collect() if f.name == "onionfl_diagnostic"]
-    assert len(family.samples) == 6
+    assert len(family.samples) == 8
 
 
 def test_drops_and_failed_quorums_are_counted(tmp_path: Path) -> None:
@@ -257,3 +271,57 @@ def test_an_otlp_provider_points_at_the_collector() -> None:
     assert processor.span_exporter._endpoint == "http://collector:4320/v1/traces"
     assert provider.resource.attributes["service.name"] == "onion-fl-test"
     provider.shutdown()
+
+
+# --- versions, arrivals and drift (continuum #203) ---------------------------------------
+
+
+def test_versions_arrivals_and_drift_are_exported(tmp_path: Path) -> None:
+    from tests.test_continual_control import ROUND, federation, signed
+    from tests.test_continual_versions import Operator, tree
+
+    sink = PrometheusSink(registry=CollectorRegistry())
+    fed = federation()
+    fed.runtime.add_node(Operator([(4.5 * ROUND, signed({"rollback": None}))], "alice"))
+    fed.runtime.add_link("alice", "cloud")
+    run = Run(tmp_path, config={}, topology=tree(), seed=0, sinks=[sink])
+    run.attach(fed)
+    fed.run()
+    run.finish()
+    value = sink.registry.get_sample_value
+    base = {"run_id": run.run_id, "topology_id": run.topology.topology_id}
+    cloud = base | {"level": "global", "node": "cloud", "dataset": ""}
+
+    events = [e for e in fed.runtime.events if e["name"].startswith("version.")]
+    for decision in ("candidate", "promoted", "rollback"):
+        n = sum(e["name"] == f"version.{decision}" for e in events)
+        counted = sum(
+            value("onionfl_versions_total", cloud | {"decision": decision, "reason": r})
+            or 0
+            for r in ("", "promoted", "operator")
+        )
+        assert n and counted == n, decision
+    (rollback,) = [e for e in events if e["name"] == "version.rollback"]
+    assert value("onionfl_champion_version", cloud) == fed.coordinator.champion
+    assert fed.coordinator.champion == rollback["value"]
+    promoted = next(e for e in events if e["name"] == "version.promoted")
+    delta = cloud | {"version": str(promoted["value"]), "name": "delta"}
+    assert value("onionfl_version_score", delta) == promoted["tags"]["delta"]
+    arrived = sum(
+        e["value"]
+        for e in fed.runtime.events
+        if e["name"] == "data.arrived" and e["node"] == "a1"
+    )
+    edge = base | {"level": "edge", "node": "a1", "dataset": ""}  # untagged edge
+    assert arrived and value("onionfl_data_arrived_total", edge) == arrived
+
+
+def test_a_drift_is_counted_per_node_and_kind() -> None:
+    sink = PrometheusSink(registry=CollectorRegistry())
+    where = {"run_id": "r", "topology_id": "t", "level": "edge", "node": "e1"}
+    event = where | {"kind": "lifecycle", "name": "drift.detected", "value": 0.7}
+    for _ in range(2):
+        sink.write(event | {"tags": {"kind": "prior", "dataset": "a"}})
+
+    labels_ = where | {"dataset": "a", "kind": "prior"}
+    assert sink.registry.get_sample_value("onionfl_drift_detected_total", labels_) == 2

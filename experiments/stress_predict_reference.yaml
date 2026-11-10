@@ -1,0 +1,27 @@
+# Centralised reference on Stress-Predict (issue #242): the 34 subjects of
+# datasets/stress_predict.yaml with the harmonized E4 features. Only the
+# classical baselines have been run with it (results/stress_predict_reference/),
+# by subject-level 5-fold cross-validation, five seeds:
+#
+#   onion_fl baseline experiments/stress_predict_reference.yaml --models lr rf --cv 5 --seed S
+#
+# The federated part below is valid but has not been run: the E4 benchmark
+# across datasets comes later.
+name: stress_predict_reference
+description: Referencia centralizada en Stress-Predict (E4 armonizado, 34 sujetos).
+topology: swell_three_fogs
+data:
+  datasets:
+    stress_predict: {}
+  roles: {test: 0.25, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 1.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, local_epochs: 1, batch_size: 32, lr: 0.001}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  global: {every: 1}
+seeds: [0, 1, 2, 3, 4]
