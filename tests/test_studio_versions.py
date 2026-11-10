@@ -18,7 +18,7 @@ import pytest
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
-from onion_fl.continuum.control import ENV, read_state  # noqa: E402
+from onion_fl.continual.control import ENV, read_state  # noqa: E402
 from onion_fl.experiment.config import ConfigError, parse_experiment  # noqa: E402
 from onion_fl.experiment.runner import run_scenario  # noqa: E402
 from onion_fl.experiment.sweep import scenarios  # noqa: E402

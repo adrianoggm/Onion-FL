@@ -24,11 +24,12 @@ from typing import Any
 
 import numpy as np
 
-from onion_fl.continuum.control import refusal
-from onion_fl.continuum.drift import Reference, detectors, window
-from onion_fl.continuum.memory import Memory
-from onion_fl.continuum.pace import View
-from onion_fl.continuum.versions import MODELS, PARTS, Version
+from onion_fl.continual.control import refusal
+from onion_fl.continual.drift import Reference, detectors, window
+from onion_fl.continual.memory import Memory
+from onion_fl.continual.pace import View
+from onion_fl.continual.unlabelled import Objective
+from onion_fl.continual.versions import MODELS, PARTS, Version
 from onion_fl.core.context import Context, child_rng
 from onion_fl.core.message import Message, Payload
 from onion_fl.core.node import Node
@@ -43,6 +44,9 @@ from onion_fl.roles.policies import AllChildren, Drop, create, quorum_needed
 
 State = dict[str, np.ndarray]
 Evaluate = Callable[[Any, Any], tuple[Mapping[str, float], int]]
+
+
+UPDATES = ("warm", "frozen", "scratch")
 
 
 def _reject(ctx: Context, msg: Message, reason: str) -> None:
@@ -101,6 +105,12 @@ def _send_idle(node: Any, round: int, scores: Mapping[str, float], ctx) -> None:
     )
 
 
+def _mass(contribution: Contribution) -> float:
+    """What a contribution weighs in the aggregate: its largest per-key weight
+    (the samples behind it, discounted by staleness for a late one)."""
+    return float(max(contribution.weights.values(), default=0.0))
+
+
 def _counted(key: str) -> bool:
     """Status keys that count toward a trigger since the last round."""
     return key == "fresh" or key.endswith(".detected")
@@ -157,8 +167,9 @@ class _Collector(Node):
         self.round, self.open, self.opened_at = 0, False, 0.0
         self.participants: list[str] = []
         self.responses: dict[str, tuple[Contribution, Mapping[str, float]]] = {}
+        # Late updates as they arrived, weighted by their age when they join.
         self.stale: dict[str, Contribution] = {}
-        self.stale_age: dict[str, float] = {}  # rounds behind, plus what it carried
+        self.stale_carried: dict[str, float] = {}  # the staleness each one carried
         self.stale_round: dict[str, int] = {}  # the round each buffered update is from
         self.sent_history: dict[int, State] = {}  # what was sent down, per round
         self.owed: dict[str, list[int]] = {}  # rounds each child has not answered
@@ -198,6 +209,24 @@ class _Collector(Node):
 
     def _late_child(self, ctx: Context) -> None:
         """A child said hello after registration ended (``register_timeout``)."""
+
+    def adopt(self, child: str) -> None:
+        """Take a child moved here (failover, I1 §9). It enters the rounds opened
+        after its hello, never the one open: no edge changes zone mid-round."""
+        self.children.add(child)
+
+    def release(self, child: str) -> None:
+        """Let go of a child moved to another parent (failover, I1 §9). What it
+        sent and this node has not combined yet is dropped, as late from its old
+        parent, and the quorum counts the children left."""
+        self.children.discard(child)
+        self.registered.pop(child, None)
+        self.bootstrapped.discard(child)
+        self.owed.pop(child, None)
+        self.responses.pop(child, None)
+        for held in (self.stale, self.stale_carried, self.stale_round):
+            held.pop(child, None)
+        self.participants = [c for c in self.participants if c != child]
 
     def _finish_registration(self, ctx: Context) -> None:
         self.ready = True
@@ -265,7 +294,7 @@ class _Collector(Node):
         # What was heard for the round before is not for this one (continuum C6).
         self._heard = {k: v for k, v in self._heard.items() if not _counted(k)}
         self.round, self.open, self.opened_at = round, True, ctx.now()
-        self.responses, self.late, self.quorum_at = {}, 0, None
+        self.responses, self.quorum_at = {}, None
         # A round a child owes stops counting once its update would be dropped: a
         # lost message must not keep the child waiting for good.
         self.owed = {
@@ -353,32 +382,46 @@ class _Collector(Node):
         target: int,
         metrics: Mapping[str, float],
     ) -> bool:
-        """Hold a late update for round ``target``, weighted by its staleness."""
-        factor = self.staleness.weight(target - round)
-        if factor is None or not contribution.state:
+        """Hold a late update; ``target`` is the earliest round it can join, so one
+        already too old for it is dropped now. Its age, and so its weight, is
+        counted in global rounds when it joins: the parent may skip this node."""
+        if self.staleness.weight(target - round) is None or not contribution.state:
             return False
-        weights = {k: w * factor for k, w in contribution.weights.items()}
-        self.stale[src] = Contribution(src, contribution.state, weights)
-        carried = float((metrics or {}).get("staleness", 0.0))
-        self.stale_age[src] = target - round + carried
+        self.stale[src] = contribution
+        self.stale_carried[src] = float((metrics or {}).get("staleness", 0.0))
         self.stale_round[src] = round
         return True
+
+    def _keep_stale(self, sources: Iterable[str]) -> None:
+        """Forget every buffered update but those of ``sources``."""
+        kept = set(sources)
+        self.stale = {s: c for s, c in self.stale.items() if s in kept}
+        self.stale_carried = {s: a for s, a in self.stale_carried.items() if s in kept}
+        self.stale_round = {s: r for s, r in self.stale_round.items() if s in kept}
+
+    def _factor(self, source: str) -> float | None:
+        """A buffered update's staleness factor in the current round; None: too old."""
+        return self.staleness.weight(self.round - self.stale_round[source])
 
     def _reached(self) -> bool:
         """A buffering round (FedBuff-style) closes on K updates, late ones included."""
         if not self.close_at_quorum:
             return False
         fresh = {s for s, (c, _) in self.responses.items() if c.state}
-        count = len(fresh) + sum(1 for s in self.stale if s not in fresh)
+        count = len(fresh) + sum(
+            1 for s in self.stale if s not in fresh and self._factor(s) is not None
+        )
         return count >= max(quorum_needed(self.quorum, len(self.participants)), 1)
 
     def _rebased(self, source: str) -> Contribution | None:
         """A late update as its change from the model it trained on, applied to the
-        model sent this round: an old model would pull the aggregate back. None
-        when that model is gone; the update is then dropped, never used as is."""
+        model sent this round (an old model would pull the aggregate back), with
+        its weights times its staleness factor. None when that model is gone or the
+        update is too old by now; it is then dropped, never used as is."""
         item = self.stale[source]
-        base = self.sent_history.get(self.stale_round.get(source, -1))
-        if base is None:
+        factor = self._factor(source)
+        base = self.sent_history.get(self.stale_round[source])
+        if base is None or factor is None:
             return None
         state = dict(item.state)
         for key, value in item.state.items():
@@ -387,7 +430,8 @@ class _Collector(Node):
             delta = np.asarray(value, np.float64) - np.asarray(base[key], np.float64)
             moved = np.asarray(self.sent[key], np.float64) + delta
             state[key] = moved.astype(np.asarray(value).dtype)
-        return Contribution(item.source, state, item.weights)
+        weights = {k: w * factor for k, w in item.weights.items()}
+        return Contribution(item.source, state, weights)
 
     def _update(self, msg: Message, ctx: Context) -> None:
         r = msg.round
@@ -491,11 +535,19 @@ class _Collector(Node):
             ctx.emit(
                 "update.unrebased", float(len(lost)), sources=lost, round=self.round
             )
-        # Staleness of what is combined: rounds behind here plus what each carried.
+        # Staleness of what is combined: rounds behind here plus what each carried,
+        # weighted as each contribution enters the aggregate.
         age = {s: float(self.responses[s][1].get("staleness", 0.0)) for s in fresh}
-        age |= {s: self.stale_age[s] for s in late}
+        age |= {
+            s: self.round - self.stale_round[s] + self.stale_carried[s] for s in late
+        }
         ages = [age[s] for s in sorted(age)]
-        self.stale, self.stale_age, self.stale_round = {}, {}, {}
+        mass = {s: _mass(c) for s, c in fresh.items()} | {
+            s: _mass(rebased[s]) for s in late
+        }
+        masses = [mass[s] for s in sorted(age)]
+        # A round that fails its quorum keeps them for the next, a round older.
+        self._keep_stale(late)
         needed = quorum_needed(self.quorum, len(self.participants) - len(idle))
         count = len(fresh) + (len(stale) if self.close_at_quorum else 0)
         tags = {
@@ -520,6 +572,7 @@ class _Collector(Node):
                 self._children_scores([*reports.values(), *scored], ctx)
             self._failed(ctx)
             return
+        self._keep_stale([])
         given = [*fresh.values(), *stale]
         aggregated = self.aggregator.aggregate(
             given, source=self.id, reference=self.sent, rng=child_rng(ctx.rng)
@@ -536,7 +589,9 @@ class _Collector(Node):
         metrics = _train_metrics(reports)
         reports += scored  # idle children scored what arrived
         if any(ages):  # absent means 0, so synchronous runs send nothing new
-            metrics["staleness"] = float(np.mean(ages))
+            weighted = sum(masses) > 0
+            mean = np.average(ages, weights=masses if weighted else None)
+            metrics["staleness"] = float(mean)
         if self.aggregate_children:
             metrics |= self._children_scores(reports, ctx)
         ctx.emit("round.closed", ctx.now() - self.opened_at, stale=len(stale), **tags)
@@ -561,6 +616,9 @@ class _Collector(Node):
     def _diagnose(
         self, fresh, aggregated: State, reports, ctx: Context, failed: bool
     ) -> None:
+        # Late updates since the last diagnosed round, those that arrived between
+        # two rounds included (they would be lost if the count restarted on open).
+        late, self.late = self.late, 0
         if not self.diagnostics:
             return
         view = RoundView(
@@ -580,7 +638,7 @@ class _Collector(Node):
             },
             reports=reports,
             participants=self.participants,
-            late=self.late,
+            late=late,
             quorum_failed=failed,
             time_to_quorum=self.quorum_at,
         )
@@ -770,7 +828,7 @@ class Coordinator(_Collector):
         # Who validates and who may give orders come from the federation's
         # build, never from what a child says of itself in its hello. With
         # ``operator_keys`` (id -> token), the operators are their ids and every
-        # order must be signed for ``audience`` (continuum.control, #203).
+        # order must be signed for ``audience`` (continual.control, #203).
         self._validators = frozenset(validators)
         self._keys = None if operator_keys is None else dict(operator_keys)
         self.operators = frozenset(operators if self._keys is None else self._keys)
@@ -1193,6 +1251,9 @@ class Aggregator(_Greeter, _Collector):
         if msg.src != self.parent or msg.kind != "global_model" or msg.round is None:
             _reject(ctx, msg, "unexpected sender or kind")
             return
+        if getattr(self, "_hello_meta", None) not in (None, self._meta()):
+            # it lost children (failover): the parent counts what is below now
+            self._say_hello(self._meta(), ctx)
         self.received = dict(msg.payload.state)
         self.whole.update(self.received)
         bootstrap = bool(msg.meta.get("bootstrap"))
@@ -1259,11 +1320,31 @@ class Edge(_Greeter, Node):
         stream: Any = None,
         replay: Any = None,
         replay_ratio: float = 0.25,
+        unlabelled: Any = None,
         continuum: Any = None,
         metrics: Sequence[str] = ("loss", "accuracy"),
         validates: bool = False,
+        update: str = "warm",
     ) -> None:
         super().__init__(node_id)
+        if update not in UPDATES:
+            raise ValueError(
+                f"{node_id}: update must be one of {UPDATES}, not {update}"
+            )
+        if update != "warm":
+            if stream is None:
+                raise ValueError(f"{node_id}: update {update} needs a stream")
+            if replay is not None or unlabelled is not None:
+                raise ValueError(
+                    f"{node_id}: update {update} takes no replay memory and no "
+                    "unlabelled objective; they need warm"
+                )
+        # How a stream edge updates (the baselines of continuum C8): warm goes on
+        # from the model received; frozen trains v0 on the history, with the
+        # first model it gets, and is idle from then on; scratch starts every training from the initial weights,
+        # on every trainable row it has.
+        self.update = update
+        self._initial: State | None = None  # the first model received, whole
         if validates and (train or stream is None):
             raise ValueError(f"{node_id}: a validator is an evaluator with a stream")
         # A validator scores the champion and a challenger on its stream (C7).
@@ -1280,6 +1361,19 @@ class Edge(_Greeter, Node):
                 raise ValueError(
                     f"{node_id}: replay_ratio must be in [0, 1), not {replay_ratio}"
                 )
+        if unlabelled is not None:
+            if stream is None:
+                raise ValueError(f"{node_id}: an unlabelled objective needs a stream")
+            if not isinstance(unlabelled, Objective):
+                raise TypeError(
+                    f"{node_id}: {type(unlabelled).__name__} is not an unlabelled "
+                    "objective; it needs size, fit and term"
+                )
+            if not getattr(trainer, "takes_unlabelled", False):
+                raise ValueError(
+                    f"{node_id}: trainer {type(trainer).__name__} runs its own "
+                    "loops and cannot train on unlabelled rows"
+                )
         self.hello_retry = hello_retry
         # A stream (continuum C3): rows arrive over time, are predicted by the
         # model the edge serves when they come, and train once labelled.
@@ -1287,6 +1381,9 @@ class Edge(_Greeter, Node):
         # A replay memory keeps rows already consumed, to train on them again.
         self.replay, self.replay_ratio = replay, replay_ratio
         self._replayed = 0  # rows the current training replays
+        # An objective on the rows whose label has not arrived (continuum C5).
+        self.unlabelled = unlabelled
+        self._fit: dict[str, Any] | None = None  # the current training's pool
         self._clock = -np.inf  # continuum time up to which arrivals are handled
         self._served: State | None = None  # the last model received, as served
         if stream is not None:
@@ -1298,6 +1395,14 @@ class Edge(_Greeter, Node):
             # weights, so a failed round trains the same rows next time.
             self._consumed_by = np.full(len(stream.data.y), -1)
             self._pending = np.zeros(len(stream.data.y), bool)
+            # The round whose training first used each row unlabelled, and per
+            # accepted pseudo-label its class, confidence and the round whose
+            # received model generated it (the audit of spec §9).
+            self._unlabelled_by = np.full(len(stream.data.y), -1)
+            self._pool = np.zeros(len(stream.data.y), bool)
+            self._pseudo_label = np.full(len(stream.data.y), -1)
+            self._pseudo_confidence = np.full(len(stream.data.y), np.nan)
+            self._generated_by = np.full(len(stream.data.y), -1)
         # A continuous federation (continuum C6): statuses, detectors and the
         # local trigger; only a training edge with a stream takes part.
         self.continuum = continuum if stream is not None and train else None
@@ -1320,6 +1425,17 @@ class Edge(_Greeter, Node):
         self.val_data, self.evaluate = val_data, evaluate
         self.eval_every, self.eval_models = eval_every, tuple(eval_models)
         self.tags = dict(tags or {})
+
+    def reparent(self, parent: str, ctx: Context) -> None:
+        """Move under ``parent`` (failover, I1 §9) and say hello to it. The data
+        stay: they belong to the logical client. The first model the new parent
+        sends is whole, with its zone's groups."""
+        previous, self.parent = self.parent, parent
+        ctx.emit(
+            "edge.reparented", parent=parent, previous=previous, round=self._seen_round
+        )
+        if hasattr(self, "_hello_meta"):  # started: otherwise its start says hello
+            self._say_hello(self._hello_meta, ctx)
 
     def on_start(self, ctx: Context) -> None:
         role = "validator" if self.validates else "evaluator"
@@ -1451,7 +1567,15 @@ class Edge(_Greeter, Node):
         since = -np.inf if s.window is None else now - s.window
         buffer = s.trainable(since, now) & (self._consumed_by < 0)
         self._pending = buffer
+        if self.unlabelled is not None:
+            # Arrived, label not here yet, never used unlabelled; a row whose
+            # label comes later still trains as labelled.
+            self._pool = (
+                s.arrived(since, now) & (s.label_at > now) & (self._unlabelled_by < 0)
+            )
         rows = buffer.copy()
+        if self.update == "scratch":  # all it may train on, used or not
+            rows = s.trainable(since, now)
         if self.replay is not None:
             # replay_ratio r of the training comes from memory: k = r·n / (1 − r);
             # with nothing new the edge stays idle, whatever it remembers
@@ -1474,6 +1598,32 @@ class Edge(_Greeter, Node):
             age=age,  # since each kept row was observed, in data seconds
             classes=np.bincount(s.data.y[kept], minlength=s.data.n_classes).tolist(),
             replayed=self._replayed,
+            **self.tags,
+        )
+
+    def _report_unlabelled(self, round: int, ctx: Context) -> None:
+        """What the pool of a training that worked gave, and the audit it leaves."""
+        fit, rows = self._fit, np.flatnonzero(self._pool)
+        self._unlabelled_by[rows] = round
+        tags: dict[str, Any] = {
+            "pseudo_labels_accepted": fit["accepted"],
+            "acceptance_rate": fit["accepted"] / fit["seen"],
+            "confidence": fit["confidence"],
+        }
+        if fit["labels"] is not None and fit["accepted"]:
+            mask = fit["mask"]
+            accepted = rows[mask]
+            self._pseudo_label[accepted] = fit["labels"][mask]
+            self._pseudo_confidence[accepted] = fit["row_confidence"][mask]
+            self._generated_by[accepted] = round
+            # Against the hidden label: streams run only in simulation.
+            hits = fit["labels"][mask] == self.stream.data.y[accepted]
+            tags["pseudo_label_accuracy"] = float(hits.mean())
+        ctx.emit(
+            "diagnostic.unlabelled",
+            float(fit["seen"]),
+            round=round,
+            **tags,
             **self.tags,
         )
 
@@ -1561,6 +1711,10 @@ class Edge(_Greeter, Node):
         return name is not None
 
     def _train(self, msg: Message, ctx: Context) -> None:
+        if msg.round <= self._seen_round:  # a round it took under its old parent
+            _reject(ctx, msg, "round already taken under another parent")
+            _send_idle(self, msg.round, {}, ctx)
+            return
         self._seen_round = msg.round
         received = dict(msg.payload.state)
         # The trainer is anchored to the model it shares: the first model a child
@@ -1573,13 +1727,18 @@ class Edge(_Greeter, Node):
         if self.stream is not None:
             own, metrics = self._arrivals(msg.round, ctx)
         load_arrays(self.model, received)
+        if self._initial is None:  # the first model a child gets is whole
+            self._initial = dict(received)
         if self.stream is not None:
             self._served = state_arrays(self.model)
             # Nothing to train on, or no update wanted yet: idle, with its scores.
             first = bool(msg.meta.get("bootstrap"))
-            if own is None or not self._wants_update(msg.round, ctx, first):
+            frozen = self.update == "frozen" and not first  # v0 only
+            if own is None or frozen or not self._wants_update(msg.round, ctx, first):
                 _send_idle(self, msg.round, metrics, ctx)
                 return
+            if self.update == "scratch":  # served as received, trained afresh
+                load_arrays(self.model, self._initial)
         scoring = (
             self.evaluate is not None
             and self.val_data is not None
@@ -1594,12 +1753,19 @@ class Edge(_Greeter, Node):
         if scoring and "received" in self.eval_models:
             metrics |= self._score("received", msg.round, ctx)
         model_before = state_arrays(self.model)
-        saved = None
+        saved, extra, self._fit = None, {}, None
         try:
+            if self.unlabelled is not None and self._pool.any():
+                # Features only, seen by the model as received.
+                pool = self.stream.data.X[self._pool]
+                self._fit = self.unlabelled.fit(self.model, pool)
+                extra = {"unlabelled": self.unlabelled}
             # What a diverged round rolls back to: the model, and the trainer's
             # memory if it can snapshot it (built-ins can; a plugin may opt in).
             saved = getattr(self.trainer, "snapshot", lambda: None)()
-            result = self.trainer.train(self.model, data, received=anchor, ctx=ctx)
+            result = self.trainer.train(
+                self.model, data, received=anchor, ctx=ctx, **extra
+            )
         except Exception as exc:  # the edge counts as absent; the run goes on
             # A trainer may have changed the model or its memory before failing:
             # roll both back, as for non-finite weights, so a retry starts clean.
@@ -1636,6 +1802,8 @@ class Edge(_Greeter, Node):
                 fresh = np.flatnonzero(self._pending)  # in time order
                 self.replay.add(fresh, self.stream.data.y[fresh])
                 self._report_memory(msg.round, ctx)
+            if self._fit is not None:  # the pool is used only now
+                self._report_unlabelled(msg.round, ctx)
         if scoring and "local" in self.eval_models:
             metrics |= self._score("local", msg.round, ctx)
         try:

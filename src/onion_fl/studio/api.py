@@ -22,7 +22,7 @@ from fastapi import Body, FastAPI, Header, HTTPException, Query
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from onion_fl.continuum.control import (
+from onion_fl.continual.control import (
     ENV,
     OperatorError,
     append_order,
@@ -119,6 +119,13 @@ AXES: list[tuple[str, str, str, str | None]] = [
         None,
     ),
     (
+        "unlabelled",
+        "Datos sin etiquetar",
+        "Cómo aprende cada edge de un stream de las filas cuya etiqueta aún no "
+        "ha llegado: pseudoetiquetas o consistencia.",
+        None,
+    ),
+    (
         "trigger",
         "Disparador",
         "Cuándo abre ronda el coordinador de una federación continua, y cuándo "
@@ -174,6 +181,18 @@ AXES: list[tuple[str, str, str, str | None]] = [
         "assignment",
         "Asignación",
         "En qué host de la infraestructura física se ejecuta cada edge.",
+        None,
+    ),
+    (
+        "backend",
+        "Backend",
+        "Dónde y con qué reloj se ejecuta cada escenario: simulación o local.",
+        None,
+    ),
+    (
+        "failover",
+        "Reasignación",
+        "Adónde va un edge cuando cae el host de su agregador.",
         None,
     ),
     (
@@ -257,7 +276,7 @@ def _safe(name: str) -> str:
 def create_app(root: str | Path = ".", operators: str | Path | None = None) -> FastAPI:
     """The Studio over ``root``. ``operators`` (or the file ``ONIONFL_OPERATORS``
     names) holds who may give runs orders, each with its token; without it no
-    order is taken (``continuum.control``)."""
+    order is taken (``continual.control``)."""
     root = Path(root).resolve()
     keys = load_operators(operators)
     # The runs it launches check the same operators' signatures.
@@ -483,7 +502,7 @@ def create_app(root: str | Path = ".", operators: str | Path | None = None) -> F
         try:
             return list(
                 resolve_topology(
-                    rooted(parse_experiment(record.meta["config"]), root)
+                    rooted(parse_experiment(record.meta["config"], signed=True), root)
                 ).levels
             )
         except (ConfigError, TopologyError, KeyError, ValueError):
