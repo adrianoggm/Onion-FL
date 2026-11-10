@@ -97,7 +97,7 @@ onion_fl report experiments/mix_ab.yaml --by topology_id --by scenario
 onion_fl baseline experiments/mix_ab.yaml     # LR, RF, XGBoost on the same test subjects
 ```
 
-For a real run over MQTT, start the stack (`just docker-up`, [docker/README.md](docker/README.md)), point the links at the broker and run `onion_fl run <experiment> --backend local` (`--mode real` is its alias).
+For a real run over MQTT, start the stack (`just docker-up`, [docker/README.md](docker/README.md)), point the links at the broker and run `onion_fl run <experiment> --backend local` (`--mode real` is its alias). Links with `transport: grpc` need no broker (`uv pip install -e ".[grpc]"`, already in dev), and neither do links with `transport: flower`, which carry each frame as a Flower message (`uv pip install -e ".[flower]"`, Flower >= 1.21; not in dev).
 
 ### Studio
 
@@ -145,7 +145,7 @@ flowchart TD
 | `learning` | Modular model with namespaced keys (`adapter.<ds>`, `trunk`, `head.<task>`), sharing scopes, aggregators, server optimizers, trainers, inits, metrics |
 | `roles` | Coordinator, aggregators and edges. Every round sends each link only the groups its scope lets through; weights travel per key, so a tree of FedAvg equals a flat FedAvg |
 | `runtime` | `SimRuntime` (virtual clock) and `RealRuntime` (wall clock); both drive the same nodes |
-| `transports` | `memory` and `mqtt` (one inbox per node, QoS and broker per link) |
+| `transports` | `memory`, `mqtt` (one inbox per node, QoS and broker per link) `grpc` (direct links, no broker; `grpc` extra) and `flower` (the same links, each frame in a Flower message; `flower` extra) |
 | `observability` | Events, run identity and signature, diagnostics, analysis, report, sinks |
 | `experiment` | Config, sweeps, the dry-run plan, the runner and the CLI |
 
@@ -180,7 +180,7 @@ sweep: {data.placement.alpha: [0.0, 0.5, 1.0]}
 - **Paired values.** A key `a,b` sweeps several paths together: `learning.sharing,learning.trainer.name: [[fedper, fedrep], [fedavg, ditto]]` gives one scenario per pair. A whole plugin can be a value; its scenario is named `name(k=v,…)`.
 - **Random search.** `search: {budget: 16, seed: 0, space: {learning.trainer.lr: {low: 1.0e-4, high: 1.0e-1, log: true}, learning.trainer.local_epochs: [1, 2, 4]}}` turns each swept scenario into `budget` trials, drawn from the search's own seed; a path is either swept or searched. Each trial keeps the search seed and its index, so they are part of its `config_id`. Unset, it stays out of the `config_id`.
 - **Noise ceiling.** `onion_fl ceiling <experiment> --replicas R` runs R replicas of every swept scenario, each with its own seed (`--paired` gives the scenarios of a replica the same seed), and with a search keeps each one's best trial (`--resample` also redraws the search per replica). It prints the top-1 agreement and the selection regret between replicas, with the agreement expected by chance (1/K). The score is the last `--metric` of the root, pooled over datasets unless `--series` picks one, and the trials are chosen on that score too: for a search, set `evaluation.global.subjects: val`.
-- **Fidelity.** `onion_fl fidelity <runs A> <runs B>` compares the runs of a backend under test (B, for example `sim`) with those of a reference (A, for example `local`) on the same experiment, pairing them by configuration and seed. It reports functional fidelity (final model, protocol events per node, bytes per link), the relative error of round, compute and link times with bootstrap intervals, and decision fidelity per `--metric` (Kendall's τ-b, top-1 agreement, selection regret, the probability of top-1 agreement from a bootstrap paired by seed), each next to the noise ceiling (`--ceiling` with the output of `onion_fl ceiling`, or the seeds of A). It warns when every configuration ties on a metric. `--csv` and `--html` write the report.
+- **Fidelity.** `onion_fl fidelity <runs A> <runs B>` compares the runs of a backend under test (B, for example `sim`) with those of a reference (A, for example `local`) on the same experiment, pairing them by configuration and seed. It reports functional fidelity (final model, protocol events per node, bytes per link), the relative error of round, compute and link times with bootstrap intervals, and decision fidelity per `--metric` (Kendall's τ-b, top-1 agreement, selection regret, the probability of top-1 agreement from a bootstrap paired by seed), each next to the noise ceiling (`--ceiling` with the output of `onion_fl ceiling`, or the seeds of A). On `time` and `time_to_target` it also shows how the factorised predictor (rounds to target in a synchronous control run × time per round from the compute and network models, plain and with a FLOSS-style participation correction) decides against A; `onion_fl fidelity predictor <runs>` makes the predictor a side itself, and `--control` names the control runs. It warns when every configuration ties on a metric. `--csv` and `--html` write the report.
 - **Aggregator, attack and privacy.** `learning.aggregator` sets the aggregator of the leaf aggregators (the fogs over the edges). `attack` makes a seeded fraction of each dataset's edges malicious, and `privacy` adds local DP at every edge. Unset, they stay out of the `config_id`.
 - **Server optimizer.** `learning.server_optimizer` sets the root's optimizer. Pairs such as `scaffold`, `fednova` and `feddyn` are checked against the trainer before the first scenario runs.
 - **Buffering and selection.**
@@ -574,7 +574,7 @@ src/onion_fl/
 ├── learning/        model, sharing, aggregators (+ server optimizers), trainers (+ inits), metrics
 ├── roles/           coordinator, aggregator, edge; round policies; federation builder
 ├── runtime/         sim (virtual clock), real (wall clock), network, devices
-├── transports/      memory, mqtt
+├── transports/      memory, mqtt, grpc, flower
 ├── observability/   events, run, diagnostics, analysis (+ report), sinks
 ├── experiment/      config, sweep, runner, real (processes), cli
 ├── studio/          the web app: FastAPI API, dry-run previews, static single-page app

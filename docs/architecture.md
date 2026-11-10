@@ -35,9 +35,9 @@ flowchart LR
 | `roles` | `nodes`, `policies`, `federation` | The round protocol and the assembly of a federation on a runtime |
 | `runtime` | `sim`, `real`, `network`, `devices` | Virtual-clock and wall-clock hosts for the nodes |
 | `infrastructure` | `model`, `paths`, `assignment`, `network`, `failover`, `backends` | The physical infrastructure, its paths, the assignment of the logical nodes to its hosts, its changes over time, the failover policies and the backends that run a scenario; depends on `core` only |
-| `transports` | `memory`, `mqtt` | Bytes between processes for the real runtime |
+| `transports` | `memory`, `mqtt`, `grpc`, `flower` | Bytes between processes for the real runtime |
 | `observability` | `events`, `run`, `diagnostics`, `analysis`, `sinks` | Event schema, run records, diagnostics, analysis and live sinks |
-| `experiment` | `config`, `sweep`, `runner`, `backends`, `real`, `ceiling`, `fidelity`, `cli` | From an experiment YAML to signed runs, and their fidelity |
+| `experiment` | `config`, `sweep`, `runner`, `backends`, `real`, `ceiling`, `fidelity`, `predictor`, `cli` | From an experiment YAML to signed runs, and their fidelity |
 
 ## 3. Topology
 
@@ -148,7 +148,7 @@ sequenceDiagram
 - Messages travel in a frame `codec \0 header \0 message`. The JSON header carries `msg_id` and `sent_at`, which the receiver puts in `meta`, so it records the same id and the end-to-end latency. The message is encoded as in simulation: `message.sent` counts its bytes, and the frame's go in the `frame` tag.
 - Every node emits `node.heartbeat`.
 
-**Transports.** `mqtt` gives each node an inbox at `onionfl/<run_id>/<node>/inbox`, with QoS and broker per link; it reconnects and resubscribes after a broker restart. `memory` is an in-process bus for tests.
+**Transports.** `mqtt` gives each node an inbox at `onionfl/<run_id>/<node>/inbox`, with QoS and broker per link; it reconnects and resubscribes after a broker restart. `grpc` has no broker: each process serves its inboxes on one gRPC server (`127.0.0.1` and a free port by default), announced by a file per inbox in a discovery folder, and a sender delivers the frame straight to it (one generic bytes method, no `.proto`). One queue and one thread per inbox keep the order; a failed delivery retries with backoff and reads the inbox's file again, so a receiver not up yet, or restarted on another port, is found; on `stop` what is queued gets one more try within `flush_timeout`. It needs the `grpc` extra. `flower` (issue #204, the `flower` extra, Flower >= 1.21) uses the same links, under its own service and discovery folder, and puts each frame in a Flower `Message`: a `RecordDict` with the frame, and `Metadata` with the inbox as `group_id` and `message_type` `query`, as Flower's protobuf. Flower carries the bytes and never drives the rounds; its SuperLink and SuperNodes are not used, because the Fleet API only lets a SuperNode reply to what the ServerApp sent (a `hello` or an update could not leave unasked), one SuperLink is a single level, and Flower starts the apps itself. `memory` is an in-process bus for tests.
 
 **Backends** (I1 §10). Every scenario runs on a backend from the `backends` registry (`infrastructure.backends`), chosen by the experiment's `backend:` or, without it, by `runtime.mode` (`real` is an alias of `local`; unset, the `config_id` does not change). The contract is `supports(infrastructure)` (the reasons it cannot reproduce it; the config refuses any), `prepare(scenario, infrastructure, assignment)` (an execution plan), `run(plan)` and `collect(plan)` (the signed run). `execute` chains them. The backends live in `experiment.backends`, since they build federations:
 - `sim`: the simulator in one process (`runner.simulate`);
@@ -157,12 +157,12 @@ sequenceDiagram
 `onion_fl run --backend NAME` overrides the experiment's; `--mode real` still works.
 
 **Real runs** (the `local` backend).
-1. `prepare` checks the links and the brokers and writes `scenario.json`.
+1. `prepare` checks the links (MQTT or gRPC) and the MQTT brokers and writes `scenario.json`.
 2. `run` starts one `onion_fl node` process per group: the root with the test evaluators, and each aggregator with its edges.
 3. Each process rebuilds the same scenario and writes its own event file.
 4. When the run finishes, a stop travels down the tree and the processes exit; `collect` merges and signs the run.
 
-With full quorum and the same seed, simulation and MQTT give the same final model. `tests/test_runtime_equivalence.py` checks it.
+With full quorum and the same seed, simulation, MQTT, gRPC and Flower give the same final model. `tests/test_runtime_equivalence.py` checks it (Flower only with its extra; the tests skip without it), pairs `local` over gRPC with `local` over Flower (the same model bit for bit and the same bytes per link), and compares `local` over MQTT with `local` over gRPC through the fidelity harness: the design id ignores the links' `transport`, so the two pair, and the harness measures their difference in time while the bytes per link stay the same.
 
 ## 7a. Infrastructure
 
@@ -319,7 +319,15 @@ infrastructure:
 **Fidelity** (I1 §12). `onion_fl fidelity <runs A> <runs B>` (`experiment.fidelity`) compares a backend under test, B, with a reference, A. A run of each is a pair when they share `design_id` (the `config_id` of the config without `backend`, `paths` and `runtime.mode`, `timeout` and `heartbeat`) and seed; only finished runs count, the newest of a cell wins, and every run's `run_hash` is verified.
 - **Functional**, per pair: the final model (within the tolerance of `test_runtime_equivalence`, and bit for bit), the protocol events of each node in order (`round.started`, `round.closed`, `round.quorum_failed`, `round.idle`, `round.abandoned`, `run.finished`) and the bytes per link and round. Traffic outside rounds (`hello`, acknowledgements, `stop`) is reported, not judged: a real child repeats its `hello` until answered.
 - **Performance**: the relative error (B − A) / A of the round durations at the root, the compute time of each edge per round (the model's arrival to its update's departure), the latency of each link (send to delivery by `msg_id`), the run's duration and, with `--target metric=value`, the time to target; the mean per pair, then over pairs with a seeded 95% bootstrap interval.
-- **Decision**, per `--metric` (a root score from `summary.json`, `time`, `bytes` or `time_to_target`; lower is better for loss and the system ones): over the configurations complete in every seed, Kendall's τ-b, top-1 agreement (ties to the first, as in the ceiling) and the selection regret (A's best minus A's score of B's winner, in units and relative) of the means over seeds, with 95% intervals and the probability of top-1 agreement from a bootstrap that resamples the same seeds in A and B. Each top-1 and regret is shown next to the noise ceiling (`--ceiling` with the output of `onion_fl ceiling`, or else the seeds of A as paired replicas) and a slot for the factorised predictor (A7). It warns when every configuration ties on a metric (constant predictors), when fewer than 5 seeds are complete, and when runs have no pair.
+- **Decision**, per `--metric` (a root score from `summary.json`, `time`, `bytes` or `time_to_target`; lower is better for loss and the system ones): over the configurations complete in every seed, Kendall's τ-b, top-1 agreement (ties to the first, as in the ceiling) and the selection regret (A's best minus A's score of B's winner, in units and relative) of the means over seeds, with 95% intervals and the probability of top-1 agreement from a bootstrap that resamples the same seeds in A and B. Each top-1 and regret is shown next to the noise ceiling (`--ceiling` with the output of `onion_fl ceiling`, or else the seeds of A as paired replicas) and, on `time` and `time_to_target`, next to both variants of the factorised predictor against A, with whether B's regret is below it. It warns when every configuration ties on a metric (constant predictors), when fewer than 5 seeds are complete, and when runs have no pair.
+
+**Factorised predictor** (N7, `experiment.predictor`). The analytic model of Luo 2021 and Valli 2026, rounds to target × time per round, as a decision backend: a backend that does not decide better than it adds nothing. Each factor comes from a different place:
+- **Rounds to target** are measured on a control run: the same design in `sim`, synchronous and without deadline or coupling. It is paired by `control_id` (the `design_id` without the topology's `deadline`, `quorum`, `close_at_quorum` and `staleness`, nor `infrastructure.assignment`) and seed. They are the first round whose mean root metric reaches the target, or all the rounds when none does (censored). `--control <runs>` names the controls; by default they are A's own runs, with a warning when those have deadlines.
+- **Time per round** is analytic, from the compute and network models of the run's own config. `plan_of` builds its federation without running it (`SimRuntime.compute_of` and `channel_of`). On the tree of each round of the control (who got `global_model`), a node takes the longest of its children's down + own + up time, plus its aggregation (one child's crossing state × children at its compute model). An edge takes the mean duration of the work its control's `edge.trained` declared (`samples`), and a link `bytes * 8 / bandwidth + latency_s` for the bytes of the control's message. `measured` has no closed form: it counts as 0, with a warning. Contention, jitter and losses are left out.
+- **The prediction** for `time` is the sum over the rounds. For `time_to_target` it is the rounds to target × their mean time, capped at that sum as the harness censors. The predictor scores those two metrics only.
+- **The `floss` variant** is a non-ignorable participation correction in the style of FLOSS (arXiv 2507.23115), using the config's deadlines. A child counts with the probability that it arrives in time. For an edge, its compute must fit in the deadline minus its links: the lognormal CDF for `lognormal_rate`, the share of the trace for `trace`, and yes or no for deterministic models. For an aggregator it is whether its expected arrival does. A round lasts until the deadline in the proportion that someone may miss it, and the rounds to target are divided by the participation weighted by examples.
+
+`onion_fl fidelity predictor <runs>` (or `<runs> predictor`, and `predictor:floss`) puts the predictor on one side. It has no runs, so the folder is the reference and the result has the decision level only, with each run's `predictions`. With two folders, the predictor is computed on A next to every time decision, unless `--no-predictor` is given.
 
 The result is JSON on stdout, flat rows with `--csv` and a page with `--html`.
 
@@ -377,7 +385,7 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | link_profile | `lan`, `wifi`, `4g`, `lora` |
 | compute_model | `samples_per_second`, `measured`, `lognormal_rate`, `trace` |
 | availability_model | `always`, `bernoulli`, `schedule`, `crash_at`, `windows` |
-| transport | `memory`, `mqtt` |
+| transport | `memory`, `mqtt`, `grpc`, `flower` |
 | model | `modular_mlp` |
 | sharing | `fedavg`, `fedper`, `lg_fedavg`, `zone`, `independent`, `harmonized`, `custom` |
 | aggregator | `fedavg`, `mean`, `median`, `trimmed_mean`, `krum`, `multi_krum`, `geometric_median`, `bulyan`, `norm_clip`, `dp_fedavg` |
