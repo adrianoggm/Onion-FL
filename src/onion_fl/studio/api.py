@@ -118,6 +118,13 @@ AXES: list[tuple[str, str, str, str | None]] = [
         "Cómo vigila cada edge, zona y la federación su estadístico de deriva.",
         None,
     ),
+    (
+        "promotion",
+        "Promoción",
+        "Cuándo pasa el modelo de una ronda (challenger) a ser el que sirven los "
+        "edges (champion), según lo reciente y lo anterior de la validación.",
+        None,
+    ),
     ("init", "Inicialización", "De dónde sale el modelo inicial.", None),
     ("participation", "Participación", "Qué hijos participan en cada ronda.", None),
     (
@@ -160,6 +167,12 @@ AXES: list[tuple[str, str, str, str | None]] = [
         "backend",
         "Backend",
         "Dónde y con qué reloj se ejecuta cada escenario: simulación o local.",
+        None,
+    ),
+    (
+        "failover",
+        "Reasignación",
+        "Adónde va un edge cuando cae el host de su agregador.",
         None,
     ),
     (

@@ -22,6 +22,7 @@ column; the ``subject`` and ``label`` steps record their source columns so
 columns are excluded on purpose, not by luck (docs/RULES.md).
 """
 
+import json
 import pickle
 import re
 from collections.abc import Callable, Mapping
@@ -279,6 +280,74 @@ class WesadPickleReader:
                 columns[f"{name.lower()}_{i}"] = values[index, i]
         columns["condition"] = labels[:n]
         return pd.DataFrame(columns)
+
+
+class LeafParams(BaseModel):
+    writers: list[str] | None = Field(
+        None,
+        description="Usuarios que se leen (submuestra fija); por defecto todos",
+    )
+
+    @model_validator(mode="after")
+    def _distinct(self) -> LeafParams:
+        if self.writers is not None and len(set(self.writers)) != len(self.writers):
+            raise ValueError("writers are repeated")
+        return self
+
+
+@readers.register(
+    "leaf_json",
+    title="LEAF JSON",
+    description="Fichero de LEAF (users, user_data con x e y): una fila por muestra.",
+    params=LeafParams,
+    explain=(
+        "Cada usuario es un sujeto (columna user); x se expande en x_0, x_1… y la "
+        "etiqueta queda en la columna y. Con writers solo se leen esos usuarios."
+    ),
+)
+class LeafJsonReader:
+    """LEAF's federated format (Caldas et al., 2018), as FEMNIST's ``all_data``."""
+
+    def __init__(self, writers: list[str] | None = None) -> None:
+        self.writers = None if writers is None else set(writers)
+
+    def read(self, path: Path) -> pd.DataFrame:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        if not data["users"]:
+            raise DataError(f"{path} has no users")
+        # The width of any user, so a file without the chosen writers still
+        # gives the same columns as the others.
+        first = data["user_data"][data["users"][0]]["x"]
+        width = len(first[0]) if first else 0
+        blocks = [np.empty((0, width), dtype=np.float32)]
+        users: list[str] = []
+        labels = [np.empty(0, dtype=np.int64)]
+        for user in data["users"]:
+            if self.writers is not None and user not in self.writers:
+                continue
+            samples = data["user_data"][user]
+            if not samples["y"]:
+                continue
+            try:
+                x = np.asarray(samples["x"], dtype=np.float32)
+            except ValueError as error:  # rows of different widths
+                raise DataError(f"{path}: user {user!r}: {error}") from None
+            y = np.asarray(samples["y"], dtype=np.int64)
+            if x.shape != (len(y), width):
+                raise DataError(
+                    f"{path}: user {user!r} has x of shape {x.shape} and "
+                    f"{len(y)} labels; expected width {width}"
+                )
+            blocks.append(x)
+            users += [user] * len(y)
+            labels.append(y)
+        frame = pd.DataFrame(
+            np.concatenate(blocks), columns=[f"x_{i}" for i in range(width)]
+        )
+        return frame.assign(
+            user=pd.Series(users, dtype=object), y=np.concatenate(labels)
+        )
 
 
 def source_files(source: SourceSpec, root: Path) -> list[tuple[Path, str | None]]:
@@ -762,10 +831,14 @@ class FeaturesStep:
         columns = [c for c in columns if c not in self.exclude]
         if not columns:
             raise DataError("no feature columns left")
-        out = df[[c for c in ("subject", "label", TIME) if c in df.columns]].copy()
-        for column in columns:
-            out[column] = _numeric(df[column], column)
-        return out
+        head = df[[c for c in ("subject", "label", TIME) if c in df.columns]]
+        # One concat, not a column at a time: wide tables (FEMNIST's 784
+        # pixels) would fragment the frame.
+        values = pd.DataFrame(
+            {column: _numeric(df[column], column) for column in columns},
+            index=df.index,
+        )
+        return pd.concat([head, values], axis=1)
 
 
 def _numeric(series: pd.Series, name: str) -> pd.Series:

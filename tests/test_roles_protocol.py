@@ -798,6 +798,68 @@ def test_a_childs_staleness_adds_to_its_age() -> None:
     assert ctx.sent[-1].payload.metrics["staleness"] == 1.0  # (2 + 0) / 2
 
 
+def test_the_mean_staleness_is_weighted_by_what_each_update_carries() -> None:
+    fog, ctx = fog_by_hand(**STALE)
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 3), ctx)
+    fog.on_message(update_msg("e2", 1, 1.0, 1, staleness=2.0), ctx)
+
+    assert ctx.sent[-1].payload.metrics["staleness"] == 0.5  # (0 * 3 + 2 * 1) / 4
+
+
+def test_a_late_update_ages_by_the_global_rounds_its_node_skipped() -> None:
+    polynomial = {"name": "next_round", "weighting": {"name": "polynomial", "a": 1}}
+    fog, ctx = fog_by_hand(**STALE | {"staleness": polynomial})
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+    fog.on_message(update_msg("e2", 1, 1.0, 3), ctx)  # late, while the fog is closed
+
+    fog.on_message(model_msg(3), ctx)  # the parent left this fog out of round 2
+    fog.on_message(update_msg("e1", 3, 1.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+
+    sent = ctx.sent[-1]
+    assert sent.payload.weights[KEY] == 2.0  # 1 + 3 * (1 + 2)^-1, two rounds late
+    assert sent.payload.metrics["staleness"] == 1.0  # (0 * 1 + 2 * 1) / 2
+
+
+def test_late_updates_outlive_a_round_that_fails_its_quorum() -> None:
+    fog, ctx = fog_by_hand(**STALE)
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+    fog.on_message(model_msg(2), ctx)
+    fog.on_message(update_msg("e2", 1, 5.0, 2), ctx)  # late for round 2
+    fog.on_timer("deadline", ctx)  # nobody fresh: round 2 fails its quorum
+    assert ctx.sent[-1].round == 2 and not ctx.sent[-1].payload.state
+
+    fog.on_message(model_msg(3), ctx)
+    fog.on_message(update_msg("e1", 3, 3.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+
+    sent = ctx.sent[-1]
+    np.testing.assert_allclose(sent.payload.state[KEY], 4.0)  # (3 * 1 + 5 * 1) / 2
+    assert sent.payload.metrics["staleness"] == 1.0  # (0 + 2) / 2: one more round
+
+
+def test_participation_counts_the_updates_late_between_two_rounds() -> None:
+    fog, ctx = fog_by_hand(**STALE | {"quorum": 1, "close_at_quorum": True})
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)  # closes round 1
+    fog.on_message(update_msg("e2", 1, 5.0, 2), ctx)  # late, before round 2 opens
+
+    fog.on_message(model_msg(2), ctx)
+    fog.on_message(update_msg("e1", 2, 1.0, 1), ctx)
+
+    late = {
+        tags["round"]: tags["late"]
+        for name, tags in ctx.events
+        if name == "diagnostic.participation"
+    }
+    assert late == {1: 0, 2: 1}
+
+
 def test_the_server_optimizer_sees_the_staleness_below() -> None:
     recorder = StatsRecorder()
     edges = {"fog_0": [edge("fast", shift=1), slow("slow", seconds=15, shift=7)]}

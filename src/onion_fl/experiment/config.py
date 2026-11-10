@@ -49,6 +49,7 @@ from pydantic import (
 from onion_fl.baselines import baseline_models
 from onion_fl.continuum.drift import detectors
 from onion_fl.continuum.memory import memories
+from onion_fl.continuum.promotion import promotions
 from onion_fl.continuum.triggers import Schedule, drift_detectors, leaves, triggers
 from onion_fl.core.codec import codecs
 from onion_fl.core.registry import PluginError, Registry
@@ -65,6 +66,7 @@ from onion_fl.data.stream import (
 from onion_fl.experiment.backends import backend_name
 from onion_fl.infrastructure.assignment import assignments
 from onion_fl.infrastructure.backends import backends
+from onion_fl.infrastructure.failover import failovers
 from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.attacks import attacks
 from onion_fl.learning.metrics import metrics
@@ -112,8 +114,10 @@ REGISTRIES: dict[str, Registry] = {
     "memory": memories,
     "trigger": triggers,
     "detector": detectors,
+    "promotion": promotions,
     "assignment": assignments,
     "backend": backends,
+    "failover": failovers,
 }
 
 
@@ -330,6 +334,16 @@ class InfrastructureConfig(Strict):
         description="infrastructures/<nombre>.yaml, una ruta, o en línea"
     )
     assignment: AssignmentConfig
+    failover: PluginRef | None = Field(
+        None,
+        description="Adónde va un edge cuyo agregador cae (none, por defecto, "
+        "nearest_alive, explicit)",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+
+    _failover = field_validator("failover")(
+        lambda v: v if v is None else _plugin(failovers, v)
+    )
 
 
 class Range(Strict):
@@ -441,6 +455,12 @@ class ExperimentConfig(Strict):
         description="Federación continua: disparadores en vez de rondas a ritmo fijo",
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
+    promotion: PluginRef | None = Field(
+        None,
+        description="Champion y challenger: el modelo de cada ronda solo llega a "
+        "los edges si la validación lo promueve",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
 
     infrastructure: InfrastructureConfig | None = Field(
         None,
@@ -459,6 +479,10 @@ class ExperimentConfig(Strict):
     _attack = field_validator("attack")(
         lambda v: v if v is None else _plugin(attacks, v)
     )
+    _promotion = field_validator("promotion")(
+        lambda v: v if v is None else _plugin(promotions, v)
+    )
+
     _backend = field_validator("backend")(
         lambda v: v if v is None else _plugin(backends, v)
     )
@@ -539,6 +563,25 @@ class ExperimentConfig(Strict):
         refused = create(backends, self.backend_ref).supports(self.infrastructure)
         if refused:
             raise ValueError("; ".join(refused))
+        return self
+
+    @model_validator(mode="after")
+    def _promotion_fits(self) -> ExperimentConfig:
+        """A challenger is validated on the validation streams, by an evaluation
+        metric (continuum C7)."""
+        if self.promotion is None:
+            return self
+        if self.stream is None:
+            raise ValueError(
+                "promotion: a challenger is validated on the validation streams; "
+                "set stream too"
+            )
+        metric = getattr(create(promotions, self.promotion), "metric", None)
+        if metric in metrics.names() and metric not in self.evaluation.metrics:
+            raise ValueError(
+                f"promotion: it compares {metric!r}, which evaluation.metrics "
+                "does not compute; add it there"
+            )
         return self
 
     @model_validator(mode="after")
