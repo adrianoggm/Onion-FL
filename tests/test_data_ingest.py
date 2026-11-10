@@ -6,6 +6,7 @@ parsing; nothing is trained or evaluated with it.
 
 from __future__ import annotations
 
+import json
 import pickle
 import textwrap
 from pathlib import Path
@@ -177,6 +178,95 @@ def test_npz_reader_expands_matrices_into_columns(tmp_path: Path) -> None:
 
     assert list(df.columns) == ["acc_0", "acc_1", "label"]
     assert df["acc_1"].tolist() == [1, 3, 5]
+
+
+def _leaf(path: Path, user_data: dict) -> Path:
+    """A LEAF JSON file (users, num_samples, user_data) as LEAF writes it."""
+    path.write_text(
+        json.dumps(
+            {
+                "users": list(user_data),
+                "num_samples": [len(d["y"]) for d in user_data.values()],
+                "user_data": user_data,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_leaf_reader_gives_one_row_per_sample(tmp_path: Path) -> None:
+    path = _leaf(
+        tmp_path / "all_data_0.json",
+        {
+            "f0000_14": {"x": [[1.0, 0.5, 0.0], [1.0, 1.0, 0.25]], "y": [3, 41]},
+            "f0001_41": {"x": [[0.0, 0.0, 1.0]], "y": [0]},
+        },
+    )
+
+    df = readers.create("leaf_json").read(path)
+
+    assert list(df.columns) == ["x_0", "x_1", "x_2", "user", "y"]
+    assert df["user"].tolist() == ["f0000_14", "f0000_14", "f0001_41"]
+    assert df["y"].tolist() == [3, 41, 0]
+    assert df["x_2"].tolist() == [0.0, 0.25, 1.0]
+
+
+def test_leaf_reader_keeps_only_the_declared_writers(tmp_path: Path) -> None:
+    users = {
+        "a": {"x": [[1.0, 0.0]], "y": [1]},
+        "b": {"x": [[0.0, 1.0]], "y": [2]},
+    }
+    path = _leaf(tmp_path / "all_data_0.json", users)
+
+    kept = readers.create("leaf_json", {"writers": ["b"]}).read(path)
+    none = readers.create("leaf_json", {"writers": ["z"]}).read(path)
+
+    assert kept["user"].tolist() == ["b"]
+    # A file without the chosen writers keeps the columns of the others.
+    assert list(none.columns) == ["x_0", "x_1", "user", "y"] and none.empty
+
+
+def test_leaf_reader_rejects_inconsistent_users(tmp_path: Path) -> None:
+    path = _leaf(
+        tmp_path / "all_data_0.json",
+        {"a": {"x": [[1.0, 0.0]], "y": [1]}, "b": {"x": [[1.0, 0.0]], "y": [1, 2]}},
+    )
+
+    with pytest.raises(DataError, match="'b'"):
+        readers.create("leaf_json").read(path)
+    with pytest.raises(ValueError, match="repeated"):
+        readers.create("leaf_json", {"writers": ["a", "a"]})
+
+
+def test_leaf_files_ingest_with_writers_as_subjects(tmp_path: Path) -> None:
+    _leaf(
+        tmp_path / "all_data_0.json",
+        {"w1": {"x": [[1.0, 0.0], [0.5, 0.5]], "y": [0, 1]}, "w2": {"x": [], "y": []}},
+    )
+    _leaf(tmp_path / "all_data_1.json", {"w3": {"x": [[0.0, 1.0]], "y": [2]}})
+    spec = DatasetSpec.model_validate(
+        {
+            "name": "leaf",
+            "root": str(tmp_path),
+            "source": {
+                "reader": "leaf_json",
+                "path": "*.json",
+                "writers": ["w1", "w3"],
+            },
+            "steps": [
+                {"subject": {"column": "user"}},
+                {"label": {"task": "character", "column": "y", "n_classes": 3}},
+                {"features": {"regex": "^x_"}},
+            ],
+        }
+    )
+
+    subjects = ingest(spec)
+
+    assert [s.subject for s in subjects] == ["w1", "w3"]
+    assert subjects[0].feature_names == ["x_0", "x_1"]  # never user or y
+    assert subjects[0].y.tolist() == [0, 1] and subjects[1].n_classes == 3
 
 
 def test_pickle_reader_follows_a_key_path(tmp_path: Path) -> None:

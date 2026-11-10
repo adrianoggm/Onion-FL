@@ -1,0 +1,134 @@
+{
+  "run_id": "20261106T012956Z-6051f46e70dd",
+  "topology_id": "ff55fe4d2ce1a807f764bcc5205a8d2d4d43ab3d533163a1d13e173a9a6725fa",
+  "config_id": "a59ec1e7f431b87a88ff90905a8efcaa8f566a013104b2a97993b27193690f1a",
+  "backend": "sim",
+  "infrastructure_id": null,
+  "data_id": "9fd573754157d68b111f037ecd891bdb62abcbff1d5e5e818da789dde470257c",
+  "code_version": {
+    "commit": "3bb359b28c728fa36672d1691395e330af9a7c2d",
+    "dirty": false
+  },
+  "seed": 2,
+  "scenario": "labels,continual.memory,continuum={'fraction': 0.1, 'delay': '30m'},reservoir(capacity=512),{'trigger': {'name': 'schedule', 'every': '10m'}, 'status_every': '10m'}",
+  "started_at": "2026-11-06T01:29:56.481712+00:00",
+  "status": "finished",
+  "config": {
+    "name": "continuum_benchmark_sweeps",
+    "description": "Barridos del benchmark continuo - fracción y retraso de etiquetas, memoria y disparador.",
+    "topology": "four_fogs_swell_wesad_lossless",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        },
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.0,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.1
+      },
+      "init": "random"
+    },
+    "rounds": 60,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1",
+        "confusion_matrix"
+      ],
+      "edge": {
+        "every": null,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": 1,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    },
+    "stream": {
+      "order": "timestamp",
+      "batch_size": 1,
+      "speed": 60.0,
+      "start": "aligned",
+      "horizon": "session",
+      "bootstrap": 1200.0,
+      "window": null
+    },
+    "labels": {
+      "fraction": 0.1,
+      "delay": 1800.0
+    },
+    "continual": {
+      "memory": {
+        "name": "reservoir",
+        "capacity": 512
+      },
+      "replay_ratio": 0.25
+    },
+    "continuum": {
+      "trigger": {
+        "name": "schedule",
+        "every": "10m"
+      },
+      "status_every": 600.0
+    }
+  },
+  "finished_at": "2026-11-06T01:30:16.267339+00:00",
+  "run_hash": "99df6d002e688663d43f9f2e601c10a837a7a291607cc41f2b5b6e2671c12c50"
+}
