@@ -14,6 +14,12 @@ in ``meta``: it records the same id and the end-to-end latency, which needs
 NTP-synchronised clocks across machines. The message itself is encoded as the
 simulation encodes it, so ``message.sent`` counts the same bytes in both
 (I1 §10); the frame's are in the ``frame`` tag.
+
+Tracing (``ONIONFL_TRACE=1`` in a node process's environment, off by default)
+adds, after each message sent and handled, a ``trace.sent`` or
+``trace.delivered`` event with the wall-clock instants of its path through the
+process, to break a link's latency down (#198). Off, nothing is recorded or
+timed, and a run is the same.
 """
 
 import dataclasses
@@ -34,6 +40,7 @@ from onion_fl.roles.policies import create
 from onion_fl.transports import transports
 
 SEPARATOR = b"\x00"  # codec name, frame header (JSON), encoded message
+TRACE = "ONIONFL_TRACE"  # set to 1 in the environment to trace every message
 
 
 class RealRuntimeError(RuntimeError):
@@ -90,10 +97,12 @@ class RealRuntime:
         heartbeat_s: float | None = 10.0,
         epoch: float | None = None,
         broker: str | None = None,
+        nodelay: bool | None = None,
         grpc: Mapping[str, Any] | None = None,
     ) -> None:
         self.run_id, self.seed = run_id, seed
         self.broker = broker  # host:port of every MQTT link, whatever they say
+        self.nodelay = nodelay  # and their TCP_NODELAY, when given
         # Across machines, every gRPC link listens on ``grpc["listen"]`` and finds
         # each node at ``grpc["peers"][node]`` (host:port), whatever they say.
         self.grpc = None if grpc is None else dict(grpc)
@@ -123,6 +132,7 @@ class RealRuntime:
         self._msg_ids = itertools.count(1)
         self._running = False
         self._thread: threading.Thread | None = None
+        self._trace = os.environ.get(TRACE, "") not in ("", "0")
 
     # --- setup -------------------------------------------------------------
 
@@ -158,11 +168,13 @@ class RealRuntime:
         """Scheduled network changes are the emulator's, never the runtime's."""
 
     def _transport(self, spec: str | Mapping[str, Any]) -> Any:
-        if self.broker is not None:
-            name = spec if isinstance(spec, str) else spec.get("name", "mqtt")
-            if name == "mqtt":
-                spec = {**({} if isinstance(spec, str) else spec), "name": "mqtt"}
+        name = spec if isinstance(spec, str) else spec.get("name", "mqtt")
+        if name == "mqtt" and (self.broker, self.nodelay) != (None, None):
+            spec = {**({} if isinstance(spec, str) else spec), "name": "mqtt"}
+            if self.broker is not None:
                 spec["broker"] = self.broker
+            if self.nodelay is not None:
+                spec["nodelay"] = self.nodelay
         if self.grpc is not None:
             name = spec if isinstance(spec, str) else spec.get("name")
             if name == "grpc":
@@ -202,10 +214,13 @@ class RealRuntime:
                 and (id(carrier), node_id) not in self._subscribed
             ):
                 self._subscribed.add((id(carrier), node_id))
-                carrier.on_receive(
-                    self.inbox(node_id),
-                    lambda data, n=node_id: self._post(0.0, "deliver", (n, data)),
-                )
+                carrier.on_receive(self.inbox(node_id), self._receiver(node_id))
+
+    def _receiver(self, node_id: str) -> Callable[[bytes], None]:
+        """What a transport calls with a message for ``node_id``: queue it."""
+        if self._trace:  # and the instant the transport handed it over
+            return lambda data: self._post(0.0, "deliver", (node_id, data, time.time()))
+        return lambda data: self._post(0.0, "deliver", (node_id, data))
 
     # --- running -----------------------------------------------------------
 
@@ -292,7 +307,10 @@ class RealRuntime:
     def _on_start(self, node_id: str) -> None:
         self._handle(node_id, "on_start", lambda node, ctx: node.on_start(ctx))
 
-    def _on_deliver(self, node_id: str, data: bytes) -> None:
+    def _on_deliver(
+        self, node_id: str, data: bytes, received: float | None = None
+    ) -> None:
+        popped = time.time() if received is not None else None
         name, _, rest = data.partition(SEPARATOR)
         header, _, body = rest.partition(SEPARATOR)
         try:
@@ -331,8 +349,21 @@ class RealRuntime:
         }
         if isinstance(sent_at, int | float):
             tags["latency"] = max(0.0, time.time() - sent_at)
+        if received is None:
+            self._record(node_id, "message.delivered", None, tags)
+            self._handle(
+                node_id, "on_message", lambda node, ctx: node.on_message(msg, ctx)
+            )
+            return
+        decoded = time.time()
         self._record(node_id, "message.delivered", None, tags)
+        recorded = time.time()
         self._handle(node_id, "on_message", lambda node, ctx: node.on_message(msg, ctx))
+        # received, taken off the queue, decoded, recorded, handled (wall clock)
+        stamps = [received, popped, decoded, recorded, time.time()]
+        self._record(
+            node_id, "trace.delivered", None, {"msg_id": msg_id, "wall": stamps}
+        )
 
     def _on_timer(self, node_id: str, name: str, token: int) -> None:
         if self._timers.get((node_id, name)) != token:
@@ -385,7 +416,8 @@ class RealRuntime:
     def _transmit(self, msg: Message) -> None:
         codec, carrier = self._links[(msg.src, msg.dst)]
         msg_id = f"{msg.src}>{msg.dst}#{next(self._msg_ids)}@{self.run_id}"
-        header = json.dumps({"msg_id": msg_id, "sent_at": time.time()}).encode()
+        sent_at = time.time()
+        header = json.dumps({"msg_id": msg_id, "sent_at": sent_at}).encode()
         try:
             body = codec.encode(msg)
         except MessageError as exc:
@@ -406,8 +438,16 @@ class RealRuntime:
         data = codec.name.encode() + SEPARATOR + header + SEPARATOR + body
         # The message's bytes, as the simulation counts them; the frame apart.
         tags["frame"] = len(data) - len(body)
+        encoded = time.time() if self._trace else None
         self._record(msg.src, "message.sent", len(body), tags)
+        if not self._trace:
+            carrier.send(self.inbox(msg.dst), data)
+            return
+        recorded = time.time()
         carrier.send(self.inbox(msg.dst), data)
+        # stamped, encoded, recorded, handed to the transport (wall clock)
+        stamps = [sent_at, encoded, recorded, time.time()]
+        self._record(msg.src, "trace.sent", None, {"msg_id": msg_id, "wall": stamps})
 
     def _record(
         self, node_id: str, name: str, value: Any, tags: Mapping[str, Any]

@@ -207,7 +207,7 @@ def write_scenario(
 ) -> Path:
     """``scenario.json``: what every node process rebuilds. ``launcher`` adds
     what the processes take from the launcher (``groups``, ``broker``,
-    ``grpc``, ``initial``)."""
+    ``nodelay``, ``grpc``, ``initial``)."""
     document = {
         "name": scenario.name,
         "seed": scenario.seed,
@@ -336,6 +336,7 @@ def run_node(
         epoch=epoch,
         heartbeat_s=chosen.config.runtime.heartbeat,
         broker=launcher.get("broker"),
+        nodelay=launcher.get("nodelay"),
         grpc=grpc,
     )
     federation = build_scenario(
@@ -388,7 +389,7 @@ def _launcher(config: str | Path) -> dict[str, Any]:
     if path.suffix != ".json":
         return {}
     doc = json.loads(path.read_text(encoding="utf-8"))
-    keys = ("groups", "broker", "grpc", "initial", "checkpoints")
+    keys = ("groups", "broker", "nodelay", "grpc", "initial", "checkpoints")
     return {k: doc[k] for k in keys if k in doc}
 
 

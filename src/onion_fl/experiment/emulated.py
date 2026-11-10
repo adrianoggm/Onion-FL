@@ -22,6 +22,7 @@ resources differ.
 """
 
 import json
+import os
 import subprocess
 import time
 from collections.abc import Mapping
@@ -50,6 +51,7 @@ from onion_fl.infrastructure.emulators import (
 )
 from onion_fl.infrastructure.model import InfrastructureError
 from onion_fl.observability.run import Run
+from onion_fl.runtime.real import TRACE
 
 ROOT = "/onionfl"  # where the containers see the source and the run's paths
 DOCKERFILE = "emulated.Dockerfile"  # in onion_fl.infrastructure
@@ -71,10 +73,16 @@ class EmulatedPlan:
     grace: float = 30.0  # seconds a process may take to start, on top of the timeout
 
     def command(self, group: str) -> list[str]:
-        """The node process of host ``group``, inside its container."""
+        """The node process of host ``group``, inside its container.
+
+        It sees the launcher's ``ONIONFL_TRACE``, which ``docker exec`` would
+        not pass on by itself.
+        """
+        trace = os.environ.get(TRACE)
         return [
             "docker",
             "exec",
+            *([] if trace is None else ["-e", f"{TRACE}={trace}"]),
             self.emulation.container(group),
             "python",
             "-m",
@@ -260,6 +268,15 @@ def prepare_emulated(scenario: Scenario, params: EmulatedParams) -> EmulatedPlan
             volumes=volumes,
             setup=folder.resolve().as_posix(),
         )
+        if params.nodelay:  # Nagle off on the broker too, as on the clients
+            from onion_fl.experiment.calibrate import broker_nodelay
+
+            broker_nodelay(emulation, folder)
+        cpusets = {}
+        if params.pin is not None:  # the CPUs the calibration's session pinned
+            from onion_fl.experiment.calibrate import pin
+
+            cpusets = pin(emulation, params.pin)
         # The containers' torch draws other initial bits: they take these.
         np.savez(folder / "initial.npz", **state)
         write_scenario(
@@ -268,6 +285,7 @@ def prepare_emulated(scenario: Scenario, params: EmulatedParams) -> EmulatedPlan
             raw,
             groups=load,
             broker=emulation.broker,
+            nodelay=params.nodelay,
             initial="emulation/initial.npz",
         )
         (folder / "compose.yaml").write_text(
@@ -283,9 +301,10 @@ def prepare_emulated(scenario: Scenario, params: EmulatedParams) -> EmulatedPlan
             "project": emulation.project,
             "image": params.image,
             "broker_image": params.broker_image,
+            "nodelay": params.nodelay,
             **lay.summary(),
             "shaping": emulation.shaping,
-        }
+        } | ({"cpusets": cpusets} if cpusets else {})
     except BaseException:  # never leave a run that looks still running
         run.finish(status="failed")
         raise

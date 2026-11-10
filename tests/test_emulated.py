@@ -264,6 +264,85 @@ def test_prepare_writes_the_project_and_the_paths_the_containers_see(
     prepared.run.finish(status="failed")  # nothing ran
 
 
+def test_a_node_process_sees_the_launchers_tracing(monkeypatch) -> None:
+    """``docker exec`` passes no environment on, so the command names it (#198)."""
+    from types import SimpleNamespace
+
+    from onion_fl.experiment.emulated import EmulatedPlan
+
+    plan = EmulatedPlan(
+        run=SimpleNamespace(run_id="20261110T000000Z-abc"),
+        scenario=None,
+        groups=["cloud-1"],
+        emulation=SimpleNamespace(container=lambda host: f"p-host-{host}"),
+        folder=Path("."),
+        params=None,
+    )
+    monkeypatch.delenv("ONIONFL_TRACE", raising=False)
+    assert plan.command("cloud-1")[:3] == ["docker", "exec", "p-host-cloud-1"]
+    monkeypatch.setenv("ONIONFL_TRACE", "1")
+    assert plan.command("cloud-1")[:5] == [
+        "docker",
+        "exec",
+        "-e",
+        "ONIONFL_TRACE=1",
+        "p-host-cloud-1",
+    ]
+
+
+def test_prepare_pins_each_host_to_the_cpus_it_was_calibrated_on(
+    workspace: Path,  # noqa: F811
+) -> None:
+    config = parse_experiment(on_lab(workspace))
+    (scenario,) = scenarios(config)
+    hosts = EmulatedBackend(project="onionfl-test").prepare(scenario)
+    used = sorted(hosts.emulation.layout.hosts)
+    hosts.run.finish(status="failed")
+    # a mapping keeps each host's CPUs, whatever other hosts the run leaves out
+    by_host = {h: [2 * i + 2] for i, h in enumerate(used)} | {"unused": [40]}
+    pin = {"cpus": by_host, "others": "20-23"}
+
+    prepared = EmulatedBackend(project="onionfl-test", pin=pin).prepare(scenario)
+
+    services = prepared.emulation.compose["services"]
+    lay = prepared.emulation.layout
+    assert {h: services[lay.services[h]]["cpuset"] for h in used} == {
+        h: str(c[0]) for h, c in by_host.items() if h in used
+    }
+    assert services["broker"]["cpuset"] == "20-23"
+    assert prepared.run.meta["emulation"]["cpusets"]["broker"] == "20-23"
+    prepared.run.finish(status="failed")  # nothing ran
+    short = {"cpus": {used[0]: [2]}, "others": "20"}
+    with pytest.raises(ConfigError, match="pin gives it 0"):
+        EmulatedBackend(project="onionfl-test", pin=short).prepare(scenario)
+
+
+def test_the_broker_and_the_clients_turn_nagle_off_unless_asked(
+    workspace: Path,  # noqa: F811
+) -> None:
+    """Nagle held the tail of back-to-back messages a round trip (#198)."""
+    config = parse_experiment(on_lab(workspace))
+    (scenario,) = scenarios(config)
+    for nodelay in (True, False):
+        backend = EmulatedBackend(project="onionfl-test", nodelay=nodelay)
+        prepared = backend.prepare(scenario)
+        broker = prepared.emulation.compose["services"]["broker"]
+        conf = prepared.folder / "mosquitto.conf"
+        document = json.loads((prepared.run.path / "scenario.json").read_text("utf-8"))
+        prepared.run.finish(status="failed")  # nothing ran
+
+        assert document["nodelay"] is nodelay  # the node processes' clients
+        assert prepared.run.meta["emulation"]["nodelay"] is nodelay
+        if nodelay:
+            assert "set_tcp_nodelay true" in conf.read_text("utf-8")
+            assert broker["command"][-1].endswith("/mosquitto.conf")
+        else:  # the broker as every run before #198 had it
+            assert not conf.exists()
+            assert broker["command"] == ["mosquitto", "-c", "/mosquitto-no-auth.conf"]
+    # The default keeps the config_ids of the runs before it.
+    assert "nodelay" not in parse_experiment(on_lab(workspace)).dump()["backend"]
+
+
 def test_the_image_takes_the_ranges_of_pyproject() -> None:
     dockerfile = (
         ROOT / "src" / "onion_fl" / "infrastructure" / "emulated.Dockerfile"

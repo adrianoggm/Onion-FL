@@ -615,6 +615,7 @@ def fidelity(
     seed: int = 0,
     control: str | Path | None = None,
     predictor: bool = True,
+    calibration: str | None = None,
 ) -> dict[str, Any]:
     """Functional, performance and decision fidelity of the runs of ``b`` against ``a``.
 
@@ -624,6 +625,9 @@ def fidelity(
     each decision on ``time`` or ``time_to_target`` also shows how both
     variants of the predictor decide against ``a``. Its rounds to target come
     from the runs of ``control`` (default: those of ``a``).
+
+    ``calibration``, when given, is the id that every paired run of ``b`` must
+    cite, and no other (a validation cites a closed calibration, I1 §13).
     """
     if str(a) in PREDICTORS and str(b) in PREDICTORS:
         raise ValueError("fidelity: compare the predictor with runs, not with itself")
@@ -678,6 +682,18 @@ def fidelity(
             f"runs {outside} send messages larger than their calibrated paths "
             "hold (run.json 'outside_calibration'); calibrate those sizes"
         )
+    if calibration is not None:
+        uncited = [
+            cells_b[k].path.name
+            for k in keys
+            if set(cells_b[k].meta.get("calibrations") or []) != {calibration}
+        ]
+        if uncited:
+            raise ValueError(
+                f"runs {uncited} of B do not cite calibration {calibration} alone "
+                "(run.json 'calibrations'); run them on the infrastructure that "
+                "cites it"
+            )
     for cell in [cells_a[k] for k in keys] + [cells_b[k] for k in keys]:
         if not verify_run(cell.path):
             warnings.append(f"{cell.path.name}: its files do not match its run_hash")
@@ -744,6 +760,7 @@ def fidelity(
     return {
         "a": str(a),
         "b": str(b),
+        **({"calibration": calibration} if calibration is not None else {}),
         "backends": {
             "a": sorted({cells_a[k].backend for k in keys}),
             "b": sorted({cells_b[k].backend for k in keys}),
