@@ -52,3 +52,13 @@ Question: can an Android phone host an `onion_fl node`? iOS is out of scope.
 
 - The machines must reach each other on the broker's port (1883) or on each one's `grpc_port` (50051 by default); the preflight checks both from every machine and names the pair that fails.
 - On the development PC under WSL2, published ports and the `advertise` address need care: with NAT networking, use the Windows host's LAN address and a port proxy, or WSL's mirrored networking.
+
+## 5. TLS between the machines (#227)
+
+Not tried on real hardware either; on the containers it is tested as described in `docs/architecture.md` §7.
+
+- **Certificates.** One CA for the lab. Each machine gets a certificate whose SANs hold its `advertise` address (a name or an IP), with the key at the same path on every machine, for example `~/onion-fl/tls/{ca.pem,node.pem,node.key}`. The keys never leave their machine and are never committed.
+- **gRPC.** `transport: {name: grpc, tls: {ca: ~/onion-fl/tls/ca.pem, cert: ~/onion-fl/tls/node.pem, key: ~/onion-fl/tls/node.key}}` on every link. TLS is mutual: a machine without a certificate from the CA cannot deliver to any other.
+- **MQTT.** Mosquitto on the broker's host with a TLS `listener` (8883), `cafile`/`certfile`/`keyfile`, and either `require_certificate true` with `use_identity_as_username true`, or `allow_anonymous false` with a `password_file`. The links take `tls: {ca: ...}` plus `cert`/`key`, or `username` with `password_file` (a path on each machine) or `password_env`. Give the backend `mqtt_port: 8883`.
+- **Secrets.** The experiment and `run.json` hold only those paths and names. A variable named by `password_env` has to be in the node's environment on the machine, for example through the inventory's `env`, but then its value sits in the inventory and on the SSH command line. Prefer `password_file`.
+- **Check.** A client without credentials (`mosquitto_sub --cafile ca.pem -h <broker> -p 8883 -t x`) is refused, and so is a plain one. `grep -r "BEGIN" runs/<run_id>` finds nothing.
