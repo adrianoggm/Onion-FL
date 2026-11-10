@@ -1575,3 +1575,15 @@ def test_a_token_dataset_without_scaling_runs(workspace: Path) -> None:
 
     assert verify_run(path)
 
+
+def test_the_committed_runs_keep_their_config_ids() -> None:
+    from onion_fl.core.ids import config_id
+    from onion_fl.experiment.sweep import identity
+
+    runs = sorted(Path(__file__).parents[1].glob("results/*/*/run.json"))
+    if not runs:
+        pytest.skip("no committed results")
+    for path in runs:
+        run = json.loads(path.read_text(encoding="utf-8"))
+        recomputed = config_id(identity(parse_experiment(run["config"])))
+        assert recomputed == run["config_id"], (path, run["scenario"])
