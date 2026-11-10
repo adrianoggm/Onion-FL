@@ -9,6 +9,8 @@ skipped when it is absent (docs/RULES.md).
 from __future__ import annotations
 
 import json
+import sys
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -26,7 +28,12 @@ from onion_fl.learning.model import (
     param_groups,
     state_arrays,
 )
-from onion_fl.learning.torch_module import PRESETS, TorchModule, TorchModuleError
+from onion_fl.learning.torch_module import (
+    PRESETS,
+    TRUSTED_ENV,
+    TorchModule,
+    TorchModuleError,
+)
 
 FEMNIST = DataShape(dataset="femnist", task="character", n_features=784, n_classes=62)
 CIFAR = DataShape(dataset="cifar10", task="object", n_features=3072, n_classes=10)
@@ -195,7 +202,7 @@ def test_columns_that_cannot_rebuild_the_input_are_rejected(
         build("leaf_femnist_cnn", shape)
 
 
-def test_an_input_the_module_cannot_take_fails_at_build() -> None:
+def test_an_input_the_module_cannot_take_fails_at_build(trusted) -> None:
     with pytest.raises(ValueError, match="H and W divisible by 4"):
         build("leaf_femnist_cnn", FEMNIST, input_shape=[1, 27, 29])
     with pytest.raises(TorchModuleError, match="fails on femnist"):
@@ -224,8 +231,8 @@ def test_the_registry_describes_it() -> None:
     "params, match",
     [
         ({"module": "resnet152"}, "unknown module"),
-        ({"module": "torch.nn:Nope"}, "cannot import"),
-        ({"module": "collections:OrderedDict"}, "not a torch.nn.Module"),
+        ({"module": "torch.nn:Linear"}, "not trusted"),
+        ({"module": "os; rm:x"}, "unknown module"),
         ({"module": "audio_cnn1d"}, "no default input_shape"),
         ({"module": "leaf_femnist_cnn", "params": {"depth": 3}}, "invalid params"),
         ({"module": "leaf_femnist_cnn", "input_shape": [0, 28]}, "input_shape"),
@@ -297,10 +304,105 @@ class MisnamedHead(External):
         self.head = nn.ModuleDict({"letters": self.head[self.task]})
 
 
-HERE = __name__
+HERE = __name__  # tests.test_learning_torch_module
 
 
-def test_an_external_class_builds_by_reference_with_its_params() -> None:
+@pytest.fixture
+def trusted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The operator trusts this test package, as ONIONFL_TRUSTED_MODULES=tests."""
+    monkeypatch.setenv(TRUSTED_ENV, HERE.split(".")[0])
+
+
+# --- external classes are imported only when trusted, and only at build ---------------
+
+BOOM = "onionfl_boom_245"  # a module that raises if anything imports it
+
+
+@pytest.fixture
+def boom(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    (tmp_path / f"{BOOM}.py").write_text(
+        "raise RuntimeError('boom: imported')", encoding="utf-8"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delenv(TRUSTED_ENV, raising=False)
+    yield f"{BOOM}:Model"
+    sys.modules.pop(BOOM, None)
+
+
+def test_an_untrusted_reference_is_rejected_without_importing_it(boom: str) -> None:
+    with pytest.raises(PluginError, match=f"not trusted.*{TRUSTED_ENV}"):
+        models.create("torch_module", {"module": boom})
+
+    assert BOOM not in sys.modules
+
+
+def test_the_studio_preview_rejects_it_too(boom: str) -> None:
+    from onion_fl.studio.previews import sharing_preview
+
+    topology = {"name": "t", "levels": ["global", "edge"], "root": {"id": "cloud"}}
+    with pytest.raises(PluginError, match="not trusted"):
+        sharing_preview(
+            topology, "fedavg", ["d"], {"name": "torch_module", "module": boom}
+        )
+
+    assert BOOM not in sys.modules
+
+
+def test_a_trusted_reference_validates_as_text_and_imports_at_build(
+    boom: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(TRUSTED_ENV, f"mylab, {BOOM}")
+    family = models.create("torch_module", {"module": boom, "input_shape": [784]})
+
+    assert BOOM not in sys.modules  # a valid config imported nothing
+    with pytest.raises(RuntimeError, match="boom: imported"):
+        family.build([FEMNIST])
+
+
+@pytest.mark.parametrize(
+    "trusted_env, ok",
+    [
+        ("", False),
+        ("tests", True),
+        ("tests.test_learning_torch_module", True),
+        ("test", False),
+        ("tests.other", False),
+    ],
+)
+def test_trust_is_by_module_prefix(
+    monkeypatch: pytest.MonkeyPatch, trusted_env: str, ok: bool
+) -> None:
+    from onion_fl.learning.torch_module import check_reference
+
+    monkeypatch.setenv(TRUSTED_ENV, trusted_env)
+    if ok:
+        check_reference(f"{HERE}:External")
+    else:
+        with pytest.raises(TorchModuleError, match="not trusted"):
+            check_reference(f"{HERE}:External")
+    check_reference("leaf_femnist_cnn")  # presets need no trust
+
+
+@pytest.mark.parametrize(
+    "module, match",
+    [
+        ("torch.nn:Nope", "cannot import"),
+        ("collections:OrderedDict", "not a torch.nn.Module"),
+        (f"{HERE}:External", "invalid params"),
+    ],
+)
+def test_a_trusted_class_that_cannot_build_fails_at_build(
+    monkeypatch: pytest.MonkeyPatch, module: str, match: str
+) -> None:
+    monkeypatch.setenv(TRUSTED_ENV, "torch,collections,tests")
+    family = models.create(
+        "torch_module", {"module": module, "input_shape": [784], "params": {"x": 1}}
+    )
+    with pytest.raises(TorchModuleError, match=match):
+        family.build([FEMNIST])
+
+
+def test_an_external_class_builds_by_reference_with_its_params(trusted) -> None:
     model = build(f"{HERE}:External", FEMNIST, params={"width": 8})
 
     assert groups(model) == {"adapter.femnist", "trunk", "head.character"}
@@ -316,12 +418,14 @@ def test_an_external_class_builds_by_reference_with_its_params() -> None:
         ("OwnTensor", "outside adapter/trunk/head"),
     ],
 )
-def test_an_external_class_outside_the_contract_is_rejected(cls: str, match: str):
+def test_an_external_class_outside_the_contract_is_rejected(
+    cls: str, match: str, trusted
+):
     with pytest.raises(TorchModuleError, match=match):
         build(f"{HERE}:{cls}", FEMNIST)
 
 
-def test_a_head_named_after_no_task_is_rejected() -> None:
+def test_a_head_named_after_no_task_is_rejected(trusted) -> None:
     with pytest.raises(TorchModuleError, match="no dataset or task"):
         build(f"{HERE}:MisnamedHead", FEMNIST)
 
@@ -456,7 +560,7 @@ def _writers() -> list[str]:
 
 
 @real
-def test_an_external_class_trains_on_real_femnist(femnist_writers) -> None:
+def test_an_external_class_trains_on_real_femnist(femnist_writers, trusted) -> None:
     from onion_fl.learning.trainers import trainers
 
     train = femnist_writers[0]

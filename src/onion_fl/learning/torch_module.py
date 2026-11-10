@@ -26,11 +26,19 @@ The framework adds what every family needs and a foreign class does not know:
 
 A trial forward pass on a zero batch checks that every dataset's input fits and
 that the output has one logit per class.
+
+**Trust.** Importing a module runs its code, and configs also arrive over HTTP
+(the Studio validates them). So validating a config never imports anything: a
+reference is checked as text, and its class is imported only when the model is
+built. A preset always resolves; an external class only when its module is
+under a prefix the operator lists in ``ONIONFL_TRUSTED_MODULES`` (comma
+separated, empty by default), e.g. ``ONIONFL_TRUSTED_MODULES=mylab.models``.
 """
 
 import importlib
 import inspect
 import math
+import os
 import re
 from collections.abc import Sequence
 from typing import Any
@@ -42,6 +50,8 @@ from torch import nn
 from onion_fl.learning.model import DataShape, _seed_for, group_of, models
 
 COLUMN = re.compile(r"^x_(\d+)$")
+REFERENCE = re.compile(r"^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*:[A-Za-z_]\w*$")
+TRUSTED_ENV = "ONIONFL_TRUSTED_MODULES"
 
 # Preset name -> (class reference, default input shape). They are plain
 # ``pkg.mod:Class`` references: a preset goes through the same path as any
@@ -58,14 +68,37 @@ class TorchModuleError(ValueError):
     """A module class, its parameters or its keys do not fit the contract."""
 
 
-def resolve_class(ref: str) -> tuple[type[nn.Module], tuple[int, ...] | None]:
-    """The class of a preset or ``pkg.mod:Class`` reference, and its default input."""
-    path, default = PRESETS.get(ref, (ref, None))
-    if ":" not in path:
+def trusted_prefixes() -> list[str]:
+    """The module prefixes the operator trusts, from ``ONIONFL_TRUSTED_MODULES``."""
+    return [p.strip() for p in os.environ.get(TRUSTED_ENV, "").split(",") if p.strip()]
+
+
+def check_reference(ref: str) -> None:
+    """A preset, or a well-formed ``pkg.mod:Class`` under a trusted prefix; no import."""
+    if ref in PRESETS:
+        return
+    if not REFERENCE.match(ref):
         raise TorchModuleError(
             f"unknown module {ref!r}: use a preset ({', '.join(sorted(PRESETS))}) "
             "or 'package.module:Class'"
         )
+    module_name = ref.partition(":")[0]
+    if not any(
+        module_name == p or module_name.startswith(p + ".") for p in trusted_prefixes()
+    ):
+        raise TorchModuleError(
+            f"external module {ref!r} is not trusted: the operator must list its "
+            f"package in {TRUSTED_ENV} (comma separated) before it can be imported"
+        )
+
+
+def resolve_class(ref: str) -> tuple[type[nn.Module], tuple[int, ...] | None]:
+    """The class of a preset or trusted ``pkg.mod:Class``, and its default input.
+
+    This is the only place that imports, and it checks the trust first.
+    """
+    check_reference(ref)
+    path, default = PRESETS.get(ref, (ref, None))
     module_name, _, attr = path.partition(":")
     try:
         cls = getattr(importlib.import_module(module_name), attr)
@@ -102,23 +135,26 @@ class TorchModuleConfig(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _the_class_takes_these_params(self) -> TorchModuleConfig:
+    def _a_known_or_trusted_module(self) -> TorchModuleConfig:
+        check_reference(self.module)  # text only: validating never imports
+        if self.module in PRESETS:  # the framework's own code: checked in full
+            self.resolved()
+        return self
+
+    def resolved(self) -> tuple[type[nn.Module], tuple[int, ...]]:
+        """Import the class (trusted only), check its params and the input shape."""
         cls, default = resolve_class(self.module)
-        if self.input_shape is None and default is None:
-            raise ValueError(
+        shape = tuple(self.input_shape) if self.input_shape is not None else default
+        if shape is None:
+            raise TorchModuleError(
                 f"{self.module}: no default input_shape; set input_shape, e.g. [1, 16000]"
             )
         try:
             inspect.signature(cls).bind(None, None, **self.params)
         except TypeError as exc:
-            raise ValueError(
+            raise TorchModuleError(
                 f"{self.module}: invalid params {self.params}: {exc}"
             ) from None
-        return self
-
-    def resolved(self) -> tuple[type[nn.Module], tuple[int, ...]]:
-        cls, default = resolve_class(self.module)
-        shape = tuple(self.input_shape) if self.input_shape is not None else default
         return cls, shape
 
 
@@ -306,7 +342,8 @@ class TorchModule(nn.Module):
         "columnas x_i; las que el preprocesado quitó por constantes valen 0. Presets: "
         "la CNN de LEAF para FEMNIST, la CNN simple de NIID-Bench para CIFAR-10, la "
         "LSTM de dos capas de LEAF para Shakespeare y una CNN 1D pequeña para audio. "
-        "Una clase externa se construye como Clase(shapes, input_shape, **params)."
+        "Una clase externa se construye como Clase(shapes, input_shape, **params) "
+        "y solo se importa si su paquete está en ONIONFL_TRUSTED_MODULES."
     ),
 )
 class TorchModuleFamily:
@@ -314,18 +351,25 @@ class TorchModuleFamily:
 
     def __init__(self, **config: object) -> None:
         self.config = TorchModuleConfig(**config)
-        self.cls, self.input_shape = self.config.resolved()
+        self._resolved: tuple[type[nn.Module], tuple[int, ...]] | None = None
+
+    def resolved(self) -> tuple[type[nn.Module], tuple[int, ...]]:
+        """The class and input shape, imported on first use (a build, not a config)."""
+        if self._resolved is None:
+            self._resolved = self.config.resolved()
+        return self._resolved
 
     @property
     def n_inputs(self) -> int:
         """Values in one example: the features a preview without data assumes."""
-        return math.prod(self.input_shape)
+        return math.prod(self.resolved()[1])
 
     def build(self, shapes: Sequence[DataShape], seed: int = 0) -> TorchModule:
+        cls, input_shape = self.resolved()
         with torch.random.fork_rng(devices=[]):
             torch.manual_seed(_seed_for(seed, "torch_module"))
-            inner = self.cls(list(shapes), self.input_shape, **self.config.params)
-        model = TorchModule(inner, shapes, self.input_shape)
+            inner = cls(list(shapes), input_shape, **self.config.params)
+        model = TorchModule(inner, shapes, input_shape)
         model.init_parameters(seed)
         model.check_output()
         return model
