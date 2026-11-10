@@ -1,0 +1,62 @@
+# FLamby's triangle on Fed-Heart-Disease (issue #251): pooled, local-only per
+# center and FedAvg, with the four hospitals as cross-silo clients under two
+# fogs. The test is each center's official FLamby test split (the *_test
+# subjects of datasets/heart_disease.yaml, docs/RULES.md §2): the same 254
+# patients in every arm, scored per center and pooled.
+#
+# Every arm has the same model and the same trainer, and sees each of its
+# training rows 50 times (50 rounds of one local epoch, Adam at lr 1e-3, batch
+# 4: FLamby's pooled and local recipe, 50 epochs). Only the data differs:
+#   pooled         the four train splits in one edge (heart_disease_one_fog)
+#   local <c>      one center's train split alone, the other three excluded
+#                  (heart_disease_one_fog)
+#   FedAvg         one edge per hospital on heart_disease_two_fogs: fog_us =
+#                  cleveland + va, fog_eu = hungarian + switzerland, FedAvg at
+#                  both levels
+# The scaler is fitted on the training rows of each arm (pooled for FedAvg).
+#
+# Not FLamby's exact protocol: its model is a logistic regression (here a
+# one-hidden-layer modular_mlp, the adapter, with no trunk), its FedAvg runs 15
+# rounds of 100 local SGD steps at lr 1e-3, and its federated clients scale with
+# their own train statistics.
+#
+#   onion_fl run experiments/heart_disease_triangle.yaml --workers 3
+#   onion_fl baseline experiments/heart_disease_triangle.yaml --models lr
+name: heart_disease_triangle
+description: Triángulo de FLamby en Fed-Heart-Disease (centralizado, local por centro y FedAvg), 4 hospitales en 2 fogs, test oficial de cada centro.
+topology: heart_disease_two_fogs
+data:
+  datasets:
+    heart_disease: {}
+  roles:
+    seed: 0
+    scaler: global
+    overrides:
+      heart_disease:
+        test: [cleveland_test, hungarian_test, switzerland_test, va_test]
+        val: []
+        exclude: []
+  placement: {name: pooled}
+learning:
+  model: {name: modular_mlp, adapter_width: 32, trunk_hidden: [], dropout: 0.0}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: adam, local_epochs: 1, batch_size: 4, lr: 0.001}
+  init: random
+rounds: 50
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  global: {every: 1}
+seeds: [0, 1, 2, 3, 4]
+sweep:
+  topology,data.placement,data.roles.overrides.heart_disease.exclude:
+    - [heart_disease_one_fog, {name: pooled}, []]
+    - [heart_disease_one_fog, {name: pooled}, [hungarian, switzerland, va]]
+    - [heart_disease_one_fog, {name: pooled}, [cleveland, switzerland, va]]
+    - [heart_disease_one_fog, {name: pooled}, [cleveland, hungarian, va]]
+    - [heart_disease_one_fog, {name: pooled}, [cleveland, hungarian, switzerland]]
+    - - heart_disease_two_fogs
+      - name: explicit
+        assignment:
+          fog_us: [heart_disease-cleveland, heart_disease-va]
+          fog_eu: [heart_disease-hungarian, heart_disease-switzerland]
+      - []
