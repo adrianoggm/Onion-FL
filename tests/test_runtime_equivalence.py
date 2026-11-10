@@ -574,6 +574,24 @@ def machines(tmp_path_factory: pytest.TempPathFactory):
         _docker("network", "rm", network, check=False)
 
 
+def fresh_ports(raw: dict) -> dict:
+    """The inventory with a gRPC port per machine that no earlier run took.
+
+    Each port was free on this host a moment ago; inside the containers it
+    only has to differ from the last run's, whose sockets may linger."""
+    socks = [socket.socket() for _ in raw["machines"]]
+    for s in socks:
+        s.bind(("127.0.0.1", 0))
+    ports = [s.getsockname()[1] for s in socks]
+    for s in socks:
+        s.close()
+    machines = {
+        host: machine | {"grpc_port": port}
+        for (host, machine), port in zip(raw["machines"].items(), ports, strict=True)
+    }
+    return raw | {"machines": machines}
+
+
 def on_the_machines(config, backend, runs: Path):
     """``config`` on ``MACHINE_LAB``, four edges per device, run by ``backend``."""
     raw = config.dump() | {
@@ -605,7 +623,11 @@ def test_the_distributed_backend_matches_the_simulation(
         pytest.importorskip("grpc")
     link = {"name": transport} | ({"broker": BROKER} if transport == "mqtt" else {})
     base = experiment(tmp_path, link)
-    backend = {"name": "distributed", "inventory": machines, "ssh": DISTRIBUTED["ssh"]}
+    backend = {
+        "name": "distributed",
+        "inventory": fresh_ports(machines),
+        "ssh": DISTRIBUTED["ssh"],
+    }
     sim = on_the_machines(base, "sim", tmp_path / "runs_sim")
     distributed = on_the_machines(base, backend, tmp_path / "runs_distributed")
 
@@ -647,7 +669,11 @@ def test_the_distributed_backend_runs_over_tls_and_keeps_no_secret(
     pytest.importorskip("cryptography")
     from tests.certs import PASSWORD_PORT
 
-    backend = {"name": "distributed", "inventory": machines, "ssh": DISTRIBUTED["ssh"]}
+    backend = {
+        "name": "distributed",
+        "inventory": fresh_ports(machines),
+        "ssh": DISTRIBUTED["ssh"],
+    }
     if transport == "mqtt":
         link = {
             "name": "mqtt",
