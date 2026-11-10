@@ -33,7 +33,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Area | Status | Summary |
 |---|---|---|
 | Topologies | ✅ | Trees of any depth in YAML (compact or general form), each with a `topology_id` (SHA-256 of its structure and links) and a JSON/Mermaid graph |
-| Data | ✅ / ⚠️ | Declarative ingestion (readers and steps), a signed cache, subject roles fixed across scenarios, and placement plugins. FEMNIST (LEAF, one subject per writer, 200 fixed writers) adds a dataset with hundreds of natural clients. The SWELL, WESAD and FEMNIST descriptors are checked against the published files and the loaders from before the redesign; **SWEET is not** ([§5](#5-datasets)) |
+| Data | ✅ / ⚠️ | Declarative ingestion (readers and steps), a signed cache, subject roles fixed across scenarios, and placement plugins. FEMNIST (LEAF, one subject per writer, 200 fixed writers) adds a dataset with hundreds of natural clients, Fed-Heart-Disease (FLamby, four hospitals with their official test splits) a cross-silo one, and CIFAR-10 one with synthetic clients (`iid`, Dir(α) or k classes each, as NIID-Bench) and its official test batch. The SWELL, WESAD, Stress-Predict, FEMNIST and Fed-Heart-Disease descriptors are checked against the published files (and against the loaders from before the redesign, or FLamby's code for Fed-Heart-Disease); **SWEET is not** ([§5](#5-datasets)) |
 | Learning | ✅ | Two model families with the same namespaced parts (adapter per dataset, shared or per-dataset trunk, head per task or dataset): `modular_mlp` and `feature_transformer` (one token per feature, attention trunk). Sharing scopes: global, per level, local. Per-key aggregators and server optimizers; trainers `standard`, `fedprox`; for personalisation `ditto`, `apfl`, `fedrep`, `fedbabu` and the `lg_fedavg` sharing preset; for non-IID drift `scaffold`, `moon`, and the trainer + server optimizer pairs `fednova` and `feddyn`. Algorithms exchange extra state (control variates) as auxiliary arrays, and the server optimizer gets each round's statistics (steps, edges). Robust aggregators (`krum`, `multi_krum`, `bulyan`, `geometric_median`, `norm_clip`), central and local differential privacy (`dp_fedavg`, `local_dp`) with ε per round, and an attack axis (`label_flip`, `sign_flip`, `gaussian`, `scale`) on a seeded fraction of edges. Edges also score personal and fine-tuned models; random or checkpoint init |
 | Round protocol | ✅ | Coordinator, aggregators at any level, edges and evaluators. Registration with acknowledged `hello`, quorum and deadline, staleness and participation plugins, per-key weights, evaluation at edge, zone and global level |
 | Simulation | ✅ | Virtual clock; links with latency, jitter, bandwidth and loss; compute and availability models; deterministic for a seed |
@@ -43,14 +43,15 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
 | Continual learning | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`), and objectives on the rows still waiting for their label (`pseudo_label`, `consistency`), with an audit of every pseudo-label. Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. A promotion policy keeps each round's model as a challenger until the validation streams promote it, with rollback. Each stream edge updates `warm`, `frozen` or `scratch`, the baselines of the continual benchmark, and `scripts/continuum_benchmark.py` measures it. The Studio shows the versions and their lineage, and its signed controls pause, resume, promote and roll back a live simulation. |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned: gRPC [#196](https://github.com/adrianoggm/Onion-FL/issues/196), Flower [#204](https://github.com/adrianoggm/Onion-FL/issues/204), distributed backend [#199](https://github.com/adrianoggm/Onion-FL/issues/199) (they replace E5 #104 and E6 #105) |
-| Tests | ✅ | 1518 tests. With SWELL, WESAD and a local broker, 1514 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
+| Tests | ✅ | 1764 tests. With the datasets in `data/` and a local broker, 1761 pass and 3 skip: SWEET (2) and the optional Parquet reader. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
 
-- **Fifteen experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the comparison of two model families, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, the selection of the unlabelled objectives (a null result: nothing could be chosen), the continual benchmark (five baselines chosen on validation, then run on test, with sweeps and a promotion run) and a FedAvg reference on 200 FEMNIST writers. Most have three seeds, so many intervals overlap.
+- **Seventeen experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the comparison of two model families, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, the selection of the unlabelled objectives (a null result: nothing could be chosen), the continual benchmark (five baselines chosen on validation, then run on test, with sweeps and a promotion run), a FedAvg reference on 200 FEMNIST writers, FLamby's triangle on Fed-Heart-Disease, and FedAvg with an MLP on CIFAR-10 (Dir(0.5) and IID; the NIID-Bench CNN reproduction waits for #245). Most have three seeds (Fed-Heart-Disease has five), so many intervals overlap.
   - The reference run and the mixing sweep have no strong result. On SWELL, no model beats always predicting "stress" on the held-out subjects. On WESAD, the federated model reaches 0.77 accuracy where centralised logistic regression reaches 0.91.
   - In the technique comparisons, the clearest effects are on WESAD: FedDyn and SCAFFOLD beat FedAvg under drift, the adaptive server optimizers beat it too, and a strong sign-flip attack collapses FedAvg while norm clipping holds.
   - On the streams, no continual baseline learns to tell the classes apart on held-out subjects: every model that keeps updating ends predicting one class. The baselines differ only in how fast they follow the class that is arriving, and replay and the unlabelled rows add nothing measurable at a tenth of the labels.
+- **The multi-dataset stress benchmark** (onion-bench-stress, [§7](#7-results)) ran on four E4 studies plus SWELL + WESAD with five seeds. Plain FedAvg beats the centralised logistic regression on no E4 study; FedBABU and FedDyn beat it on Stress-Predict and narrowly on PhysioNet; on Nurse Stress nothing is far from the majority class, and a model trained only on the laboratory studies transfers poorly to the hospital.
 - **Checking the data found real problems,** now fixed. 999 means "missing" in the SWELL physiology file, for 53% of the heart-rate values, and both the old and the new loaders read it as a value. The facial and physiology joins and the WESAD chest signals `Resp` and `Temp` failed to load. The SWELL posture file has every date a month early, so posture is left out.
 - **Tests that need data** skip without `data/` ([docs/RULES.md](docs/RULES.md)). Protocol tests use a stub trainer that learns nothing.
 - **Legacy numbers stay legacy.** [§7](#7-results) lists the baselines from before the redesign with their caveats. Some of them predate the `blok` leak fix.
@@ -82,7 +83,11 @@ The data is not in git. Download each dataset from its source and place it where
 | SWEET | — | `data/SWEET/{sample_subjects,selection1/users,selection2/users}/<user>/` | `datasets/sweet.yaml` |
 | WESAD | [University of Siegen](https://uni-siegen.sciebo.de/s/HGdUkoNlW1Ub0Gx) (`WESAD.zip`, 2.2 GB; publications must cite Schmidt et al., 2018); extract the `S<n>/S<n>.pkl` files (13 GB) into `data/` | `data/WESAD/S<n>/S<n>.pkl` | `datasets/wesad.yaml`, `datasets/wesad_e4.yaml` (wrist at the native E4 rates, with the harmonized E4 features) |
 | PhysioNet Wearable Device | [PhysioNet](https://physionet.org/content/wearable-device-dataset/1.0.1/) ("Wearable Device Dataset from Induced Stress and Structured Exercise Sessions", v1.0.1, ODC-By 1.0, open access; cite the dataset and PhysioNet): the official zip (`wearable-device-dataset-1.0.1.zip`, 73 MB; 259 MB extracted), checked against the project's `SHA256SUMS.txt`, or `wget -r -N -c -np https://physionet.org/files/wearable-device-dataset/1.0.1/`. Extract the contents of its top folder into `data/PhysioNetE4/` | `data/PhysioNetE4/Wearable_Dataset/{STRESS,AEROBIC,ANAEROBIC}/<session>/*.csv` | `datasets/physionet_e4.yaml` (Empatica E4 at native rates, harmonized E4 features; one subject per participant) |
+| Nurse Stress | [Dryad](https://doi.org/10.5061/dryad.5hqbzkh6f) or the same files on [Zenodo](https://zenodo.org/records/5514277) (Hosseini et al., 2022, *Sci. Data* 9:255), **CC0**: redistributable, so a real extract may be shared. Download `Stress_dataset.zip` (1.16 GB, MD5 `8829a9c0…210cea`) and `SurveyResults.xlsx`; the zip holds one zip per E4 session, which `python -I scripts/nurse_stress_extract.py data/NurseStress/Stress_dataset.zip data/NurseStress/Stress_dataset` unpacks (3.6 GB, 609 sessions). Reading the survey needs openpyxl (extra `excel`). `scripts/nurse_stress_sample.py` writes a 9 MB real extract (four sessions of four nurses) to `data/samples/NurseStress/` | `data/NurseStress/{SurveyResults.xlsx,Stress_dataset/<ID>/<ID>_<start>/}` | `datasets/nurse_stress.yaml` (survey events on E4 windows; the time zone and the labels are in its header) |
+| Stress-Predict | [GitHub](https://github.com/italha-d/Stress-Predict-Dataset) (MIT; cite Iqbal et al., 2022, *Sensors* 22:8135): download the repository archive (`Download ZIP`, 24 MB) and extract its folders; reading `Time_logs.xlsx` needs openpyxl (in the `dev` extra). `scripts/stress_predict_sample.py` copies three sessions, with the licence, into `data/samples/stress_predict/` for the tests | `data/StressPredict/{Raw_data/S<n>/*.csv,Processed_data/Time_logs.xlsx}` | `datasets/stress_predict.yaml` (34 subjects, harmonized E4 features) |
 | FEMNIST | [LEAF](https://github.com/TalwalkarLab/leaf) (Caldas et al., 2018; BSD-2): `./preprocess.sh` in `leaf/data/femnist` downloads NIST SD19 and first writes `data/all_data/all_data_<k>.json`, every writer before LEAF's sampling (about 3,600); copy those files. A shorter route is the Flower Datasets copy, [flwrlabs/femnist](https://huggingface.co/datasets/flwrlabs/femnist) (one 201 MB Parquet file): `scripts/femnist_from_flower.py` writes the 200 declared writers in the same format (it needs pyarrow and Pillow, not dependencies of Onion-FL; the command is in the script) | `data/FEMNIST/all_data/*.json` | `datasets/femnist.yaml` (200 fixed writers) |
+| Fed-Heart-Disease | [UCI Heart Disease](https://archive.ics.uci.edu/dataset/45/heart+disease) (Janosi et al., 1988; CC BY 4.0, doi:10.24432/C52P4X), the four files FLamby's `download.py` fetches: `processed.{cleveland,hungarian,switzerland,va}.data` from `https://archive.ics.uci.edu/ml/machine-learning-databases/heart-disease/` (40 KB) into `data/HeartDisease/raw/`. `scripts/heart_disease_flamby.py` checks FLamby's MD5 sums and writes FLamby's preprocessing and train/test split, one CSV per center and split (the command is in the script) | `data/HeartDisease/flamby/<center>{,_test}.csv` | `datasets/heart_disease.yaml` (4 hospitals, FLamby's split) |
+| CIFAR-10 | [University of Toronto](https://www.cs.toronto.edu/~kriz/cifar.html), the python version (`cifar-10-python.tar.gz`, 163 MB, MD5 `c58f30108f718f92721af3b95e74349a`). The page gives no licence; it asks that work using the dataset cite Krizhevsky (2009), *Learning Multiple Layers of Features from Tiny Images*. Check the MD5 and extract it into `data/CIFAR10/`. The batches are pickles: the reader opens them with a restricted unpickler that runs no code from the file | `data/CIFAR10/cifar-10-batches-py/{data_batch_1..5,test_batch}` | `datasets/cifar10.yaml` (synthetic clients) |
 
 FedScale's client device traces (issue #253; [FedScale](https://github.com/SymbioticLab/FedScale), Apache-2.0) are infrastructure, not data to learn from. Download `client_device_capacity` and `client_behave_trace` from [`benchmark/dataset/data/device_info/`](https://github.com/SymbioticLab/FedScale/tree/7ec441c2afa99510535adebe155d89fa8bb2c637/benchmark/dataset/data/device_info) (65 MB) into `data/FedScale/` and run `onion_fl traces import fedscale data/FedScale`. They are pickles: the import reads them with an unpickler that builds only plain values and writes `capacity.csv`, `behaviour.jsonl` and `manifest.json`, which is all the runs read. `infrastructures/fedscale_field.yaml` samples its phones from them.
 
@@ -95,6 +100,7 @@ onion_fl plan experiments/mix_ab.yaml         # composition per fog and groups p
 onion_fl run experiments/mix_ab.yaml --workers 3
 onion_fl report experiments/mix_ab.yaml --by topology_id --by scenario
 onion_fl baseline experiments/mix_ab.yaml     # LR, RF, XGBoost on the same test subjects
+onion_fl baseline experiments/mix_ab.yaml --seeds 0 1 2   # each seed draws other test subjects; mean and 95% CI
 onion_fl explain runs/<run_id>                # feature importance on val subjects
 ```
 
@@ -259,7 +265,11 @@ Each run writes `runs/<run_id>/`:
 | **SWEET** | `binary` (stress ≥ 2), `ordinal` (1–5), `three_class` | One self-report matched to the feature minute | `selection` option: `sample_subjects`, `selection1/users`, `selection2/users`; subjects with fewer than 5 samples are dropped |
 | **WESAD** | `binary` (baseline vs stress), `three_class` (+ amusement) | 60 s windows, 50% overlap, five statistics per channel | `location`: wrist (default) or chest; `signals` option |
 | **PhysioNet Wearable Device** | `binary` (baseline and rests vs stress tasks, task `stress_binary`), `three_class` (+ exercise, task `stress_vs_exercise`) | 60 s windows, 50% overlap, five statistics per E4 channel | Labels from the protocol tags; the sessions that `data_constraints.txt` flags as invalid, incomplete or split are dropped or cut, as the descriptor documents. The 30 s stages give no 60 s windows (`window_seconds` option) |
+| **Nurse Stress** | `binary` (inside a survey event rated ≥ 1 vs outside every event of a surveyed E4 session), `high` (rated 2) | 60 s windows, 50% overlap, the harmonized E4 features (ACC, BVP, EDA, TEMP at native rates) | One subject per nurse (15), never the session; windows in unrated or level-0 events, and sessions without an event, are dropped. Survey times are local (America/Chicago, with daylight saving), the E4 is Unix UTC. The events were flagged by the authors' detector on EDA, HR and TEMP, so "no stress" is partly what it did not flag. 63,913 windows, 15% stress |
+| **Stress-Predict** | `stress_binary` (Stroop, interview and hyperventilation vs baseline, rests and questionnaire) | 60 s windows, 50% overlap, the harmonized E4 features | Labels from `Time_logs.xlsx` (minute resolution): they agree with the authors' processed CSV on 96.3% of its seconds ([INDEX](results/stress_predict_reference/INDEX.md)). S01 is left out, as by the authors; consent and the gaps between phases have no class |
 | **FEMNIST** | `character` (62 classes: 0-9, A-Z, a-z) | One 28x28 image per row, 784 pixels in [0, 1] | One subject per writer: a fixed subsample of 200 writers (44,451 images) declared in the descriptor; the writer id is never a feature |
+| **Fed-Heart-Disease** | `heart_disease` (no disease vs disease, UCI `num` ≥ 1) | One patient per row, FLamby's 13 features | Cross-silo: one subject per hospital and split (`cleveland` and `cleveland_test`, …), FLamby's fixed split (train/test 199/104, 172/89, 30/16 and 85/45). The `*_test` subjects are the test role (docs/RULES.md §2); the center is never a feature |
+| **CIFAR-10** | `object` (10 classes) | One 32x32 colour image per row, 3,072 pixels in [0, 1] | No natural clients: the `partition` step cuts the 50,000 training images into synthetic clients (`iid`, `dirichlet_label` with `alpha`, or `label_skew` with `k` classes each, as NIID-Bench), drawn from the labels and `partition_seed` only. The official test batch is the subject `test`, reserved with `data.roles.overrides.cifar10.test: [test]` (`experiments/cifar10_mlp.yaml`) |
 
 Missing values stay missing in the cache. Imputation, scaling and the removal of constant features are fitted on the training subjects only. A dataset can set its own in `data.roles.overrides`, for example `femnist: {scaler: none, drop_constant: false}` to keep the raw pixels (`experiments/mix_swell_femnist.yaml`). A descriptor whose features are token indices declares `tokens: true`, and an experiment that would scale it is refused. The descriptors record in their comments what was found in the published files, for example the keys that join the SWELL modalities. `tests/test_datasets_descriptors.py` compares each descriptor with the loader from before the redesign, and it runs as soon as `data/` is present. It passes for SWELL (computer file) and WESAD (chest, subject S2).
 
@@ -548,6 +558,87 @@ Source: [results/femnist_reference/](results/femnist_reference/INDEX.md), `confi
 | Always "1" (majority class) | 0.060 | 0.002 |
 
 The federated model clearly beats the majority class, so it is not a constant predictor; it was still improving at round 30 and stays below centralised logistic regression. [results/sim_scale/](results/sim_scale/INDEX.md) measures the simulator from 100 to 4,000 edges.
+
+### New framework: Nurse Stress centralised baselines
+
+Source: [results/nurse_stress/](results/nurse_stress/INDEX.md), `config_id` `93db2e3c…`, `topology_id` `9d37394c…`, `data_id` `ea32ad8d…`, commit `36e3a25`. These are centralised baselines only; the federated runs of `experiments/nurse_stress_reference.yaml` have not run. The data is 15 nurses in a hospital, 63,913 E4 windows with survey labels (15% stress). Each of seeds 0–4 draws its own 4 test nurses; the table gives the mean ± 95% CI.
+
+| Model | Accuracy | Balanced accuracy | Macro-F1 |
+|---|---|---|---|
+| Logistic regression | 0.851 ± 0.027 | 0.538 ± 0.065 | 0.528 ± 0.091 |
+| Random forest | 0.834 ± 0.036 | 0.540 ± 0.057 | 0.533 ± 0.081 |
+| Always "no stress" | 0.846 ± 0.041 | 0.500 | 0.458 ± 0.012 |
+
+On held-out nurses the models barely beat the majority class. The field labels come from the authors' detector, rated by the nurses, so "no stress" is the time that was not flagged; the INDEX discusses what this allows.
+
+### New framework: Stress-Predict centralised reference
+
+Source: [results/stress_predict_reference/](results/stress_predict_reference/INDEX.md), `config_id` `6a48914d…`, `data_id` `4d64cbd9…`, commit `e8ddfd9`. `onion_fl baseline experiments/stress_predict_reference.yaml --models lr rf --cv 5 --seed S`: subject-level 5-fold cross-validation on the 34 subjects of `datasets/stress_predict.yaml` (3,425 windows, 34% stress), seeds 0–4.
+
+| Model | Macro-F1 | Balanced accuracy | Accuracy |
+|---|---|---|---|
+| Random forest (mean ± 95% CI over 5 seeds) | 0.568 ± 0.017 | 0.574 ± 0.014 | 0.666 ± 0.012 |
+| Logistic regression | 0.521 ± 0.007 | 0.547 ± 0.004 | 0.666 ± 0.006 |
+| Always "rest" (majority class) | 0.399 | 0.500 | 0.664 |
+
+The E4 statistics carry some signal on unseen subjects, but little: accuracy is no better than always answering "rest". No federated run has been made on this dataset yet.
+
+### New framework: onion-bench-stress, the multi-dataset stress benchmark
+
+Source: [results/stress_e4/](results/stress_e4/INDEX.md), issue #244. The protocol was committed before the benchmark ran (commit `8bf2343`), and every run's `run_id`, `run_hash`, `config_id`, `topology_id` and commit is in the INDEX. Code: commits `8bf2343`–`e965216`, all with the same `src/`.
+
+- **E4 track** (`benchmarks/stress.yaml`, `stress_lodo.yaml`, `stress_per_study.yaml`): WESAD wrist, PhysioNet, Nurse Stress and Stress-Predict with the same 30 harmonized E4 features. One edge per subject, one fog per study (`topology_id` `5f5cd72e…`, `data_id` `a5610d4e…`).
+- **Lab track** (`benchmarks/stress_lab.yaml`): SWELL and WESAD as in the existing baselines (`topology_id` `ff55fe4d…`, `data_id` `9fd57375…`). It is never in the same table as the E4 track.
+- **Protocol.** The test subjects are fixed by the roles seed and are the same in every scenario and seed: E4 4 / 9 / 4 / 8 per study, lab 5 + 3. Five seeds, 20 rounds, SGD with the lr chosen beforehand on validation subjects. Macro-F1 over the test windows of each study, mean ± 95% CI; differences paired by seed. The centralised logistic regression is one number.
+
+Macro-F1, E4 track:
+
+| | WESAD wrist | PhysioNet | Nurse | Stress-Predict |
+|---|---|---|---|---|
+| Majority class | 0.391 | 0.457 | 0.459 | 0.399 |
+| Centralised LR per study | 0.877 | 0.563 | 0.542 | 0.641 |
+| Centralised LR pooled over the four | 0.386 | 0.550 | 0.543 | 0.459 |
+| FedAvg, hierarchical, per-study adapters | 0.850 ± 0.032 | 0.495 ± 0.016 | 0.552 ± 0.014 | 0.660 ± 0.036 |
+| FedAvg, hierarchical, shared adapter | 0.493 ± 0.066 | 0.556 ± 0.020 | 0.557 ± 0.010 | 0.498 ± 0.026 |
+| FedBABU | 0.888 ± 0.011 | 0.603 ± 0.038 | 0.556 ± 0.015 | 0.673 ± 0.015 |
+| FedDyn | 0.853 ± 0.014 | 0.640 ± 0.072 | 0.552 ± 0.044 | 0.663 ± 0.011 |
+| Trained on the other three (leave-one-out, shared adapter) | 0.479 ± 0.062 | 0.558 ± 0.023 | 0.478 ± 0.031 | 0.493 ± 0.028 |
+
+**What beats the centralised regression and what doesn't:**
+- **Plain FedAvg beats it on no E4 study.** It is below the regression on WESAD wrist and PhysioNet, and its interval contains it on Nurse and Stress-Predict.
+- **FedBABU and FedDyn beat it on Stress-Predict and, by a small margin, on PhysioNet.** FedBABU ties it on WESAD wrist.
+- **On Nurse nothing separates from it, and everything is close to the majority class.**
+- **Lab track:** the federation beats the regression on SWELL (FedAvg 0.555 ± 0.033 against 0.433) and loses on WESAD (best FedDyn 0.856 ± 0.048 against 0.918).
+
+**The other comparisons:**
+- **Flat and hierarchical FedAvg give the same model** (paired differences within ±0.007): with full participation and sample weights the hierarchy only changes the traffic.
+- **The shared adapter hands the model to Nurse,** which holds 90% of the windows. WESAD wrist loses 0.357 ± 0.064 and Stress-Predict 0.162 ± 0.037. With per-study adapters, the federation beats one regression pooled over the four studies on the laboratory studies.
+- **Laboratory → hospital transfers poorly.** Trained on the three laboratory studies, the model scores 0.478 ± 0.031 on the test nurses, against 0.557 ± 0.010 when Nurse trains (paired −0.079 ± 0.039). The majority class is at 0.459.
+- **Not run:** the bootstrap by subject, `feature_transformer` (#229), the `mixing` scenario and the 3-class PhysioNet task. The INDEX lists them.
+
+### New framework: Fed-Heart-Disease triangle (cross-silo)
+
+Source: [results/heart_disease_triangle/](results/heart_disease_triangle/INDEX.md), commit `0fa2b87`. It is `experiments/heart_disease_triangle.yaml`: FLamby's four hospitals as clients, each tested on its official FLamby test split (254 patients), with `modular_mlp` (one hidden layer) trained for 50 rounds of one Adam epoch in every arm, seeds 0–4. FedAvg runs on two fogs (`topology_id` `6f49bb9f…`, `config_id` `67041951…`), and pooled and local-only on one fog (`topology_id` `54cd664e…`).
+
+| Arm (accuracy, mean ± 95% CI over 5 seeds) | Mean of the 4 hospitals | All 254 test patients |
+|---|---|---|
+| Pooled | 0.820 ± 0.018 | 0.795 ± 0.014 |
+| Local-only, best hospital (Cleveland) | 0.704 ± 0.042 | 0.720 ± 0.015 |
+| FedAvg (2 fogs) | 0.747 ± 0.039 | 0.782 ± 0.024 |
+
+FedAvg comes close to pooled over all test patients and beats every local-only arm, but it does worse than pooled on Switzerland's 16 test patients. The local Switzerland model is a constant predictor, because all 30 of its training patients have the disease. Pooled matches FLamby's own pooled number (0.795, the mean of the per-seed files it publishes), but the protocol is not FLamby's (MLP instead of logistic regression, Adam epochs instead of SGD steps, and a hierarchical FedAvg), so the FedAvg row does not reproduce FLamby's. The INDEX has the per-hospital table and the comparison.
+
+### New framework: CIFAR-10 FedAvg with an MLP
+
+Source: [results/cifar10_mlp/](results/cifar10_mlp/INDEX.md), `config_id` `d0b01225…` (Dir(0.5)) and `71c75dfc…` (IID), `topology_id` `60f08e8d…`, commit `195443d`. It is `experiments/cifar10_mlp.yaml`: NIID-Bench's setting of 10 synthetic clients (`partition_seed` 0) under one server, tested on the official test batch (10,000 images), with `modular_mlp` on the 3,072 pixels. The schedule is NIID-Bench's, 50 rounds of 10 local epochs with SGD at lr 0.01 but without its momentum, and the seeds are 0–2.
+
+| Model | Dir(0.5) accuracy | IID accuracy |
+|---|---|---|
+| Federated MLP, round 50 (mean ± 95% CI over 3 seeds) | 0.477 ± 0.003 | 0.534 ± 0.011 |
+| NIID-Bench FedAvg, simple CNN (published, not run here) | 0.682 ± 0.007 | 0.704 ± 0.002 |
+| Constant predictor | 0.100 | 0.100 |
+
+**This is not the NIID-Bench reproduction.** The 17 to 20 point gap is the model: an MLP on raw pixels shares nothing across image positions. NIID-Bench publishes no MLP result on CIFAR-10. The CNN run, which is the ±3 point check, waits for torch_module presets (#245). The MLP overfits after about round 10: its test loss rises while its accuracy levels off.
 
 ### Before the redesign
 

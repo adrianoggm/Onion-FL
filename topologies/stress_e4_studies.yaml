@@ -1,0 +1,21 @@
+# The stress benchmark's hierarchy (issue #244): one fog per E4 study, with one
+# edge per subject under it. Lossless links: the benchmark measures learning,
+# not the network.
+name: stress_e4_studies
+levels: [global, fog, edge]
+root:
+  id: cloud
+  aggregator: fedavg
+  server_optimizer: replace
+fog:
+  defaults:
+    aggregator: fedavg
+    quorum: 1.0
+    link_up: {transport: mqtt, codec: npz, profile: lan}
+  nodes:
+    - {id: lab_wesad, home: wesad_e4}
+    - {id: lab_physionet, home: physionet_e4}
+    - {id: hospital_nurse, home: nurse_stress}
+    - {id: lab_stress_predict, home: stress_predict}
+edge:
+  link_up: {transport: mqtt, codec: npz, profile: lan}

@@ -1,0 +1,62 @@
+{
+  "rounds": 20,
+  "finished": true,
+  "t_virtual_end": 0.12753432573005233,
+  "wall_seconds": 142.8987344000052,
+  "messages": {
+    "sent": 4011,
+    "bytes": 114545478,
+    "dropped": 0
+  },
+  "quorum_failed": 0,
+  "final": {
+    "global/*": {
+      "round": 20,
+      "accuracy": 0.8345944734039572,
+      "loss": 0.4712387656827786,
+      "macro_f1": 0.5407101375258984
+    },
+    "global/nurse_stress": {
+      "round": 20,
+      "accuracy": 0.8447208737864078,
+      "loss": 0.4294627038764336,
+      "macro_f1": 0.5421669082012673
+    },
+    "global/physionet_e4": {
+      "round": 20,
+      "accuracy": 0.8056426332288401,
+      "loss": 0.614870983578532,
+      "macro_f1": 0.5406173383281113
+    },
+    "global/stress_predict": {
+      "round": 20,
+      "accuracy": 0.6839506172839506,
+      "loss": 1.0607332259254518,
+      "macro_f1": 0.5187789690646464
+    },
+    "global/wesad_e4": {
+      "round": 20,
+      "accuracy": 0.6810344827586207,
+      "loss": 1.1831366461278416,
+      "macro_f1": 0.5139268128173927
+    },
+    "finetuned/*": {
+      "round": 20,
+      "accuracy": 0.824776636884918,
+      "loss": 0.4288053096787252,
+      "macro_f1": 0.5776112091544273
+    },
+    "local/*": {
+      "round": 20,
+      "accuracy": 0.8209094545939458,
+      "loss": 0.461410409401875,
+      "macro_f1": 0.5791730630284034
+    },
+    "received/*": {
+      "round": 20,
+      "accuracy": 0.8259767969062541,
+      "loss": 0.47604567722231117,
+      "macro_f1": 0.5104498239584288
+    }
+  }
+}

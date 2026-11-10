@@ -1,0 +1,123 @@
+{
+  "run_id": "20261110T141114Z-d44ca55ba518",
+  "topology_id": "ff2f72b4481005ad901259b9460425489906e6975c711471f9b5bddce15a3ead",
+  "config_id": "ee1438c10aff431f7e8420f84168bfc694653c079b0c7752e3c694239c036f7c",
+  "backend": "sim",
+  "infrastructure_id": null,
+  "data_id": "a5610d4e619b550eb87ac696065cecf9c33f0dd949459ba93dec386b7e55c305",
+  "code_version": {
+    "commit": "4d34d9f253b10358d026d2a56ad99b4db3bda699",
+    "dirty": false
+  },
+  "seed": 1,
+  "scenario": "topology,data.roles.overrides=stress_e4_without_physionet_e4,{'physionet_e4': {'held_out': True}}",
+  "started_at": "2026-11-10T14:11:14.924371+00:00",
+  "status": "finished",
+  "config": {
+    "name": "stress_e4_lodo",
+    "description": "onion-bench-stress, pista E4. Leave-one-dataset-out con el adaptador compartido.",
+    "topology": "stress_e4_without_physionet_e4",
+    "data": {
+      "datasets": {
+        "wesad_e4": {
+          "descriptor": null,
+          "options": {}
+        },
+        "physionet_e4": {
+          "descriptor": null,
+          "options": {}
+        },
+        "nurse_stress": {
+          "descriptor": null,
+          "options": {}
+        },
+        "stress_predict": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.25,
+        "val": 0.1,
+        "overrides": {
+          "physionet_e4": {
+            "test": null,
+            "val": null,
+            "exclude": [],
+            "held_out": true
+          }
+        },
+        "seed": 0,
+        "local_val": 0.2,
+        "local_val_split": "class_tail",
+        "subjects_per_client": 1,
+        "scaler": "local",
+        "impute": "mean",
+        "drop_constant": false
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2,
+        "adapters": "shared"
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 5,
+        "batch_size": 32,
+        "lr": 0.03
+      },
+      "init": "random"
+    },
+    "rounds": 20,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": null,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": 20,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    }
+  },
+  "finished_at": "2026-11-10T14:13:29.379775+00:00",
+  "run_hash": "5b30e5dfa7fd18d8432f2d80bd79c7fca78812320f03da64cbca62bdbc500f1d"
+}

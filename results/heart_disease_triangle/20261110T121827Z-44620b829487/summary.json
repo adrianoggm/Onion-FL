@@ -1,0 +1,26 @@
+{
+  "rounds": 50,
+  "finished": true,
+  "t_virtual_end": 0.22519774500671394,
+  "wall_seconds": 5.280024899999262,
+  "messages": {
+    "sent": 618,
+    "bytes": 4433632,
+    "dropped": 0
+  },
+  "quorum_failed": 0,
+  "final": {
+    "global/*": {
+      "round": 50,
+      "accuracy": 0.5905511811023622,
+      "loss": 0.970993889726936,
+      "macro_f1": 0.5343487485168041
+    },
+    "global/heart_disease": {
+      "round": 50,
+      "accuracy": 0.5905511811023622,
+      "loss": 0.970993889726936,
+      "macro_f1": 0.5343487485168041
+    }
+  }
+}
