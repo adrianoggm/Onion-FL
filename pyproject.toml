@@ -44,11 +44,20 @@ dev = [
     "fastapi>=0.110,<1",  # Studio API tests (same pins as the studio extra)
     "uvicorn>=0.29,<1",
     "httpx>=0.27,<1",
+    "grpcio>=1.60,<2",  # gRPC transport tests (same pin as the grpc extra)
 ]
 # Onion-FL Studio: onion_fl serve
 studio = [
     "fastapi>=0.110,<1",
     "uvicorn>=0.29,<1",
+]
+# gRPC transport: direct links between processes, no broker
+grpc = [
+    "grpcio>=1.60,<2",
+]
+# Flower transport: every frame in a Flower Message, over the gRPC links
+flower = [
+    "flwr>=1.21,<2",
 ]
 # XGBoost baseline (onion_fl.baselines) and analysis scripts (scripts/, results/legacy/)
 analysis = [
