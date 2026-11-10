@@ -20,7 +20,7 @@ def descriptor(name: str):
     return load_spec(DESCRIPTORS / f"{name}.yaml")
 
 
-@pytest.mark.parametrize("name", ["swell", "sweet", "wesad", "femnist"])
+@pytest.mark.parametrize("name", ["swell", "sweet", "wesad", "wesad_e4", "femnist"])
 def test_descriptors_are_valid(name: str) -> None:
     spec = descriptor(name)
 
@@ -36,6 +36,10 @@ def test_descriptors_are_valid(name: str) -> None:
         ("sweet", {"label": "ordinal", "selection": "selection2/users"}),
         ("sweet", {"label": "three_class"}),
         ("wesad", {"location": "chest", "signals": "ECG,EDA", "label": "three_class"}),
+        (
+            "wesad_e4",
+            {"signals": "EDA,TEMP", "window_seconds": 30, "label": "three_class"},
+        ),
     ],
 )
 def test_descriptor_options_are_valid(name: str, options: dict) -> None:
@@ -124,6 +128,39 @@ def test_wesad_chest_reads_like_the_previous_loader() -> None:
     assert new.feature_names == names
     np.testing.assert_array_equal(new.y, y)
     np.testing.assert_allclose(new.X, X, rtol=1e-5)
+
+
+@pytest.mark.skipif(not Path("data/WESAD").exists(), reason="data/WESAD not available")
+def test_wesad_wrist_reads_the_same_windows_at_native_rates() -> None:
+    """The acceptance of #239, on S2 (wesad_e4.yaml records the 15 subjects)."""
+    one = {"path": "{subject}/S2.pkl"}
+    old_spec, new_spec = descriptor("wesad"), descriptor("wesad_e4")
+    old_spec.source = old_spec.source.model_copy(update=one)
+    new_spec.source = new_spec.source.model_copy(update=one)
+    (old,) = ingest(old_spec)
+    (new,) = ingest(new_spec)
+
+    np.testing.assert_array_equal(new.y, old.y)
+    np.testing.assert_allclose(new.t, old.t)
+    renamed = {"acc_0": "acc_x", "acc_1": "acc_y", "acc_2": "acc_z"}
+    renamed |= {"bvp_0": "bvp", "eda_0": "eda", "temp_0": "temp"}
+    legacy = {
+        renamed[name.rsplit("_", 1)[0]] + "_" + name.rsplit("_", 1)[1]: old.X[:, j]
+        for j, name in enumerate(old.feature_names)
+    }
+    assert sorted(legacy) == sorted(new.feature_names)
+    for j, name in enumerate(new.feature_names):
+        channel, stat = name.rsplit("_", 1)
+        span = new.X[:, new.feature_names.index(f"{channel}_max")]
+        span = span - new.X[:, new.feature_names.index(f"{channel}_min")]
+        error = np.abs(new.X[:, j] - legacy[name])
+        if stat in ("min", "max") or channel in ("eda", "temp"):
+            np.testing.assert_allclose(
+                new.X[:, j], legacy[name], rtol=1e-6, err_msg=name
+            )
+        else:
+            tolerance = 0.04 if stat == "median" else 3e-4
+            assert (error <= tolerance * span + 1e-6).all(), name
 
 
 def test_femnist_declares_a_fixed_subsample_of_hundreds_of_writers() -> None:
