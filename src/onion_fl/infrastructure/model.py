@@ -81,6 +81,7 @@ class Profile(Strict):
         ge=0,
         description="Dispersión de la tasa de entrenamiento: desviación típica "
         "de su logaritmo (lognormal, de media la de train_rate)",
+        exclude_if=lambda v: v is None,  # the ids from before it stay
     )
     aggregate_rate: float | None = Field(
         None, gt=0, description="Bytes de actualización combinados por segundo"
@@ -356,9 +357,6 @@ class Infrastructure(Strict):
     def infrastructure_id(self) -> str:
         """SHA-256 of the canonical infrastructure; the name does not count."""
         canonical = self.model_dump(mode="json", exclude={"name"})
-        for profile in canonical["profiles"].values():
-            if profile["train_sigma"] is None:  # the ids from before it stay
-                del profile["train_sigma"]
         canonical["network"]["links"] = sorted(
             canonical["network"]["links"], key=lambda link: sorted(link["between"])
         )
