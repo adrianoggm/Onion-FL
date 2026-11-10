@@ -336,6 +336,13 @@ def place(
     seed: int = 0,
 ) -> Placement:
     """Build the scenario: edges and zone evaluators under each leaf aggregator."""
+    if topology.root in topology.leaves():
+        # The root takes evaluators only: training edges under it would be lost.
+        raise DataError(
+            f"topology {topology.name!r} hangs the edges from the root "
+            f"{topology.root.id!r}, which takes evaluators only; add an aggregator "
+            "level (one fedavg node with quorum 1.0 gives a flat FedAvg)"
+        )
     plugin = placements.create(placement, params)
     datasets = sorted(
         {c.dataset for c in split.clients} | {v.dataset for v in split.val}
