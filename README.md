@@ -474,6 +474,18 @@ Source: [results/femnist_reference/](results/femnist_reference/INDEX.md), `confi
 
 The federated model clearly beats the majority class, so it is not a constant predictor; it was still improving at round 30 and stays below centralised logistic regression. [results/sim_scale/](results/sim_scale/INDEX.md) measures the simulator from 100 to 4,000 edges.
 
+### New framework: Nurse Stress centralised baselines
+
+Source: [results/nurse_stress/](results/nurse_stress/INDEX.md), `config_id` `93db2e3c…`, `topology_id` `9d37394c…`, `data_id` `ea32ad8d…`, commit `36e3a25`. These are centralised baselines only; the federated runs of `experiments/nurse_stress_reference.yaml` have not run. The data is 15 nurses in a hospital, 63,913 E4 windows with survey labels (15% stress). Each of seeds 0–4 draws its own 4 test nurses; the table gives the mean ± 95% CI.
+
+| Model | Accuracy | Balanced accuracy | Macro-F1 |
+|---|---|---|---|
+| Logistic regression | 0.851 ± 0.027 | 0.538 ± 0.065 | 0.528 ± 0.091 |
+| Random forest | 0.834 ± 0.036 | 0.540 ± 0.057 | 0.533 ± 0.081 |
+| Always "no stress" | 0.846 ± 0.041 | 0.500 | 0.458 ± 0.012 |
+
+On held-out nurses the models barely beat the majority class. The field labels come from the authors' detector, rated by the nurses, so "no stress" is the time that was not flagged; the INDEX discusses what this allows.
+
 ### Before the redesign
 
 The rest of this section lists centralised baselines from the old scripts (removed in F7.2). They live in `results/legacy/`, whose [INDEX.md](results/legacy/INDEX.md) gives each file's origin and caveats. Use `onion_fl baseline` to produce new ones on the current data layer.
