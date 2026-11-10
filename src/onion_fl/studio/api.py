@@ -192,7 +192,8 @@ AXES: list[tuple[str, str, str, str | None]] = [
     (
         "backend",
         "Backend",
-        "Dónde y con qué reloj se ejecuta cada escenario: simulación o local.",
+        "Dónde y con qué reloj se ejecuta cada escenario: simulación, local o "
+        "emulado en contenedores.",
         None,
     ),
     (

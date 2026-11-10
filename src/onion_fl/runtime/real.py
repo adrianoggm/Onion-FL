@@ -89,8 +89,10 @@ class RealRuntime:
         listeners: list[Any] | None = None,
         heartbeat_s: float | None = 10.0,
         epoch: float | None = None,
+        broker: str | None = None,
     ) -> None:
         self.run_id, self.seed = run_id, seed
+        self.broker = broker  # host:port of every MQTT link, whatever they say
         self.hosted = None if hosted is None else set(hosted)
         self.listeners = list(listeners or [])
         self.heartbeat_s = heartbeat_s
@@ -134,7 +136,26 @@ class RealRuntime:
         if self.is_hosted(node.id):
             self._nodes[node.id] = node
 
+    def add_host(self, host: str, cpus: int | None = None) -> None:
+        """Real hosts are the machines the processes run on: nothing to model."""
+
+    def place(self, node_id: str, host: str) -> None:
+        """Real hosts are the machines the processes run on: nothing to model."""
+
+    def set_compute(self, node_id: str, compute: Any) -> None:
+        """Real work takes real time: nothing to model."""
+
+    def note(
+        self, t: float, node: str, name: str, value: Any = None, **tags: Any
+    ) -> None:
+        """Scheduled network changes are the emulator's, never the runtime's."""
+
     def _transport(self, spec: str | Mapping[str, Any]) -> Any:
+        if self.broker is not None:
+            name = spec if isinstance(spec, str) else spec.get("name", "mqtt")
+            if name == "mqtt":
+                spec = {**({} if isinstance(spec, str) else spec), "name": "mqtt"}
+                spec["broker"] = self.broker
         key = json.dumps(spec, sort_keys=True)
         if key not in self._transports:
             self._transports[key] = create(transports, spec)
@@ -147,8 +168,10 @@ class RealRuntime:
         profile: Any = "lan",
         codec: str = "json",
         transport: str | Mapping[str, Any] = "mqtt",
+        channel: Any = None,
     ) -> None:
-        """Link two nodes both ways. ``profile`` is the simulator's; real links are real."""
+        """Link two nodes both ways. ``profile`` and ``channel`` are the
+        simulator's; real links are real."""
         wire, carrier = get_codec(codec), self._transport(transport)
         self._codecs[wire.name] = wire
         for src, dst in ((child, parent), (parent, child)):

@@ -780,9 +780,15 @@ def plan(config: ExperimentConfig) -> list[dict[str, Any]]:
         topology, split, placement, digests = _scenario_data(scenario)
         _, state = _initial_state(scenario.config, _shapes(split), scenario.seed)
         resolved = physical(scenario, topology, placement, state)
+        backend = {}
         if resolved is not None:
             check_memory(resolved, placement, state)
             check_capacity(scenario.config, topology, placement)
+            # A backend that runs on machines it builds (emulated) shows and
+            # checks them here: its container cap, what it cannot emulate.
+            backend_ref = scenario.config.backend_ref
+            inspect = getattr(create(backends, backend_ref), "inspect", None)
+            backend = {} if inspect is None else {"backend": inspect(resolved)}
         policy = create(sharing, scenario.config.learning.sharing)
         previews.append(
             {
@@ -798,6 +804,7 @@ def plan(config: ExperimentConfig) -> list[dict[str, Any]]:
                 "warnings": link_warnings(topology, resolved),
             }
             | ({} if resolved is None else {"infrastructure": resolved.preview()})
+            | backend
             | (
                 {}
                 if scenario.config.stream is None
