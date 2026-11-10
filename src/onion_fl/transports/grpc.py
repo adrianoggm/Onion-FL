@@ -39,7 +39,8 @@ each client checks the server's certificate against the same CA and the
 peer's address. Both certificates are required: an unauthenticated client,
 plain or TLS without a certificate, never completes the handshake, so
 nothing it sends reaches an inbox. The link holds paths only (see
-``onion_fl.transports.tls``).
+``onion_fl.transports.tls``). Each frame is handed over with ``principal``,
+the common name of the client certificate that sent it.
 """
 
 import os
@@ -107,6 +108,12 @@ def _require_grpc() -> Any:
     return grpc
 
 
+def _common_name(context: Any) -> str | None:
+    """The CN of the client certificate gRPC verified, if it has one."""
+    names = context.auth_context().get("x509_common_name") or []
+    return names[0].decode("utf-8") if names else None
+
+
 @transports.register(
     "grpc",
     title="gRPC",
@@ -172,8 +179,13 @@ class GrpcTransport:
                 self.stats["bytes_received"] += len(request)
         if not callbacks:  # the sender read a stale file: let it look again
             context.abort(self._grpc.StatusCode.NOT_FOUND, f"no inbox {address!r} here")
+        if self.params.tls is None:
+            for callback in callbacks:
+                callback(request)
+            return b""
+        principal = _common_name(context)
         for callback in callbacks:
-            callback(request)
+            callback(request, principal=principal)
         return b""
 
     def start(self) -> None:

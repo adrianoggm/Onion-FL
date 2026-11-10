@@ -14,6 +14,12 @@ in ``meta``: it records the same id and the end-to-end latency, which needs
 NTP-synchronised clocks across machines. The message itself is encoded as the
 simulation encodes it, so ``message.sent`` counts the same bytes in both
 (I1 §10); the frame's are in the ``frame`` tag.
+
+A transport that authenticates its peers (gRPC over mutual TLS) calls back
+with ``principal``, the identity it verified; the runtime puts it in the
+message's ``meta["principal"]``, ``None`` when the transport says nothing, and
+always over what the sender wrote there. The coordinator takes an operator's
+order only from the principal its ``src`` names (#227).
 """
 
 import dataclasses
@@ -201,7 +207,9 @@ class RealRuntime:
                 self._subscribed.add((id(carrier), node_id))
                 carrier.on_receive(
                     self.inbox(node_id),
-                    lambda data, n=node_id: self._post(0.0, "deliver", (n, data)),
+                    lambda data, principal=None, n=node_id: self._post(
+                        0.0, "deliver", (n, data, principal)
+                    ),
                 )
 
     # --- running -----------------------------------------------------------
@@ -289,7 +297,9 @@ class RealRuntime:
     def _on_start(self, node_id: str) -> None:
         self._handle(node_id, "on_start", lambda node, ctx: node.on_start(ctx))
 
-    def _on_deliver(self, node_id: str, data: bytes) -> None:
+    def _on_deliver(
+        self, node_id: str, data: bytes, principal: str | None = None
+    ) -> None:
         name, _, rest = data.partition(SEPARATOR)
         header, _, body = rest.partition(SEPARATOR)
         try:
@@ -301,7 +311,8 @@ class RealRuntime:
                 raise MessageError("the frame header is not an object")
             msg = codec.decode(body)
             known = {k: frame[k] for k in ("msg_id", "sent_at") if k in frame}
-            msg = dataclasses.replace(msg, meta={**msg.meta, **known})
+            meta = {**msg.meta, **known, "principal": principal}
+            msg = dataclasses.replace(msg, meta=meta)
         except Exception as exc:  # anything can arrive; the node goes on
             self._record(
                 node_id, "message.rejected", None, {"reason": f"undecodable: {exc}"}

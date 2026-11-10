@@ -14,6 +14,8 @@ import pytest
 
 pytest.importorskip("grpc")
 
+from onion_fl.core.message import Message  # noqa: E402
+from onion_fl.core.node import Node  # noqa: E402
 from onion_fl.runtime.real import RealRuntime  # noqa: E402
 from onion_fl.transports import transports  # noqa: E402
 from onion_fl.transports.grpc import GrpcTransport  # noqa: E402
@@ -22,10 +24,12 @@ from onion_fl.transports.grpc import GrpcTransport  # noqa: E402
 class Inbox:
     def __init__(self) -> None:
         self.items: list[bytes] = []
+        self.principals: list[str | None] = []
         self._cv = threading.Condition()
 
-    def __call__(self, data: bytes) -> None:
+    def __call__(self, data: bytes, principal: str | None = None) -> None:
         with self._cv:
+            self.principals.append(principal)
             self.items.append(data)
             self._cv.notify_all()
 
@@ -235,6 +239,7 @@ def test_grpc_over_mutual_tls_delivers(tmp_path: Path, pki) -> None:
     finally:
         a.stop()
         b.stop()
+    assert got.principals == ["a"]  # the CN of the sender's certificate
 
 
 def _call(channel, address: str = "secure") -> None:
@@ -319,3 +324,59 @@ def test_grpc_tls_files_are_read_on_start_and_missing_ones_are_named(
     t = make(tmp_path, tls={"ca": "nowhere/ca.pem", "cert": "c.pem", "key": "k.key"})
     with pytest.raises(ConnectionError, match="ca 'nowhere/ca.pem'"):
         t.start()
+
+
+class Recorder(Node):
+    stopped = True  # passive
+
+    def __init__(self, node_id: str) -> None:
+        super().__init__(node_id)
+        self.got: list[Message] = []
+
+    def on_message(self, msg, ctx) -> None:
+        self.got.append(msg)
+
+
+class Forger(Node):
+    """Says it is the operator, and claims the principal too."""
+
+    stopped = False
+
+    def on_start(self, ctx) -> None:
+        meta = {"promote": 1, "override": True, "principal": "operator"}
+        ctx.send(Message(kind="control", src=self.id, dst="cloud", meta=meta))
+        ctx.set_timer(1.0, "done")
+
+    def on_timer(self, name, ctx) -> None:
+        self.stopped = True
+
+
+@pytest.mark.parametrize("common_name", ["operator", "intruder"])
+def test_the_runtime_tells_who_tls_authenticated_never_who_the_sender_says(
+    tmp_path: Path, pki, common_name: str
+) -> None:
+    """The principal comes from the client certificate, never from ``meta``
+    (#227): the coordinator binds an order's ``src`` to it."""
+    folder = str(tmp_path / "peers")
+
+    def link(name: str) -> dict:
+        return {"name": "grpc", "directory": folder, "tls": tls_of(pki, name)}
+
+    here = RealRuntime("orders", hosted={"cloud"}, heartbeat_s=None)
+    there = RealRuntime("orders", hosted={"operator"}, heartbeat_s=None)
+    cloud = Recorder("cloud")
+    here.add_node(cloud)
+    here.add_node(Forger("operator"))
+    here.add_link("operator", "cloud", transport=link("cloud"))
+    there.add_node(Recorder("cloud"))
+    there.add_node(Forger("operator"))
+    there.add_link("operator", "cloud", transport=link(common_name))
+    here.start()
+    try:
+        there.run(timeout=10)
+    finally:
+        here.stop()
+
+    (order,) = cloud.got
+    assert order.src == "operator" and order.meta["promote"] == 1
+    assert order.meta["principal"] == common_name
