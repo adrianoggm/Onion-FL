@@ -344,6 +344,46 @@ def test_datasets_are_preprocessed_separately() -> None:
         np.testing.assert_allclose(client.train.X[:, 0], [-1.0, 1.0], rtol=1e-6)
 
 
+def test_a_dataset_can_set_its_own_preprocessing() -> None:
+    swell = [subject("1", [[0.0, 5.0], [2.0, 5.0]])]
+    raw = [subject("1", [[0.0, 5.0], [np.nan, 5.0], [4.0, 5.0]], dataset="femnist")]
+    config = RolesConfig(
+        test=0.0,
+        overrides={
+            "femnist": {"scaler": "none", "drop_constant": False, "impute": "median"}
+        },
+    )
+
+    split = split_subjects(swell + raw, config)
+
+    swell_client, raw_client = sorted(split.clients, key=lambda c: c.dataset != "swell")
+    np.testing.assert_allclose(swell_client.train.X[:, 0], [-1.0, 1.0], rtol=1e-6)
+    assert swell_client.train.feature_names == ["f0"]
+    assert raw_client.train.X.tolist() == [[0.0, 5.0], [2.0, 5.0], [4.0, 5.0]]
+    assert split.preprocessing["femnist"]["scaler"] == "none"
+    assert split.preprocessing["femnist"]["impute"] == "median"
+    assert split.preprocessing["swell"]["scaler"] == "global"
+
+
+def test_unset_per_dataset_preprocessing_stays_out_of_the_config() -> None:
+    config = RolesConfig(overrides={"swell": {"test": 0.5}})
+
+    assert config.model_dump()["overrides"]["swell"] == {
+        "test": 0.5,
+        "val": None,
+        "exclude": [],
+    }
+    assert config.of("swell") == config
+    assert config.of("swell").overrides == config.overrides
+
+
+def test_the_scalers_in_use_include_the_overrides() -> None:
+    config = RolesConfig(overrides={"a": {"scaler": "local"}, "b": {"test": 0.1}})
+
+    assert config.scalers() == {"global", "local"}
+    assert config.of("a").scaler == "local" and config.of("b").scaler == "global"
+
+
 def test_describe_lists_roles_and_clients() -> None:
     split = split_subjects(cohort(4), RolesConfig(test=0.25, scaler="none"))
 

@@ -6,7 +6,7 @@ Estas reglas protegen la validez científica de los resultados. Cada una existe 
 
 - **No se usan datos sintéticos** (por ejemplo, generados con `np.random`) para entrenar, validar o evaluar modelos. Tampoco para "rellenar" features que faltan: `process_swell_rri.py` lo hacía, y escribía los valores inventados con los nombres de los CSV reales de SWELL.
 - **Ataques simulados:** los ataques (`label_flip`, `sign_flip`, `gaussian`, `scale`) modelan a un participante malicioso. `label_flip` invierte etiquetas reales y `gaussian` envía ruido en lugar de una actualización: son el comportamiento del atacante, no datos para aprender, y se permiten.
-- **Datasets autorizados:** SWELL, SWEET y WESAD, obtenidos de su fuente original y colocados en `data/` (que no está en git). ECG5000 se eliminó: sus particiones tenían fuga entre train y test.
+- **Datasets autorizados:** SWELL, SWEET, WESAD, FEMNIST (LEAF, un sujeto por escritor) y PhysioNet Wearable Device (estrés inducido y ejercicio, ODC-By 1.0, un sujeto por participante), obtenidos de su fuente original o de una copia reconocida (FEMNIST: el script de LEAF o `flwrlabs/femnist`, README §2) y colocados en `data/` (que no está en git). ECG5000 se eliminó: sus particiones tenían fuga entre train y test.
 - **Tests:**
   - Los tests de **protocolo y runtime** pueden usar el *entrenador de prueba*, que no aprende y devuelve pesos deterministas, con edges sin datos. Así se ejecutan en el CI.
   - Los tests que entrenan o evalúan aprendizaje usan extractos reales (`data/samples/`) y se saltan cuando no están.

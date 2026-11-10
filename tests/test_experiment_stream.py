@@ -318,18 +318,18 @@ STRICTER = {"name": "page_hinkley", "threshold": 2}
 @pytest.mark.parametrize(
     "change, message",
     [
-        ({"continuum": SCHEDULE}, "round_every"),  # both pace the rounds
+        ({"continual": SCHEDULE}, "round_every"),  # both pace the rounds
         ({"stream": PACED}, "round_every"),  # neither does
-        ({"stream": None, "labels": None, "continuum": SCHEDULE}, "continuum"),
+        ({"stream": None, "labels": None, "continual": SCHEDULE}, "continual"),
         (
-            {"stream": PACED, "continuum": {"trigger": PRIOR | {"kind": "concept"}}},
+            {"stream": PACED, "continual": {"trigger": PRIOR | {"kind": "concept"}}},
             "kind",
         ),
-        ({"stream": PACED, "continuum": {"trigger": "carrier_pigeon"}}, "pigeon"),
+        ({"stream": PACED, "continual": {"trigger": "carrier_pigeon"}}, "pigeon"),
         (
             {
                 "stream": PACED,
-                "continuum": {
+                "continual": {
                     "trigger": PRIOR,
                     "edge_trigger": PRIOR | {"detector": STRICTER},
                 },
@@ -338,7 +338,7 @@ STRICTER = {"name": "page_hinkley", "threshold": 2}
         ),
     ],
 )
-def test_a_continuum_that_cannot_run_is_refused(
+def test_a_trigger_that_cannot_run_is_refused(
     workspace: Path, change: dict, message: str
 ) -> None:
     raw = {k: v for k, v in (experiment(workspace) | change).items() if v is not None}
@@ -348,12 +348,12 @@ def test_a_continuum_that_cannot_run_is_refused(
 
 def test_a_stream_paced_by_round_every_keeps_its_config_id(workspace: Path) -> None:
     dumped = parse_experiment(experiment(workspace)).dump()
-    assert dumped["stream"]["round_every"] == 300 and "continuum" not in dumped
+    assert dumped["stream"]["round_every"] == 300 and "continual" not in dumped
 
 
 def test_a_schedule_trigger_runs_as_round_every_did(workspace: Path) -> None:
     paced = run(workspace)
-    triggered = run(workspace, stream=PACED, continuum=SCHEDULE)
+    triggered = run(workspace, stream=PACED, continual=SCHEDULE)
 
     with np.load(paced / "model.npz") as a, np.load(triggered / "model.npz") as b:
         assert a.files == b.files and all(np.array_equal(a[k], b[k]) for k in a.files)
@@ -363,7 +363,7 @@ def test_the_events_carry_the_data_time_of_each_trigger(workspace: Path) -> None
     path = run(
         workspace,
         stream=PACED,
-        continuum={"trigger": {"name": "volume", "samples": 8}, "status_every": 60},
+        continual={"trigger": {"name": "volume", "samples": 8}, "status_every": 60},
     )
 
     fired = events(path, "trigger.fired")
@@ -373,7 +373,7 @@ def test_the_events_carry_the_data_time_of_each_trigger(workspace: Path) -> None
 
 
 def test_the_plan_names_the_trigger(workspace: Path) -> None:
-    raw = experiment(workspace, stream=PACED, continuum=SCHEDULE)
+    raw = experiment(workspace, stream=PACED, continual=SCHEDULE)
     (preview,) = plan(parse_experiment(raw))
 
     assert preview["stream"]["rounds"] is None
@@ -391,8 +391,110 @@ def test_the_plan_names_the_trigger(workspace: Path) -> None:
 def test_a_schedule_must_fall_on_the_status_ticks(
     workspace: Path, trigger: dict, status_every: int
 ) -> None:
-    continuum = {"trigger": trigger, "status_every": status_every}
-    raw = experiment(workspace, stream=PACED, continuum=continuum)
+    continual = {"trigger": trigger, "status_every": status_every}
+    raw = experiment(workspace, stream=PACED, continual=continual)
 
     with pytest.raises(ConfigError, match="status_every"):
         parse_experiment(raw)
+
+
+# --- unlabelled rows (continuum C5) -----------------------------------------------
+
+PSEUDO = {"name": "pseudo_label", "threshold": 0.8}
+STANDARD = {"model": {"name": "modular_mlp", "adapter_width": 4, "trunk_hidden": [4]}}
+
+
+def test_a_stream_without_an_objective_keeps_its_config_id(workspace: Path) -> None:
+    assert "unlabelled" not in parse_experiment(experiment(workspace)).dump()
+
+
+def test_an_objective_needs_a_stream(workspace: Path) -> None:
+    raw = experiment(workspace, unlabelled=PSEUDO)
+    del raw["stream"], raw["labels"]
+
+    with pytest.raises(ConfigError, match="unlabelled"):
+        parse_experiment(raw)
+
+
+@pytest.mark.parametrize("trainer", ["stub", "ditto", "apfl", "fedrep"])
+def test_an_objective_needs_a_trainer_that_takes_it(
+    workspace: Path, trainer: str
+) -> None:
+    learning = STANDARD | {"trainer": trainer, "sharing": "fedper"}
+    config = parse_experiment(
+        experiment(workspace, learning=learning, unlabelled=PSEUDO)
+    )
+
+    with pytest.raises(ConfigError, match="own training loops"):
+        plan(config)
+
+
+def test_the_plan_accepts_an_objective_and_each_edge_gets_its_own(
+    workspace: Path,
+) -> None:
+    from onion_fl.continual.unlabelled import PseudoLabel
+    from onion_fl.experiment.runner import _unlabelled
+
+    learning = STANDARD | {"trainer": "standard"}
+    config = parse_experiment(
+        experiment(workspace, learning=learning, unlabelled=PSEUDO)
+    )
+    assert plan(config)
+    (scenario,) = scenarios(config)
+
+    one, two = (_unlabelled(scenario)["unlabelled"] for _ in range(2))
+    assert isinstance(one, PseudoLabel) and one is not two
+    assert one.threshold == 0.8
+    none = parse_experiment(experiment(workspace, unlabelled="none"))
+    assert _unlabelled(next(iter(scenarios(none)))) == {}
+    assert plan(none)  # the stub is fine when nothing is added
+
+
+# --- champion and challenger (continuum C7) ----------------------------------------
+
+PROMOTION = {"name": "champion_challenger", "metric": "accuracy", "min_samples": 1}
+
+
+def test_a_promotion_run_serves_and_saves_the_champion(workspace: Path) -> None:
+    path = run(workspace, promotion=PROMOTION)
+
+    candidates = events(path, "version.candidate")
+    decided = events(path, "version.promoted") + events(path, "version.rejected")
+    assert candidates and len(decided) == len(candidates)
+    lineage = json.loads((path / "bundle" / "lineage.json").read_text("utf-8"))
+    champion = lineage["champion"]
+    assert [v["v"] for v in lineage["versions"]] == list(range(len(candidates) + 1))
+    assert lineage["versions"][champion]["status"] == "active"
+    promoted = [e["value"] for e in events(path, "version.promoted")]
+    assert champion == (promoted[-1] if promoted else 0)
+    registered = events(path, "node.registered")
+    validators = [e for e in registered if e["tags"]["role"] == "validator"]
+    assert validators and all(e["node"] == "cloud" for e in validators)
+
+
+@pytest.mark.parametrize(
+    "change, message",
+    [
+        ({"stream": None, "labels": None}, "stream"),
+        ({"evaluation": {"metrics": ["loss"]}}, "accuracy"),
+    ],
+)
+def test_a_promotion_that_cannot_decide_is_refused(
+    workspace: Path, change: dict, message: str
+) -> None:
+    raw = experiment(workspace, promotion=PROMOTION) | change
+    raw = {k: v for k, v in raw.items() if v is not None}
+    with pytest.raises(ConfigError, match=message):
+        parse_experiment(raw)
+
+
+def test_a_promotion_needs_validation_subjects(workspace: Path) -> None:
+    raw = experiment(workspace, promotion=PROMOTION)
+    raw["data"] = raw["data"] | {"roles": {"test": 0.25, "val": 0.0, "seed": 0}}
+    (scenario,) = scenarios(parse_experiment(raw))
+    with pytest.raises(ValueError, match="data.roles.val"):
+        run_scenario(scenario, evaluate=stub_score)
+
+
+def test_a_run_without_promotion_keeps_its_config_id(workspace: Path) -> None:
+    assert "promotion" not in parse_experiment(experiment(workspace)).dump()
