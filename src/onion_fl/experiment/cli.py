@@ -181,7 +181,12 @@ def cmd_node(args: argparse.Namespace) -> int:
     if not Path(args.config).exists():
         raise FileNotFoundError(f"config not found: {args.config}")
     return run_node(
-        args.id, args.run, args.config, scenario=args.scenario, seed=args.seed
+        args.id,
+        args.run,
+        args.config,
+        scenario=args.scenario,
+        seed=args.seed,
+        resume=args.resume,
     )
 
 
@@ -442,6 +447,11 @@ def parser() -> argparse.ArgumentParser:
     )
     node.add_argument("--scenario", help="with an experiment YAML: which scenario")
     node.add_argument("--seed", type=int, help="with an experiment YAML: which seed")
+    node.add_argument(
+        "--resume",
+        action="store_true",
+        help="restart a node of a real run from the state its edges saved",
+    )
     node.set_defaults(func=cmd_node)
 
     ceiling = sub.add_parser(

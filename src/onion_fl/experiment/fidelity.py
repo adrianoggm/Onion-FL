@@ -8,7 +8,8 @@ the cheaper backend under test. A run of ``A`` and one of ``B`` are a pair
 when they ran the same configuration with the same seed: the same
 ``design_id``, the ``config_id`` of the config without what only says where
 and how it ran (``backend``, ``runtime.mode``, ``timeout``, ``heartbeat``,
-``paths`` and the ``transport`` of the links of an inline topology). So
+``paths`` and the ``transport`` of the links of an inline topology, but
+with the failures of the backend: ``restarts`` and ``joins``). So
 ``A`` and ``B`` can also be one backend over two transports, MQTT and gRPC.
 
 Three levels:
@@ -72,6 +73,7 @@ PROTOCOL = (
 )
 SYSTEM = ("time", "bytes", "time_to_target")  # from the run itself, lower is better
 RUNTIME_ONLY = ("mode", "timeout", "heartbeat")
+FAULTS = ("restarts", "joins")  # what fails is part of the design
 BOOTSTRAP = 2000
 MIN_SEEDS = 5  # for decision fidelity (I1 §12, §17)
 RTOL, ATOL = 1e-6, 1e-7  # as test_runtime_equivalence
@@ -88,8 +90,19 @@ def _without_transport(value: Any) -> Any:
 
 
 def design_id(config: Mapping[str, Any]) -> str:
-    """The ``config_id`` of a run's config without where and how it ran."""
+    """The ``config_id`` of a run's config without where and how it ran.
+
+    A backend's failures (``restarts``, ``joins``: the same keys in ``sim``
+    and ``distributed``) are part of the design, so a run with failures
+    pairs with the same failures on the other backend, never with a run
+    without them.
+    """
     design = {k: v for k, v in config.items() if k not in ("backend", "paths")}
+    backend = config.get("backend")
+    if isinstance(backend, Mapping):
+        faults = {k: backend[k] for k in FAULTS if backend.get(k)}
+        if faults:
+            design["faults"] = faults
     runtime = {
         k: v for k, v in (design.get("runtime") or {}).items() if k not in RUNTIME_ONLY
     }

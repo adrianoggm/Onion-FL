@@ -1,0 +1,19 @@
+# The five Docker containers that act as machines for the distributed
+# continuum (issue #164, continuum C9), all on one Docker Desktop VM. The
+# network describes the containers' bridge (sub-millisecond, no loss), not a
+# real lab; the profiles are not calibrated (I1 §13, issue #197), so the
+# simulation's compute times are a guess. Real hardware is still pending
+# (docs/distributed-hardware.md).
+name: continuum_containers
+profiles:
+  container: {cpus: 2, memory: 2GB, train_rate: 2000}   # as the topology's edge device in C8
+sites:
+  dc:    {hosts: {cloud-1: container}}
+  fog:   {hosts: {fog-1: container}}
+  field: {hosts: {field-1: container, field-2: container, field-3: container}}
+network:
+  links:
+    - {between: [field, fog], latency: 1ms, bandwidth: 1Gbps}
+    - {between: [fog, dc], latency: 1ms, bandwidth: 1Gbps}
+services:
+  mqtt_broker: cloud-1

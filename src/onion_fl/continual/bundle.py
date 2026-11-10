@@ -20,6 +20,7 @@ does not load keeps what its ancestors knew of it.
 """
 
 import json
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,6 +32,7 @@ import yaml
 from onion_fl.roles.snapshot import FederationSnapshot, NodeState
 
 ROOT_PARTS = {"state": "model.npz", "server": "server.npz"}
+META = "__meta__"  # a node part's metadata, inside its .npz (``save_node``)
 
 
 @dataclass
@@ -101,6 +103,37 @@ def save_bundle(
         encoding="utf-8",
     )
     return path
+
+
+def save_node(path: str | Path, node_id: str, node: NodeState) -> None:
+    """One node's part of a bundle, ``nodes/<id>.npz`` and ``.json``, replaced
+    atomically: a process killed while it writes leaves the previous part.
+
+    In a real run (C9) each machine keeps the part of the nodes it hosts, and
+    nothing of an edge leaves its machine.
+    """
+    folder = Path(path) / "nodes"
+    folder.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(node.meta, indent=2, sort_keys=True) + "\n"
+    temporary = folder / f".{node_id}.npz"
+    with open(temporary, "wb") as out:  # the metadata inside too: one file to swap
+        np.savez(
+            out,
+            **{k: np.asarray(v) for k, v in node.arrays.items()},
+            **{META: np.asarray(text)},
+        )
+    os.replace(temporary, folder / f"{node_id}.npz")
+    (folder / f"{node_id}.json").write_text(text, encoding="utf-8")  # to read
+
+
+def load_node(path: str | Path, node_id: str) -> NodeState | None:
+    """A node's part saved by ``save_node``; None if there is none."""
+    file = Path(path) / "nodes" / f"{node_id}.npz"
+    if not file.is_file():
+        return None
+    arrays = _load_npz(file)
+    meta = json.loads(str(arrays.pop(META)))
+    return NodeState(arrays, meta)
 
 
 def load_bundle(path: str | Path) -> Bundle:

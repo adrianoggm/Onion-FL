@@ -20,7 +20,7 @@ from ipaddress import IPv4Network
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from onion_fl.infrastructure.backends import backends
 
@@ -37,6 +37,61 @@ class SimPlan:
     evaluate: Any = None
     paused: bool = False  # for the operators to resume (continual.control)
     path: Path | None = None
+    faults: Any = None
+
+
+class Restart(BaseModel):
+    host: str = Field(description="Host cuyo proceso se mata (kill -9)")
+    at: float = Field(gt=0, description="Segundo del reloj de la ejecución en que cae")
+    down: float = Field(ge=0, description="Segundos caído antes de volver con --resume")
+
+
+class FaultParams(BaseModel):
+    """When a run on hosts starts and what fails in it, the same keys in
+    ``sim`` and ``distributed`` so that one scenario runs on both (C9)."""
+
+    start_in: float = Field(
+        0.0,
+        ge=0,
+        description=(
+            "Segundos entre el lanzamiento y el cero del reloj de la ejecución, "
+            "para que un stream no empiece antes de que arranquen los nodos"
+        ),
+    )
+    checkpoints: bool = Field(
+        False,
+        description=(
+            "Cada edge guarda su estado (su parte del bundle) en su máquina "
+            "tras cada evento, para reanudar si su proceso cae"
+        ),
+    )
+    restarts: list[Restart] = Field(
+        default_factory=list,
+        description="Fallos reales: el proceso de un host cae y vuelve con su estado",
+    )
+    joins: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "host -> segundo del reloj de la ejecución en que arranca: sus edges "
+            "se incorporan a mitad"
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _faults(self) -> FaultParams:
+        if self.restarts and not self.checkpoints:
+            raise ValueError(
+                "restarts: a host comes back with its state only if its edges "
+                "save it; set checkpoints: true"
+            )
+        both = {r.host for r in self.restarts} & set(self.joins)
+        if both:
+            raise ValueError(f"joins: {sorted(both)} also restart; pick one")
+        return self
+
+
+class SimParams(FaultParams):
+    pass
 
 
 @backends.register(
@@ -46,10 +101,18 @@ class SimPlan:
     explain=(
         "Ejecuta la federación entera en un proceso con un reloj virtual. "
         "Reproduce la infraestructura declarada: cómputo, contención, red "
-        "física y fallos. Es el backend de los barridos rápidos."
+        "física y fallos. Es el backend de los barridos rápidos. Con "
+        "`start_in`, `restarts` y `joins` reproduce el arranque y los fallos "
+        "de `distributed`: los nodos arrancan antes del cero del reloj, y el "
+        "proceso de un host cae y vuelve con el estado guardado de sus edges, "
+        "o arranca tarde."
     ),
+    params=SimParams,
 )
 class SimBackend:
+    def __init__(self, **params: Any) -> None:
+        self.params = SimParams(**params)
+
     def supports(self, infrastructure: Any) -> list[str]:
         return []
 
@@ -61,12 +124,21 @@ class SimBackend:
         evaluate: Any = None,
         paused: bool = False,
     ) -> SimPlan:
-        return SimPlan(scenario, evaluate, paused)
+        params = self.params
+        faults = params if params.restarts or params.joins or params.start_in else None
+        if faults is not None and infrastructure is None:
+            raise ValueError(
+                "backend sim: start_in, restarts and joins are for hosts; give "
+                "the experiment an infrastructure"
+            )
+        return SimPlan(scenario, evaluate, paused, faults=faults)
 
     def run(self, plan: SimPlan) -> None:
         from onion_fl.experiment.runner import simulate
 
-        plan.path = simulate(plan.scenario, plan.evaluate, plan.paused)
+        plan.path = simulate(
+            plan.scenario, plan.evaluate, plan.paused, faults=plan.faults
+        )
 
     def collect(self, plan: SimPlan) -> Path:
         if plan.path is None:
@@ -241,7 +313,7 @@ class EmulatedBackend:
         return merge(plan)
 
 
-class DistributedParams(BaseModel):
+class DistributedParams(FaultParams):
     inventory: str | dict[str, Any] = Field(
         description=(
             "Inventario de máquinas: ruta de un YAML o el mapa en línea; "
