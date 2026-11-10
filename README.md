@@ -41,7 +41,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Observability | ✅ | `runs/<run_id>/` with signed events, summary and final model. Diagnostics at every aggregator; analysis API with mean ± CI over seeds; HTML report; Prometheus and OpenTelemetry sinks; Grafana dashboard |
 | CLI | ✅ | `onion_fl data · topology · plan · run · node · ceiling · fidelity · report · baseline · schema · serve` |
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
-| Continual learning | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`), and objectives on the rows still waiting for their label (`pseudo_label`, `consistency`), with an audit of every pseudo-label. Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. A promotion policy keeps each round's model as a challenger until the validation streams promote it, with rollback. Each stream edge updates `warm`, `frozen` or `scratch`, the baselines of the continual benchmark, and `scripts/continuum_benchmark.py` measures it. The Studio's view and controls of the versions are [#203](https://github.com/adrianoggm/Onion-FL/issues/203) |
+| Continual learning | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`), and objectives on the rows still waiting for their label (`pseudo_label`, `consistency`), with an audit of every pseudo-label. Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. A promotion policy keeps each round's model as a challenger until the validation streams promote it, with rollback. Each stream edge updates `warm`, `frozen` or `scratch`, the baselines of the continual benchmark, and `scripts/continuum_benchmark.py` measures it. The Studio shows the versions and their lineage, and its signed controls pause, resume, promote and roll back a live simulation. |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned (E5 [#104](https://github.com/adrianoggm/Onion-FL/issues/104), E6 [#105](https://github.com/adrianoggm/Onion-FL/issues/105)) |
 | Tests | ✅ | 1385 tests. With SWELL, WESAD and a local broker, 1381 pass and 4 skip: SWEET (2) and the optional Excel and Parquet readers. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
@@ -106,7 +106,7 @@ onion_fl serve                                  # http://127.0.0.1:8765
 The Studio reads and writes the same files as the command line (`topologies/`, `experiments/`, `runs/`). It has five areas:
 - **Topologies:** the library, the graph and an editor that validates as you type.
 - **Experiments:** scenarios, the dry-run plan (composition per fog, groups per link, a stream's pace, warnings) and a launch button.
-- **Runs:** status, identity, the rounds and their triggers, the drift detected, metrics per level and live events.
+- **Runs:** status, identity, the rounds and their triggers, the drift detected, metrics per level and live events; with versions, their lineage and scores, the rows and drift per edge, and the operator's controls.
 - **Compare:** mean ± CI over seeds, by topology, scenario or dataset.
 - **Tutorial:** every plugin explained, with previews of sharing, placement and network profiles.
 
@@ -221,7 +221,14 @@ sweep: {data.placement.alpha: [0.0, 0.5, 1.0]}
 
   - The edges serve the champion only. A validator per validation subject, under the root, scores both on the labels that came since the champion was promoted (or within `window`), and on every earlier one, the history included.
   - The challenger is promoted unless it loses more than `min_delta` on the recent window, forgets more than `max_forgetting` on the earlier labels, or has fewer than `min_samples` recent labels to be judged. A rejection leaves the champion and its server state as they were. The test subjects never decide.
-  - `version.candidate`, `version.promoted`, `version.rejected` and `version.rollback` carry the decision's scores. An operator's control message to the coordinator (`{rollback: v}`, `null` for the previous champion, or `{promote: v}`) changes the champion. Only the configured operator ids may send it, and only the configured validators decide; a missing or non-finite score never promotes. Authenticating the operator on the transport, the Studio and the API are [#203](https://github.com/adrianoggm/Onion-FL/issues/203).
+  - `version.candidate`, `version.promoted`, `version.rejected` and `version.rollback` carry the decision's scores. An operator's control message to the coordinator (`{rollback: v}`, `null` for the previous champion, or `{promote: v}`) changes the champion. Only the configured operator ids may send it, and only the configured validators decide; a missing or non-finite score never promotes.
+  - **Operators.** A YAML file of operator ids and tokens (`alice: <16 characters or more>`), named by `ONIONFL_OPERATORS` or `onion_fl serve --operators`, says who may give orders. Each order is signed for its run with the operator's token, and the coordinator refuses an unsigned, forged or replayed one on any transport. Without the file, no order is taken.
+  - **Live control.** A simulation with operators reads its inbox as it runs: in the Studio, a run's page pauses and resumes it, and promotes or rolls back a version, at once or at a virtual time. `onion_fl run --paused` (or "en pausa" in the Studio) starts it paused. The same controls are an HTTP API:
+
+    ```bash
+    curl -X POST localhost:8765/api/runs/<run_id>/control -H "Authorization: Bearer $TOKEN" \
+         -H "Content-Type: application/json" -d '{"order": "rollback", "at": 12}'
+    ```
   - The bundle's model is the champion, and its lineage lists every version.
 - **Edge validation.** `data.roles.local_val_split: class_tail` holds out the last rows of each class instead of the last rows of the recording, which are usually a single condition.
 - **Downloadable data.** `experiments/mix_swell_wesad.yaml` runs the same sweep with SWELL and WESAD, the two datasets that can be downloaded. It trains for 10 local epochs: with one, the model only learns the majority class ([§7](#7-results)).
@@ -272,7 +279,7 @@ Every runtime event is enriched into one schema and written to `events.jsonl`, t
 - **Analysis.** `load_runs("runs/").compare(level="fog", metric="accuracy", by=["topology_id"])` gives the mean ± 95% CI over seeds per round, plus the spread across the nodes of the level. The runs of a group are pooled, so for a sweep over one topology add `scenario` or `config_id` to `by`. `onion_fl report` builds an HTML page from it. With `target=0.8`, `compare` gives the time to target instead: the mean first instant the metric reaches it, with a bootstrap interval, and how many runs never did (censored at their duration); `time_to_target` has the per-run rows.
 - **Studio.** `onion_fl serve` gives the same views in the browser, and follows running runs live.
 - **Live.**
-  - The `prometheus` sink serves `onionfl_*` series on port 9464 for the Grafana dashboard. One server per process holds the runs of a sweep, told apart by `run_id`, so it needs `--workers 1`.
+  - The `prometheus` sink serves `onionfl_*` series on port 9464 for the Grafana dashboard. One server per process holds the runs of a sweep, told apart by `run_id`, so it needs `--workers 1`. With versions and streams it adds the champion, the version decisions and their scores, the rows arrived per edge and the drifts detected, in the dashboard's Continuum row.
   - The `otel` sink creates one span per send and per receive, linked by the message id. It exports them to the collector of the Docker stack.
   - A real run feeds both when the launcher merges the node processes' events, once the run has ended.
 
@@ -611,7 +618,8 @@ The workflows run only on release PRs into `main`, to save CI minutes; task PRs 
 - **SWELL posture is not loaded:** the per-minute Kinect file has every date one month early, so its rows only align with the other modalities by position.
 - **Global evaluation with personal or zone heads.** With `fedper` or `zone` sharing, the global model has no trained heads. Use the edge and zone scores.
 - **Lossy links need deadlines.** The simulator drops messages on lossy profiles (`wifi`, `4g`, `lora`) without retransmitting them. An aggregator without a `deadline` then waits for a lost update for ever, and the run ends `incomplete`. `onion_fl plan` and the Studio warn about it.
-- **The Studio is local.** It listens on `127.0.0.1` with no authentication; don't expose it.
+- **The Studio is local.** It listens on `127.0.0.1` over plain HTTP. Only its orders need an operator's token; everything else is open, so don't expose it.
+- **Live control is for simulations.** A real run's coordinator checks signed orders, but nothing yet delivers an operator's order over MQTT, and the Studio refuses orders to it.
 - **Security.** MQTT runs without TLS or authentication, the broker sees every update, and there is no secure aggregation or differential privacy.
 - **Real-run latency** across machines needs NTP-synchronised clocks.
 - **Manual deployments** across machines need the same data and cache on each machine, because every process rebuilds the scenario.

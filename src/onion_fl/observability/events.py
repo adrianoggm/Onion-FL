@@ -77,6 +77,10 @@ class JsonlSink:
         if self.flush:
             self._file.flush()
 
+    def sync(self) -> None:
+        """Write out what is buffered, e.g. while a live run is paused."""
+        self._file.flush()
+
     def close(self) -> None:
         self._file.close()
 

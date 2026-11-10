@@ -10,6 +10,7 @@ from __future__ import annotations
    under the root; then it runs inside a ``Run`` that writes ``runs/<run_id>/``.
 """
 
+import functools
 import hashlib
 import json
 import math
@@ -24,6 +25,7 @@ from typing import Any
 import numpy as np
 
 from onion_fl.continual.bundle import Bundle, load_bundle, save_bundle
+from onion_fl.continual.control import LiveControl, load_operators
 from onion_fl.continual.memory import NoMemory, memories
 from onion_fl.continual.pace import Continuum
 from onion_fl.continual.promotion import promotions
@@ -1261,8 +1263,13 @@ def build_scenario(
     evaluate: Callable[..., Any] | None = None,
     runtime: Any = None,
     parent: Any = ...,
+    operator_keys: Mapping[str, str] | None = None,
+    audience: str = "",
 ) -> Any:
-    """The federation of a scenario, on ``runtime`` (a new SimRuntime by default)."""
+    """The federation of a scenario, on ``runtime`` (a new SimRuntime by default).
+
+    ``operator_keys`` (``continual.control``) are who may give the coordinator
+    orders, signed for ``audience``, the run's id."""
     config = scenario.config
     edges, initial = edge_specs(scenario, topology, split, placement)
     resolved, link_profiles = physical(scenario, topology, placement, initial), None
@@ -1294,6 +1301,8 @@ def build_scenario(
         runtime=runtime,
         link_profiles=link_profiles,
         link_channels=channels,
+        operator_keys=operator_keys,
+        audience=audience,
     )
     if resolved is not None:
         _on_machines(federation.runtime, resolved, topology, network)
@@ -1315,10 +1324,21 @@ def _versions(coordinator: Any) -> dict[str, Any]:
 
 
 def run_scenario(
-    scenario: Scenario, evaluate: Callable[..., Any] | None = None
+    scenario: Scenario,
+    evaluate: Callable[..., Any] | None = None,
+    paused: bool = False,
 ) -> Path:
-    """Run one scenario on its backend and return its ``runs/<run_id>/`` folder."""
+    """Run one scenario on its backend and return its ``runs/<run_id>/`` folder.
+
+    With operators (``ONIONFL_OPERATORS``), a simulation takes their signed
+    orders as it runs (``continual.control``); ``paused`` starts it paused, for
+    them to resume."""
     config = scenario.config
+    if paused and (load_operators() is None or not config.simulated):
+        raise ConfigError(
+            "paused: only a simulation with operators (ONIONFL_OPERATORS) can be "
+            "resumed"
+        )
     infra = config.infrastructure
     return execute(
         create(backends, config.backend_ref),
@@ -1326,12 +1346,18 @@ def run_scenario(
         infra,
         None if infra is None else infra.assignment,
         evaluate=evaluate,
+        **({"paused": True} if paused else {}),  # only the sim backend takes it
     )
 
 
-def simulate(scenario: Scenario, evaluate: Callable[..., Any] | None = None) -> Path:
+def simulate(
+    scenario: Scenario,
+    evaluate: Callable[..., Any] | None = None,
+    paused: bool = False,
+) -> Path:
     """Run one scenario in the simulator (the ``sim`` backend) and sign it."""
     config = scenario.config
+    operators = load_operators()
     parent = _parent(config, scenario.seed)  # resolved once for the whole run
     topology, split, placement, digests = _scenario_data(scenario, parent)
     infra = resolve_infrastructure(config)
@@ -1357,7 +1383,14 @@ def simulate(scenario: Scenario, evaluate: Callable[..., Any] | None = None) -> 
     try:
         record_data(run, scenario, split, placement)
         federation = build_scenario(
-            scenario, topology, split, placement, evaluate=evaluate, parent=parent
+            scenario,
+            topology,
+            split,
+            placement,
+            evaluate=evaluate,
+            parent=parent,
+            operator_keys=operators,
+            audience=run.run_id,
         )
         run.attach(federation)
         if config.stream is not None:
@@ -1370,7 +1403,17 @@ def simulate(scenario: Scenario, evaluate: Callable[..., Any] | None = None) -> 
                 rounds=summary["rounds"],
                 edges=summary["edges"],
             )
-        federation.run()
+        if operators is None:
+            federation.run()
+        else:  # the operators' orders, read as it runs
+            LiveControl(
+                run.path,
+                operators,
+                run.run_id,
+                federation.coordinator.id,
+                paused=paused,
+                idle=run.sync,  # a paused run's events reach the Studio
+            ).run(federation.runtime)
         save_model(run.path, federation.coordinator.state)
         # What the lineage knows of a dataset or node outlives a run without it.
         earlier = parent[1] if parent else None
@@ -1446,6 +1489,7 @@ def run_experiment(
     workers: int = 1,
     only: str | None = None,
     evaluate: Callable[..., Any] | None = None,
+    paused: bool = False,
 ) -> list[Path]:
     """Run every scenario (or the one named ``only``); in parallel processes when ``workers > 1``."""
     every = scenarios(config)
@@ -1453,15 +1497,18 @@ def run_experiment(
     if not todo:
         names = sorted({s.name for s in every})
         raise ConfigError(f"no scenario named {only!r}; the scenarios are {names}")
-    return run_scenarios(todo, workers=workers, evaluate=evaluate)
+    return run_scenarios(todo, workers=workers, evaluate=evaluate, paused=paused)
 
 
 def run_scenarios(
     todo: Sequence[Scenario],
     workers: int = 1,
     evaluate: Callable[..., Any] | None = None,
+    paused: bool = False,
 ) -> list[Path]:
-    """Run the scenarios of one experiment, in order; in parallel when ``workers > 1``."""
+    """Run the scenarios of one experiment, in order; in parallel when ``workers > 1``.
+
+    ``paused`` starts each simulation paused (``run_scenario``)."""
     if workers > 1 and evaluate is not None:
         raise ValueError(
             "a custom evaluate cannot be sent to worker processes; use workers=1"
@@ -1478,8 +1525,8 @@ def run_scenarios(
         )
     check_scenarios(todo)  # also fills the caches before any worker reads them
     if workers <= 1:
-        return [run_scenario(s, evaluate) for s in todo]
-    return _in_parallel(run_scenario, todo, workers)
+        return [run_scenario(s, evaluate, paused) for s in todo]
+    return _in_parallel(functools.partial(run_scenario, paused=paused), todo, workers)
 
 
 def _in_parallel(fn: Callable[[Any], Any], items: Sequence[Any], workers: int) -> list:

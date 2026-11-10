@@ -159,7 +159,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
     if args.backend:
         config = parse_experiment(config.dump() | {"backend": args.backend})
-    for path in run_experiment(config, workers=args.workers, only=args.scenario):
+    for path in run_experiment(
+        config, workers=args.workers, only=args.scenario, paused=args.paused
+    ):
         print(path)
     return 0
 
@@ -279,7 +281,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
     print(
         f"Onion-FL Studio on http://{args.host}:{args.port}  (root {Path(args.root).resolve()})"
     )
-    uvicorn.run(create_app(args.root), host=args.host, port=args.port)
+    uvicorn.run(
+        create_app(args.root, operators=args.operators), host=args.host, port=args.port
+    )
     return 0
 
 
@@ -336,6 +340,12 @@ def parser() -> argparse.ArgumentParser:
     run.add_argument("--backend", help="sim, local...; overrides the experiment's")
     run.add_argument("--mode", choices=["sim", "real"], help="real: alias of local")
     run.add_argument("--workers", type=int, default=1)
+    run.add_argument(
+        "--paused",
+        action="store_true",
+        help="start each simulation paused, for an operator to resume "
+        "(needs ONIONFL_OPERATORS)",
+    )
     run.set_defaults(func=cmd_run)
 
     node = sub.add_parser("node", help="start one node of a real run")
@@ -430,6 +440,11 @@ def parser() -> argparse.ArgumentParser:
     )
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
+    serve.add_argument(
+        "--operators",
+        help="YAML of operator ids and tokens that may give orders "
+        "(default: the file ONIONFL_OPERATORS names; none: no orders)",
+    )
     serve.set_defaults(func=cmd_serve)
 
     schema = sub.add_parser(
