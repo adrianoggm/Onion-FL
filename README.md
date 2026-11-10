@@ -125,7 +125,7 @@ The Studio reads and writes the same files as the command line (`topologies/`, `
 
 ## 3. How it works
 
-The full design is in [docs/architecture.md](docs/architecture.md). In short:
+The full design is in [docs/architecture.md](docs/architecture.md), and how it compares with Flower, FedML, FedScale, Fogify, EmuFog, iFogSim and EdgeSimPy is in [docs/related-work.md](docs/related-work.md). In short:
 
 ```mermaid
 flowchart TD
@@ -702,7 +702,7 @@ datasets/            dataset descriptors (YAML)
 topologies/          topologies (YAML)
 experiments/         experiments (YAML): mix_ab, swell_reference
 docker/              MQTT broker, OTEL collector, Jaeger, Prometheus, Grafana
-docs/                architecture, rules, diagrams, release notes, the design spec
+docs/                architecture, rules, related work, diagrams, release notes, the design spec
 results/legacy/      results from before the redesign, with INDEX.md
 scripts/             data extraction (SWEET ZIPs) and real-sample creation
 tests/               pytest suite
