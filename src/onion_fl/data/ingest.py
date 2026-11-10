@@ -282,6 +282,164 @@ class WesadPickleReader:
         return pd.DataFrame(columns)
 
 
+# --- Empatica E4 (WESAD wrist, PhysioNet wearables, Nurse Stress, Stress-Predict) --
+
+# Each E4 signal and its channels, in the order every E4 reader emits them, so
+# the window features have the same names and order in every E4 dataset.
+E4_CHANNELS = {
+    "ACC": ["acc_x", "acc_y", "acc_z"],  # raw, 1/64 g
+    "BVP": ["bvp"],
+    "EDA": ["eda"],  # μS
+    "TEMP": ["temp"],  # °C
+    "HR": ["hr"],  # beats per minute, computed by the device from BVP
+    "IBI": ["ibi"],  # seconds between beats, at irregular times
+}
+E4_DEFAULT = "ACC,BVP,EDA,TEMP"
+
+
+def _e4_signals(value: list[str] | str | None, available: Mapping[str, Any]) -> list:
+    chosen = _split(value) or _split(E4_DEFAULT)
+    unknown = [s for s in chosen if s not in available]
+    if unknown:
+        raise ValueError(f"unknown E4 signals {unknown}; available {list(available)}")
+    if len(set(chosen)) != len(chosen):
+        raise ValueError(f"signals are repeated: {chosen}")
+    return [s for s in available if s in chosen]  # the canonical order
+
+
+def _e4_table(blocks: list[tuple[np.ndarray, dict[str, np.ndarray]]]) -> pd.DataFrame:
+    """Stack signals sampled at different times into one table sorted by ``time``.
+
+    Each row is one sample of one signal: its channels have values and every
+    other column is empty. The multi-rate window step reads each channel back
+    at its own rate.
+    """
+    total = sum(len(times) for times, _ in blocks)
+    names = [name for _, columns in blocks for name in columns]
+    out = {"time": np.concatenate([t for t, _ in blocks] or [np.empty(0)])}
+    out |= {name: np.full(total, np.nan) for name in names}
+    offset = 0
+    for times, columns in blocks:
+        for name, values in columns.items():
+            out[name][offset : offset + len(times)] = values
+        offset += len(times)
+    order = np.argsort(out["time"], kind="stable")
+    return pd.DataFrame({name: values[order] for name, values in out.items()})
+
+
+class E4CsvParams(BaseModel):
+    signals: list[str] | str | None = Field(
+        E4_DEFAULT,
+        description="Señales E4 (lista o 'A,B'): ACC, BVP, EDA, TEMP, HR, IBI",
+    )
+
+    @model_validator(mode="after")
+    def _known(self) -> E4CsvParams:
+        _e4_signals(self.signals, E4_CHANNELS)
+        return self
+
+
+@readers.register(
+    "empatica_e4_csv",
+    title="Empatica E4 (CSV)",
+    description="Carpeta de una sesión E4: un CSV por señal, cada una a su tasa nativa.",
+    params=E4CsvParams,
+    explain=(
+        "Cada CSV trae la marca de tiempo de inicio (Unix, en segundos) en la fila 1 "
+        "y la frecuencia en la fila 2; IBI.csv trae el inicio y luego pares (desfase, "
+        "IBI). La ruta es la carpeta o un fichero suyo. La columna time es la marca "
+        "de cada muestra: es un metadato, así que el descriptor necesita un paso time."
+    ),
+)
+class EmpaticaE4CsvReader:
+    """The CSV export of an Empatica E4 session (E4 connect, one file per signal)."""
+
+    def __init__(self, signals: list[str] | str | None = E4_DEFAULT) -> None:
+        self.signals = _e4_signals(signals, E4_CHANNELS)
+
+    def read(self, path: Path) -> pd.DataFrame:
+        folder = path if path.is_dir() else path.parent
+        blocks = []
+        for signal in self.signals:
+            file = folder / f"{signal}.csv"
+            if not file.exists():
+                raise DataError(f"{folder} has no {signal}.csv")
+            raw = pd.read_csv(file, header=None, skipinitialspace=True)
+            reader = self._ibi if signal == "IBI" else self._regular
+            blocks.append(reader(file, raw, E4_CHANNELS[signal]))
+        return _e4_table(blocks)
+
+    @staticmethod
+    def _regular(file: Path, raw: pd.DataFrame, names: list[str]):
+        if raw.shape[1] != len(names) or len(raw) < 2:
+            raise DataError(
+                f"{file}: expected {len(names)} columns and the start and rate rows"
+            )
+        head = raw.iloc[:2].to_numpy(np.float64)
+        start, rate = head[0, 0], head[1, 0]
+        if not ((head[0] == start).all() and (head[1] == rate).all()) or rate <= 0:
+            raise DataError(f"{file}: columns with different starts or rates {head}")
+        values = raw.iloc[2:].to_numpy(np.float64)
+        times = start + np.arange(len(values)) / rate
+        return times, {name: values[:, i] for i, name in enumerate(names)}
+
+    @staticmethod
+    def _ibi(file: Path, raw: pd.DataFrame, names: list[str]):
+        if raw.shape[1] != 2 or len(raw) < 1:
+            raise DataError(f"{file}: expected the start row and (offset, ibi) pairs")
+        start = float(raw.iloc[0, 0])
+        values = raw.iloc[1:].to_numpy(np.float64)
+        return start + values[:, 0], {names[0]: values[:, 1]}
+
+
+class WesadE4Params(BaseModel):
+    signals: list[str] | str | None = Field(
+        E4_DEFAULT, description="Señales de muñeca (lista o 'A,B'): ACC, BVP, EDA, TEMP"
+    )
+
+    @model_validator(mode="after")
+    def _known(self) -> WesadE4Params:
+        _e4_signals(self.signals, WESAD_RATES["wrist"])
+        return self
+
+
+@readers.register(
+    "wesad_e4",
+    title="WESAD muñeca (E4)",
+    description="Muñeca de un S<n>.pkl de WESAD a tasas nativas, como el lector E4.",
+    params=WesadE4Params,
+    explain=(
+        "Da las mismas columnas que empatica_e4_csv (time en segundos desde el "
+        "inicio de la grabación) más condition, la etiqueta original (0-7) a 700 Hz "
+        "en filas propias."
+    ),
+)
+class WesadE4Reader:
+    """WESAD's wrist device is an Empatica E4: the same channels as its CSV export."""
+
+    def __init__(self, signals: list[str] | str | None = E4_DEFAULT) -> None:
+        self.signals = _e4_signals(signals, WESAD_RATES["wrist"])
+
+    def read(self, path: Path) -> pd.DataFrame:
+        with open(path, "rb") as handle:  # the dataset's own format; trusted files only
+            data = pickle.load(handle, encoding="latin1")
+        wrist = {k.upper(): v for k, v in data["signal"]["wrist"].items()}
+        blocks = []
+        for signal in self.signals:
+            if signal not in wrist:
+                raise DataError(f"{path} has no wrist signal {signal}")
+            values = np.asarray(wrist[signal], dtype=np.float64)
+            values = values.reshape(len(values), -1)
+            times = np.arange(len(values)) / WESAD_RATES["wrist"][signal]
+            names = E4_CHANNELS[signal]
+            blocks.append((times, {n: values[:, i] for i, n in enumerate(names)}))
+        labels = np.asarray(data["label"], dtype=np.float64)
+        blocks.append(
+            (np.arange(len(labels)) / WESAD_LABEL_RATE, {"condition": labels})
+        )
+        return _e4_table(blocks)
+
+
 class LeafParams(BaseModel):
     writers: list[str] | None = Field(
         None,
