@@ -440,6 +440,79 @@ class WesadE4Reader:
         return _e4_table(blocks)
 
 
+# The phases of Stress-Predict's protocol, in the order of the columns of
+# Time_logs.xlsx (its headers have typos, so they are named here).
+STRESS_PREDICT_PHASES = [
+    "consent",
+    "baseline",
+    "stroop",
+    "relax_1",
+    "interview",
+    "relax_2",
+    "hyperventilation",
+    "relax_3",
+    "questionnaire",
+    "relax_4",
+]
+
+
+@readers.register(
+    "stress_predict_time_logs",
+    title="Stress-Predict: Time_logs.xlsx",
+    description="Horario de cada fase del protocolo de Stress-Predict: una fila por fase.",
+    explain=(
+        "Da subject, phase, start y end (Unix, en segundos). La hoja trae horas de "
+        "reloj de 12 h sin AM/PM: las anteriores a las 08:00 son de la tarde. Son "
+        "hora de Irlanda, que en febrero y marzo de 2022 es UTC. Si una fase acaba "
+        "después de que empiece la siguiente, acaba donde esa empieza. Necesita "
+        "openpyxl."
+    ),
+)
+class StressPredictTimeLogsReader:
+    """``Processed_data/Time_logs.xlsx`` of Stress-Predict (Iqbal et al., 2022).
+
+    One row per subject, a (Start, End) pair of columns per phase under a
+    two-row header, and the session's day in the ``Date`` column.
+    """
+
+    def read(self, path: Path) -> pd.DataFrame:
+        raw = pd.read_excel(path, header=None)
+        head = [str(v).strip() for v in raw.iloc[0]]
+        sub = [str(v).strip() for v in raw.iloc[1]]
+        pairs = [j for j in range(len(sub) - 1) if sub[j : j + 2] == ["Start", "End"]]
+        if len(pairs) != len(STRESS_PREDICT_PHASES) or "Date" not in head:
+            raise DataError(
+                f"{path}: expected {len(STRESS_PREDICT_PHASES)} (Start, End) pairs "
+                f"and a Date column; found {len(pairs)} pairs"
+            )
+        day_column = head.index("Date")
+        rows = []
+        for _, row in raw.iloc[2:].iterrows():
+            subject = str(row.iloc[0]).strip()
+            if subject in ("", "nan"):
+                continue
+            day = pd.Timestamp(row.iloc[day_column]).normalize()
+            phases = [
+                (phase, _clock(day, row.iloc[j]), _clock(day, row.iloc[j + 1]))
+                for phase, j in zip(STRESS_PREDICT_PHASES, pairs, strict=True)
+            ]
+            phases.sort(key=lambda p: p[1])
+            for k, (phase, start, end) in enumerate(phases):
+                if k + 1 < len(phases):
+                    end = min(end, phases[k + 1][1])
+                rows.append((subject, phase, start, end))
+        return pd.DataFrame(rows, columns=["subject", "phase", "start", "end"])
+
+
+def _clock(day: pd.Timestamp, value: Any) -> float:
+    """Unix seconds of a 12-hour clock time without AM/PM, in a day session."""
+    if not hasattr(value, "hour"):
+        raise DataError(f"Time_logs: {value!r} is not a time")
+    hour = value.hour + (12 if value.hour < 8 else 0)
+    stamp = day + pd.Timedelta(hours=hour, minutes=value.minute, seconds=value.second)
+    return float((stamp - pd.Timestamp(0)).total_seconds())
+
+
 class LeafParams(BaseModel):
     writers: list[str] | None = Field(
         None,
