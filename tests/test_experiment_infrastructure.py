@@ -508,7 +508,7 @@ def test_profiles_in_the_topology_are_refused_with_an_infrastructure(
 def test_an_infrastructure_is_refused_in_a_real_run(
     workspace: Path,  # noqa: F811
 ) -> None:
-    with pytest.raises(ConfigError, match="simulated only for now"):
+    with pytest.raises(ConfigError, match="emulated or distributed backend"):
         parse_experiment(with_infrastructure(workspace, runtime={"mode": "real"}))
 
 
