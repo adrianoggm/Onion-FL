@@ -22,6 +22,7 @@ resources differ.
 """
 
 import json
+import os
 import subprocess
 import time
 from collections.abc import Mapping
@@ -50,6 +51,7 @@ from onion_fl.infrastructure.emulators import (
 )
 from onion_fl.infrastructure.model import InfrastructureError
 from onion_fl.observability.run import Run
+from onion_fl.runtime.real import TRACE
 
 ROOT = "/onionfl"  # where the containers see the source and the run's paths
 DOCKERFILE = "emulated.Dockerfile"  # in onion_fl.infrastructure
@@ -71,10 +73,16 @@ class EmulatedPlan:
     grace: float = 30.0  # seconds a process may take to start, on top of the timeout
 
     def command(self, group: str) -> list[str]:
-        """The node process of host ``group``, inside its container."""
+        """The node process of host ``group``, inside its container.
+
+        It sees the launcher's ``ONIONFL_TRACE``, which ``docker exec`` would
+        not pass on by itself.
+        """
+        trace = os.environ.get(TRACE)
         return [
             "docker",
             "exec",
+            *([] if trace is None else ["-e", f"{TRACE}={trace}"]),
             self.emulation.container(group),
             "python",
             "-m",

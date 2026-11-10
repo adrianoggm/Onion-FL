@@ -264,6 +264,32 @@ def test_prepare_writes_the_project_and_the_paths_the_containers_see(
     prepared.run.finish(status="failed")  # nothing ran
 
 
+def test_a_node_process_sees_the_launchers_tracing(monkeypatch) -> None:
+    """``docker exec`` passes no environment on, so the command names it (#198)."""
+    from types import SimpleNamespace
+
+    from onion_fl.experiment.emulated import EmulatedPlan
+
+    plan = EmulatedPlan(
+        run=SimpleNamespace(run_id="20261110T000000Z-abc"),
+        scenario=None,
+        groups=["cloud-1"],
+        emulation=SimpleNamespace(container=lambda host: f"p-host-{host}"),
+        folder=Path("."),
+        params=None,
+    )
+    monkeypatch.delenv("ONIONFL_TRACE", raising=False)
+    assert plan.command("cloud-1")[:3] == ["docker", "exec", "p-host-cloud-1"]
+    monkeypatch.setenv("ONIONFL_TRACE", "1")
+    assert plan.command("cloud-1")[:5] == [
+        "docker",
+        "exec",
+        "-e",
+        "ONIONFL_TRACE=1",
+        "p-host-cloud-1",
+    ]
+
+
 def test_prepare_pins_each_host_to_the_cpus_it_was_calibrated_on(
     workspace: Path,  # noqa: F811
 ) -> None:
