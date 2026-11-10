@@ -136,6 +136,7 @@ def baselines(config: ExperimentConfig, seed: int = 0) -> dict[str, Any]:
     for client in split.clients:
         train[client.dataset].append(client)
     every = [c.train for c in split.clients]
+    harmonized = len({tuple(c.feature_names) for c in every}) == 1
     out: dict[str, Any] = {
         "roles": {d: split.roles[d]["test"] for d in sorted(split.roles)},
         "datasets": {},
@@ -162,7 +163,7 @@ def baselines(config: ExperimentConfig, seed: int = 0) -> dict[str, Any]:
                 },
             },
         }
-        if len(tests) > 1:
+        if len(tests) > 1 and harmonized:  # one model over every study's windows
             row["lr_pooled"] = score_dataset(tests[dataset], _fit(every, n, seed))
             row["lr_lodo"] = score_dataset(tests[dataset], _fit(others, n, seed))
         out["datasets"][dataset] = row
