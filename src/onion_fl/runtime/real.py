@@ -15,6 +15,12 @@ NTP-synchronised clocks across machines. The message itself is encoded as the
 simulation encodes it, so ``message.sent`` counts the same bytes in both
 (I1 §10); the frame's are in the ``frame`` tag.
 
+A transport that authenticates its peers (gRPC over mutual TLS) calls back
+with ``principal``, the identity it verified; the runtime puts it in the
+message's ``meta["principal"]``, ``None`` when the transport says nothing, and
+always over what the sender wrote there. The coordinator takes an operator's
+order only from the principal its ``src`` names (#227).
+
 Tracing (``ONIONFL_TRACE=1`` in a node process's environment, off by default)
 adds, after each message sent and handled, a ``trace.sent`` or
 ``trace.delivered`` event with the wall-clock instants of its path through the
@@ -216,11 +222,16 @@ class RealRuntime:
                 self._subscribed.add((id(carrier), node_id))
                 carrier.on_receive(self.inbox(node_id), self._receiver(node_id))
 
-    def _receiver(self, node_id: str) -> Callable[[bytes], None]:
-        """What a transport calls with a message for ``node_id``: queue it."""
+    def _receiver(self, node_id: str) -> Callable[..., None]:
+        """What a transport calls with a message for ``node_id`` and, if it
+        authenticated the sender, its ``principal``: queue it."""
         if self._trace:  # and the instant the transport handed it over
-            return lambda data: self._post(0.0, "deliver", (node_id, data, time.time()))
-        return lambda data: self._post(0.0, "deliver", (node_id, data))
+            return lambda data, principal=None: self._post(
+                0.0, "deliver", (node_id, data, principal, time.time())
+            )
+        return lambda data, principal=None: self._post(
+            0.0, "deliver", (node_id, data, principal)
+        )
 
     # --- running -----------------------------------------------------------
 
@@ -308,7 +319,11 @@ class RealRuntime:
         self._handle(node_id, "on_start", lambda node, ctx: node.on_start(ctx))
 
     def _on_deliver(
-        self, node_id: str, data: bytes, received: float | None = None
+        self,
+        node_id: str,
+        data: bytes,
+        principal: str | None = None,
+        received: float | None = None,
     ) -> None:
         popped = time.time() if received is not None else None
         name, _, rest = data.partition(SEPARATOR)
@@ -322,7 +337,8 @@ class RealRuntime:
                 raise MessageError("the frame header is not an object")
             msg = codec.decode(body)
             known = {k: frame[k] for k in ("msg_id", "sent_at") if k in frame}
-            msg = dataclasses.replace(msg, meta={**msg.meta, **known})
+            meta = {**msg.meta, **known, "principal": principal}
+            msg = dataclasses.replace(msg, meta=meta)
         except Exception as exc:  # anything can arrive; the node goes on
             self._record(
                 node_id, "message.rejected", None, {"reason": f"undecodable: {exc}"}

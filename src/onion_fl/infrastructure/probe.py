@@ -88,6 +88,9 @@ def listen(host: str, port: int) -> socket.socket | None:
     import threading
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # It closes the connections it accepts, which leaves them in TIME_WAIT on
+    # this port; the node's gRPC server binds it right after (#227).
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         sock.bind((host, port))
         sock.listen(16)
@@ -105,6 +108,16 @@ def listen(host: str, port: int) -> socket.socket | None:
 
     threading.Thread(target=accept, daemon=True).start()
     return sock
+
+
+def release(sock: socket.socket) -> None:
+    """Free the port now: ``shutdown`` wakes the thread blocked in ``accept``,
+    which would otherwise keep the socket open after ``close``."""
+    try:
+        sock.shutdown(socket.SHUT_RDWR)
+    except OSError:  # not connected: nothing to shut down
+        pass
+    sock.close()
 
 
 def facts(request: dict[str, Any]) -> dict[str, Any]:
@@ -163,7 +176,7 @@ def main(argv: list[str]) -> None:
         else:
             print(json.dumps({"error": f"unknown command {command!r}"}), flush=True)
     if held is not None:
-        held.close()
+        release(held)
 
 
 if __name__ == "__main__":

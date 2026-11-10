@@ -12,6 +12,7 @@ The dataset is a CSV format fixture (docs/RULES.md).
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import socket
@@ -171,6 +172,38 @@ def test_a_direct_transport_with_one_process_per_group_matches_the_simulation(
 
     with np.load(path / "model.npz", allow_pickle=False) as saved:
         assert_same_model(expected, {k: saved[k] for k in saved.files})
+
+
+def assert_no_secrets(path: Path, *secrets: str) -> None:
+    """Nothing in a run folder holds a key, a certificate or a password (#227)."""
+    for file in sorted(p for p in path.rglob("*") if p.suffix in (".json", ".jsonl")):
+        text = file.read_text(encoding="utf-8")
+        assert "-----BEGIN" not in text, file.name
+        for secret in secrets:
+            assert secret not in text, file.name
+
+
+def test_grpc_over_mutual_tls_with_one_process_per_group_matches_the_simulation(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("cryptography")
+    from tests.certs import Pki
+
+    pki = Pki(tmp_path / "pki")
+    cert, key = pki.issue("node", ["127.0.0.1"])
+    tls = {"ca": str(pki.ca), "cert": str(cert), "key": str(key)}
+    grpc = _direct(tmp_path) | {"tls": tls}
+    expected = simulated(experiment(tmp_path, grpc))
+
+    (path,) = run_experiment(experiment(tmp_path, grpc, mode="real"))
+
+    meta = json.loads((path / "run.json").read_text(encoding="utf-8"))
+    assert meta["status"] == "finished", meta.get("processes")
+    with np.load(path / "model.npz", allow_pickle=False) as saved:
+        assert_same_model(expected, {k: saved[k] for k in saved.files})
+    pem = key.read_text(encoding="utf-8").splitlines()[1]  # a line of the key itself
+    assert_no_secrets(path, pem)
+    assert "node.key" in json.dumps(meta)  # the path is what the run keeps
 
 
 def test_local_over_grpc_and_over_flower_give_the_same_model_and_bytes(
@@ -431,6 +464,10 @@ def test_the_emulated_backend_matches_the_simulation(tmp_path: Path) -> None:
 # The launcher reaches them only through SSH, as it would real machines, with
 # a throwaway key made for the test. The broker runs in cloud-1's network
 # namespace, as on a real cloud host.
+#
+# With ``cryptography`` installed, each machine also gets its own certificate
+# (one test CA) at the same path, ``TLS_ROOT``, and cloud-1 a second broker
+# that speaks only TLS (issue #227).
 
 DISTRIBUTED = {
     "base": EMULATED["image"],
@@ -440,6 +477,8 @@ DISTRIBUTED = {
     "ssh": os.environ.get("ONIONFL_SSH", "ssh"),
 }
 MACHINES = ["cloud-1", "fog-a", "fog-b", "field-device-1", "field-device-2"]
+TLS_ROOT = "/onionfl/tls"  # on every machine: ca.pem, node.pem, node.key, password
+MQTT_USER, MQTT_PASSWORD = "onion", f"pw-{os.urandom(8).hex()}"
 MACHINE_LAB = LAB | {
     "name": "distributed_lab",
     "sites": LAB["sites"] | {"field": {"pool": {"device": 2}}},
@@ -494,6 +533,16 @@ def machines(tmp_path_factory: pytest.TempPathFactory):
     source = Path(onion_fl.__file__).resolve().parent.as_posix()
     mount = f"type=bind,source={source},target=/onionfl/src/onion_fl,readonly"
     prefix = DISTRIBUTED["prefix"]
+    pki = None
+    if importlib.util.find_spec("cryptography") is not None:
+        from tests.certs import Pki
+
+        pki = Pki(folder / "pki")
+        for host in MACHINES:
+            own = folder / "tls" / host
+            pki.issue("node", [f"{prefix}-{host}", host], own)
+            (own / "ca.pem").write_bytes(pki.ca.read_bytes())
+            (own / "password").write_text(MQTT_PASSWORD, encoding="utf-8")
     network, started = f"{prefix}-net", []
     _docker("network", "create", network)
     try:
@@ -502,10 +551,16 @@ def machines(tmp_path_factory: pytest.TempPathFactory):
             published = ["-p", "127.0.0.1::22"]
             if host == "cloud-1" and DISTRIBUTED["mqtt_port"]:
                 published += ["-p", f"127.0.0.1:{DISTRIBUTED['mqtt_port']}:1883"]
+            mounts = ["--mount", mount]
+            if pki is not None:
+                own = (folder / "tls" / host).as_posix()
+                mounts += [
+                    "--mount", f"type=bind,source={own},target={TLS_ROOT},readonly"
+                ]  # fmt: skip
             _docker(
                 "run", "-d", "--name", name, "--hostname", host,
                 "--network", network, *published,
-                "-e", f"AUTHORIZED_KEY={public}", "--mount", mount,
+                "-e", f"AUTHORIZED_KEY={public}", *mounts,
                 DISTRIBUTED["image"],
             )  # fmt: skip
             started.append(name)
@@ -515,6 +570,27 @@ def machines(tmp_path_factory: pytest.TempPathFactory):
             "eclipse-mosquitto:2", "mosquitto", "-c", "/mosquitto-no-auth.conf",
         )  # fmt: skip
         started.append(broker)
+        if pki is not None:
+            from tests.certs import BROKER_TLS, mosquitto_tls, wait_for_mosquitto
+
+            command = mosquitto_tls(
+                pki,
+                folder / "mqtts",
+                [f"{prefix}-cloud-1", "cloud-1"],
+                MQTT_USER,
+                MQTT_PASSWORD,
+            )
+            mqtts = f"{prefix}-mqtts"
+            target = (
+                f"type=bind,source={(folder / 'mqtts').as_posix()},target={BROKER_TLS}"
+            )
+            _docker(
+                "run", "-d", "--name", mqtts,
+                "--network", f"container:{prefix}-cloud-1", "--mount", target,
+                "eclipse-mosquitto:2", *command,
+            )  # fmt: skip
+            started.append(mqtts)
+            wait_for_mosquitto(mqtts)
         ports = {
             host: int(_docker("port", f"{prefix}-{host}", "22").rsplit(":")[-1])
             for host in MACHINES
@@ -555,6 +631,24 @@ def machines(tmp_path_factory: pytest.TempPathFactory):
         _docker("network", "rm", network, check=False)
 
 
+def fresh_ports(raw: dict) -> dict:
+    """The inventory with a gRPC port per machine that no earlier run took.
+
+    Each port was free on this host a moment ago; inside the containers it
+    only has to differ from the last run's, whose sockets may linger."""
+    socks = [socket.socket() for _ in raw["machines"]]
+    for s in socks:
+        s.bind(("127.0.0.1", 0))
+    ports = [s.getsockname()[1] for s in socks]
+    for s in socks:
+        s.close()
+    machines = {
+        host: machine | {"grpc_port": port}
+        for (host, machine), port in zip(raw["machines"].items(), ports, strict=True)
+    }
+    return raw | {"machines": machines}
+
+
 def on_the_machines(config, backend, runs: Path):
     """``config`` on ``MACHINE_LAB``, four edges per device, run by ``backend``."""
     raw = config.dump() | {
@@ -586,7 +680,11 @@ def test_the_distributed_backend_matches_the_simulation(
         pytest.importorskip("grpc")
     link = {"name": transport} | ({"broker": BROKER} if transport == "mqtt" else {})
     base = experiment(tmp_path, link)
-    backend = {"name": "distributed", "inventory": machines, "ssh": DISTRIBUTED["ssh"]}
+    backend = {
+        "name": "distributed",
+        "inventory": fresh_ports(machines),
+        "ssh": DISTRIBUTED["ssh"],
+    }
     sim = on_the_machines(base, "sim", tmp_path / "runs_sim")
     distributed = on_the_machines(base, backend, tmp_path / "runs_distributed")
 
@@ -611,3 +709,57 @@ def test_the_distributed_backend_matches_the_simulation(
     functional = result["pairs"][0]["functional"]
     assert result["functional"]["complete"], functional
     assert functional["model"]["bitwise"], functional["model"]
+
+
+@pytest.mark.skipif(
+    not _machines_possible(), reason="no Docker, no ssh or no emulated host image"
+)
+@pytest.mark.parametrize("transport", ["mqtt", "grpc"])
+def test_the_distributed_backend_runs_over_tls_and_keeps_no_secret(
+    tmp_path: Path, machines, transport: str
+) -> None:
+    """MQTTS with a password from a file, and gRPC with mutual TLS (#227).
+
+    Every machine reads its own certificate at the same path; the run folder
+    keeps those paths and never what the files hold.
+    """
+    pytest.importorskip("cryptography")
+    from tests.certs import PASSWORD_PORT
+
+    backend = {
+        "name": "distributed",
+        "inventory": fresh_ports(machines),
+        "ssh": DISTRIBUTED["ssh"],
+    }
+    if transport == "mqtt":
+        link = {
+            "name": "mqtt",
+            "broker": BROKER,
+            "tls": {"ca": f"{TLS_ROOT}/ca.pem"},
+            "username": MQTT_USER,
+            "password_file": f"{TLS_ROOT}/password",
+        }
+        backend["mqtt_port"] = PASSWORD_PORT
+    else:
+        pytest.importorskip("grpc")
+        link = {
+            "name": "grpc",
+            "tls": {
+                "ca": f"{TLS_ROOT}/ca.pem",
+                "cert": f"{TLS_ROOT}/node.pem",
+                "key": f"{TLS_ROOT}/node.key",
+            },
+        }
+    base = experiment(tmp_path, link)
+    sim = on_the_machines(base, "sim", tmp_path / "runs_sim")
+    secure = on_the_machines(base, backend, tmp_path / "runs_distributed")
+
+    (path,) = run_experiment(secure)
+
+    meta = json.loads((path / "run.json").read_text(encoding="utf-8"))
+    assert meta["status"] == "finished", meta.get("processes")
+    assert meta["distributed"]["transports"] == [transport]
+    with np.load(path / "model.npz", allow_pickle=False) as saved:
+        assert_same_model(simulated(sim), {k: saved[k] for k in saved.files})
+    assert_no_secrets(path, MQTT_PASSWORD)
+    assert f"{TLS_ROOT}/ca.pem" in json.dumps(meta["config"])

@@ -832,7 +832,7 @@ class Coordinator(_Collector):
         round_every: float | None = None,
         promotion: Any = None,
         validators: Iterable[str] = (),
-        operators: Iterable[str] = ("operator",),
+        operators: Iterable[str] = (),
         operator_keys: Mapping[str, str] | None = None,
         audience: str = "",
         **kw: Any,
@@ -1132,14 +1132,28 @@ class Coordinator(_Collector):
     def _other(self, msg: Message, ctx: Context) -> None:
         """An operator's order: ``{"rollback": v}`` (``None``: to the champion the
         current one replaced) or ``{"promote": v}``, as a control message from a
-        configured operator. With operator keys, it must also be signed by that
-        operator for this run, and each signature counts once, whatever the
-        transport that carried it (#203)."""
+        configured operator (none by default). With operator keys, it must also
+        be signed by that operator for this run, and each signature counts once,
+        whatever the transport that carried it (#203).
+
+        ``msg.src`` is what the sender says of itself. Over a real transport the
+        runtime puts in ``meta["principal"]`` who the transport authenticated
+        (the CN of a gRPC client certificate), or ``None``, overwriting whatever
+        the sender wrote; an unsigned order counts only when that principal is
+        its ``src`` (#227). A signed one is checked by its signature instead. In
+        simulation every node is in the process: there is no principal and the
+        id is enough."""
         orders = ("rollback", "promote")
         if msg.kind != "control" or not any(k in msg.meta for k in orders):
             super()._other(msg, ctx)
         elif msg.src not in self.operators:
             _reject(ctx, msg, f"{msg.src} is not an operator")
+        elif (
+            self._keys is None  # a signed order proves its operator itself
+            and "principal" in msg.meta
+            and msg.meta["principal"] != msg.src
+        ):
+            _reject(ctx, msg, f"{msg.src} is not authenticated as itself")
         elif (why := self._unauthentic(msg)) is not None:
             _reject(ctx, msg, why)
         elif self.promotion is None:
@@ -1186,6 +1200,10 @@ class Coordinator(_Collector):
         target = self.versions.get(to) if isinstance(to, int) else None
         if target is None or target.status not in ("rejected", "rolled_back"):
             _reject(ctx, msg, f"no rejected or rolled back version {to} to promote")
+            return
+        if target.status == "rejected" and msg.meta.get("override") is not True:
+            # the validation said no: overruling it has to be said, not implied
+            _reject(ctx, msg, f"version {to} was rejected; promote it with override")
             return
         target.status = "candidate"  # it replaces the champion as a new one would
         self._activate(target, ctx)

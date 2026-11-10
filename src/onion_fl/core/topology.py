@@ -51,6 +51,22 @@ class LinkSpec(BaseModel):
     codec: str = "json"
     profile: str | dict[str, Any] = "lan"
 
+    @field_validator("transport")
+    @classmethod
+    def _known_transport(cls, value: str | dict[str, Any]) -> str | dict[str, Any]:
+        """Checked here, not when a process opens it: a link that holds a
+        secret, or a setting the transport does not take, never reaches the
+        ``config_id`` or ``run.json`` (#227)."""
+        from onion_fl.transports import transports
+
+        params = {} if isinstance(value, str) else dict(value)
+        name = value if isinstance(value, str) else params.pop("name", "mqtt")
+        try:
+            transports.get(name).validate(params)
+        except PluginError as exc:
+            raise ValueError(str(exc)) from exc
+        return value
+
     @field_validator("codec")
     @classmethod
     def _known_codec(cls, value: str) -> str:

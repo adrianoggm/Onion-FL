@@ -46,6 +46,7 @@ dev = [
     "httpx>=0.27,<1",
     "openpyxl>=3.1,<4",  # excel reader: .xlsx sheets of Stress-Predict and Nurse Stress
     "grpcio>=1.60,<2",  # gRPC transport tests (same pin as the grpc extra)
+    "cryptography>=42,<48",  # throwaway certificates for the TLS tests
 ]
 # Onion-FL Studio: onion_fl serve
 studio = [

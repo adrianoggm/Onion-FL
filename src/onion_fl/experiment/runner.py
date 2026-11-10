@@ -1427,6 +1427,7 @@ def build_scenario(
         promotion=(
             None if config.promotion is None else create(promotions, config.promotion)
         ),
+        operators=config.operators,
         sharing=config.learning.sharing,
         seed=scenario.seed,
         metrics=config.evaluation.metrics,

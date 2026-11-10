@@ -569,6 +569,12 @@ class ExperimentConfig(Strict):
         "los edges si la validación lo promueve",
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
+    operators: list[str] = Field(
+        default_factory=list,
+        description="Ids que pueden dar órdenes de promover o revertir versiones; "
+        "sin ellos no se acepta ninguna",
+        exclude_if=lambda v: not v,  # unset, it keeps existing config_ids
+    )
 
     infrastructure: InfrastructureConfig | None = Field(
         None,

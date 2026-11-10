@@ -61,3 +61,13 @@ Question: can an Android phone host an `onion_fl node`? iOS is out of scope.
 2. `start_in` must exceed the slowest machine's start (on the containers a process took about 40 s to build the scenario); the Pi's will be longer. A round-1 deadline that fits a cold first training avoids its late updates.
 3. **A real failure.** Power the Pi off (or `sudo reboot`) during the run rather than `kill -KILL`. The launcher does not yet start a node again on its own after a reboot: give `restarts` a `down` longer than the reboot, or start `onion_fl node --resume` on the Pi by hand (`python -m onion_fl node --id <host> --run <run_id> --config runs/<run_id>/scenario.json --resume`, in its `root`). Check that its edges' `node.resumed` events say `restored` and that `python scripts/continuum_distributed.py resumed` shows each edge's `examples` equal to the simulation's.
 4. Restarting a fog or the root is not supported: put the aggregators on machines that stay up.
+
+## 6. TLS between the machines (#227)
+
+Not tried on real hardware either; on the containers it is tested as described in `docs/architecture.md` §7.
+
+- **Certificates.** One CA for the lab. Each machine gets a certificate whose SANs hold its `advertise` address (a name or an IP), with the key at the same path on every machine, for example `~/onion-fl/tls/{ca.pem,node.pem,node.key}`. The keys never leave their machine and are never committed.
+- **gRPC.** `transport: {name: grpc, tls: {ca: ~/onion-fl/tls/ca.pem, cert: ~/onion-fl/tls/node.pem, key: ~/onion-fl/tls/node.key}}` on every link. TLS is mutual: a machine without a certificate from the CA cannot deliver to any other.
+- **MQTT.** Mosquitto on the broker's host with a TLS `listener` (8883), `cafile`/`certfile`/`keyfile`, and either `require_certificate true` with `use_identity_as_username true`, or `allow_anonymous false` with a `password_file`. The links take `tls: {ca: ...}` plus `cert`/`key`, or `username` with `password_file` (a path on each machine) or `password_env`. Give the backend `mqtt_port: 8883`.
+- **Secrets.** The experiment and `run.json` hold only those paths and names. A variable named by `password_env` has to be in the node's environment on the machine, for example through the inventory's `env`, but then its value sits in the inventory and on the SSH command line. Prefer `password_file`.
+- **Check.** A client without credentials (`mosquitto_sub --cafile ca.pem -h <broker> -p 8883 -t x`) is refused, and so is a plain one. `grep -r "BEGIN" runs/<run_id>` finds nothing.
