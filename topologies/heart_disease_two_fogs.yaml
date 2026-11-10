@@ -1,0 +1,19 @@
+# Cross-silo for Fed-Heart-Disease (issue #251): the four hospitals under two
+# fogs and one cloud. The fogs follow geography: fog_us holds Cleveland and VA
+# Long Beach, fog_eu holds Hungarian (Budapest) and Switzerland (Zurich, Basel).
+name: heart_disease_two_fogs
+levels: [global, fog, edge]
+root:
+  id: cloud
+  aggregator: fedavg
+  server_optimizer: replace
+fog:
+  defaults:
+    aggregator: fedavg
+    quorum: 1.0
+    link_up: {transport: mqtt, codec: json, profile: lan}
+  nodes:
+    - {id: fog_us}
+    - {id: fog_eu}
+edge:
+  link_up: {transport: mqtt, codec: json, profile: lan}
