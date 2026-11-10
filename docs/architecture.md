@@ -352,6 +352,12 @@ infrastructure:
 
 The result is JSON on stdout, flat rows with `--csv` and a page with `--html`.
 
+**Ex ante diagnostic of the deadline bias** (N8, `experiment.diagnostic`). Every `sim` run computes it before its first round and saves it as `diagnostic` in `run.json`, with the `seconds` it took.
+- `p_i`, the probability that edge i's update reaches the root in time, is the FLOSS variant's per-hop product over a round that `planned_round` plans from the built federation: the training children of each node, the keys crossing each link sized by its codec, and `local_epochs` passes over the edge's examples (the stub declares its own).
+- `w_i` is the edge's share of the examples. `d_i` is a statistic of `edge_statistics` on the initial model: `label_divergence` (the primary one) and `gradient_norm` (the norm of the initial loss gradient, one full-batch pass).
+- With `u_i = w_i d_i`, `D = Cov(p, u) / (mean(p) mean(u))`: the share of the divergence that arrives over the share of edges that do, minus one. It is 0 when nothing diverges or who arrives is unrelated to it, negative when the edges that miss bring what is different, and null when nobody arrives.
+- The baselines saved with it are the mean participation rate alone and the FLOSS correction (the participation weighted by examples and the factor `1 / participation` on the rounds to target). A diagnostic that cannot be computed leaves `error` and the run goes on.
+
 **Sinks.**
 - `jsonl` is always on.
 - `prometheus` serves the `onionfl_*` series that the Grafana dashboard queries; a test keeps the dashboard and the series in sync. With versions: `onionfl_champion_version`, `onionfl_versions_total` (by `decision` and `reason`) and `onionfl_version_score` (each decision's scores, by `version` and `name`); with streams, `onionfl_data_arrived_total` per edge and `onionfl_drift_detected_total` per node and `kind`.

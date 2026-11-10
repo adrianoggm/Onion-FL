@@ -172,12 +172,23 @@ def plan_of(config: Mapping[str, Any], seed: int, scenario: str = "") -> Plan:
     from onion_fl.experiment.config import parse_experiment
     from onion_fl.experiment.runner import _scenario_data, build_scenario
     from onion_fl.experiment.sweep import Scenario
-    from onion_fl.learning.sharing import keys_crossing
 
     parsed = parse_experiment(dict(config))
     built = Scenario(scenario, seed, parsed, config_id(dict(config)))
     topology, split, placement, _ = _scenario_data(built, None)
-    federation = build_scenario(built, topology, split, placement, parent=None)
+    return plan_from(build_scenario(built, topology, split, placement, parent=None))
+
+
+def _crossing(state: Mapping[str, Any], node: Any) -> list[str]:
+    """The keys of the full ``state`` that travel between an aggregation node and
+    its children, both ways."""
+    from onion_fl.learning.sharing import keys_crossing
+
+    return keys_crossing(state, node.sharing, node.levels, node.level)
+
+
+def plan_from(federation: Any) -> Plan:
+    """The models of a built (not yet run) federation on the simulator."""
     runtime = federation.runtime
     aggregation = [federation.coordinator, *federation.aggregators.values()]
     nodes = [n.id for n in aggregation] + list(federation.edges)
@@ -193,12 +204,7 @@ def plan_of(config: Mapping[str, Any], seed: int, scenario: str = "") -> Plan:
         },
         deadlines={n.id: n.deadline for n in aggregation},
         combine={
-            n.id: float(
-                sum(
-                    np.asarray(state[k]).nbytes
-                    for k in keys_crossing(state, n.sharing, n.levels, n.level)
-                )
-            )
+            n.id: float(sum(np.asarray(state[k]).nbytes for k in _crossing(state, n)))
             for n in aggregation
         },
         unknown=sorted(n for n, m in compute.items() if mean_duration(m, 1.0) is None),
@@ -261,6 +267,66 @@ def rounds_to_target(
     return (max(values) if values else None), True
 
 
+# --- a round planned ex ante ----------------------------------------------------------
+
+
+def planned_work(edge: Any) -> tuple[float, float]:
+    """The samples an edge's compute is charged a round and its examples, planned
+    from its trainer: ``local_epochs`` passes over its training rows (the stub
+    declares its own examples). Trainers with extra passes (Ditto's personal
+    model, FedRep's head) are counted at their shared passes only."""
+    params = getattr(edge.trainer, "params", None)
+    rows = getattr(edge.data, "y", None)
+    examples = float(getattr(params, "examples", 0 if rows is None else len(rows)))
+    return float(getattr(params, "local_epochs", 1)) * examples, examples
+
+
+def planned_round(federation: Any) -> tuple[str, Round]:
+    """The root and a round of a built federation, planned without running it.
+
+    A round past the bootstrap: every aggregation node sends the model to the
+    children that train (edges, or aggregators with such edges below), and
+    each sends back an update of the keys crossing that link, sized by the
+    link's codec; an edge does its ``planned_work``.
+    """
+    from onion_fl.core.message import Message, Payload
+
+    runtime = federation.runtime
+    state = federation.coordinator.state
+    aggregation = {
+        n.id: n for n in [federation.coordinator, *federation.aggregators.values()]
+    }
+    rnd = Round()
+    for edge_id, edge in sorted(federation.edges.items()):
+        if edge.train:
+            rnd.samples[edge_id], rnd.examples[edge_id] = planned_work(edge)
+
+    def trains(node_id: str) -> bool:
+        node = aggregation.get(node_id)
+        if node is None:
+            return node_id in rnd.samples
+        return any(trains(k) for k in node.children)
+
+    sizes: dict[tuple, float] = {}  # the same keys a node: one encoding per codec
+    for node in aggregation.values():
+        crossing = {k: np.asarray(state[k]) for k in _crossing(state, node)}
+        for kid in sorted(k for k in node.children if trains(k)):
+            rnd.children.setdefault(node.id, []).append(kid)
+            for src, dst, kind in (
+                (node.id, kid, "global_model"),
+                (kid, node.id, "update"),
+            ):
+                codec = runtime.codec_of(src, dst)
+                key = (node.id, kind, codec.name)
+                if key not in sizes:
+                    weights = dict.fromkeys(crossing, 1.0) if kind == "update" else {}
+                    payload = Payload(state=crossing, weights=weights)
+                    sizes[key] = float(codec.size(Message(kind, src, dst, 2, payload)))
+                sent = rnd.down if kind == "global_model" else rnd.up
+                sent[(src, dst)] = sizes[key]
+    return federation.coordinator.id, rnd
+
+
 # --- the prediction ------------------------------------------------------------------
 
 
@@ -296,6 +362,13 @@ def _node(
         longest = everyone * min(longest, deadline) + (1 - everyone) * deadline
     combine = plan.combine.get(node, 0.0) * len(kids)
     return longest + plan.compute_time(node, combine), reach
+
+
+def arrival_probabilities(plan: Plan, root: str, rnd: Round) -> dict[str, float]:
+    """Per edge of a round, the probability that its update reaches the root in
+    time: the product, up its path, of each hop's arriving before the parent's
+    deadline, as the FLOSS-style variant counts it."""
+    return _node(root, rnd, plan, floss=True)[1]
 
 
 def predict(
