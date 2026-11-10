@@ -71,6 +71,13 @@ def snapshot_federation(federation: Federation) -> FederationSnapshot:
         # continue.
         if getattr(edge, "stream", None) is not None:
             state.arrays["stream/consumed_by"] = edge._consumed_by
+        if getattr(edge, "unlabelled", None) is not None:  # and the audit of §9
+            state.arrays |= {
+                "unlabelled/used_by": edge._unlabelled_by,
+                "unlabelled/pseudo_label": edge._pseudo_label,
+                "unlabelled/confidence": edge._pseudo_confidence,
+                "unlabelled/generated_by_version": edge._generated_by,
+            }
         if getattr(edge, "replay", None) is not None:
             replay, meta = edge.replay.state()
             state.arrays |= _prefixed("replay", replay)

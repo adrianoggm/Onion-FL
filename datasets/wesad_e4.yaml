@@ -1,0 +1,41 @@
+# WESAD wrist (Empatica E4) at the native rates (ACC 32 Hz, BVP 64 Hz, EDA and
+# TEMP 4 Hz), with the harmonized E4 features every E4 dataset shares:
+# <channel>_<stat> for acc_x, acc_y, acc_z, bvp, eda and temp (issue #239).
+#
+# The same windows as `wesad.yaml` with location wrist: 60 s with half overlap,
+# the label read at 700 Hz, and a window dropped when any of its label samples
+# is outside the chosen classes. Checked on the 15 subjects (2026-11-10): the
+# windows, labels and times are identical, and so are min and max, since both
+# take the same native samples. `wesad.yaml` holds each signal at 700 Hz, so it
+# weights a sample by how many label rows it covers: EDA and TEMP (175 rows
+# each) still match exactly; for ACC and BVP, mean and std differ by under
+# 0.03% of the window's range and the median by under 4% (one step of the
+# integer ACC). tests/test_datasets_descriptors.py checks these tolerances.
+#
+# A separate descriptor, not an option of `wesad.yaml`: the cache key hashes
+# the description, so an option there would change what existing runs cite.
+name: wesad_e4
+description: WESAD muñeca (Empatica E4) a tasas nativas, con las features E4 armonizadas.
+root: data/WESAD
+options:
+  signals: "ACC,BVP,EDA,TEMP"
+  window_seconds: 60
+  overlap: 0.5
+source:
+  reader: wesad_e4
+  path: "{subject}/{subject}.pkl"
+  signals: "{signals}"
+steps:
+  - time: {column: time}    # seconds from the start of the recording
+  - label:
+      default: binary
+      strategies:
+        binary: {task: stress_binary, column: condition, map: {1: 0, 2: 1}}
+        three_class: {task: affect_3class, column: condition, map: {1: 0, 2: 1, 3: 2}}
+  - multirate_window:
+      seconds: "{window_seconds}"
+      overlap: "{overlap}"
+      label: mode
+      label_rows: condition   # the rows that carry a label sample (700 Hz)
+  - features:
+      regex: "_(mean|std|min|max|median)$"

@@ -385,6 +385,17 @@ class Resolved:
     def train_rate(self, node: str) -> float | None:
         return self.infrastructure.profile_of(self.hosts[node]).train_rate
 
+    def link(
+        self, child: str, parent: str, transport: Any
+    ) -> tuple[list[str], list[Hop], dict[str, Any]]:
+        """A logical link between two placed nodes, compiled as :func:`resolve`
+        does: through the broker when the transport is MQTT."""
+        mqtt = _transport(transport) == "mqtt"
+        via = self.services.get("mqtt_broker") if mqtt else None
+        return compile_link(
+            self.infrastructure, self.hosts[child], self.hosts[parent], via
+        )
+
     def load(self) -> dict[str, list[str]]:
         """The logical nodes each host runs."""
         out: dict[str, list[str]] = {}
@@ -393,17 +404,25 @@ class Resolved:
         return dict(sorted(out.items()))
 
     def preview(self) -> dict[str, Any]:
-        return {
-            "infrastructure_id": self.infrastructure_id,
-            "name": self.infrastructure.name,
-            "hosts": dict(sorted(self.hosts.items())),
-            "load": self.load(),
-            "services": dict(sorted(self.services.items())),
-            "links": {
-                child: {"path": path, "profile": profile}
-                for child, (path, profile) in sorted(self.links.items())
-            },
-        } | ({} if self.coupling is None else {"coupling": self.coupling})
+        return (
+            {
+                "infrastructure_id": self.infrastructure_id,
+                "name": self.infrastructure.name,
+                "hosts": dict(sorted(self.hosts.items())),
+                "load": self.load(),
+                "services": dict(sorted(self.services.items())),
+                "links": {
+                    child: {"path": path, "profile": profile}
+                    for child, (path, profile) in sorted(self.links.items())
+                },
+            }
+            | ({} if self.coupling is None else {"coupling": self.coupling})
+            | (
+                {}
+                if not self.infrastructure.device_traces
+                else {"device_traces": self.infrastructure.device_traces}
+            )
+        )
 
 
 def resolve(
@@ -456,8 +475,9 @@ def resolve(
     for child, up in parent.items():
         spec = topology.node(child).link_up if child in names else topology.edge.link_up
         via = broker if _transport(spec.transport) == "mqtt" else None
-        path, crossed[child] = route(infra, hosts[child], hosts[up], via)
-        profile = combine([(segment(infra, k), f) for k, f in crossed[child]])
+        path, crossed[child], profile = compile_link(
+            infra, hosts[child], hosts[up], via
+        )
         links[child] = (path, profile)
     coupling = None
     if coupled:
@@ -469,6 +489,15 @@ def resolve(
         coupling = {"statistic": edges.statistic, "rho": edges.rho}
         coupling["spearman"] = None if achieved is None else round(achieved, 4)
     return Resolved(infra, hosts, parent, links, placed, crossed, coupling)
+
+
+def compile_link(
+    infra: Infrastructure, child: str, parent: str, via: str | None = None
+) -> tuple[list[str], list[Hop], dict[str, Any]]:
+    """The sites, segments and profile of a logical link between two hosts,
+    through ``via`` (the broker) when given."""
+    path, crossed = route(infra, child, parent, via)
+    return path, crossed, combine([(segment(infra, k), f) for k, f in crossed])
 
 
 def _transport(spec: Any) -> str:

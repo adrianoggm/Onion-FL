@@ -1,0 +1,45 @@
+# The continual benchmark (issue #163, continuum C8), step 1 of the selection:
+# each baseline's learning rate and local epochs, chosen on the validation
+# subjects. The streams are C5's: SWELL + WESAD in time order after a 20-minute
+# bootstrap, a tenth of the rows labelled, 10 minutes late, and a round every
+# 10 minutes of data (a schedule trigger, C6). The baselines differ in how an
+# edge updates (continual.update):
+# - warm: from the model received, on its new rows (C3);
+# - frozen: v0 on the history, then nothing;
+# - scratch: from the initial weights, on every labelled row it has.
+# The root scores each round's model on what the validation streams brought
+# since the last round; the test subjects are never evaluated here.
+#
+#   onion_fl run experiments/continuum_benchmark_select.yaml --workers 3
+name: continuum_benchmark_select
+description: Selección en validación de la tasa de aprendizaje y las épocas de cada línea base del benchmark continuo.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+rounds: 60                 # an upper bound: the run ends at the last label
+stream:
+  bootstrap: 20m
+  batch_size: 1
+  speed: 60
+labels: {fraction: 0.1, delay: 10m}
+continual: {memory: none}
+continuum:
+  trigger: {name: schedule, every: 10m}
+  status_every: 10m
+evaluation:
+  metrics: [loss, accuracy, macro_f1, confusion_matrix]
+  aggregators: {every: 1}
+  global: {every: 1, subjects: val}
+seeds: [0, 1, 2]
+sweep:
+  continual.update: [warm, frozen, scratch]
+  learning.trainer.lr: [0.1, 0.03, 0.01, 0.003]
+  learning.trainer.local_epochs: [1, 10]

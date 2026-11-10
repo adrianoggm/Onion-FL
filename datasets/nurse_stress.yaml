@@ -1,0 +1,80 @@
+# Nurse Stress (Hosseini et al., 2022, Sci. Data 9:255): 15 nurses of one
+# hospital wearing an Empatica E4 at work in 2020, with the stress events of a
+# daily survey (issue #241). CC0, from Dryad doi:10.5061/dryad.5hqbzkh6f or the
+# same files on Zenodo record 5514277 (README §2).
+#
+# Layout under the root: Stress_dataset/<ID>/<ID>_<unix start>/ holds one E4
+# session (ACC, BVP, EDA, TEMP, HR, IBI, tags as CSV), extracted from the nested
+# zips; SurveyResults.xlsx has one sheet, one event per row. The subject is the
+# nurse (<ID>), never the session or the shift. tags.csv is not read: the
+# authors say the nurses did not use the button.
+#
+# Checked against the published files (2026-11-10): 15 nurses, 609 sessions,
+# 1,251.7 hours of EDA; 358 survey events, all of the 15 nurses, with level 2 in
+# 179, 1 in 20, 0 in 46 and "na" (not answered) in 113.
+#
+# Labels, declared before any model was trained or evaluated on this dataset:
+#   - stress (1): inside an event with level >= 1, the levels the nurses
+#     validated as low/medium (1) or high (2) stress;
+#   - no stress (0): outside every event, in a session that holds at least one
+#     event of its nurse, so the nurse was surveyed during that recording;
+#   - dropped: inside an event with level 0 or "na", and every session without
+#     an event. Where events overlap, the larger level wins (13 overlapping
+#     pairs; "na" counts below 0).
+#   The label strategy `high` (level 2 only) is a sensitivity check.
+# The windows are those of wesad_e4.yaml (60 s, half overlap); a window is
+# dropped when any of its samples has no label, and takes the majority label
+# when it spans an event boundary.
+#
+# Time zone: the E4 stores Unix UTC; the survey gives local dates and times of
+# day. They are read in America/Chicago, the hospital's zone with daylight
+# saving (UTC-5 until 2020-11-01, UTC-6 after). The paper says "Central
+# Standard Time ... 6 hours behind GMT", which only holds from November: the
+# authors' notebook (github.com/CPHSLab/Stress-Detection-in-Nurses,
+# predictor.ipynb) prints the event times with datetime.fromtimestamp, the local
+# time of its machine. On the published files, 305 of the 358 events lie wholly
+# inside a session of their nurse in America/Chicago, against 283 at a fixed
+# UTC-5 and 198 at a fixed UTC-6 (198 of the 303 events before November at
+# UTC-6, 50 of the 55 after). An event that ends past midnight (one, 23:53 to
+# 00:05) ends the next day.
+#
+# Caveat: the survey events are the epochs a Random Forest on EDA, HR and skin
+# temperature flagged as possible stress (the paper); the nurses then rated
+# them. "No stress" is what the detector did not flag, so the labels partly
+# encode its features; the paper notes that unlabelled time "does not
+# necessarily imply a lack of stress".
+name: nurse_stress
+description: Nurse Stress (Hosseini 2022), E4 de 15 enfermeras en el hospital con eventos de estrés de encuesta y las features E4 armonizadas.
+root: data/NurseStress
+options:
+  signals: "ACC,BVP,EDA,TEMP"
+  window_seconds: 60
+  overlap: 0.5
+source:
+  reader: empatica_e4_csv
+  path: "Stress_dataset/{subject}/{subject}_*/EDA.csv"
+  signals: "{signals}"
+steps:
+  - time: {column: time}    # Unix seconds (UTC)
+  - intervals:
+      source: {reader: excel, path: SurveyResults.xlsx, na_values: ["na"]}
+      start: Start time
+      end: End time
+      date: date
+      timezone: America/Chicago
+      value: Stress level
+      column: event_level
+      by: {subject: ID}
+      overlap: max
+      outside: -1            # outside every event of a surveyed session
+  - label:
+      default: binary
+      strategies:
+        binary: {task: stress_binary, column: event_level, map: {-1: 0, 1: 1, 2: 1}}
+        high: {task: stress_binary, column: event_level, map: {-1: 0, 2: 1}}
+  - multirate_window:
+      seconds: "{window_seconds}"
+      overlap: "{overlap}"
+      label: mode
+  - features:
+      regex: "_(mean|std|min|max|median)$"

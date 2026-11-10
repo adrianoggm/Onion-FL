@@ -1,0 +1,5 @@
+{"python": "3.11.15", "machine": "Windows-10-10.0.26300-SP0"}
+{"edges": 100, "fogs": 10, "rounds": 3, "codec": "npz", "diagnostics": "all", "build_s": 0.28, "run_s": 3.66, "s_per_round": 1.22, "peak_rss_mib": 347.7, "import_rss_mib": 200.5}
+{"edges": 200, "fogs": 10, "rounds": 3, "codec": "npz", "diagnostics": "all", "build_s": 0.3, "run_s": 11.24, "s_per_round": 3.75, "peak_rss_mib": 470.7, "import_rss_mib": 200.7}
+{"edges": 500, "fogs": 10, "rounds": 3, "codec": "npz", "diagnostics": "all", "build_s": 0.79, "run_s": 33.51, "s_per_round": 11.17, "peak_rss_mib": 840.1, "import_rss_mib": 200.8}
+{"edges": 1000, "fogs": 10, "rounds": 3, "codec": "npz", "diagnostics": "all", "build_s": 1.37, "run_s": 118.09, "s_per_round": 39.36, "peak_rss_mib": 1443.5, "import_rss_mib": 200.5}
