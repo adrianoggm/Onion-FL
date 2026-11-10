@@ -114,6 +114,7 @@ def versioned(
     rogue: Node | None = None,
     operator: str = "operator",
     replace_validator: bool = False,
+    operators: tuple[str, ...] = ("operator",),
 ):
     serving = {name: Serving() for name in ("a1", "a2")}
     learners = [
@@ -143,6 +144,7 @@ def versioned(
         evaluate=evaluate or scorer(forgets),
         promotion=promotions.create("champion_challenger", params),
         server_optimizer=server_optimizer,
+        operators=operators,
     )
     if rogue is not None:  # a child of the root that is not what it says
         federation.runtime._nodes[rogue.id] = rogue
@@ -310,7 +312,7 @@ def test_a_rejection_leaves_no_trace_in_the_server_optimizer() -> None:
 
 def test_an_operator_promotes_a_rejected_version() -> None:
     federation, serving = versioned(
-        forgets=0.1, orders=[(2.5 * EVERY / SPEED, {"promote": 1})]
+        forgets=0.1, orders=[(2.5 * EVERY / SPEED, {"promote": 1, "override": True})]
     )
 
     promoted = events(federation, "version.promoted")
@@ -423,7 +425,7 @@ def test_an_order_from_a_child_or_a_stranger_is_rejected(sender: str) -> None:
     # the rogue is a child of the root; the intruder is outside, not configured
     federation, _ = versioned(
         forgets=0.1,
-        orders=[(2.5 * EVERY / SPEED, {"promote": 1})],
+        orders=[(2.5 * EVERY / SPEED, {"promote": 1, "override": True})],
         operator=sender,
         rogue=Rogue() if sender == "rogue" else None,
     )
@@ -576,3 +578,52 @@ def test_a_validator_needs_a_stream() -> None:
             train=False,
             validates=True,
         )
+
+
+# --- who may give orders (#227) ----------------------------------------------------
+
+
+def _refusals(federation) -> list[str]:
+    return [
+        e["tags"]["reason"]
+        for e in events(federation, "message.rejected")
+        if e["node"] == "cloud" and e["tags"]["kind"] == "control"
+    ]
+
+
+def test_no_one_gives_orders_unless_operators_are_named() -> None:
+    order = {"promote": 1, "override": True}
+    federation, _ = versioned(
+        forgets=0.1, orders=[(2.5 * EVERY / SPEED, order)], operators=()
+    )
+
+    assert not events(federation, "version.promoted")
+    assert _refusals(federation) == ["operator is not an operator"]
+
+
+def test_promoting_a_rejected_version_needs_an_explicit_override() -> None:
+    federation, _ = versioned(
+        forgets=0.1, orders=[(2.5 * EVERY / SPEED, {"promote": 1})]
+    )
+
+    assert not events(federation, "version.promoted")
+    assert _refusals(federation) == ["version 1 was rejected; promote it with override"]
+
+
+@pytest.mark.parametrize("principal", ["intruder", None])
+def test_a_forged_operator_order_is_rejected(principal) -> None:
+    """Over a real transport ``meta["principal"]`` is who TLS authenticated
+    (``None``: nobody). An order whose ``src`` is not that principal is refused
+    however it names itself."""
+    order = {"promote": 1, "override": True, "principal": principal}
+    federation, _ = versioned(forgets=0.1, orders=[(2.5 * EVERY / SPEED, order)])
+
+    assert not events(federation, "version.promoted")
+    assert _refusals(federation) == ["operator is not authenticated as itself"]
+
+
+def test_an_order_from_the_principal_it_names_is_taken() -> None:
+    order = {"promote": 1, "override": True, "principal": "operator"}
+    federation, _ = versioned(forgets=0.1, orders=[(2.5 * EVERY / SPEED, order)])
+
+    assert [e["value"] for e in events(federation, "version.promoted")][:1] == [1]

@@ -796,7 +796,7 @@ class Coordinator(_Collector):
         round_every: float | None = None,
         promotion: Any = None,
         validators: Iterable[str] = (),
-        operators: Iterable[str] = ("operator",),
+        operators: Iterable[str] = (),
         **kw: Any,
     ) -> None:
         super().__init__(node_id, children, **kw)
@@ -1071,13 +1071,21 @@ class Coordinator(_Collector):
     def _other(self, msg: Message, ctx: Context) -> None:
         """An operator's order: ``{"rollback": v}`` (``None``: to the champion the
         current one replaced) or ``{"promote": v}``, as a control message from a
-        configured operator. Who that sender really is, the transport has to
-        authenticate (#203); here the id is checked."""
+        configured operator (none by default).
+
+        ``msg.src`` is what the sender says of itself. Over a real transport the
+        runtime puts in ``meta["principal"]`` who the transport authenticated
+        (the CN of a gRPC client certificate), or ``None``, overwriting whatever
+        the sender wrote; an order counts only when that principal is its
+        ``src`` (#227). In simulation every node is in the process: there is no
+        principal and the id is enough."""
         orders = ("rollback", "promote")
         if msg.kind != "control" or not any(k in msg.meta for k in orders):
             super()._other(msg, ctx)
         elif msg.src not in self.operators:
             _reject(ctx, msg, f"{msg.src} is not an operator")
+        elif "principal" in msg.meta and msg.meta["principal"] != msg.src:
+            _reject(ctx, msg, f"{msg.src} is not authenticated as itself")
         elif self.promotion is None:
             _reject(ctx, msg, "no versions: the run has no promotion policy")
         elif self._deciding is not None:
@@ -1108,6 +1116,10 @@ class Coordinator(_Collector):
         target = self.versions.get(to) if isinstance(to, int) else None
         if target is None or target.status not in ("rejected", "rolled_back"):
             _reject(ctx, msg, f"no rejected or rolled back version {to} to promote")
+            return
+        if target.status == "rejected" and msg.meta.get("override") is not True:
+            # the validation said no: overruling it has to be said, not implied
+            _reject(ctx, msg, f"version {to} was rejected; promote it with override")
             return
         target.status = "candidate"  # it replaces the champion as a new one would
         self._activate(target, ctx)

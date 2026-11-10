@@ -109,3 +109,16 @@ def test_the_local_backend_cannot_take_a_custom_scorer(
 
     with pytest.raises(ValueError, match="node processes"):
         run_scenario(scenario, evaluate=lambda model, data: ({}, 0))
+
+
+def test_no_operators_keeps_the_config_id_and_naming_them_changes_it(
+    workspace: Path,  # noqa: F811
+) -> None:
+    """Operators are opt-in (#227); unset, existing config_ids stay as they were."""
+    default = parse_experiment(experiment(workspace))
+    empty = parse_experiment(experiment(workspace, operators=[]))
+    named = parse_experiment(experiment(workspace, operators=["ops"]))
+
+    assert "operators" not in identity(default) and default.operators == []
+    assert scenarios(empty)[0].config_id == scenarios(default)[0].config_id
+    assert scenarios(named)[0].config_id != scenarios(default)[0].config_id
