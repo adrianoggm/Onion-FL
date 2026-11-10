@@ -125,6 +125,23 @@ def test_the_design_id_ignores_where_and_how_a_config_ran(
     assert design_id(base) != design_id(base | {"rounds": 9})
 
 
+def test_the_design_id_ignores_the_transport_of_the_links() -> None:
+    def config(transport, profile="lan"):
+        link = {"transport": transport, "profile": profile}
+        return {
+            "name": "x",
+            "topology": {
+                "fog": {"defaults": {"link_up": link}},
+                "edge": {"link_up": link},
+            },
+        }
+
+    mqtt = config({"name": "mqtt", "broker": "localhost:1883"})
+
+    assert design_id(mqtt) == design_id(config("grpc"))
+    assert design_id(mqtt) != design_id(config("grpc", profile="wan"))
+
+
 def test_a_backend_against_itself_has_complete_fidelity(
     workspace: Path,  # noqa: F811
 ) -> None:
