@@ -16,7 +16,7 @@ import pandas as pd
 import pytest
 
 from onion_fl.data.contract import DataError
-from onion_fl.data.ingest import readers
+from onion_fl.data.ingest import TIME, IngestContext, readers, steps
 
 START = 1_600_000_000.0  # a Unix time, as in the first row of every E4 CSV
 SECONDS = 10
@@ -53,6 +53,10 @@ def e4_session(folder: Path) -> Path:
     )
     (folder / "tags.csv").write_text(f"{START + 4:.6f}\n", encoding="utf-8")
     return folder
+
+
+def _ctx(root: Path) -> IngestContext:
+    return IngestContext(root=root, options={})
 
 
 # --- empatica_e4_csv ------------------------------------------------------------
@@ -165,3 +169,94 @@ def test_wesad_e4_reader_names_a_signal_the_file_lacks(tmp_path: Path) -> None:
 def test_wesad_e4_reader_has_no_device_derived_signals() -> None:
     with pytest.raises(ValueError, match="HR"):
         readers.create("wesad_e4", {"signals": "EDA,HR"})
+
+
+# --- multirate_window ---------------------------------------------------------------
+
+
+def _session_table(tmp_path: Path, signals: str = "ACC,BVP,EDA,TEMP") -> pd.DataFrame:
+    df = readers.create("empatica_e4_csv", {"signals": signals}).read(
+        e4_session(tmp_path / "S1")
+    )
+    return df.assign(subject="S1", **{TIME: df["time"]})
+
+
+def window(params: dict, df: pd.DataFrame, ctx=None) -> pd.DataFrame:
+    return steps.create("multirate_window", params).apply(df, ctx)
+
+
+def test_multirate_window_reads_each_channel_at_its_rate(tmp_path: Path) -> None:
+    out = window(
+        {"seconds": 4, "overlap": 0.5, "columns": ["eda", "bvp"]},
+        _session_table(tmp_path),
+    )
+
+    assert out[TIME].tolist() == [START + 4, START + 6, START + 8, START + 10]
+    assert out["eda_mean"].iloc[0] == pytest.approx(0.15)  # 4 samples at 1 Hz
+    assert out["bvp_max"].iloc[0] == 15  # 16 samples at 4 Hz
+    assert out["bvp_min"].iloc[1] == 8  # the second window starts at second 2
+    assert list(out.columns[:2]) == ["subject", TIME]
+
+
+def test_multirate_window_spans_only_what_every_channel_covers(
+    tmp_path: Path,
+) -> None:
+    df = _session_table(tmp_path, "EDA,HR")  # HR covers seconds 2 to 10
+
+    out = window({"seconds": 4, "overlap": 0.5, "columns": ["eda", "hr"]}, df)
+
+    assert out[TIME].tolist() == [START + 6, START + 8, START + 10]
+    assert out["hr_min"].iloc[0] == 60
+
+
+def test_multirate_window_drops_windows_where_a_channel_is_empty(
+    tmp_path: Path,
+) -> None:
+    df = _session_table(tmp_path, "EDA,IBI")  # IBI has no beat in seconds 2-6
+
+    out = window({"seconds": 2, "columns": ["eda", "ibi"]}, df)
+
+    # IBI starts at 0.5 s, so the windows do too.
+    assert out[TIME].tolist() == [START + 2.5, START + 6.5]
+
+
+def test_multirate_window_labels_from_the_label_rows_only(tmp_path: Path) -> None:
+    df = readers.create("wesad_e4", {"signals": "EDA"}).read(
+        wesad_file(tmp_path / "S2" / "S2.pkl")
+    )
+    labels = df["condition"].map({1: 0.0, 2: 1.0})
+    df = df.assign(subject="S2", label=labels, **{TIME: df["time"]})
+    ctx = _ctx(tmp_path)
+    ctx.meta_columns |= {"time", "condition"}
+
+    out = window(
+        {"seconds": 2, "label": "mode", "label_rows": "condition"},
+        df,
+        ctx,
+    )
+
+    # The EDA rows carry no label sample: they do not drop the windows.
+    assert out["label"].tolist() == [0, 1]
+    assert [c for c in out.columns if c.startswith("eda")] == [
+        f"eda_{s}" for s in ["mean", "std", "min", "max", "median"]
+    ]
+
+
+def test_multirate_window_drops_windows_with_a_label_sample_without_class(
+    tmp_path: Path,
+) -> None:
+    df = _session_table(tmp_path, "EDA")
+    label = np.where(df["time"] - START < 6, 0.0, np.nan)
+
+    out = window({"seconds": 2, "columns": ["eda"]}, df.assign(label=label))
+
+    assert out[TIME].tolist() == [START + 2, START + 4, START + 6]
+
+
+def test_multirate_window_needs_time_and_subject(tmp_path: Path) -> None:
+    df = _session_table(tmp_path, "EDA")
+
+    with pytest.raises(DataError, match="time step"):
+        window({"seconds": 2}, df.drop(columns=[TIME]))
+    with pytest.raises(DataError, match="subject"):
+        window({"seconds": 2}, df.drop(columns=["subject"]))

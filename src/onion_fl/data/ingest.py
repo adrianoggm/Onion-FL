@@ -853,6 +853,118 @@ class WindowStep:
         return pd.DataFrame(rows, columns=head + names)
 
 
+EPS = 1e-6  # seconds: below any sample interval, above float error on Unix times
+
+
+class MultirateWindowParams(BaseModel):
+    seconds: PositiveFloat = Field(description="Duración de cada ventana")
+    overlap: float = Field(0.0, ge=0, lt=1)
+    stats: list[Literal["mean", "std", "min", "max", "median"]] = Field(
+        default_factory=lambda: list(STATS)
+    )
+    columns: list[str] | None = Field(
+        None, description="Canales; por defecto los numéricos"
+    )
+    label: Literal["mean_round", "mode", "first", "last"] = "mean_round"
+    label_rows: str | None = Field(
+        None,
+        description="Columna cuyas filas con valor son las muestras de la etiqueta; "
+        "por defecto, todas las filas",
+    )
+
+
+@steps.register(
+    "multirate_window",
+    title="Ventanas multi-tasa",
+    description="Ventanas de N segundos por sujeto; cada canal, con sus muestras a su tasa.",
+    params=MultirateWindowParams,
+    explain=(
+        "Cada canal usa solo sus filas con valor, así que señales a tasas distintas "
+        "conviven en una tabla. Las ventanas van del último inicio al primer final de "
+        "los canales; se descartan las que dejan un canal sin muestras o tienen una "
+        "muestra de etiqueta sin clase. Cada ventana toma el tiempo de su final."
+    ),
+)
+class MultirateWindowStep:
+    def __init__(self, seconds, overlap, stats, columns, label, label_rows) -> None:
+        self.size, self.stats, self.columns = float(seconds), stats, columns
+        self.label, self.label_rows = label, label_rows
+        self.step = self.size * (1 - overlap)
+
+    def apply(self, df: pd.DataFrame, ctx: IngestContext | None) -> pd.DataFrame:
+        if "subject" not in df.columns:
+            raise DataError("window runs per subject: put a subject step before it")
+        if TIME not in df.columns:
+            raise DataError("multirate_window needs each row's time: add a time step")
+        reserved = {"subject", "label", TIME, self.label_rows}
+        reserved |= ctx.meta_columns if ctx else set()
+        columns = self.columns or [
+            c
+            for c in df.columns
+            if c not in reserved and pd.api.types.is_numeric_dtype(df[c])
+        ]
+        _require(df, columns + [c for c in [self.label_rows] if c], "multirate_window")
+        names = [f"{c}_{s}" for c in columns for s in self.stats]
+        has_label = "label" in df.columns
+        rows = []
+        for subject, group in df.groupby("subject", sort=False):
+            times = group[TIME].to_numpy(dtype=np.float64)
+            tracks = [_track(times, group[c].to_numpy(np.float64)) for c in columns]
+            labels = None
+            if has_label:
+                held = (
+                    group[self.label_rows].notna().to_numpy()
+                    if self.label_rows
+                    else np.ones(len(group), dtype=bool)
+                )
+                labels = _track(
+                    times, group["label"].to_numpy(np.float64), present=held
+                )
+            span = tracks + ([labels] if labels is not None else [])
+            if any(len(t) == 0 for t, _ in span):
+                continue
+            start = max(t[0] for t, _ in span)
+            end = min(t[-1] + _interval(t) for t, _ in span)
+            count = int(np.floor((end - start - self.size) / self.step + EPS)) + 1
+            for k in range(max(count, 0)):
+                lo = start + k * self.step
+                hi = lo + self.size
+                row: list[Any] = [subject]
+                if labels is not None:
+                    window = _within(labels, lo, hi)
+                    if len(window) == 0 or np.isnan(window).any():
+                        continue
+                    row.append(REDUCE[self.label](window))
+                values = [_within(track, lo, hi) for track in tracks]
+                if any(len(v) == 0 for v in values):
+                    continue
+                row.append(hi)  # observable once the window is complete
+                rows.append(row + [STATS[s](v) for v in values for s in self.stats])
+        head = ["subject", "label"] if has_label else ["subject"]
+        return pd.DataFrame(rows, columns=head + [TIME] + names)
+
+
+def _track(times: np.ndarray, values: np.ndarray, present: np.ndarray | None = None):
+    """One channel's samples (rows with a value, or ``present``), sorted by time."""
+    keep = ~np.isnan(values) if present is None else present
+    t, v = times[keep], values[keep]
+    order = np.argsort(t, kind="stable")
+    return t[order], v[order]
+
+
+def _interval(times: np.ndarray) -> float:
+    """The usual time between samples; signals sampled at one instant count once."""
+    distinct = np.unique(times)
+    return float(np.median(np.diff(distinct))) if len(distinct) > 1 else 0.0
+
+
+def _within(track: tuple[np.ndarray, np.ndarray], lo: float, hi: float) -> np.ndarray:
+    """Values sampled in ``[lo, hi)``."""
+    times, values = track
+    a, b = np.searchsorted(times, [lo - EPS, hi - EPS])
+    return values[a:b]
+
+
 class LabelRule(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
