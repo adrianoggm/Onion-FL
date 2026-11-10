@@ -68,6 +68,7 @@ flowchart LR
   - `val` subjects become zone evaluators;
   - `train` subjects are grouped into clients (`subjects_per_client`), each keeping `local_val` rows: its last rows (`tail`) or the last rows of each class (`class_tail`);
   - imputation, scaling (`global`, `local` or `none`) and constant-feature removal are fitted on the training portions only.
+  - a dataset with `overrides.<ds>.held_out` (leave-one-dataset-out) draws its roles as usual and keeps only its `test` subjects: nothing of it trains or is fitted, so it needs `scaler: local` or `none`.
 - **Placement** gives each leaf aggregator its clients and its zone evaluators:
   - `mixing(α)` weights each dataset by home fog (declared, inherited or assigned in turns), from segregated at α = 0 to uniform at α = 1;
   - the others are `dirichlet(β)`, `label_skew(β)`, `explicit` and `pooled`, the centralised baseline with the same model and trainer.
