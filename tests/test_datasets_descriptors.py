@@ -21,7 +21,8 @@ def descriptor(name: str):
 
 
 @pytest.mark.parametrize(
-    "name", ["swell", "sweet", "wesad", "wesad_e4", "physionet_e4", "femnist"]
+    "name",
+    ["swell", "sweet", "wesad", "wesad_e4", "physionet_e4", "nurse_stress", "femnist"],
 )
 def test_descriptors_are_valid(name: str) -> None:
     spec = descriptor(name)
@@ -44,6 +45,7 @@ def test_descriptors_are_valid(name: str) -> None:
         ),
         ("physionet_e4", {"signals": "EDA,HR", "window_seconds": 30}),
         ("physionet_e4", {"label": "three_class"}),
+        ("nurse_stress", {"label": "high", "signals": "EDA,TEMP,HR"}),
     ],
 )
 def test_descriptor_options_are_valid(name: str, options: dict) -> None:
@@ -280,6 +282,116 @@ def test_physionet_sample_reads_its_participants() -> None:
     assert np.bincount(binary["f14"].y.astype(int)).tolist() == [42, 6]
     assert sorted(three) == ["S02", "f07", "f14"]
     assert set(three["f07"].y.tolist()) == {2}  # its exercise sessions are valid
+
+
+NURSE = Path("data/NurseStress")
+
+
+def _survey_events():
+    """The survey events in Unix UTC, computed here apart from the descriptor."""
+    import pandas as pd
+
+    survey = pd.read_excel(NURSE / "SurveyResults.xlsx", na_values=["na"])
+    day = survey["date"].dt.strftime("%Y-%m-%d") + " "
+
+    def utc(column: str) -> pd.Series:
+        local = pd.to_datetime(day + survey[column].astype(str))
+        stamps = local.dt.tz_localize("America/Chicago").dt.tz_convert("UTC")
+        return (stamps - pd.Timestamp(0, tz="UTC")).dt.total_seconds()
+
+    start, end = utc("Start time"), utc("End time")
+    end = end.where(end > start, end + 86400)
+    return survey.assign(subject=survey["ID"].astype(str), start=start, end=end)
+
+
+@pytest.mark.skipif(
+    not (NURSE / "Stress_dataset").exists(), reason="data/NurseStress not available"
+)
+def test_nurse_stress_matches_the_published_files() -> None:
+    sessions = sorted((NURSE / "Stress_dataset").glob("*/*/EDA.csv"))
+    nurses = sorted({s.parent.parent.name for s in sessions})
+    survey = _survey_events()
+
+    assert len(nurses) == 15 and len(sessions) == 609
+    assert all(s.parent.name.startswith(s.parent.parent.name + "_") for s in sessions)
+    assert len(survey) == 358 and sorted(survey["subject"].unique()) == nurses
+    levels = survey["Stress level"].value_counts(dropna=False).to_dict()
+    assert {k: v for k, v in levels.items() if k == k} == {2: 179, 1: 20, 0: 46}
+    assert survey["Stress level"].isna().sum() == 113
+
+
+def _covered(events, times: np.ndarray) -> np.ndarray:
+    return np.array([((events.start <= x) & (events.end > x)).any() for x in times])
+
+
+@pytest.mark.skipif(
+    not (NURSE / "Stress_dataset").exists(), reason="data/NurseStress not available"
+)
+def test_nurse_stress_labels_follow_the_survey() -> None:
+    """Nurse 6D: each sample's label is the one the survey gives its time."""
+    from onion_fl.data.ingest import IngestContext, readers, steps
+
+    spec = descriptor("nurse_stress")
+    events = _survey_events().query("subject == '6D'")
+    stress = events[events["Stress level"] >= 1]
+    reader = readers.create("empatica_e4_csv", {})
+    ctx = IngestContext(root=NURSE, options={})
+    labelled = [steps.create(*next(iter(s.items()))) for s in spec.steps[:3]]
+    surveyed = 0
+    for session in sorted((NURSE / "Stress_dataset" / "6D").iterdir()):
+        df = reader.read(session).assign(subject="6D")
+        for step in labelled:
+            df = step.apply(df, ctx)
+        t = df["time"].to_numpy()[::97]  # about one sample a second
+        anywhere, in_stress = _covered(events, t), _covered(stress, t)
+        expected = np.where(in_stress, 1.0, np.where(anywhere, np.nan, 0.0))
+        if not anywhere.any():
+            expected[:] = np.nan  # a session without an event is dropped
+        surveyed += bool(anywhere.any())
+        np.testing.assert_array_equal(df["label"].to_numpy()[::97], expected)
+    assert surveyed == 1  # 6D has one session with events (2026-11-10)
+
+    one = {"path": "Stress_dataset/{subject}/6D_*/EDA.csv"}
+    spec.source = spec.source.model_copy(update=one)
+    (data,) = ingest(spec)
+    assert data.feature_names[:2] == ["acc_x_mean", "acc_x_std"]
+    assert np.bincount(data.y.astype(int)).tolist() == [63, 92]
+
+
+NURSE_SAMPLE = Path("data/samples/NurseStress")
+
+
+@pytest.mark.skipif(
+    not NURSE_SAMPLE.exists(), reason="data/samples/NurseStress not available"
+)
+def test_nurse_stress_sample_reads_with_both_classes() -> None:
+    """The real extract of scripts/nurse_stress_sample.py: four nurses."""
+    subjects = {
+        s.subject: s for s in ingest(descriptor("nurse_stress"), root=NURSE_SAMPLE)
+    }
+
+    counts = {k: np.bincount(s.y.astype(int)).tolist() for k, s in subjects.items()}
+    assert counts == {"7E": [55, 52], "BG": [55, 36], "E4": [46, 48], "F5": [75, 24]}
+    for data in subjects.values():
+        assert data.task == "stress_binary" and data.n_classes == 2
+        assert len(data.feature_names) == 30  # 6 E4 channels x 5 statistics
+
+
+@pytest.mark.skipif(
+    not (NURSE_SAMPLE.exists() and (NURSE / "Stress_dataset").exists()),
+    reason="data/NurseStress or its sample not available",
+)
+def test_nurse_stress_sample_matches_the_full_dataset() -> None:
+    spec = descriptor("nurse_stress")
+    sample = {s.subject: s for s in ingest(spec, root=NURSE_SAMPLE)}
+    for session in ["E4_1593538007", "BG_1607735684"]:
+        nurse = session.split("_")[0]
+        spec.source = spec.source.model_copy(
+            update={"path": f"Stress_dataset/{{subject}}/{session}/EDA.csv"}
+        )
+        (full,) = ingest(spec)
+        np.testing.assert_array_equal(sample[nurse].y, full.y)
+        np.testing.assert_array_equal(sample[nurse].X, full.X)
 
 
 def test_femnist_declares_a_fixed_subsample_of_hundreds_of_writers() -> None:

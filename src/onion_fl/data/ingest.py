@@ -123,20 +123,25 @@ class CsvReader:
 
 class ExcelParams(BaseModel):
     sheet: str | int = Field(0, description="Hoja por nombre o posición")
+    na_values: list[str] = Field(
+        default_factory=list, description="Textos que se leen como vacíos"
+    )
 
 
 @readers.register(
     "excel",
     title="Excel",
-    description="Hoja de un .xlsx (necesita openpyxl).",
+    description="Hoja de un .xlsx (necesita openpyxl: extra excel).",
     params=ExcelParams,
 )
 class ExcelReader:
-    def __init__(self, sheet: str | int = 0) -> None:
-        self.sheet = sheet
+    def __init__(
+        self, sheet: str | int = 0, na_values: list[str] | None = None
+    ) -> None:
+        self.sheet, self.na_values = sheet, na_values or None
 
     def read(self, path: Path) -> pd.DataFrame:
-        return pd.read_excel(path, sheet_name=self.sheet)
+        return pd.read_excel(path, sheet_name=self.sheet, na_values=self.na_values)
 
 
 @readers.register(
@@ -847,9 +852,17 @@ class TimeStep:
 
 
 def _seconds(
-    raw: pd.Series, format: str | None, pad_to: int | None, step: str
+    raw: pd.Series,
+    format: str | None,
+    pad_to: int | None,
+    step: str,
+    timezone: str | None = None,
 ) -> np.ndarray:
-    """Seconds since the epoch: numbers as they are, text parsed as dates."""
+    """Seconds since the epoch: numbers as they are, text parsed as dates.
+
+    With ``timezone``, dates without a zone are local times there and the result
+    is in Unix UTC seconds; without it, they are taken as they read.
+    """
     if format is None and pd.api.types.is_numeric_dtype(raw):
         seconds = raw.astype(float)
     else:
@@ -857,7 +870,13 @@ def _seconds(
         if pad_to is not None:
             text = text.str.ljust(pad_to, "0")
         stamps = pd.to_datetime(text, format=format, errors="coerce")
-        seconds = (stamps - pd.Timestamp(0)).dt.total_seconds()
+        epoch = pd.Timestamp(0)
+        if timezone is not None:
+            stamps = stamps.dt.tz_localize(
+                timezone, ambiguous="raise", nonexistent="raise"
+            ).dt.tz_convert("UTC")
+            epoch = pd.Timestamp(0, tz="UTC")
+        seconds = (stamps - epoch).dt.total_seconds()
     bad = raw[seconds.isna()].unique()[:3].tolist()
     if bad:
         raise DataError(f"{step}: rows of {raw.name!r} without a time: {bad}")
@@ -1063,14 +1082,45 @@ class IntervalsParams(BaseModel):
     end: str = Field("end", description="Columna del final (no incluido)")
     value: str = Field("class", description="Columna con la clase del intervalo")
     column: str = Field("interval", description="Columna nueva con la clase por fila")
-    by: list[str] = Field(
-        default_factory=list, description="Claves comunes, como subject"
+    by: list[str] | dict[str, str] = Field(
+        default_factory=list,
+        description="Claves comunes, como subject, o {columna de la fila: columna "
+        "de la tabla}",
     )
     format: str | None = Field(
         None,
         description="Formato strptime de inicio y final; sin él, segundos o una "
         "fecha que pandas entienda",
     )
+    date: str | None = Field(
+        None,
+        description="Columna con el día, si inicio y final son horas del día; un "
+        "final que no pasa del inicio es del día siguiente",
+    )
+    timezone: str | None = Field(
+        None,
+        description="Zona IANA de las fechas sin zona (p. ej. Etc/GMT+6); se pasan "
+        "a segundos Unix UTC",
+    )
+    overlap: Literal["error", "max"] = Field(
+        "error",
+        description="Intervalos solapados: error, o la clase mayor (numérica) en "
+        "las filas que caen en varios",
+    )
+    outside: float | str | None = Field(
+        None,
+        description="Clase de las filas fuera de todo intervalo, solo en los "
+        "ficheros con algún intervalo de su clave",
+    )
+
+    @model_validator(mode="after")
+    def _known_timezone(self) -> IntervalsParams:
+        if self.timezone is not None:
+            try:
+                pd.Timestamp(0).tz_localize(self.timezone)
+            except Exception as exc:
+                raise ValueError(f"unknown timezone {self.timezone!r}") from exc
+        return self
 
 
 @steps.register(
@@ -1081,53 +1131,114 @@ class IntervalsParams(BaseModel):
     explain=(
         "Para tags de protocolo y eventos de encuesta. Compara con el tiempo de cada "
         "fila, así que va después de un paso time y en sus unidades. Las filas fuera "
-        "de todo intervalo quedan sin clase; los intervalos de una misma clave no "
-        "pueden solaparse. La columna nueva es meta: nunca es una feature."
+        "de todo intervalo quedan sin clase, o con la clase outside si su fichero "
+        "tiene algún intervalo de su clave. Los intervalos de una clave no pueden "
+        "solaparse salvo con overlap: max. Con timezone, las fechas locales pasan a "
+        "Unix UTC. La columna nueva es meta: nunca es una feature."
     ),
 )
 class IntervalsStep:
-    def __init__(self, source, start, end, value, column, by, format) -> None:
+    def __init__(
+        self,
+        source,
+        start,
+        end,
+        value,
+        column,
+        by,
+        format,
+        date,
+        timezone,
+        overlap,
+        outside,
+    ) -> None:
         self.source = SourceSpec.model_validate(source)
         self.start, self.end, self.value, self.column = start, end, value, column
-        self.by, self.format = list(by), format
+        self.by = dict(by) if isinstance(by, Mapping) else {k: k for k in by}
+        self.format, self.date, self.timezone = format, date, timezone
+        self.overlap, self.outside = overlap, outside
         self._table: pd.DataFrame | None = None
+
+    def _read(self, root: Path) -> pd.DataFrame:
+        table = read_source(self.source, root)
+        dates = [self.date] if self.date else []
+        needed = [self.start, self.end, self.value, *dates, *self.by.values()]
+        _require(table, needed, "intervals")
+        start, end = table[self.start], table[self.end]
+        if self.date:
+            day = table[self.date]
+            if pd.api.types.is_datetime64_any_dtype(day):
+                day = day.dt.strftime("%Y-%m-%d")
+            day = day.astype(str) + " "
+            start = (day + start.astype(str)).rename(self.start)
+            end = (day + end.astype(str)).rename(self.end)
+        begins = _seconds(start, self.format, None, "intervals", self.timezone)
+        ends = _seconds(end, self.format, None, "intervals", self.timezone)
+        if self.date:  # a time of day that does not pass the start is the next day
+            ends = np.where(ends <= begins, ends + 86400.0, ends)
+        if self.overlap == "max":
+            numbers = pd.to_numeric(table[self.value], errors="coerce")
+            if numbers.isna().ne(table[self.value].isna()).any():
+                raise DataError(
+                    f"intervals: overlap max needs numeric classes in {self.value!r}"
+                )
+        return table.assign(_start=begins, _end=ends).reset_index(drop=True)
 
     def apply(self, df: pd.DataFrame, ctx: IngestContext) -> pd.DataFrame:
         if TIME not in df.columns:
             raise DataError("intervals compares with each row's time: add a time step")
         if self._table is None:  # read once, then used with every source file
-            table = read_source(self.source, ctx.root)
-            _require(table, [self.start, self.end, self.value, *self.by], "intervals")
-            self._table = table.assign(
-                _start=_seconds(table[self.start], self.format, None, "intervals"),
-                _end=_seconds(table[self.end], self.format, None, "intervals"),
-            ).reset_index(drop=True)
+            self._table = self._read(ctx.root)
         table = self._table
-        _require(df, self.by, "intervals")
+        _require(df, list(self.by), "intervals")
         times = df[TIME].to_numpy(np.float64)
         hit = np.full(len(df), -1)
+        left = _keys(df, list(self.by)) if self.by else np.zeros(len(df), str)
         if self.by:
-            left = df[self.by].astype(str).agg("\x1f".join, axis=1).to_numpy()
-            right = table[self.by].astype(str).agg("\x1f".join, axis=1).to_numpy()
+            right = _keys(table, list(self.by.values()))
             groups = [(left == key, right == key) for key in np.unique(right)]
         else:
             groups = [(np.ones(len(df), bool), np.ones(len(table), bool))]
         for rows, intervals in groups:
-            part = table[intervals].sort_values("_start")
-            if part.empty:
+            part = table[intervals].sort_values("_start", kind="stable")
+            where = np.flatnonzero(rows)
+            if part.empty or len(where) == 0:
                 continue
             starts, ends = part["_start"].to_numpy(), part["_end"].to_numpy()
-            if (ends <= starts).any() or (starts[1:] < ends[:-1]).any():
+            if (ends <= starts).any():
+                raise DataError(f"intervals: empty intervals in {self.source.path}")
+            if self.overlap == "error" and (starts[1:] < ends[:-1]).any():
                 raise DataError(
-                    f"intervals: empty or overlapping intervals in {self.source.path}"
+                    f"intervals: overlapping intervals in {self.source.path}"
                 )
-            where = np.flatnonzero(rows)
-            pos = np.searchsorted(starts, times[where], side="right") - 1
-            inside = (pos >= 0) & (times[where] < ends[np.maximum(pos, 0)])
-            hit[where[inside]] = part.index.to_numpy()[pos[inside]]
+            # Later writes win: in increasing class order (missing classes first),
+            # a row in several intervals keeps the largest class.
+            order = np.arange(len(part))
+            if self.overlap == "max":
+                numbers = pd.to_numeric(part[self.value]).fillna(-np.inf)
+                order = np.argsort(numbers.to_numpy(), kind="stable")
+            t = times[where]
+            for i in order:
+                inside = (t >= starts[i]) & (t < ends[i])
+                hit[where[inside]] = part.index[i]
         classes = table[self.value].reindex(hit).set_axis(df.index)
+        if self.outside is not None:
+            # Only in a file with an interval of its key: elsewhere, nothing says
+            # whether the rows are outside every event or simply not surveyed.
+            held = np.unique(left[hit >= 0])
+            lone = (hit < 0) & np.isin(left, held)
+            classes = classes.astype(object).where(~lone, self.outside)
+            classes = classes.infer_objects()
         ctx.meta_columns.add(self.column)
         return df.assign(**{self.column: classes})
+
+
+def _keys(df: pd.DataFrame, columns: list[str]) -> np.ndarray:
+    """One text key per row from ``columns``, so int and text ids compare equal."""
+    keys = df[columns[0]].astype(str)
+    for column in columns[1:]:  # by column, not by row: sessions have millions
+        keys = keys + "\x1f" + df[column].astype(str)
+    return keys.to_numpy()
 
 
 class LabelRule(BaseModel):
@@ -1166,8 +1277,11 @@ class LabelRule(BaseModel):
             values = values.round()
         if self.map is not None:
             text = {str(k): v for k, v in self.map.items()}
-            exact = values.map(lambda v: self.map.get(v, text.get(str(v).strip())))
-            return pd.to_numeric(exact, errors="coerce").astype(float)
+            codes, uniques = pd.factorize(values)  # each distinct value once
+            found = [self.map.get(v, text.get(str(v).strip())) for v in uniques]
+            exact = pd.to_numeric(pd.Series(found, dtype=object), errors="coerce")
+            exact = np.append(exact.to_numpy(np.float64), np.nan)  # code -1: missing
+            return pd.Series(exact[codes], index=values.index)
         if self.threshold is not None:
             return (values >= self.threshold).astype(float).where(values.notna())
         if self.bins is not None:
@@ -1404,7 +1518,9 @@ def ingest(
                 f"missing {missing}, extra {extra}"
             )
         frames.append(df)
-    # A file a select step emptied (an excluded session) adds no rows.
+    # Files that end without rows (a session a select step excluded, an E4
+    # session without labelled windows) are left out of the concatenation,
+    # which would otherwise warn about them.
     df = pd.concat([f for f in frames if len(f)] or frames[:1], ignore_index=True)
     ran = {name for name, _ in active}
 

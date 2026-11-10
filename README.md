@@ -81,6 +81,7 @@ The data is not in git. Download each dataset from its source and place it where
 | SWEET | — | `data/SWEET/{sample_subjects,selection1/users,selection2/users}/<user>/` | `datasets/sweet.yaml` |
 | WESAD | [University of Siegen](https://uni-siegen.sciebo.de/s/HGdUkoNlW1Ub0Gx) (`WESAD.zip`, 2.2 GB; publications must cite Schmidt et al., 2018); extract the `S<n>/S<n>.pkl` files (13 GB) into `data/` | `data/WESAD/S<n>/S<n>.pkl` | `datasets/wesad.yaml`, `datasets/wesad_e4.yaml` (wrist at the native E4 rates, with the harmonized E4 features) |
 | PhysioNet Wearable Device | [PhysioNet](https://physionet.org/content/wearable-device-dataset/1.0.1/) ("Wearable Device Dataset from Induced Stress and Structured Exercise Sessions", v1.0.1, ODC-By 1.0, open access; cite the dataset and PhysioNet): the official zip (`wearable-device-dataset-1.0.1.zip`, 73 MB; 259 MB extracted), checked against the project's `SHA256SUMS.txt`, or `wget -r -N -c -np https://physionet.org/files/wearable-device-dataset/1.0.1/`. Extract the contents of its top folder into `data/PhysioNetE4/` | `data/PhysioNetE4/Wearable_Dataset/{STRESS,AEROBIC,ANAEROBIC}/<session>/*.csv` | `datasets/physionet_e4.yaml` (Empatica E4 at native rates, harmonized E4 features; one subject per participant) |
+| Nurse Stress | [Dryad](https://doi.org/10.5061/dryad.5hqbzkh6f) or the same files on [Zenodo](https://zenodo.org/records/5514277) (Hosseini et al., 2022, *Sci. Data* 9:255), **CC0**: redistributable, so a real extract may be shared. Download `Stress_dataset.zip` (1.16 GB, MD5 `8829a9c0…210cea`) and `SurveyResults.xlsx`; the zip holds one zip per E4 session, which `python -I scripts/nurse_stress_extract.py data/NurseStress/Stress_dataset.zip data/NurseStress/Stress_dataset` unpacks (3.6 GB, 609 sessions). Reading the survey needs openpyxl (extra `excel`). `scripts/nurse_stress_sample.py` writes a 9 MB real extract (four sessions of four nurses) to `data/samples/NurseStress/` | `data/NurseStress/{SurveyResults.xlsx,Stress_dataset/<ID>/<ID>_<start>/}` | `datasets/nurse_stress.yaml` (survey events on E4 windows; the time zone and the labels are in its header) |
 | FEMNIST | [LEAF](https://github.com/TalwalkarLab/leaf) (Caldas et al., 2018; BSD-2): `./preprocess.sh` in `leaf/data/femnist` downloads NIST SD19 and first writes `data/all_data/all_data_<k>.json`, every writer before LEAF's sampling (about 3,600); copy those files. A shorter route is the Flower Datasets copy, [flwrlabs/femnist](https://huggingface.co/datasets/flwrlabs/femnist) (one 201 MB Parquet file): `scripts/femnist_from_flower.py` writes the 200 declared writers in the same format (it needs pyarrow and Pillow, not dependencies of Onion-FL; the command is in the script) | `data/FEMNIST/all_data/*.json` | `datasets/femnist.yaml` (200 fixed writers) |
 
 ### Run
@@ -92,6 +93,7 @@ onion_fl plan experiments/mix_ab.yaml         # composition per fog and groups p
 onion_fl run experiments/mix_ab.yaml --workers 3
 onion_fl report experiments/mix_ab.yaml --by topology_id --by scenario
 onion_fl baseline experiments/mix_ab.yaml     # LR, RF, XGBoost on the same test subjects
+onion_fl baseline experiments/mix_ab.yaml --seeds 0 1 2   # each seed draws other test subjects; mean and 95% CI
 ```
 
 For a real run over MQTT, start the stack (`just docker-up`, [docker/README.md](docker/README.md)), point the links at the broker and run `onion_fl run <experiment> --mode real`.
@@ -241,6 +243,7 @@ Each run writes `runs/<run_id>/`:
 | **SWEET** | `binary` (stress ≥ 2), `ordinal` (1–5), `three_class` | One self-report matched to the feature minute | `selection` option: `sample_subjects`, `selection1/users`, `selection2/users`; subjects with fewer than 5 samples are dropped |
 | **WESAD** | `binary` (baseline vs stress), `three_class` (+ amusement) | 60 s windows, 50% overlap, five statistics per channel | `location`: wrist (default) or chest; `signals` option |
 | **PhysioNet Wearable Device** | `binary` (baseline and rests vs stress tasks, task `stress_binary`), `three_class` (+ exercise, task `stress_vs_exercise`) | 60 s windows, 50% overlap, five statistics per E4 channel | Labels from the protocol tags; the sessions that `data_constraints.txt` flags as invalid, incomplete or split are dropped or cut, as the descriptor documents. The 30 s stages give no 60 s windows (`window_seconds` option) |
+| **Nurse Stress** | `binary` (inside a survey event rated ≥ 1 vs outside every event of a surveyed E4 session), `high` (rated 2) | 60 s windows, 50% overlap, the harmonized E4 features (ACC, BVP, EDA, TEMP at native rates) | One subject per nurse (15), never the session; windows in unrated or level-0 events, and sessions without an event, are dropped. Survey times are local (America/Chicago, with daylight saving), the E4 is Unix UTC. The events were flagged by the authors' detector on EDA, HR and TEMP, so "no stress" is partly what it did not flag. 63,913 windows, 15% stress |
 | **FEMNIST** | `character` (62 classes: 0-9, A-Z, a-z) | One 28x28 image per row, 784 pixels in [0, 1] | One subject per writer: a fixed subsample of 200 writers (44,451 images) declared in the descriptor; the writer id is never a feature |
 
 Missing values stay missing in the cache. Imputation, scaling and the removal of constant features are fitted on the training subjects only. The descriptors record in their comments what was found in the published files, for example the keys that join the SWELL modalities. `tests/test_datasets_descriptors.py` compares each descriptor with the loader from before the redesign, and it runs as soon as `data/` is present. It passes for SWELL (computer file) and WESAD (chest, subject S2).
@@ -472,6 +475,18 @@ Source: [results/femnist_reference/](results/femnist_reference/INDEX.md), `confi
 | Always "1" (majority class) | 0.060 | 0.002 |
 
 The federated model clearly beats the majority class, so it is not a constant predictor; it was still improving at round 30 and stays below centralised logistic regression. [results/sim_scale/](results/sim_scale/INDEX.md) measures the simulator from 100 to 4,000 edges.
+
+### New framework: Nurse Stress centralised baselines
+
+Source: [results/nurse_stress/](results/nurse_stress/INDEX.md), `config_id` `93db2e3c…`, `topology_id` `9d37394c…`, `data_id` `ea32ad8d…`, commit `36e3a25`. These are centralised baselines only; the federated runs of `experiments/nurse_stress_reference.yaml` have not run. The data is 15 nurses in a hospital, 63,913 E4 windows with survey labels (15% stress). Each of seeds 0–4 draws its own 4 test nurses; the table gives the mean ± 95% CI.
+
+| Model | Accuracy | Balanced accuracy | Macro-F1 |
+|---|---|---|---|
+| Logistic regression | 0.851 ± 0.027 | 0.538 ± 0.065 | 0.528 ± 0.091 |
+| Random forest | 0.834 ± 0.036 | 0.540 ± 0.057 | 0.533 ± 0.081 |
+| Always "no stress" | 0.846 ± 0.041 | 0.500 | 0.458 ± 0.012 |
+
+On held-out nurses the models barely beat the majority class. The field labels come from the authors' detector, rated by the nurses, so "no stress" is the time that was not flagged; the INDEX discusses what this allows.
 
 ### Before the redesign
 
