@@ -1,0 +1,14 @@
+{
+  "femnist": {
+    "lr": {
+      "train_samples": 35786,
+      "test": {
+        "accuracy": 0.6611656087709175,
+        "balanced_accuracy": 0.46754738871867185,
+        "f1_macro": 0.4723794338711547,
+        "n_samples": 8665
+      },
+      "val": null
+    }
+  }
+}
