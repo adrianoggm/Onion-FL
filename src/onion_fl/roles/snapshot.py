@@ -61,34 +61,113 @@ def snapshot_federation(federation: Federation) -> FederationSnapshot:
         state.arrays |= _prefixed("zone", aggregator.zone)
         nodes[node_id] = state
     for node_id, edge in federation.edges.items():
-        state = NodeState(
-            _prefixed("model", state_arrays(edge.model)) if edge.model else {},
-            {"rng": rng_state(runtime._rng(node_id))},
-        )
-        state.arrays |= _prefixed("privacy", getattr(edge.privacy, "state", dict)())
-        # The replay memory and what the stream consumed are saved together, so a
-        # row is either kept or unconsumed; restoring them waits for streams to
-        # continue.
-        if getattr(edge, "stream", None) is not None:
-            state.arrays["stream/consumed_by"] = edge._consumed_by
-        if getattr(edge, "unlabelled", None) is not None:  # and the audit of §9
-            state.arrays |= {
-                "unlabelled/used_by": edge._unlabelled_by,
-                "unlabelled/pseudo_label": edge._pseudo_label,
-                "unlabelled/confidence": edge._pseudo_confidence,
-                "unlabelled/generated_by_version": edge._generated_by,
-            }
-        if getattr(edge, "replay", None) is not None:
-            replay, meta = edge.replay.state()
-            state.arrays |= _prefixed("replay", replay)
-            state.meta["replay"] = meta
-        export = getattr(edge.trainer, "export_memory", None)
-        if export is not None:
-            memory, meta = export()
-            state.arrays |= _prefixed("memory", memory)
-            state.meta["memory"] = meta
-        nodes[node_id] = state
+        nodes[node_id] = _edge(edge, runtime._rng(node_id))
     return FederationSnapshot(round=root.round, nodes=nodes, root=root.id)
+
+
+def _edge(edge: Any, rng: Any) -> NodeState:
+    state = NodeState(
+        _prefixed("model", state_arrays(edge.model)) if edge.model else {},
+        {"rng": rng_state(rng)},
+    )
+    state.arrays |= _prefixed("privacy", getattr(edge.privacy, "state", dict)())
+    # The replay memory and what the stream consumed are saved together, so a
+    # row is either kept or unconsumed; restoring them waits for streams to
+    # continue.
+    if getattr(edge, "stream", None) is not None:
+        state.arrays["stream/consumed_by"] = edge._consumed_by
+    if getattr(edge, "unlabelled", None) is not None:  # and the audit of §9
+        state.arrays |= {
+            "unlabelled/used_by": edge._unlabelled_by,
+            "unlabelled/pseudo_label": edge._pseudo_label,
+            "unlabelled/confidence": edge._pseudo_confidence,
+            "unlabelled/generated_by_version": edge._generated_by,
+        }
+    if getattr(edge, "replay", None) is not None:
+        replay, meta = edge.replay.state()
+        state.arrays |= _prefixed("replay", replay)
+        state.meta["replay"] = meta
+    export = getattr(edge.trainer, "export_memory", None)
+    if export is not None:
+        memory, meta = export()
+        state.arrays |= _prefixed("memory", memory)
+        state.meta["memory"] = meta
+    return state
+
+
+# --- one edge, while a real run goes on (continuum C9) ---------------------------------
+
+# What a stream edge has done with its rows, besides what a bundle keeps.
+LIVE_ARRAYS = ("_logits", "_predicted", "_pending", "_pool")
+LIVE_SCALARS = ("_clock", "_ticked", "_updated_at", "_seen_round", "_replayed")
+
+
+def _number(value: float) -> float | str:
+    """A float JSON can carry: the infinities as text."""
+    return value if np.isfinite(value) else str(value)
+
+
+def checkpoint_edge(edge: Any, rng: Any) -> NodeState:
+    """Everything an edge of a real run needs to go on after its process dies.
+
+    Its part of the bundle, plus what the stream has done since the start:
+    the stored predictions, the time up to which arrivals were handled, the
+    model served and the first model received. Drift detectors are not kept:
+    a resumed edge starts them afresh (``meta["fresh"]`` says so).
+    """
+    state = _edge(edge, rng)
+    if getattr(edge, "stream", None) is not None:
+        state.arrays |= {f"live/{n[1:]}": getattr(edge, n) for n in LIVE_ARRAYS}
+        state.meta["live"] = {
+            n[1:]: _number(float(getattr(edge, n))) for n in LIVE_SCALARS
+        }
+        state.meta["live"]["local_drift"] = dict(edge._local_drift)
+        if edge._served is not None:
+            state.arrays |= _prefixed("served", edge._served)
+        if edge._detectors:
+            state.meta["fresh"] = ["drift detectors"]
+    if getattr(edge, "_initial", None) is not None:
+        state.arrays |= _prefixed("initial", edge._initial)
+    state.meta["round"] = int(getattr(edge, "_seen_round", 0))
+    return state
+
+
+def resume_edge(edge: Any, state: NodeState, rng: Any) -> None:
+    """Bring an edge built from the same specs to a ``checkpoint_edge`` state."""
+    model = _part(state.arrays, "model")
+    if edge.model is not None and model:
+        load_arrays(edge.model, model)
+    if "memory" in state.meta and hasattr(edge.trainer, "import_memory"):
+        edge.trainer.import_memory(
+            _part(state.arrays, "memory"), state.meta["memory"], edge.model
+        )
+    load = getattr(edge.privacy, "load_state", None)
+    if load is not None:
+        load(_part(state.arrays, "privacy"))
+    restore_rng(rng, state.meta["rng"])
+    if getattr(edge, "replay", None) is not None and "replay" in state.meta:
+        edge.replay.load_state(_part(state.arrays, "replay"), state.meta["replay"])
+    initial = _part(state.arrays, "initial")
+    if initial:
+        edge._initial = initial
+    if getattr(edge, "stream", None) is None:
+        return
+    edge._consumed_by = np.array(state.arrays["stream/consumed_by"])
+    if getattr(edge, "unlabelled", None) is not None:
+        edge._unlabelled_by = np.array(state.arrays["unlabelled/used_by"])
+        edge._pseudo_label = np.array(state.arrays["unlabelled/pseudo_label"])
+        edge._pseudo_confidence = np.array(state.arrays["unlabelled/confidence"])
+        edge._generated_by = np.array(state.arrays["unlabelled/generated_by_version"])
+    for name in LIVE_ARRAYS:
+        setattr(edge, name, np.array(state.arrays[f"live/{name[1:]}"]))
+    live = state.meta["live"]
+    for name in LIVE_SCALARS:
+        setattr(edge, name, float(live[name[1:]]))
+    edge._seen_round = int(edge._seen_round)
+    edge._replayed = int(edge._replayed)
+    edge._local_drift = dict(live.get("local_drift", {}))
+    served = _part(state.arrays, "served")
+    edge._served = served or None
 
 
 def restore_federation(federation: Federation, snapshot: FederationSnapshot) -> None:

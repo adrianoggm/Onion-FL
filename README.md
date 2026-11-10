@@ -41,13 +41,13 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Observability | ✅ | `runs/<run_id>/` with signed events, summary and final model. Diagnostics at every aggregator; analysis API with mean ± CI over seeds; HTML report; Prometheus and OpenTelemetry sinks; Grafana dashboard |
 | CLI | ✅ | `onion_fl data · topology · plan · run · node · ceiling · fidelity · calibrate · report · baseline · schema · serve` |
 | Studio | ✅ | `onion_fl serve`: the topology library and editor; experiments with their plan and launch; a live run monitor; comparisons between topologies and scenarios per level; and a tutorial with dry-run previews ([§6](#6-observability)) |
-| Continual learning | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`), and objectives on the rows still waiting for their label (`pseudo_label`, `consistency`), with an audit of every pseudo-label. Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. A promotion policy keeps each round's model as a challenger until the validation streams promote it, with rollback. Each stream edge updates `warm`, `frozen` or `scratch`, the baselines of the continual benchmark, and `scripts/continuum_benchmark.py` measures it. The Studio shows the versions and their lineage, and its signed controls pause, resume, promote and roll back a live simulation. |
+| Continual learning | ✅ / ⚠️ | Every simulated run writes a signed bundle, and a later run continues it exactly (`init: run`). Edges can be fed by streams: rows in time order, a labelled fraction, delayed labels, test-then-train scoring, a replay memory (`none`, `fifo`, `reservoir`, `class_balanced`), and objectives on the rows still waiting for their label (`pseudo_label`, `consistency`), with an audit of every pseudo-label. Triggers open the rounds (`schedule`, `volume`, `drift`, `any`), with drift detected per edge, zone and federation. A promotion policy keeps each round's model as a challenger until the validation streams promote it, with rollback. Each stream edge updates `warm`, `frozen` or `scratch`, the baselines of the continual benchmark, and `scripts/continuum_benchmark.py` measures it. Streams and continual runs also run on real processes; on the `distributed` backend each edge keeps its state on its machine and resumes it when its host restarts, and hosts may join late (C9, so far on containers acting as machines). The Studio shows the versions and their lineage, and its signed controls pause, resume, promote and roll back a live simulation. |
 | gRPC and Flower transports, distributed deployment | ❌ | Planned: gRPC [#196](https://github.com/adrianoggm/Onion-FL/issues/196), Flower [#204](https://github.com/adrianoggm/Onion-FL/issues/204), distributed backend [#199](https://github.com/adrianoggm/Onion-FL/issues/199) (they replace E5 #104 and E6 #105) |
-| Tests | ✅ | 1764 tests. With the datasets in `data/` and a local broker, 1761 pass and 3 skip: SWEET (2) and the optional Parquet reader. The CI starts a broker but has no data, so the data-dependent tests skip there |
+| Tests | ✅ | 1978 tests. With the datasets in `data/`, a local broker and Docker, 1970 pass and 8 skip: SWEET (2), the optional Parquet reader and the container runs of the emulated and distributed backends (5), which need the emulated host image. The CI starts a broker but has no data, so the data-dependent tests skip there |
 
 ### What the results can and can't support today
 
-- **Seventeen experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the comparison of two model families, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, the selection of the unlabelled objectives (a null result: nothing could be chosen), the continual benchmark (five baselines chosen on validation, then run on test, with sweeps and a promotion run), a FedAvg reference on 200 FEMNIST writers, FLamby's triangle on Fed-Heart-Disease, and FedAvg with an MLP on CIFAR-10 (Dir(0.5) and IID; the NIID-Bench CNN reproduction waits for #245). Most have three seeds (Fed-Heart-Disease has five), so many intervals overlap.
+- **Eighteen experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the comparison of two model families, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, the selection of the unlabelled objectives (a null result: nothing could be chosen), the continual benchmark (five baselines chosen on validation, then run on test, with sweeps and a promotion run), a FedAvg reference on 200 FEMNIST writers, FLamby's triangle on Fed-Heart-Disease, FedAvg with an MLP on CIFAR-10 (Dir(0.5) and IID; the NIID-Bench CNN reproduction waits for #245), and the same federation over four simulated architectures of the continuum. Most have three seeds (Fed-Heart-Disease and the architectures have five, and the architectures' times come from an uncalibrated infrastructure), so many intervals overlap. A pre-registered pilot on FEMNIST (`sim`, 390 runs) tests whether the factorised predictor picks the wrong federation when a deadline couples participation and data weight.
   - The reference run and the mixing sweep have no strong result. On SWELL, no model beats always predicting "stress" on the held-out subjects. On WESAD, the federated model reaches 0.77 accuracy where centralised logistic regression reaches 0.91.
   - In the technique comparisons, the clearest effects are on WESAD: FedDyn and SCAFFOLD beat FedAvg under drift, the adaptive server optimizers beat it too, and a strong sign-flip attack collapses FedAvg while norm clipping holds.
   - On the streams, no continual baseline learns to tell the classes apart on held-out subjects: every model that keeps updating ends predicting one class. The baselines differ only in how fast they follow the class that is arriving, and replay and the unlabelled rows add nothing measurable at a tenth of the labels.
@@ -423,6 +423,22 @@ Source: [results/techniques_server/](results/techniques_server/INDEX.md), `topol
 - **In these runs, FedAdagrad, FedYogi and FedAdam beat FedAvg on WESAD**; the intervals do not overlap. On SWELL they overlap.
 - **FedBuff-style buffering finishes 20 rounds in 43% less simulated time**, but its per-round score on SWELL is lower; time-to-accuracy is not compared yet. It is a hierarchical adaptation (the fogs buffer, the cloud stays synchronous), not the FedBuff or FedAsync protocol.
 
+### New framework: the same federation over four architectures
+
+Source: [results/infrastructure_architectures/](results/infrastructure_architectures/INDEX.md), commit `2833a9c`, `infrastructure_id` `90b27e16…` (A–C) and `a28dd1a2…` (D). It is `experiments/infrastructure_architectures.yaml`: SWELL + WESAD, the same subjects, training (SGD at lr 0.1, chosen on validation) and 5 seeds on an illustrative, uncalibrated infrastructure, on the `sim` backend. A: the 28 edges straight under the cloud; B: four fogs on two fog servers; C: B with mixed devices; D: C with the SWELL fogs' server down from 30 to 60 s and `nearest_alive` failover. Mean ± 95% CI:
+
+| Arm | Global SWELL | Global WESAD | Round time (s) | Run (s) | WAN (MB) |
+|---|---|---|---|---|---|
+| A, cloud-centralised | 0.551 ± 0.039 | 0.753 ± 0.013 | 5.48 | 109.8 | 198.4 |
+| B, edge–fog–cloud | 0.552 ± 0.036 | 0.754 ± 0.012 | 1.88 | 37.7 | 28.6 |
+| C, heterogeneous | 0.552 ± 0.036 | 0.754 ± 0.012 | 7.56 | 151.3 | 28.6 |
+| D, dynamic | 0.544 ± 0.042 | 0.751 ± 0.014 | 7.72 | 339.1 ± 120 | 18.2 |
+
+- **The architectures tie on learning** (B and C give the same model bit for bit), so they are ranked on system metrics only.
+- **In this model of the continuum**, the fogs cut WAN traffic 7× and round time 2.9× against the centralised cloud, slow devices make every round wait (4× B's), and a fog failure costs a round deadline (120 or 300 s) although the failover moves its edges within 5 s.
+- **Decision fidelity between `sim` and `local`** (the logical federations of A and B, commit `76d1bd8`, 5 seeds each): the final models, protocol events and bytes match bit for bit in all 10 pairs, so both backends rank A and B the same on learning (a tie, below the seeds' noise ceiling) and on traffic. They rank them in opposite order on time: the logical `sim` has no compute model and counts link hops, while `local` measures this machine's training, which B spreads over four processes. C and D wait for the emulated backend (I10). The `local` runs had first stalled on MQTT behind Docker Desktop's port forwarding, fixed by giving the transport one connection each way. The INDEX gives the details.
+- **Sim against emulated, with a closed calibration** ([results/fidelity_sim_emulated/](results/fidelity_sim_emulated/INDEX.md), pre-registered, calibration `b55104b3…`, 6 configurations × 5 seeds on other topologies than the calibration's): the protocol matches in all 30 pairs, but the calibrated simulation is still 40–50 % too fast in round time and link latency. It still picks the emulation's best configuration on time, bytes and learning with zero regret, and ranks time with τ-b 0.87. Bytes and models differ only by floating point, yet beyond the pre-registered tolerances.
+
 ### New framework: two model families
 
 Source: [results/model_families/](results/model_families/INDEX.md), `topology_id` `ff55fe4d…`, `config_id` `f81c7216…` (MLP) and `ab0cab7d…` (transformer), commit `5b658b0`. It is `experiments/model_families.yaml`: FedAvg's setup above, with `modular_mlp` against `feature_transformer` (one token per feature, one attention block). Each family's SGD rate was chosen on the validation subjects: 0.1 for the MLP, 0.3 for the transformer. Macro-F1, mean ± 95% CI over 3 seeds:
@@ -642,6 +658,31 @@ Source: [results/cifar10_mlp/](results/cifar10_mlp/INDEX.md), `config_id` `d0b01
 | Constant predictor | 0.100 | 0.100 |
 
 **This is not the NIID-Bench reproduction.** The 17 to 20 point gap is the model: an MLP on raw pixels shares nothing across image positions. NIID-Bench publishes no MLP result on CIFAR-10. The CNN run, which is the ±3 point check, waits for torch_module presets (#245). The MLP overfits after about round 10: its test loss rises while its accuracy levels off.
+
+### New framework: the deadline-coupling pilot
+
+Source: [results/pilot_deadline_coupling/](results/pilot_deadline_coupling/INDEX.md), pre-registered at commit `b7f0f2f`, runs at `b7f0f2f` and `a0af5e3`, 66 `config_id`s (each run's identity is in `analysis.json`). It is `experiments/pilot_deadline_coupling.yaml` in `sim`: FEMNIST's 160 training writers on 160 devices of three speeds, six configurations (flat, 2 fogs, 4 fogs × FedAvg, FedAdam), a 1 s deadline or FedBuff-style buffering, and five data-device couplings; time to 0.35 test accuracy.
+
+- **The noise gate passed** in both regimes (split-half top-1 0.92 and 1.00), with a ceiling regret of practically zero.
+- **With the deadline, the factorised predictor and its FLOSS variant pick the true winner in all five cells** (4 fogs, FedAdam), with or without coupling.
+- **In the FedBuff-style regime, both predictors pick wrongly in all five cells** (regret 2.1–3.1 times the best time), `rho = 0` included. The pre-registered count over the coupled cells (4 of 8) says "the gap exists", but the failure comes from the regime, not from the coupling: the predictors do not see the quorum, and FedAdam collapses under buffering.
+- **The ex ante diagnostic does not separate the cells** (AUC 0.50 for every score). The scores cannot see the regime that decides the outcome.
+
+### Distributed continuum on containers acting as machines (C9)
+
+Source: [results/continuum_distributed/](results/continuum_distributed/INDEX.md), commit `ab5e66f`. C8's warm start behind champion/challenger, on five Docker containers reached over SSH (**not real hardware**: the acceptance on real machines is pending), against its simulation; means over 3 seeds. A third mode kills the process of the host of 13 SWELL edges at 60 s, starts it again 15 s later from its edges' saved state, and starts the host of 5 more edges at 90 s.
+
+| Mode | Rounds | Prequential SWELL | Trainings | MB sent | Late updates |
+|---|---|---|---|---|---|
+| simulation | 18 | 0.372 | 193 | 214.5 | 0 |
+| distributed | 18 | 0.352 | 186 | 208.5 | 15 |
+| distributed, with failures | 18 | 0.341 | 134 | 162.2 | 26 |
+| simulation, with the same failures | 18 | 0.327 | 146 | 180.9 | 0 |
+
+- Every edge of every run trains exactly the labelled rows it trains in the simulation; the 39 restarted edges came back with their state, and no row was lost or trained twice.
+- Without failures, the runs differ in round 1, where 14–16 edges miss the fogs' 6 s deadline with their first training. The failures cost the rounds without the down edges.
+- The `sim` backend reproduces the failures with the same keys (`start_in`, `checkpoints`, `restarts`, `joins`). Every edge trains the same rows as on the machines, but a simulated process restarts at once, while a real one took 12–16 s to rebuild its scenario, so the simulation misses fewer rounds and sends more bytes.
+- The final model is the initial one in every mode (no challenger is promoted, as in C8), except the simulation with failures in seed 2, which promoted one; so it says little about fidelity.
 
 ### Before the redesign
 

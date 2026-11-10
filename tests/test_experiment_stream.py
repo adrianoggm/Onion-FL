@@ -139,7 +139,6 @@ def test_the_same_seed_gives_the_same_stream_run(workspace: Path) -> None:
 @pytest.mark.parametrize(
     "change, match",
     [
-        ({"runtime": {"mode": "real"}}, "real"),
         (
             {
                 "learning": {
@@ -169,7 +168,6 @@ def test_the_same_seed_gives_the_same_stream_run(workspace: Path) -> None:
         ({"stream": None}, "labels"),
     ],
     ids=[
-        "real",
         "init_run",
         "local_val",
         "local_scaler",

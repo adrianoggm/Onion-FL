@@ -1,0 +1,57 @@
+# The infrastructure of the sim-emulated validation (issue #198, I1 §12-§13):
+# infrastructures/emulated_lab_calibrated.yaml with five edge devices instead
+# of six, the five the calibration's sessions measured (field-edge_device-1 to
+# -5), so that every host of a run is one the calibration pinned and measured.
+# Everything else is that file's, field for field; tests/test_fidelity_validation.py
+# checks it.
+#
+# CALIBRATION: b55104b3..., the refit of #197 on four pinned sessions
+# (results/calibration_emulated/). It replaced the single-session 5d7d0e70...
+# before any run of the validation (results/fidelity_sim_emulated/
+# PREREGISTRATION.md, §2).
+name: fidelity_validation_lab
+profiles:
+  cloud_vm:
+    cpus: 2
+    memory: 4GB
+    calibration: b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc
+  fog_small:
+    cpus: 1
+    memory: 2GB
+    calibration: b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc
+  edge_device:
+    cpus: 1
+    memory: 2GB
+    calibration: b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc
+sites:
+  dc:
+    hosts:
+      cloud-1: cloud_vm
+  fog_a:
+    hosts:
+      fog-a: fog_small
+  fog_b:
+    hosts:
+      fog-b: fog_small
+  field:
+    pool:
+      edge_device: 5
+network:
+  links:
+  - between: [field, fog_a]
+    latency: 10ms
+    bandwidth: 50Mbps
+    calibration: b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc
+  - between: [field, fog_b]
+    latency: 15ms
+    bandwidth: 20Mbps
+  - between: [fog_a, dc]
+    latency: 40ms
+    bandwidth: 10Mbps
+    calibration: b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc
+  - between: [fog_b, dc]
+    latency: 60ms
+    bandwidth: 10Mbps
+    calibration: b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc
+services:
+  mqtt_broker: cloud-1

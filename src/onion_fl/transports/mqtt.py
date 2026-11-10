@@ -21,9 +21,17 @@ authenticate the client by certificate. ``username`` with ``password_env``
 by password. The link holds names and paths, never the secret: it ends up in
 the ``config_id`` and in ``run.json``. A broker that refuses the credentials
 makes ``start`` fail at once, with the broker's reason.
+
+Both connections turn Nagle's algorithm off (``TCP_NODELAY``) unless the link
+says ``nodelay: false``. With Nagle, the last partial segment of a message
+waits until the previous one is acknowledged: a round trip whenever messages
+leave closer together than that, as an edge host's updates or a fog's models
+do. On the emulated lab it added 11 to 35 ms to an update and up to 50 ms to
+a burst of control messages (#198).
 """
 
 import os
+import socket
 import ssl
 import threading
 import time
@@ -67,6 +75,12 @@ class MqttParams(BaseModel):
         if has_password and self.username is None:
             raise ValueError("a password needs a username")
         return self
+
+    nodelay: bool = Field(
+        True,
+        description="TCP_NODELAY en las dos conexiones (sin Nagle); false lo deja",
+        exclude_if=lambda v: v,  # the default keeps existing ids
+    )
 
     @field_validator("broker")
     @classmethod
@@ -187,6 +201,8 @@ class MqttTransport:
             client.tls_set_context(context)
         if self.params.username is not None:
             client.username_pw_set(self.params.username, password)
+        if self.params.nodelay:  # on every socket, reconnections included
+            client.on_socket_open = _no_delay
         client.reconnect_delay_set(self.params.reconnect_min, self.params.reconnect_max)
         client.connect_async(self.host, self.port, self.params.keepalive)
         client.loop_start()
@@ -237,3 +253,8 @@ class MqttTransport:
                 client.loop_stop()
                 client.disconnect()
         self._listener = self._publisher = None
+
+
+def _no_delay(client: Any, userdata: Any, sock: Any) -> None:
+    """paho's ``on_socket_open``: send each segment at once (no Nagle)."""
+    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)

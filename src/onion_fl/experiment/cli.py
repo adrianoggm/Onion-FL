@@ -14,7 +14,8 @@ from __future__ import annotations
                      [--resample] [--paired] [--workers N]
     onion_fl fidelity <runs A | predictor> <runs B | predictor[:floss]>
                       [--metric NAME]... [--target METRIC=VALUE] [--control RUNS]
-                      [--no-predictor] [--ceiling FILE] [--csv FILE] [--html FILE]
+                      [--no-predictor] [--ceiling FILE] [--calibration ID]
+                      [--csv FILE] [--html FILE]
     onion_fl calibrate measure <spec.yaml> --out <session> [--image IMAGE]
                        [--project NAME] [--subnet CIDR]
     onion_fl calibrate fit <session>... [--out calibrations] [--infrastructure-out FILE]
@@ -180,7 +181,12 @@ def cmd_node(args: argparse.Namespace) -> int:
     if not Path(args.config).exists():
         raise FileNotFoundError(f"config not found: {args.config}")
     return run_node(
-        args.id, args.run, args.config, scenario=args.scenario, seed=args.seed
+        args.id,
+        args.run,
+        args.config,
+        scenario=args.scenario,
+        seed=args.seed,
+        resume=args.resume,
     )
 
 
@@ -228,6 +234,7 @@ def cmd_fidelity(args: argparse.Namespace) -> int:
         minimize=args.minimize or [],
         resamples=args.bootstrap,
         seed=args.seed,
+        calibration=args.calibration,
         control=args.control,
         predictor=not args.no_predictor,
     )
@@ -440,6 +447,11 @@ def parser() -> argparse.ArgumentParser:
     )
     node.add_argument("--scenario", help="with an experiment YAML: which scenario")
     node.add_argument("--seed", type=int, help="with an experiment YAML: which seed")
+    node.add_argument(
+        "--resume",
+        action="store_true",
+        help="restart a node of a real run from the state its edges saved",
+    )
     node.set_defaults(func=cmd_node)
 
     ceiling = sub.add_parser(
@@ -507,6 +519,9 @@ def parser() -> argparse.ArgumentParser:
     )
     fidelity.add_argument("--bootstrap", type=int, default=2000)
     fidelity.add_argument("--seed", type=int, default=0, help="of the bootstrap")
+    fidelity.add_argument(
+        "--calibration", help="the calibration_id every run of B must cite, alone"
+    )
     fidelity.add_argument("--csv", help="also write the result as CSV rows")
     fidelity.add_argument("--html", help="also write an HTML report")
     fidelity.set_defaults(func=cmd_fidelity)

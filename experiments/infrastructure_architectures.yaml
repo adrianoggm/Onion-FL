@@ -1,0 +1,61 @@
+# The same federated learning over four architectures of the continuum
+# (issue #192, spec I1 §1 question 2): the same subjects, the same seeds, the
+# same model and trainer; only where the nodes run and what the
+# infrastructure does changes.
+#
+#   A  cloud-centralised: every edge reports straight to the cloud (2 levels)
+#   B  edge-fog-cloud: four fogs on two fog servers, homogeneous edges
+#   C  heterogeneous: B with a mix of edge devices (50 % Raspberry Pi,
+#      30 % desktop, 20 % low-power IoT)
+#   D  dynamic: C with the server of the SWELL fogs (fog-1) down from 30 s to
+#      60 s, and its edges moved to the nearest live fog after 5 s (B's
+#      selection runs took 38 simulated seconds, so the failure falls inside
+#      every run)
+#
+# The edges' learning rate, 0.1, comes from
+# infrastructure_architectures_select.yaml (validation subjects only, on B).
+# The infrastructures are illustrative, not calibrated (I12).
+#
+#   onion_fl plan experiments/infrastructure_architectures.yaml
+#   onion_fl run experiments/infrastructure_architectures.yaml --workers 3
+name: infrastructure_architectures
+description: La misma federación sobre cuatro arquitecturas del continuum (cloud centralizado, Edge–Fog–Cloud, heterogénea y dinámica).
+topology: four_fogs_swell_wesad_physical
+infrastructure:
+  name: architectures_lab
+  assignment:
+    root: cloud-1
+    aggregators: {fog_a1: fog-1, fog_a2: fog-1, fog_b1: fog-2, fog_b2: fog-2}
+    edges: {name: profile_mix, mix: {raspberry_pi: 1.0}}
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, local_val: 0.2, local_val_split: class_tail, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge: {every: 5, models: [received, local]}
+  aggregators: {every: 5}
+  global: {every: 1}
+seeds: [0, 1, 2, 3, 4]
+sweep:
+  topology,infrastructure.name,infrastructure.assignment,infrastructure.failover:
+    - [cloud_swell_wesad, architectures_lab,                                # A
+       {root: cloud-1, edges: {name: profile_mix, mix: {raspberry_pi: 1.0}}}, none]
+    - [four_fogs_swell_wesad_physical, architectures_lab,                   # B
+       {root: cloud-1, aggregators: {fog_a1: fog-1, fog_a2: fog-1, fog_b1: fog-2, fog_b2: fog-2},
+        edges: {name: profile_mix, mix: {raspberry_pi: 1.0}}}, none]
+    - [four_fogs_swell_wesad_physical, architectures_lab,                   # C
+       {root: cloud-1, aggregators: {fog_a1: fog-1, fog_a2: fog-1, fog_b1: fog-2, fog_b2: fog-2},
+        edges: {name: profile_mix, mix: {raspberry_pi: 0.5, desktop: 0.3, low_power_iot: 0.2}}}, none]
+    - [four_fogs_swell_wesad_physical, architectures_lab_dynamic,           # D
+       {root: cloud-1, aggregators: {fog_a1: fog-1, fog_a2: fog-1, fog_b1: fog-2, fog_b2: fog-2},
+        edges: {name: profile_mix, mix: {raspberry_pi: 0.5, desktop: 0.3, low_power_iot: 0.2}}},
+       {name: nearest_alive, after: 5s}]

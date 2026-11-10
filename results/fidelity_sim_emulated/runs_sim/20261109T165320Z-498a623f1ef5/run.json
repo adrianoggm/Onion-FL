@@ -1,0 +1,109 @@
+{
+  "run_id": "20261109T165320Z-498a623f1ef5",
+  "topology_id": "7033b5cb5738208aefa908a0b0290219175f9fad279a9c68b521d6c34754823e",
+  "config_id": "4dc91667ab169de94e6974a3e1b1dad8e89e949008d99521d0948f3e4dbb4a04",
+  "backend": "sim",
+  "infrastructure_id": "ac43b5a3b0e4a1355e1b76032899cc673455795e46a1629a8386d7e38e59b940",
+  "data_id": "7949a27b972ad85bf284ca213fcbfe77c610276f373755f866de29850c0bfc53",
+  "code_version": {
+    "commit": "1720dc8d1900b678b5b0e0d7b10d5b5708002ae9",
+    "dirty": false
+  },
+  "seed": 0,
+  "scenario": "learning.trainer.local_epochs=5,topology,infrastructure.assignment=swell_cloud_npz,{'root': 'cloud-1', 'edges': {'name': 'colocated', 'per_host': 4}}",
+  "started_at": "2026-11-09T16:53:20.615200+00:00",
+  "status": "finished",
+  "config": {
+    "name": "fidelity_sim_emulated",
+    "description": "Validaci\u00f3n de la simulaci\u00f3n frente a la emulaci\u00f3n con la calibraci\u00f3n cerrada, en otras topolog\u00edas.",
+    "topology": "swell_cloud_npz",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": "datasets/swell_physiology.yaml",
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.0,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.0,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 1.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 32,
+        "trunk_hidden": [
+          16
+        ]
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "local_epochs": 5,
+        "batch_size": 32,
+        "lr": 0.01
+      },
+      "init": "random"
+    },
+    "rounds": 10,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": null,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": null,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 900.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "infrastructure": {
+      "name": "fidelity_validation_lab",
+      "assignment": {
+        "root": "cloud-1",
+        "aggregators": {},
+        "edges": {
+          "name": "colocated",
+          "per_host": 4
+        },
+        "services": {}
+      }
+    },
+    "backend": "sim"
+  },
+  "calibrations": [
+    "b55104b3f71d684dedc413a000eec3a67eb1caba134cc9ff6a95648fb35c8dfc"
+  ],
+  "finished_at": "2026-11-09T16:53:31.335897+00:00",
+  "run_hash": "ab79498d9af349b065a67afc9b08c0e58a8c5bb50bfe519531add0bf6d5ca28f"
+}

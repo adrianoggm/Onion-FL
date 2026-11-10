@@ -53,7 +53,16 @@ Question: can an Android phone host an `onion_fl node`? iOS is out of scope.
 - The machines must reach each other on the broker's port (1883) or on each one's `grpc_port` (50051 by default); the preflight checks both from every machine and names the pair that fails.
 - On the development PC under WSL2, published ports and the `advertise` address need care: with NAT networking, use the Windows host's LAN address and a port proxy, or WSL's mirrored networking.
 
-## 5. TLS between the machines (#227)
+## 5. The distributed continuum (C9, #164)
+
+**Status: run on containers only.** `results/continuum_distributed/` has a C8 scenario on five containers acting as machines, against its simulation, with an edge host killed and resumed from its edges' saved state and an edge host that joins late. The acceptance of #164 on real machines needs the same on the lab above:
+
+1. The inventory of §1 with three hosts of edges, and `experiments/continuum_distributed.yaml` with its `infrastructure` pointing at the lab (hosts, assignment) and `backend: {name: distributed, inventory: inventories/lab.yaml, start_in: 60, checkpoints: true}`.
+2. `start_in` must exceed the slowest machine's start (on the containers a process took about 40 s to build the scenario); the Pi's will be longer. A round-1 deadline that fits a cold first training avoids its late updates.
+3. **A real failure.** Power the Pi off (or `sudo reboot`) during the run rather than `kill -KILL`. The launcher does not yet start a node again on its own after a reboot: give `restarts` a `down` longer than the reboot, or start `onion_fl node --resume` on the Pi by hand (`python -m onion_fl node --id <host> --run <run_id> --config runs/<run_id>/scenario.json --resume`, in its `root`). Check that its edges' `node.resumed` events say `restored` and that `python scripts/continuum_distributed.py resumed` shows each edge's `examples` equal to the simulation's.
+4. Restarting a fog or the root is not supported: put the aggregators on machines that stay up.
+
+## 6. TLS between the machines (#227)
 
 Not tried on real hardware either; on the containers it is tested as described in `docs/architecture.md` §7.
 

@@ -74,14 +74,27 @@ def check_brokers(topology: Topology, timeout: float = 2.0) -> None:
 
 
 def _root_evaluators(config: Any, placement: Any) -> list[str]:
-    """The evaluators under the root, as edge_specs names them."""
+    """The evaluators under the root, as edge_specs names them: the test (or
+    global validation) evaluators, and the validators of a promotion (C7)."""
+    zone = [
+        e
+        for leaf in sorted(placement.zone_evaluators)
+        for e in placement.zone_evaluators[leaf]
+    ]
     if config.evaluation.global_.subjects == "val":
-        return [
-            f"gval-{e.dataset}-{e.subject}"
-            for leaf in sorted(placement.zone_evaluators)
-            for e in placement.zone_evaluators[leaf]
-        ]
-    return [f"test-{e.dataset}-{e.subject}" for e in placement.test]
+        out = [f"gval-{e.dataset}-{e.subject}" for e in zone]
+    else:
+        out = [f"test-{e.dataset}-{e.subject}" for e in placement.test]
+    if config.promotion is not None:
+        out += [f"validate-{e.dataset}-{e.subject}" for e in zone]
+    return out
+
+
+def _root_members(config: Any, topology: Topology, placement: Any) -> list[str]:
+    """The edges under the root: its training clients when it is the leaf (two
+    levels), then its evaluators; as edge_specs builds them."""
+    clients = [c.id for c in placement.edges.get(topology.root.id, [])]
+    return clients + _root_evaluators(config, placement)
 
 
 CROSS_PROCESS = ("mqtt", "grpc", "flower")
@@ -194,7 +207,7 @@ def write_scenario(
 ) -> Path:
     """``scenario.json``: what every node process rebuilds. ``launcher`` adds
     what the processes take from the launcher (``groups``, ``broker``,
-    ``grpc``, ``initial``)."""
+    ``nodelay``, ``grpc``, ``initial``)."""
     document = {
         "name": scenario.name,
         "seed": scenario.seed,
@@ -211,13 +224,14 @@ def write_scenario(
 def edge_groups(
     config: Any, topology: Topology, placement: Any
 ) -> dict[str, list[str]]:
-    """The edges and evaluators under each leaf, and the root's evaluators."""
+    """The edges and evaluators under each leaf, and the root's members: its
+    training clients when it is the leaf (two levels), then its evaluators."""
     out = {leaf: [c.id for c in clients] for leaf, clients in placement.edges.items()}
     for leaf, evaluators in placement.zone_evaluators.items():
         out.setdefault(leaf, []).extend(
             f"val-{e.dataset}-{e.subject}" for e in evaluators
         )
-    out[topology.root.id] = _root_evaluators(config, placement)
+    out[topology.root.id] = _root_members(config, topology, placement)
     return out
 
 
@@ -290,8 +304,15 @@ def run_node(
     config: str | Path,
     scenario: str | None = None,
     seed: int | None = None,
+    resume: bool = False,
 ) -> int:
-    """Host one group of nodes of a real run until the tree says stop. Exit code 0 when it did."""
+    """Host one group of nodes of a real run until the tree says stop. Exit code 0 when it did.
+
+    With ``checkpoints`` in ``scenario.json`` (continuum C9), every hosted edge
+    saves its part of the bundle, ``runs/<run_id>/bundle/nodes/<id>``, on this
+    machine after each event it handles; ``resume`` starts each edge from it,
+    so a process that died goes on with its edges' state.
+    """
     from onion_fl.experiment.runner import _scenario_data, build_scenario
 
     chosen, epoch = load_scenario(config, scenario, seed)
@@ -315,6 +336,7 @@ def run_node(
         epoch=epoch,
         heartbeat_s=chosen.config.runtime.heartbeat,
         broker=launcher.get("broker"),
+        nodelay=launcher.get("nodelay"),
         grpc=grpc,
     )
     federation = build_scenario(
@@ -329,7 +351,8 @@ def run_node(
     if "initial" in launcher:
         take_initial(federation, Path(config).parent / launcher["initial"])
     roles = node_roles(federation, topology)
-    (Path(chosen.config.paths.runs) / run_id).mkdir(parents=True, exist_ok=True)
+    run_path = Path(chosen.config.paths.runs) / run_id
+    run_path.mkdir(parents=True, exist_ok=True)
     part = JsonlSink(
         Path(chosen.config.paths.runs) / run_id / PART.format(group=group), flush=True
     )
@@ -347,6 +370,8 @@ def run_node(
         )
 
     runtime.listeners.append(write)
+    if launcher.get("checkpoints") or resume:
+        keep_edges(federation, runtime, run_path / "bundle", resume)
     try:
         runtime.run(timeout=chosen.config.runtime.timeout)
     finally:
@@ -364,7 +389,47 @@ def _launcher(config: str | Path) -> dict[str, Any]:
     if path.suffix != ".json":
         return {}
     doc = json.loads(path.read_text(encoding="utf-8"))
-    return {k: doc[k] for k in ("groups", "broker", "grpc", "initial") if k in doc}
+    keys = ("groups", "broker", "nodelay", "grpc", "initial", "checkpoints")
+    return {k: doc[k] for k in keys if k in doc}
+
+
+def keep_edges(federation: Any, runtime: Any, bundle: Path, resume: bool) -> None:
+    """Save each hosted edge's state after every handler; with ``resume``,
+    first bring each one back to what it saved, and say so in ``node.resumed``."""
+    from onion_fl.continual.bundle import load_node, save_node
+    from onion_fl.roles.snapshot import checkpoint_edge
+
+    edges = {n: e for n, e in federation.edges.items() if runtime.is_hosted(n)}
+    if resume:
+        for node_id, edge in sorted(edges.items()):
+            resume_from(edge, load_node(bundle, node_id), runtime)
+
+    def save(node_id: str) -> None:
+        if node_id in edges:
+            state = checkpoint_edge(edges[node_id], runtime._rng(node_id))
+            save_node(bundle, node_id, state)
+
+    runtime.after_handle.append(save)
+
+
+def resume_from(edge: Any, saved: Any, runtime: Any) -> None:
+    """Bring an edge rebuilt from its specs back to ``saved`` (``None``: it never
+    saved, so it starts afresh, as a new edge) and say so in ``node.resumed``.
+    The node processes of a real run and the simulation's restarts share it."""
+    from onion_fl.roles.snapshot import resume_edge
+
+    node_id = edge.id
+    if saved is None:
+        runtime._record(node_id, "node.resumed", None, {"state": "none"})
+        return
+    resume_edge(edge, saved, runtime._rng(node_id))
+    tags: dict[str, Any] = {"state": "restored", "round": saved.meta["round"]}
+    if getattr(edge, "stream", None) is not None:
+        tags["consumed"] = int((edge._consumed_by >= 0).sum())
+        tags["predicted"] = int(edge._predicted.sum())
+        tags["clock"] = float(edge._clock)
+    tags["fresh"] = saved.meta.get("fresh", [])
+    runtime._record(node_id, "node.resumed", float(saved.meta["round"]), tags)
 
 
 def take_initial(federation: Any, path: str | Path) -> None:
@@ -386,7 +451,7 @@ def _group_members(
     config: Any, topology: Topology, placement: Any, group: str
 ) -> set[str]:
     if group == topology.root.id:
-        return {group, *_root_evaluators(config, placement)}
+        return {group, *_root_members(config, topology, placement)}
     topology.node(group)  # raises for an unknown id
     members = {group, *(c.id for c in placement.edges.get(group, []))}
     members |= {
