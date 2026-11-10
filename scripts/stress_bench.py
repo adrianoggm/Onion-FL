@@ -218,6 +218,10 @@ def score_runs(folders: Sequence[Path]) -> list[dict[str, Any]]:
                     "commit": meta["code_version"]["commit"][:7],
                     "dirty": meta["code_version"]["dirty"],
                     "status": meta["status"],
+                    **{
+                        f"edge_{m}": summary["final"].get(f"{m}/*", {}).get("macro_f1")
+                        for m in ("received", "local", "personal", "finetuned")
+                    },
                     "bytes": summary["messages"]["bytes"],
                     "quorum_failed": summary["quorum_failed"],
                     "wall_seconds": round(summary["wall_seconds"], 1),
