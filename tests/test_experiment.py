@@ -148,7 +148,12 @@ def test_the_schema_includes_the_plugin_catalogue() -> None:
         "pooled",
     }
     assert "params" in plugins["aggregator"][0]
-    assert {p["name"] for p in plugins["transport"]} == {"memory", "mqtt"}
+    assert {p["name"] for p in plugins["transport"]} == {
+        "memory",
+        "mqtt",
+        "grpc",
+        "flower",
+    }
 
 
 def test_fedrep_needs_sharing_that_keeps_the_heads_local(workspace: Path) -> None:

@@ -1853,7 +1853,13 @@ class Edge(_Greeter, Node):
         examples = result.examples
         if self.replay is not None:  # replayed rows were weighted when they were new
             examples = int(self._pending.sum())
-        ctx.emit("edge.trained", result.loss, round=msg.round, examples=examples)
+        ctx.emit(
+            "edge.trained",
+            result.loss,
+            round=msg.round,
+            examples=examples,
+            samples=result.samples,  # the work its compute model charged
+        )
         # One vote per edge for trainers whose papers average clients (SCAFFOLD).
         uniform = getattr(self.trainer, "uniform_weights", False)
         payload = Payload(
