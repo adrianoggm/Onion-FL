@@ -47,7 +47,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 
 ### What the results can and can't support today
 
-- **Fifteen experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the comparison of two model families, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, the selection of the unlabelled objectives (a null result: nothing could be chosen), the continual benchmark (five baselines chosen on validation, then run on test, with sweeps and a promotion run) and a FedAvg reference on 200 FEMNIST writers. Most have three seeds, so many intervals overlap.
+- **Sixteen experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the comparison of two model families, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, the selection of the unlabelled objectives (a null result: nothing could be chosen), the continual benchmark (five baselines chosen on validation, then run on test, with sweeps and a promotion run) a FedAvg reference on 200 FEMNIST writers and LEAF's CNN on the same writers. Most have three seeds, so many intervals overlap.
   - The reference run and the mixing sweep have no strong result. On SWELL, no model beats always predicting "stress" on the held-out subjects. On WESAD, the federated model reaches 0.77 accuracy where centralised logistic regression reaches 0.91.
   - In the technique comparisons, the clearest effects are on WESAD: FedDyn and SCAFFOLD beat FedAvg under drift, the adaptive server optimizers beat it too, and a strong sign-flip attack collapses FedAvg while norm clipping holds.
   - On the streams, no continual baseline learns to tell the classes apart on held-out subjects: every model that keeps updating ends predicting one class. The baselines differ only in how fast they follow the class that is arriving, and replay and the unlabelled rows add nothing measurable at a tenth of the labels.
@@ -547,6 +547,18 @@ Source: [results/femnist_reference/](results/femnist_reference/INDEX.md), `confi
 | Always "1" (majority class) | 0.060 | 0.002 |
 
 The federated model clearly beats the majority class, so it is not a constant predictor; it was still improving at round 30 and stays below centralised logistic regression. [results/sim_scale/](results/sim_scale/INDEX.md) measures the simulator from 100 to 4,000 edges.
+
+### New framework: LEAF's CNN on FEMNIST
+
+Source: [results/femnist_cnn/](results/femnist_cnn/INDEX.md), `config_id` `0dd4b57b…`, `topology_id` `80d45cbe…`, commit `8ab0ba5`. It is `experiments/femnist_cnn.yaml`: the FEMNIST reference above with only the model changed, to the `torch_module` preset `leaf_femnist_cnn` (LEAF's CNN, 6.6 M parameters). Same writers, test writers, preprocessing, trainer, rounds and seeds. Round 30, mean ± 95% CI over 3 seeds:
+
+| Model | Accuracy | Macro-F1 |
+|---|---|---|
+| Federated LEAF CNN | 0.712 ± 0.025 | 0.413 ± 0.043 |
+| Federated MLP (reference) | 0.519 ± 0.003 | 0.153 ± 0.002 |
+| Centralised logistic regression | 0.661 | 0.472 |
+
+The CNN clearly beats the MLP on the same test writers, and passes centralised logistic regression in accuracy but not in macro-F1. It costs 58 times the parameters: 292 GB encoded per run against 5.1 GB, and 17–26 GB of memory in one simulator process.
 
 ### Before the redesign
 
