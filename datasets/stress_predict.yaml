@@ -1,0 +1,60 @@
+# Stress-Predict (Iqbal et al., 2022, Sensors 22:8135; MIT): 35 healthy
+# volunteers with an Empatica E4 on the wrist through a one-hour protocol of
+# baseline, Stroop test, interview and hyperventilation, with a rest after each
+# task (issue #242). The raw E4 sessions at the native rates, with the
+# harmonized E4 features of `wesad_e4.yaml`: <channel>_<stat> for acc_x, acc_y,
+# acc_z, bvp, eda and temp.
+#
+# Labels come from Processed_data/Time_logs.xlsx, at minute resolution: 1 for
+# the Stroop test, the interview and the hyperventilation, 0 for the baseline,
+# the rests and the closing questionnaire. Consent and the gaps between phases
+# have no class, so a window that touches them is dropped. S01 is left out:
+# the paper drops one participant whose protocol "was not followed properly",
+# and the authors' processed CSV has no S01 (its time log also puts the
+# baseline after the Stroop test).
+#
+# Checked against Processed_data/Improved_All_Combined_hr_rsp_binary.csv on its
+# 34 subjects (2026-11-10): see the agreement in results/stress_predict_reference/
+# INDEX.md and the test in tests/test_datasets_descriptors.py. The authors took
+# the task boundaries from the button presses (tags_S<n>.csv, to the second)
+# and from the time log where the tags are wrong (S06, S17, S18, S30), so the
+# two differ by up to a minute at each boundary. That CSV's HR and respiration
+# columns, its time and its participant are never read.
+name: stress_predict
+description: Stress-Predict (E4 de muñeca, 34 sujetos), tareas de estrés frente a descanso, con las features E4 armonizadas.
+root: data/StressPredict
+options:
+  signals: "ACC,BVP,EDA,TEMP"
+  window_seconds: 60
+  overlap: 0.5
+source:
+  reader: empatica_e4_csv
+  path: "Raw_data/{subject}/ACC.csv"   # the session folder, through one of its files
+  signals: "{signals}"
+steps:
+  - select: {query: "subject != 'S01'"}   # protocol not followed (see above)
+  - time: {column: time}    # Unix seconds of each sample
+  - intervals:
+      source: {reader: stress_predict_time_logs, path: Processed_data/Time_logs.xlsx}
+      value: phase
+      column: phase
+      by: [subject]
+  - label:
+      task: stress_binary
+      column: phase
+      map:
+        baseline: 0
+        relax_1: 0
+        relax_2: 0
+        relax_3: 0
+        questionnaire: 0
+        relax_4: 0
+        stroop: 1
+        interview: 1
+        hyperventilation: 1
+  - multirate_window:
+      seconds: "{window_seconds}"
+      overlap: "{overlap}"
+      label: mode
+  - features:
+      regex: "_(mean|std|min|max|median)$"

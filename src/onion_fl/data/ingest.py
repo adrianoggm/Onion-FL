@@ -129,20 +129,25 @@ class CsvReader:
 
 class ExcelParams(BaseModel):
     sheet: str | int = Field(0, description="Hoja por nombre o posición")
+    na_values: list[str] = Field(
+        default_factory=list, description="Textos que se leen como vacíos"
+    )
 
 
 @readers.register(
     "excel",
     title="Excel",
-    description="Hoja de un .xlsx (necesita openpyxl).",
+    description="Hoja de un .xlsx (necesita openpyxl: extra excel).",
     params=ExcelParams,
 )
 class ExcelReader:
-    def __init__(self, sheet: str | int = 0) -> None:
-        self.sheet = sheet
+    def __init__(
+        self, sheet: str | int = 0, na_values: list[str] | None = None
+    ) -> None:
+        self.sheet, self.na_values = sheet, na_values or None
 
     def read(self, path: Path) -> pd.DataFrame:
-        return pd.read_excel(path, sheet_name=self.sheet)
+        return pd.read_excel(path, sheet_name=self.sheet, na_values=self.na_values)
 
 
 @readers.register(
@@ -286,6 +291,323 @@ class WesadPickleReader:
                 columns[f"{name.lower()}_{i}"] = values[index, i]
         columns["condition"] = labels[:n]
         return pd.DataFrame(columns)
+
+
+# --- Empatica E4 (WESAD wrist, PhysioNet wearables, Nurse Stress, Stress-Predict) --
+
+# Each E4 signal and its channels, in the order every E4 reader emits them, so
+# the window features have the same names and order in every E4 dataset.
+E4_CHANNELS = {
+    "ACC": ["acc_x", "acc_y", "acc_z"],  # raw, 1/64 g
+    "BVP": ["bvp"],
+    "EDA": ["eda"],  # μS
+    "TEMP": ["temp"],  # °C
+    "HR": ["hr"],  # beats per minute, computed by the device from BVP
+    "IBI": ["ibi"],  # seconds between beats, at irregular times
+}
+E4_DEFAULT = "ACC,BVP,EDA,TEMP"
+
+
+def _e4_signals(value: list[str] | str | None, available: Mapping[str, Any]) -> list:
+    chosen = _split(value) or _split(E4_DEFAULT)
+    unknown = [s for s in chosen if s not in available]
+    if unknown:
+        raise ValueError(f"unknown E4 signals {unknown}; available {list(available)}")
+    if len(set(chosen)) != len(chosen):
+        raise ValueError(f"signals are repeated: {chosen}")
+    return [s for s in available if s in chosen]  # the canonical order
+
+
+def _e4_table(blocks: list[tuple[np.ndarray, dict[str, np.ndarray]]]) -> pd.DataFrame:
+    """Stack signals sampled at different times into one table sorted by ``time``.
+
+    Each row is one sample of one signal: its channels have values and every
+    other column is empty. The multi-rate window step reads each channel back
+    at its own rate.
+    """
+    total = sum(len(times) for times, _ in blocks)
+    names = [name for _, columns in blocks for name in columns]
+    out = {"time": np.concatenate([t for t, _ in blocks] or [np.empty(0)])}
+    out |= {name: np.full(total, np.nan) for name in names}
+    offset = 0
+    for times, columns in blocks:
+        for name, values in columns.items():
+            out[name][offset : offset + len(times)] = values
+        offset += len(times)
+    order = np.argsort(out["time"], kind="stable")
+    return pd.DataFrame({name: values[order] for name, values in out.items()})
+
+
+class E4CsvParams(BaseModel):
+    signals: list[str] | str | None = Field(
+        E4_DEFAULT,
+        description="Señales E4 (lista o 'A,B'): ACC, BVP, EDA, TEMP, HR, IBI",
+    )
+
+    @model_validator(mode="after")
+    def _known(self) -> E4CsvParams:
+        _e4_signals(self.signals, E4_CHANNELS)
+        return self
+
+
+@readers.register(
+    "empatica_e4_csv",
+    title="Empatica E4 (CSV)",
+    description="Carpeta de una sesión E4: un CSV por señal, cada una a su tasa nativa.",
+    params=E4CsvParams,
+    explain=(
+        "Cada CSV trae la marca de tiempo de inicio en la fila 1 (Unix en segundos, o "
+        "una fecha UTC como en PhysioNet) y la frecuencia en la fila 2; IBI.csv trae "
+        "el inicio y luego pares (desfase, IBI). La ruta es la carpeta o un fichero "
+        "suyo. La columna time es la marca de cada muestra en segundos Unix: es un "
+        "metadato, así que el descriptor necesita un paso time."
+    ),
+)
+class EmpaticaE4CsvReader:
+    """The CSV export of an Empatica E4 session (E4 connect, one file per signal)."""
+
+    def __init__(self, signals: list[str] | str | None = E4_DEFAULT) -> None:
+        self.signals = _e4_signals(signals, E4_CHANNELS)
+
+    def read(self, path: Path) -> pd.DataFrame:
+        folder = path if path.is_dir() else path.parent
+        blocks = []
+        for signal in self.signals:
+            file = folder / f"{signal}.csv"
+            if not file.exists():
+                raise DataError(f"{folder} has no {signal}.csv")
+            reader = self._ibi if signal == "IBI" else self._regular
+            blocks.append(reader(file, E4_CHANNELS[signal]))
+        return _e4_table(blocks)
+
+    @staticmethod
+    def _regular(file: Path, names: list[str]):
+        head = _e4_rows(file, 2)
+        if head.shape != (2, len(names)):
+            raise DataError(
+                f"{file}: expected {len(names)} columns and the start and rate rows"
+            )
+        starts = {e4_seconds(v, file) for v in head[0]}
+        rates = {e4_seconds(v, file) for v in head[1]}
+        if len(starts) > 1 or len(rates) > 1 or min(rates) <= 0:
+            raise DataError(f"{file}: columns with different starts or rates {head}")
+        values = _e4_values(file, 2, len(names))
+        times = starts.pop() + np.arange(len(values)) / rates.pop()
+        return times, {name: values[:, i] for i, name in enumerate(names)}
+
+    @staticmethod
+    def _ibi(file: Path, names: list[str]):
+        start = e4_seconds(_e4_rows(file, 1)[0, 0], file)
+        values = _e4_values(file, 1, 2)  # E4 connect may export an empty IBI
+        return start + values[:, 0], {names[0]: values[:, 1]}
+
+
+def e4_seconds(value: Any, file: Path | str = "") -> float:
+    """An E4 time as Unix seconds: a number, or a UTC date as PhysioNet writes it."""
+    text = str(value).strip()
+    try:
+        return float(text)
+    except ValueError:
+        pass
+    try:
+        stamp = pd.Timestamp(text)
+    except ValueError:
+        raise DataError(
+            f"{file}: {text!r} is neither Unix seconds nor a date"
+        ) from None
+    if stamp.tzinfo is not None:
+        stamp = stamp.tz_convert("UTC").tz_localize(None)
+    return (stamp - pd.Timestamp(0)).total_seconds()
+
+
+def _e4_rows(file: Path, n: int) -> np.ndarray:
+    """The first ``n`` rows as text: the start time (and the rate)."""
+    try:
+        rows = pd.read_csv(file, header=None, nrows=n, dtype=str)
+    except pd.errors.EmptyDataError:
+        raise DataError(f"{file} is empty") from None
+    if len(rows) < n:
+        raise DataError(f"{file}: expected {n} header rows, got {len(rows)}")
+    return rows.to_numpy()
+
+
+def _e4_values(file: Path, skip: int, width: int) -> np.ndarray:
+    try:
+        values = pd.read_csv(
+            file, header=None, skiprows=skip, skipinitialspace=True
+        ).to_numpy(np.float64)
+    except pd.errors.EmptyDataError:
+        return np.empty((0, width))
+    if values.shape[1] != width:
+        raise DataError(f"{file}: expected {width} columns, got {values.shape[1]}")
+    return values
+
+
+# Sessions of the first stage are S<nn> (protocol V1), of the second f<nn> (V2).
+PHYSIONET_STAGES = {"S": "V1", "f": "V2"}
+
+
+@readers.register(
+    "physionet_wearable",
+    title="PhysioNet Wearable Device (E4)",
+    description="Sesión E4 de PhysioNet (estrés inducido y ejercicio) con su tramo de protocolo.",
+    params=E4CsvParams,
+    explain=(
+        "Lee Wearable_Dataset/<ACTIVIDAD>/<sesión>/ como empatica_e4_csv y añade "
+        "session (ACTIVIDAD/sesión) y segment (ACTIVIDAD_V<versión>_<k>), donde k es "
+        "el número de tags pulsados hasta esa muestra: 0 antes del primero y k entre "
+        "el tag k y el k+1. La versión sale del prefijo de la sesión (S = V1, f = V2). "
+        "Ambas columnas son metadatos: la etiqueta se declara mapeando segment."
+    ),
+)
+class PhysioNetWearableReader:
+    """PhysioNet's Wearable Device Dataset: E4 sessions with protocol tags."""
+
+    def __init__(self, signals: list[str] | str | None = E4_DEFAULT) -> None:
+        self.e4 = EmpaticaE4CsvReader(signals)
+
+    def read(self, path: Path) -> pd.DataFrame:
+        folder = path if path.is_dir() else path.parent
+        activity, session = folder.parent.name, folder.name
+        version = PHYSIONET_STAGES.get(session[:1])
+        if version is None:
+            raise DataError(f"{folder}: a session starts with S or f, got {session!r}")
+        df = self.e4.read(folder)
+        tags = np.sort(_e4_tags(folder / "tags.csv"))
+        k = np.searchsorted(tags, df["time"].to_numpy(np.float64), side="right")
+        return df.assign(
+            session=f"{activity}/{session}",
+            segment=[f"{activity}_{version}_{i}" for i in k],
+        )
+
+
+def _e4_tags(file: Path) -> np.ndarray:
+    """The times of the button presses (one per line); a session may have none."""
+    if not file.exists():
+        raise DataError(f"{file.parent} has no tags.csv")
+    lines = [line.strip() for line in file.read_text(encoding="utf-8").splitlines()]
+    return np.array([e4_seconds(line, file) for line in lines if line], np.float64)
+
+
+class WesadE4Params(BaseModel):
+    signals: list[str] | str | None = Field(
+        E4_DEFAULT, description="Señales de muñeca (lista o 'A,B'): ACC, BVP, EDA, TEMP"
+    )
+
+    @model_validator(mode="after")
+    def _known(self) -> WesadE4Params:
+        _e4_signals(self.signals, WESAD_RATES["wrist"])
+        return self
+
+
+@readers.register(
+    "wesad_e4",
+    title="WESAD muñeca (E4)",
+    description="Muñeca de un S<n>.pkl de WESAD a tasas nativas, como el lector E4.",
+    params=WesadE4Params,
+    explain=(
+        "Da las mismas columnas que empatica_e4_csv (time en segundos desde el "
+        "inicio de la grabación) más condition, la etiqueta original (0-7) a 700 Hz "
+        "en filas propias."
+    ),
+)
+class WesadE4Reader:
+    """WESAD's wrist device is an Empatica E4: the same channels as its CSV export."""
+
+    def __init__(self, signals: list[str] | str | None = E4_DEFAULT) -> None:
+        self.signals = _e4_signals(signals, WESAD_RATES["wrist"])
+
+    def read(self, path: Path) -> pd.DataFrame:
+        with open(path, "rb") as handle:  # the dataset's own format; trusted files only
+            data = pickle.load(handle, encoding="latin1")
+        wrist = {k.upper(): v for k, v in data["signal"]["wrist"].items()}
+        blocks = []
+        for signal in self.signals:
+            if signal not in wrist:
+                raise DataError(f"{path} has no wrist signal {signal}")
+            values = np.asarray(wrist[signal], dtype=np.float64)
+            values = values.reshape(len(values), -1)
+            times = np.arange(len(values)) / WESAD_RATES["wrist"][signal]
+            names = E4_CHANNELS[signal]
+            blocks.append((times, {n: values[:, i] for i, n in enumerate(names)}))
+        labels = np.asarray(data["label"], dtype=np.float64)
+        blocks.append(
+            (np.arange(len(labels)) / WESAD_LABEL_RATE, {"condition": labels})
+        )
+        return _e4_table(blocks)
+
+
+# The phases of Stress-Predict's protocol, in the order of the columns of
+# Time_logs.xlsx (its headers have typos, so they are named here).
+STRESS_PREDICT_PHASES = [
+    "consent",
+    "baseline",
+    "stroop",
+    "relax_1",
+    "interview",
+    "relax_2",
+    "hyperventilation",
+    "relax_3",
+    "questionnaire",
+    "relax_4",
+]
+
+
+@readers.register(
+    "stress_predict_time_logs",
+    title="Stress-Predict: Time_logs.xlsx",
+    description="Horario de cada fase del protocolo de Stress-Predict: una fila por fase.",
+    explain=(
+        "Da subject, phase, start y end (Unix, en segundos). La hoja trae horas de "
+        "reloj de 12 h sin AM/PM: las anteriores a las 08:00 son de la tarde. Son "
+        "hora de Irlanda, que en febrero y marzo de 2022 es UTC. Si una fase acaba "
+        "después de que empiece la siguiente, acaba donde esa empieza. Necesita "
+        "openpyxl."
+    ),
+)
+class StressPredictTimeLogsReader:
+    """``Processed_data/Time_logs.xlsx`` of Stress-Predict (Iqbal et al., 2022).
+
+    One row per subject, a (Start, End) pair of columns per phase under a
+    two-row header, and the session's day in the ``Date`` column.
+    """
+
+    def read(self, path: Path) -> pd.DataFrame:
+        raw = pd.read_excel(path, header=None)
+        head = [str(v).strip() for v in raw.iloc[0]]
+        sub = [str(v).strip() for v in raw.iloc[1]]
+        pairs = [j for j in range(len(sub) - 1) if sub[j : j + 2] == ["Start", "End"]]
+        if len(pairs) != len(STRESS_PREDICT_PHASES) or "Date" not in head:
+            raise DataError(
+                f"{path}: expected {len(STRESS_PREDICT_PHASES)} (Start, End) pairs "
+                f"and a Date column; found {len(pairs)} pairs"
+            )
+        day_column = head.index("Date")
+        rows = []
+        for _, row in raw.iloc[2:].iterrows():
+            subject = str(row.iloc[0]).strip()
+            if subject in ("", "nan"):
+                continue
+            day = pd.Timestamp(row.iloc[day_column]).normalize()
+            phases = [
+                (phase, _clock(day, row.iloc[j]), _clock(day, row.iloc[j + 1]))
+                for phase, j in zip(STRESS_PREDICT_PHASES, pairs, strict=True)
+            ]
+            phases.sort(key=lambda p: p[1])
+            for k, (phase, start, end) in enumerate(phases):
+                if k + 1 < len(phases):
+                    end = min(end, phases[k + 1][1])
+                rows.append((subject, phase, start, end))
+        return pd.DataFrame(rows, columns=["subject", "phase", "start", "end"])
+
+
+def _clock(day: pd.Timestamp, value: Any) -> float:
+    """Unix seconds of a 12-hour clock time without AM/PM, in a day session."""
+    if not hasattr(value, "hour"):
+        raise DataError(f"Time_logs: {value!r} is not a time")
+    hour = value.hour + (12 if value.hour < 8 else 0)
+    stamp = day + pd.Timedelta(hours=hour, minutes=value.minute, seconds=value.second)
+    return float((stamp - pd.Timestamp(0)).total_seconds())
 
 
 class LeafParams(BaseModel):
@@ -691,21 +1013,42 @@ class TimeStep:
         if self.rate is not None:
             return df.assign(**{TIME: np.arange(len(df)) / self.rate})
         _require(df, [self.column], "time")
-        raw = df[self.column]
-        if self.format is None and pd.api.types.is_numeric_dtype(raw):
-            seconds = raw.astype(float)
-        else:
-            text = raw.astype(str)
-            if self.pad_to is not None:
-                text = text.str.ljust(self.pad_to, "0")
-            stamps = pd.to_datetime(text, format=self.format, errors="coerce")
-            seconds = (stamps - pd.Timestamp(0)).dt.total_seconds()
-        bad = raw[seconds.isna()].unique()[:3].tolist()
-        if bad:
-            raise DataError(f"time: rows of {self.column!r} without a time: {bad}")
+        seconds = _seconds(df[self.column], self.format, self.pad_to, "time")
         if ctx is not None:
             ctx.meta_columns.add(self.column)
-        return df.assign(**{TIME: seconds.to_numpy(np.float64)})
+        return df.assign(**{TIME: seconds})
+
+
+def _seconds(
+    raw: pd.Series,
+    format: str | None,
+    pad_to: int | None,
+    step: str,
+    timezone: str | None = None,
+) -> np.ndarray:
+    """Seconds since the epoch: numbers as they are, text parsed as dates.
+
+    With ``timezone``, dates without a zone are local times there and the result
+    is in Unix UTC seconds; without it, they are taken as they read.
+    """
+    if format is None and pd.api.types.is_numeric_dtype(raw):
+        seconds = raw.astype(float)
+    else:
+        text = raw.astype(str)
+        if pad_to is not None:
+            text = text.str.ljust(pad_to, "0")
+        stamps = pd.to_datetime(text, format=format, errors="coerce")
+        epoch = pd.Timestamp(0)
+        if timezone is not None:
+            stamps = stamps.dt.tz_localize(
+                timezone, ambiguous="raise", nonexistent="raise"
+            ).dt.tz_convert("UTC")
+            epoch = pd.Timestamp(0, tz="UTC")
+        seconds = (stamps - epoch).dt.total_seconds()
+    bad = raw[seconds.isna()].unique()[:3].tolist()
+    if bad:
+        raise DataError(f"{step}: rows of {raw.name!r} without a time: {bad}")
+    return seconds.to_numpy(np.float64)
 
 
 STATS: dict[str, Callable[[np.ndarray], np.ndarray]] = {
@@ -720,6 +1063,8 @@ REDUCE: dict[str, Callable[[np.ndarray], float]] = {
     "mode": lambda a: float(np.bincount(a.astype(np.int64)).argmax()),
     "first": lambda a: float(a[0]),
     "last": lambda a: float(a[-1]),
+    # one class throughout, or no label: the window is dropped
+    "unanimous": lambda a: float(a[0]) if (a == a[0]).all() else float("nan"),
 }
 
 
@@ -783,6 +1128,287 @@ class WindowStep:
         return pd.DataFrame(rows, columns=head + names)
 
 
+EPS = 1e-6  # seconds: below any sample interval, above float error on Unix times
+
+
+class MultirateWindowParams(BaseModel):
+    seconds: PositiveFloat = Field(description="Duración de cada ventana")
+    overlap: float = Field(0.0, ge=0, lt=1)
+    stats: list[Literal["mean", "std", "min", "max", "median"]] = Field(
+        default_factory=lambda: list(STATS)
+    )
+    columns: list[str] | None = Field(
+        None, description="Canales; por defecto los numéricos"
+    )
+    label: Literal["mean_round", "mode", "first", "last", "unanimous"] = Field(
+        "mean_round",
+        description="Cómo resume la ventana sus muestras de etiqueta; unanimous "
+        "descarta las ventanas que mezclan clases",
+    )
+    label_rows: str | None = Field(
+        None,
+        description="Columna cuyas filas con valor son las muestras de la etiqueta; "
+        "por defecto, todas las filas",
+    )
+
+
+@steps.register(
+    "multirate_window",
+    title="Ventanas multi-tasa",
+    description="Ventanas de N segundos por sujeto; cada canal, con sus muestras a su tasa.",
+    params=MultirateWindowParams,
+    explain=(
+        "Cada canal usa solo sus filas con valor, así que señales a tasas distintas "
+        "conviven en una tabla. Las ventanas van del último inicio al primer final de "
+        "los canales; se descartan las que dejan un canal sin muestras o tienen una "
+        "muestra de etiqueta sin clase. Cada ventana toma el tiempo de su final."
+    ),
+)
+class MultirateWindowStep:
+    def __init__(self, seconds, overlap, stats, columns, label, label_rows) -> None:
+        self.size, self.stats, self.columns = float(seconds), stats, columns
+        self.label, self.label_rows = label, label_rows
+        self.step = self.size * (1 - overlap)
+
+    def apply(self, df: pd.DataFrame, ctx: IngestContext | None) -> pd.DataFrame:
+        if "subject" not in df.columns:
+            raise DataError("window runs per subject: put a subject step before it")
+        if TIME not in df.columns:
+            raise DataError("multirate_window needs each row's time: add a time step")
+        reserved = {"subject", "label", TIME, self.label_rows}
+        reserved |= ctx.meta_columns if ctx else set()
+        columns = self.columns or [
+            c
+            for c in df.columns
+            if c not in reserved and pd.api.types.is_numeric_dtype(df[c])
+        ]
+        _require(df, columns + [c for c in [self.label_rows] if c], "multirate_window")
+        names = [f"{c}_{s}" for c in columns for s in self.stats]
+        has_label = "label" in df.columns
+        rows = []
+        for subject, group in df.groupby("subject", sort=False):
+            times = group[TIME].to_numpy(dtype=np.float64)
+            tracks = [_track(times, group[c].to_numpy(np.float64)) for c in columns]
+            labels = None
+            if has_label:
+                held = (
+                    group[self.label_rows].notna().to_numpy()
+                    if self.label_rows
+                    else np.ones(len(group), dtype=bool)
+                )
+                labels = _track(
+                    times, group["label"].to_numpy(np.float64), present=held
+                )
+            span = tracks + ([labels] if labels is not None else [])
+            if any(len(t) == 0 for t, _ in span):
+                continue
+            start = max(t[0] for t, _ in span)
+            end = min(t[-1] + _interval(t) for t, _ in span)
+            count = int(np.floor((end - start - self.size) / self.step + EPS)) + 1
+            for k in range(max(count, 0)):
+                lo = start + k * self.step
+                hi = lo + self.size
+                row: list[Any] = [subject]
+                if labels is not None:
+                    window = _within(labels, lo, hi)
+                    if len(window) == 0 or np.isnan(window).any():
+                        continue
+                    row.append(REDUCE[self.label](window))
+                values = [_within(track, lo, hi) for track in tracks]
+                if any(len(v) == 0 for v in values):
+                    continue
+                row.append(hi)  # observable once the window is complete
+                rows.append(row + [STATS[s](v) for v in values for s in self.stats])
+        head = ["subject", "label"] if has_label else ["subject"]
+        return pd.DataFrame(rows, columns=head + [TIME] + names)
+
+
+def _track(times: np.ndarray, values: np.ndarray, present: np.ndarray | None = None):
+    """One channel's samples (rows with a value, or ``present``), sorted by time."""
+    keep = ~np.isnan(values) if present is None else present
+    t, v = times[keep], values[keep]
+    order = np.argsort(t, kind="stable")
+    return t[order], v[order]
+
+
+def _interval(times: np.ndarray) -> float:
+    """The usual time between samples; signals sampled at one instant count once."""
+    distinct = np.unique(times)
+    return float(np.median(np.diff(distinct))) if len(distinct) > 1 else 0.0
+
+
+def _within(track: tuple[np.ndarray, np.ndarray], lo: float, hi: float) -> np.ndarray:
+    """Values sampled in ``[lo, hi)``."""
+    times, values = track
+    a, b = np.searchsorted(times, [lo - EPS, hi - EPS])
+    return values[a:b]
+
+
+class IntervalsParams(BaseModel):
+    source: SourceSpec = Field(description="Tabla con un intervalo por fila")
+    start: str = Field("start", description="Columna del inicio")
+    end: str = Field("end", description="Columna del final (no incluido)")
+    value: str = Field("class", description="Columna con la clase del intervalo")
+    column: str = Field("interval", description="Columna nueva con la clase por fila")
+    by: list[str] | dict[str, str] = Field(
+        default_factory=list,
+        description="Claves comunes, como subject, o {columna de la fila: columna "
+        "de la tabla}",
+    )
+    format: str | None = Field(
+        None,
+        description="Formato strptime de inicio y final; sin él, segundos o una "
+        "fecha que pandas entienda",
+    )
+    date: str | None = Field(
+        None,
+        description="Columna con el día, si inicio y final son horas del día; un "
+        "final que no pasa del inicio es del día siguiente",
+    )
+    timezone: str | None = Field(
+        None,
+        description="Zona IANA de las fechas sin zona (p. ej. Etc/GMT+6); se pasan "
+        "a segundos Unix UTC",
+    )
+    overlap: Literal["error", "max"] = Field(
+        "error",
+        description="Intervalos solapados: error, o la clase mayor (numérica) en "
+        "las filas que caen en varios",
+    )
+    outside: float | str | None = Field(
+        None,
+        description="Clase de las filas fuera de todo intervalo, solo en los "
+        "ficheros con algún intervalo de su clave",
+    )
+
+    @model_validator(mode="after")
+    def _known_timezone(self) -> IntervalsParams:
+        if self.timezone is not None:
+            try:
+                pd.Timestamp(0).tz_localize(self.timezone)
+            except Exception as exc:
+                raise ValueError(f"unknown timezone {self.timezone!r}") from exc
+        return self
+
+
+@steps.register(
+    "intervals",
+    title="Etiquetar por intervalos",
+    description="Da a cada fila la clase del intervalo (inicio, fin) de otra tabla que la contiene.",
+    params=IntervalsParams,
+    explain=(
+        "Para tags de protocolo y eventos de encuesta. Compara con el tiempo de cada "
+        "fila, así que va después de un paso time y en sus unidades. Las filas fuera "
+        "de todo intervalo quedan sin clase, o con la clase outside si su fichero "
+        "tiene algún intervalo de su clave. Los intervalos de una clave no pueden "
+        "solaparse salvo con overlap: max. Con timezone, las fechas locales pasan a "
+        "Unix UTC. La columna nueva es meta: nunca es una feature."
+    ),
+)
+class IntervalsStep:
+    def __init__(
+        self,
+        source,
+        start,
+        end,
+        value,
+        column,
+        by,
+        format,
+        date,
+        timezone,
+        overlap,
+        outside,
+    ) -> None:
+        self.source = SourceSpec.model_validate(source)
+        self.start, self.end, self.value, self.column = start, end, value, column
+        self.by = dict(by) if isinstance(by, Mapping) else {k: k for k in by}
+        self.format, self.date, self.timezone = format, date, timezone
+        self.overlap, self.outside = overlap, outside
+        self._table: pd.DataFrame | None = None
+
+    def _read(self, root: Path) -> pd.DataFrame:
+        table = read_source(self.source, root)
+        dates = [self.date] if self.date else []
+        needed = [self.start, self.end, self.value, *dates, *self.by.values()]
+        _require(table, needed, "intervals")
+        start, end = table[self.start], table[self.end]
+        if self.date:
+            day = table[self.date]
+            if pd.api.types.is_datetime64_any_dtype(day):
+                day = day.dt.strftime("%Y-%m-%d")
+            day = day.astype(str) + " "
+            start = (day + start.astype(str)).rename(self.start)
+            end = (day + end.astype(str)).rename(self.end)
+        begins = _seconds(start, self.format, None, "intervals", self.timezone)
+        ends = _seconds(end, self.format, None, "intervals", self.timezone)
+        if self.date:  # a time of day that does not pass the start is the next day
+            ends = np.where(ends <= begins, ends + 86400.0, ends)
+        if self.overlap == "max":
+            numbers = pd.to_numeric(table[self.value], errors="coerce")
+            if numbers.isna().ne(table[self.value].isna()).any():
+                raise DataError(
+                    f"intervals: overlap max needs numeric classes in {self.value!r}"
+                )
+        return table.assign(_start=begins, _end=ends).reset_index(drop=True)
+
+    def apply(self, df: pd.DataFrame, ctx: IngestContext) -> pd.DataFrame:
+        if TIME not in df.columns:
+            raise DataError("intervals compares with each row's time: add a time step")
+        if self._table is None:  # read once, then used with every source file
+            self._table = self._read(ctx.root)
+        table = self._table
+        _require(df, list(self.by), "intervals")
+        times = df[TIME].to_numpy(np.float64)
+        hit = np.full(len(df), -1)
+        left = _keys(df, list(self.by)) if self.by else np.zeros(len(df), str)
+        if self.by:
+            right = _keys(table, list(self.by.values()))
+            groups = [(left == key, right == key) for key in np.unique(right)]
+        else:
+            groups = [(np.ones(len(df), bool), np.ones(len(table), bool))]
+        for rows, intervals in groups:
+            part = table[intervals].sort_values("_start", kind="stable")
+            where = np.flatnonzero(rows)
+            if part.empty or len(where) == 0:
+                continue
+            starts, ends = part["_start"].to_numpy(), part["_end"].to_numpy()
+            if (ends <= starts).any():
+                raise DataError(f"intervals: empty intervals in {self.source.path}")
+            if self.overlap == "error" and (starts[1:] < ends[:-1]).any():
+                raise DataError(
+                    f"intervals: overlapping intervals in {self.source.path}"
+                )
+            # Later writes win: in increasing class order (missing classes first),
+            # a row in several intervals keeps the largest class.
+            order = np.arange(len(part))
+            if self.overlap == "max":
+                numbers = pd.to_numeric(part[self.value]).fillna(-np.inf)
+                order = np.argsort(numbers.to_numpy(), kind="stable")
+            t = times[where]
+            for i in order:
+                inside = (t >= starts[i]) & (t < ends[i])
+                hit[where[inside]] = part.index[i]
+        classes = table[self.value].reindex(hit).set_axis(df.index)
+        if self.outside is not None:
+            # Only in a file with an interval of its key: elsewhere, nothing says
+            # whether the rows are outside every event or simply not surveyed.
+            held = np.unique(left[hit >= 0])
+            lone = (hit < 0) & np.isin(left, held)
+            classes = classes.astype(object).where(~lone, self.outside)
+            classes = classes.infer_objects()
+        ctx.meta_columns.add(self.column)
+        return df.assign(**{self.column: classes})
+
+
+def _keys(df: pd.DataFrame, columns: list[str]) -> np.ndarray:
+    """One text key per row from ``columns``, so int and text ids compare equal."""
+    keys = df[columns[0]].astype(str)
+    for column in columns[1:]:  # by column, not by row: sessions have millions
+        keys = keys + "\x1f" + df[column].astype(str)
+    return keys.to_numpy()
+
+
 class LabelRule(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -819,8 +1445,11 @@ class LabelRule(BaseModel):
             values = values.round()
         if self.map is not None:
             text = {str(k): v for k, v in self.map.items()}
-            exact = values.map(lambda v: self.map.get(v, text.get(str(v).strip())))
-            return pd.to_numeric(exact, errors="coerce").astype(float)
+            codes, uniques = pd.factorize(values)  # each distinct value once
+            found = [self.map.get(v, text.get(str(v).strip())) for v in uniques]
+            exact = pd.to_numeric(pd.Series(found, dtype=object), errors="coerce")
+            exact = np.append(exact.to_numpy(np.float64), np.nan)  # code -1: missing
+            return pd.Series(exact[codes], index=values.index)
         if self.threshold is not None:
             return (values >= self.threshold).astype(float).where(values.notna())
         if self.bins is not None:
@@ -1155,7 +1784,10 @@ def ingest(
                 f"missing {missing}, extra {extra}"
             )
         frames.append(df)
-    df = pd.concat(frames, ignore_index=True)
+    # Files that end without rows (a session a select step excluded, an E4
+    # session without labelled windows) are left out of the concatenation,
+    # which would otherwise warn about them.
+    df = pd.concat([f for f in frames if len(f)] or frames[:1], ignore_index=True)
     del frames
     for _, step in active[cut:]:
         df = step.apply(df, ctx)

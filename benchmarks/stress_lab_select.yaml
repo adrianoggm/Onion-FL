@@ -1,0 +1,50 @@
+# onion-bench-stress (issue #244), lab track (SWELL and WESAD, the existing
+# baselines' pair): learning-rate selection, validation only, with the rule of
+# benchmarks/stress_select.yaml. SWELL has no E4, so this track never shares a
+# table with the E4 track.
+#
+#   onion_fl run benchmarks/stress_lab_select.yaml --workers 6
+name: stress_lab_select
+description: onion-bench-stress, pista de laboratorio (SWELL y WESAD). Selección del lr con los sujetos de validación.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, local_val: 0.2, local_val_split: class_tail, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: &sgd {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge:
+    every: 20
+    models: [received, local, personal, finetuned]
+    finetune: {name: standard, optimizer: sgd, local_epochs: 2, batch_size: 32, lr: 0.03}
+  aggregators: {every: 20}
+  global: {every: 20, subjects: val}
+seeds: [0]
+sweep:
+  learning.sharing,learning.trainer,learning.server_optimizer:
+    - [fedavg, {<<: *sgd, name: standard, lr: 0.03}, replace]
+    - [fedavg, {<<: *sgd, name: standard, lr: 0.1}, replace]
+    - [fedavg, {<<: *sgd, name: standard, lr: 0.3}, replace]
+    - [fedavg, {<<: *sgd, name: scaffold, lr: 0.03}, scaffold]
+    - [fedavg, {<<: *sgd, name: scaffold, lr: 0.1}, scaffold]
+    - [fedavg, {<<: *sgd, name: scaffold, lr: 0.3}, scaffold]
+    - [fedavg, {<<: *sgd, name: feddyn, lr: 0.03}, feddyn]
+    - [fedavg, {<<: *sgd, name: feddyn, lr: 0.1}, feddyn]
+    - [fedavg, {<<: *sgd, name: feddyn, lr: 0.3}, feddyn]
+    - [fedavg, {<<: *sgd, name: ditto, lr: 0.03}, replace]
+    - [fedavg, {<<: *sgd, name: ditto, lr: 0.1}, replace]
+    - [fedavg, {<<: *sgd, name: ditto, lr: 0.3}, replace]
+    - [fedper, {<<: *sgd, name: fedrep, lr: 0.03}, replace]
+    - [fedper, {<<: *sgd, name: fedrep, lr: 0.1}, replace]
+    - [fedper, {<<: *sgd, name: fedrep, lr: 0.3}, replace]
+    - [fedavg, {<<: *sgd, name: fedbabu, lr: 0.03}, replace]
+    - [fedavg, {<<: *sgd, name: fedbabu, lr: 0.1}, replace]
+    - [fedavg, {<<: *sgd, name: fedbabu, lr: 0.3}, replace]

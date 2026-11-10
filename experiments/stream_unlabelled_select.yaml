@@ -1,0 +1,49 @@
+# Choosing each unlabelled objective's settings on the validation subjects
+# (issue #160, continuum C5). The streams are stream_swell_wesad's with a
+# tenth of the rows labelled, 10 minutes late; the other nine tenths reach the
+# edges unlabelled and wait in each edge's pool.
+# - none: the unlabelled rows are not used (C3).
+# - pseudo_label: the received model's class, where its confidence reaches the
+#   threshold, adds weight·CE to each batch.
+# - consistency: weight·KL(p(x) ‖ p(x + ε)), ε ~ N(0, noise²) on the scaled
+#   features.
+# The final global model is scored offline on the validation subjects; the
+# test subjects are never evaluated here.
+#
+#   onion_fl run experiments/stream_unlabelled_select.yaml --workers 3
+name: stream_unlabelled_select
+description: Selección de los ajustes de cada objetivo sin etiquetar sobre los sujetos de validación.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+rounds: 60                 # an upper bound: the run ends when the streams do
+stream:
+  bootstrap: 20m
+  round_every: 10m
+  batch_size: 1
+  speed: 60
+labels: {fraction: 0.1, delay: 10m}
+evaluation:
+  metrics: [loss, accuracy, macro_f1, confusion_matrix]
+  aggregators: {every: 1}
+  global: {every: 5, subjects: val}
+seeds: [0, 1, 2]
+sweep:
+  unlabelled:
+    - none
+    - {name: pseudo_label, threshold: 0.8, weight: 0.5}
+    - {name: pseudo_label, threshold: 0.8, weight: 1.0}
+    - {name: pseudo_label, threshold: 0.9, weight: 0.5}
+    - {name: pseudo_label, threshold: 0.9, weight: 1.0}
+    - {name: pseudo_label, threshold: 0.95, weight: 0.5}
+    - {name: pseudo_label, threshold: 0.95, weight: 1.0}
+    - {name: consistency, noise: 0.05}
+    - {name: consistency, noise: 0.1}

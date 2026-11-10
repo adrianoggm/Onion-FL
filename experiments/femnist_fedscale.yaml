@@ -1,0 +1,33 @@
+# FEMNIST on FedScale's devices (issue #253): the 160 training writers of
+# datasets/femnist.yaml, each on its own phone sampled from FedScale's client
+# traces (infrastructures/fedscale_field.yaml). A phone trains at its client's
+# speed, sends at its bandwidth and is up only inside its client's windows.
+# Needs the imported traces (README §2); the rates are trace-derived, not
+# calibrated, so this is no fidelity result.
+#
+#   onion_fl traces import fedscale data/FedScale
+#   onion_fl run experiments/femnist_fedscale.yaml
+name: femnist_fedscale
+description: FEMNIST con perfiles de dispositivos reales de FedScale (cómputo, ancho de banda y disponibilidad).
+topology: femnist_fedscale
+infrastructure:
+  name: fedscale_field
+  assignment:
+    root: cloud-1
+    aggregators: {fog_0: fog-1}
+    edges: {name: one_per_device, seed: 0}
+data:
+  datasets:
+    femnist: {}
+  roles: {test: 0.2, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 1.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 128, trunk_hidden: [128], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, local_epochs: 1, batch_size: 32, lr: 0.001}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  global: {every: 1}
+seeds: [0]

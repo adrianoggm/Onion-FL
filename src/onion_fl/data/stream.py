@@ -76,8 +76,8 @@ class StreamConfig(BaseModel):
     )
     round_every: Positive | None = Field(
         None,
-        description="Tiempo de datos entre rondas; con continuum, lo decide su "
-        "disparador",
+        description="Tiempo de datos entre rondas; con continual.trigger, lo "
+        "decide ese disparador",
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
     window: Positive | None = Field(

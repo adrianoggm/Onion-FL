@@ -1,0 +1,36 @@
+# Centralised reference on the PhysioNet Wearable Device dataset (issue #240):
+# stress_binary (baseline and rests against the stress tasks) on 60 s windows
+# with the harmonized E4 features. The pooled placement trains one edge on every
+# training participant, so the run is the centralised baseline with the same
+# model and trainer as the federated runs. Nine participants are reserved for
+# the test: the role-seed-0 draw of a quarter of the 35 participants with
+# windows, listed so that physionet_e4_exercise_reference.yaml tests on the
+# same people. The hyperparameters were set before the runs, not tuned.
+#
+#   onion_fl run experiments/physionet_e4_reference.yaml --workers 3
+#   onion_fl report experiments/physionet_e4_reference.yaml --out report.html --metric accuracy --metric macro_f1
+#   onion_fl baseline experiments/physionet_e4_reference.yaml --models lr rf > baselines.json
+name: physionet_e4_reference
+description: Referencia centralizada en PhysioNet Wearable Device (E4), estrés binario, con sujetos de test fijos.
+topology: one_fog
+data:
+  datasets:
+    physionet_e4: {options: {label: binary}}
+  roles:
+    seed: 0
+    scaler: global
+    overrides:
+      physionet_e4:
+        test: [S04, S09, S10, S11, S16, S18, f10, f15, f17]
+        val: []
+  placement: {name: pooled}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, local_epochs: 5, batch_size: 32, lr: 0.001}
+  init: random
+rounds: 10
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  global: {every: 1}
+seeds: [0, 1, 2, 3, 4]

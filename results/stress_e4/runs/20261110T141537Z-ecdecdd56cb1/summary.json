@@ -1,0 +1,26 @@
+{
+  "rounds": 20,
+  "finished": true,
+  "t_virtual_end": 0.11644973601520778,
+  "wall_seconds": 104.06881470000371,
+  "messages": {
+    "sent": 612,
+    "bytes": 17319336,
+    "dropped": 0
+  },
+  "quorum_failed": 0,
+  "final": {
+    "global/*": {
+      "round": 20,
+      "accuracy": 0.8475728155339806,
+      "loss": 0.43849180034288493,
+      "macro_f1": 0.5525195687557398
+    },
+    "global/nurse_stress": {
+      "round": 20,
+      "accuracy": 0.8475728155339806,
+      "loss": 0.43849180034288493,
+      "macro_f1": 0.5525195687557398
+    }
+  }
+}

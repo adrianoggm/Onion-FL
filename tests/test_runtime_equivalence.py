@@ -1,8 +1,10 @@
 """Simulation and real runtime give the same final model (spec §9.3, issue #100).
 
 With full quorum and the same seed, the coordinator's final model must match
-in SimRuntime, in RealRuntime over the memory bus, and over MQTT with one
-process per group. The edges use the stub trainer with per-node noise: it
+in SimRuntime, in RealRuntime over the memory bus, gRPC and Flower, and over
+MQTT, gRPC and Flower with one process per group. Flower needs the ``flower``
+extra, and its tests skip without it. The edges use the stub trainer with
+per-node noise: it
 learns nothing, but every edge sends a different, seeded update, so any
 difference in participants, rng streams or aggregation order would show.
 The dataset is a CSV format fixture (docs/RULES.md).
@@ -129,6 +131,94 @@ def test_the_real_runtime_in_one_process_matches_the_simulation(tmp_path: Path) 
     assert_same_model(simulated(config), federation.coordinator.state)
 
 
+DIRECT = ["grpc", "flower"]  # transports with direct links, no broker
+
+
+def _direct(tmp_path: Path, name: str = "grpc") -> dict:
+    if name == "flower":
+        pytest.importorskip("flwr", minversion="1.21")
+    pytest.importorskip("grpc")
+    return {"name": name, "directory": str(tmp_path / f"peers_{name}")}
+
+
+@pytest.mark.parametrize("name", DIRECT)
+def test_the_real_runtime_over_a_direct_transport_matches_the_simulation(
+    tmp_path: Path, name: str
+) -> None:
+    config = experiment(tmp_path, _direct(tmp_path, name))
+    (scenario,) = scenarios(config)
+    topology, split, placement, _ = _scenario_data(scenario)
+    runtime = RealRuntime(f"equivalence-{name}", seed=scenario.seed, heartbeat_s=None)
+    federation = build_scenario(scenario, topology, split, placement, runtime=runtime)
+
+    runtime.run(timeout=30)
+
+    assert federation.coordinator.finished
+    assert_same_model(simulated(config), federation.coordinator.state)
+
+
+@pytest.mark.parametrize("name", DIRECT)
+def test_a_direct_transport_with_one_process_per_group_matches_the_simulation(
+    tmp_path: Path, name: str
+) -> None:
+    transport = _direct(tmp_path, name)
+    expected = simulated(experiment(tmp_path, transport))
+
+    (path,) = run_experiment(experiment(tmp_path, transport, mode="real"))
+
+    with np.load(path / "model.npz", allow_pickle=False) as saved:
+        assert_same_model(expected, {k: saved[k] for k in saved.files})
+
+
+def test_local_over_grpc_and_over_flower_give_the_same_model_and_bytes(
+    tmp_path: Path,
+) -> None:
+    from onion_fl.experiment.fidelity import fidelity
+
+    for name in DIRECT:
+        raw = experiment(tmp_path, _direct(tmp_path, name)).dump()
+        raw = raw | {"backend": "local"}
+        raw["paths"] = raw["paths"] | {"runs": str(tmp_path / f"runs_{name}")}
+        run_experiment(parse_experiment(raw))
+
+    result = fidelity(
+        tmp_path / "runs_grpc", tmp_path / "runs_flower", metrics=["time"]
+    )
+
+    (pair,) = result["pairs"]
+    assert pair["functional"]["model"]["bitwise"], pair["functional"]
+    assert result["functional"]["complete"], pair["functional"]
+    assert pair["functional"]["bytes"]["a"] == pair["functional"]["bytes"]["b"] > 0
+
+
+def _round_bytes(events) -> dict:
+    out: dict = {}
+    for e in events:
+        if e["name"] == "message.sent" and e["tags"]["round"] is not None:
+            key = (e["node"], e["tags"]["dst"], e["tags"]["round"])
+            out[key] = out.get(key, 0) + e["value"]
+    return out
+
+
+def test_the_real_runtime_counts_the_bytes_the_simulation_counts(
+    tmp_path: Path,
+) -> None:
+    config = experiment(tmp_path, {"name": "memory", "bus": "bytes"})
+    (scenario,) = scenarios(config)
+    topology, split, placement, _ = _scenario_data(scenario)
+    sim = build_scenario(scenario, topology, split, placement)
+    sim.run()
+    runtime = RealRuntime("bytes", seed=scenario.seed, heartbeat_s=None)
+    build_scenario(scenario, topology, split, placement, runtime=runtime)
+
+    runtime.run(timeout=30)
+
+    expected = _round_bytes(sim.runtime.events)
+    assert expected and _round_bytes(runtime.events) == expected
+    framed = [e for e in runtime.events if e["name"] == "message.sent"]
+    assert all(e["tags"]["frame"] > 0 for e in framed)
+
+
 @pytest.mark.skipif(not _broker_up(), reason=f"no MQTT broker at {BROKER}")
 def test_mqtt_with_one_process_per_group_matches_the_simulation(tmp_path: Path) -> None:
     mqtt = {"name": "mqtt", "broker": BROKER}
@@ -138,6 +228,27 @@ def test_mqtt_with_one_process_per_group_matches_the_simulation(tmp_path: Path) 
 
     with np.load(path / "model.npz", allow_pickle=False) as saved:
         assert_same_model(expected, {k: saved[k] for k in saved.files})
+
+
+@pytest.mark.skipif(not _broker_up(), reason=f"no MQTT broker at {BROKER}")
+def test_the_fidelity_of_local_against_sim_is_functionally_complete(
+    tmp_path: Path,
+) -> None:
+    from onion_fl.experiment.fidelity import fidelity
+
+    mqtt = {"name": "mqtt", "broker": BROKER}
+    folders = {}
+    for backend in ("sim", "local"):
+        raw = experiment(tmp_path, mqtt).dump() | {"backend": backend}
+        raw["paths"] = raw["paths"] | {"runs": str(tmp_path / f"runs_{backend}")}
+        run_experiment(parse_experiment(raw))
+        folders[backend] = tmp_path / f"runs_{backend}"
+
+    result = fidelity(folders["local"], folders["sim"], metrics=["time"])
+
+    assert result["backends"] == {"a": ["local"], "b": ["sim"]}
+    assert result["functional"]["complete"], result["pairs"][0]["functional"]
+    assert {"round_time", "link_latency", "duration"} <= set(result["performance"])
 
 
 @pytest.mark.skipif(not _broker_up(), reason=f"no MQTT broker at {BROKER}")
@@ -168,3 +279,24 @@ def test_a_real_run_feeds_its_sinks_and_labels_its_traffic(
     ]
     assert traffic and all(e["level"] and e["role"] for e in traffic)
     assert {"run.finished", "diagnostic.communication"} <= set(seen)
+
+
+@pytest.mark.skipif(not _broker_up(), reason=f"no MQTT broker at {BROKER}")
+def test_local_over_mqtt_and_over_grpc_give_the_same_model_and_measure_the_rest(
+    tmp_path: Path,
+) -> None:
+    from onion_fl.experiment.fidelity import fidelity
+
+    transports = {"mqtt": {"name": "mqtt", "broker": BROKER}, "grpc": _direct(tmp_path)}
+    for name, transport in transports.items():
+        raw = experiment(tmp_path, transport).dump() | {"backend": "local"}
+        raw["paths"] = raw["paths"] | {"runs": str(tmp_path / f"runs_{name}")}
+        run_experiment(parse_experiment(raw))
+
+    result = fidelity(tmp_path / "runs_mqtt", tmp_path / "runs_grpc", metrics=["time"])
+
+    (pair,) = result["pairs"]
+    assert pair["functional"]["model"]["bitwise"], pair["functional"]
+    assert result["functional"]["complete"], pair["functional"]
+    assert pair["functional"]["bytes"]["a"] == pair["functional"]["bytes"]["b"] > 0
+    assert {"round_time", "link_latency", "duration"} <= set(result["performance"])
