@@ -7,8 +7,9 @@ same experiment: ``A`` is the reference (closer to the physical system), ``B``
 the cheaper backend under test. A run of ``A`` and one of ``B`` are a pair
 when they ran the same configuration with the same seed: the same
 ``design_id``, the ``config_id`` of the config without what only says where
-and how it ran (``backend``, ``runtime.mode``, ``timeout``, ``heartbeat`` and
-``paths``).
+and how it ran (``backend``, ``runtime.mode``, ``timeout``, ``heartbeat``,
+``paths`` and the ``transport`` of the links of an inline topology). So
+``A`` and ``B`` can also be one backend over two transports, MQTT and gRPC.
 
 Three levels:
 
@@ -77,13 +78,25 @@ RTOL, ATOL = 1e-6, 1e-7  # as test_runtime_equivalence
 PREDICTORS = {"predictor": "factorised", "predictor:floss": "floss"}  # as a side
 
 
+def _without_transport(value: Any) -> Any:
+    """A topology without the transport of its links (only ``LinkSpec`` has one)."""
+    if isinstance(value, Mapping):
+        return {k: _without_transport(v) for k, v in value.items() if k != "transport"}
+    if isinstance(value, list):
+        return [_without_transport(v) for v in value]
+    return value
+
+
 def design_id(config: Mapping[str, Any]) -> str:
     """The ``config_id`` of a run's config without where and how it ran."""
     design = {k: v for k, v in config.items() if k not in ("backend", "paths")}
     runtime = {
         k: v for k, v in (design.get("runtime") or {}).items() if k not in RUNTIME_ONLY
     }
-    return config_id(design | {"runtime": runtime})
+    design |= {"runtime": runtime}
+    if isinstance(design.get("topology"), Mapping):
+        design["topology"] = _without_transport(design["topology"])
+    return config_id(design)
 
 
 @dataclass(frozen=True)
