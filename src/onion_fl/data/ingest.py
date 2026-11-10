@@ -432,6 +432,52 @@ def _e4_values(file: Path, skip: int, width: int) -> np.ndarray:
     return values
 
 
+# Sessions of the first stage are S<nn> (protocol V1), of the second f<nn> (V2).
+PHYSIONET_STAGES = {"S": "V1", "f": "V2"}
+
+
+@readers.register(
+    "physionet_wearable",
+    title="PhysioNet Wearable Device (E4)",
+    description="Sesión E4 de PhysioNet (estrés inducido y ejercicio) con su tramo de protocolo.",
+    params=E4CsvParams,
+    explain=(
+        "Lee Wearable_Dataset/<ACTIVIDAD>/<sesión>/ como empatica_e4_csv y añade "
+        "session (ACTIVIDAD/sesión) y segment (ACTIVIDAD_V<versión>_<k>), donde k es "
+        "el número de tags pulsados hasta esa muestra: 0 antes del primero y k entre "
+        "el tag k y el k+1. La versión sale del prefijo de la sesión (S = V1, f = V2). "
+        "Ambas columnas son metadatos: la etiqueta se declara mapeando segment."
+    ),
+)
+class PhysioNetWearableReader:
+    """PhysioNet's Wearable Device Dataset: E4 sessions with protocol tags."""
+
+    def __init__(self, signals: list[str] | str | None = E4_DEFAULT) -> None:
+        self.e4 = EmpaticaE4CsvReader(signals)
+
+    def read(self, path: Path) -> pd.DataFrame:
+        folder = path if path.is_dir() else path.parent
+        activity, session = folder.parent.name, folder.name
+        version = PHYSIONET_STAGES.get(session[:1])
+        if version is None:
+            raise DataError(f"{folder}: a session starts with S or f, got {session!r}")
+        df = self.e4.read(folder)
+        tags = np.sort(_e4_tags(folder / "tags.csv"))
+        k = np.searchsorted(tags, df["time"].to_numpy(np.float64), side="right")
+        return df.assign(
+            session=f"{activity}/{session}",
+            segment=[f"{activity}_{version}_{i}" for i in k],
+        )
+
+
+def _e4_tags(file: Path) -> np.ndarray:
+    """The times of the button presses (one per line); a session may have none."""
+    if not file.exists():
+        raise DataError(f"{file.parent} has no tags.csv")
+    lines = [line.strip() for line in file.read_text(encoding="utf-8").splitlines()]
+    return np.array([e4_seconds(line, file) for line in lines if line], np.float64)
+
+
 class WesadE4Params(BaseModel):
     signals: list[str] | str | None = Field(
         E4_DEFAULT, description="Señales de muñeca (lista o 'A,B'): ACC, BVP, EDA, TEMP"
@@ -1358,7 +1404,8 @@ def ingest(
                 f"missing {missing}, extra {extra}"
             )
         frames.append(df)
-    df = pd.concat(frames, ignore_index=True)
+    # A file a select step emptied (an excluded session) adds no rows.
+    df = pd.concat([f for f in frames if len(f)] or frames[:1], ignore_index=True)
     ran = {name for name, _ in active}
 
     if "subject" not in df.columns:
