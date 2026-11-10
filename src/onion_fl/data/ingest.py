@@ -73,6 +73,11 @@ class DatasetSpec(BaseModel):
     options: dict[str, Any] = Field(default_factory=dict)
     steps: list[dict[str, Any]]
     min_samples_per_subject: PositiveInt = 1
+    tokens: bool = Field(
+        False,
+        description="Las features son índices o tokens: no admiten escalado",
+        exclude_if=lambda v: not v,  # unset, it keeps existing cache keys
+    )
 
 
 def load_spec(path: str | Path) -> DatasetSpec:
@@ -280,6 +285,250 @@ class WesadPickleReader:
                 columns[f"{name.lower()}_{i}"] = values[index, i]
         columns["condition"] = labels[:n]
         return pd.DataFrame(columns)
+
+
+# --- Empatica E4 (WESAD wrist, PhysioNet wearables, Nurse Stress, Stress-Predict) --
+
+# Each E4 signal and its channels, in the order every E4 reader emits them, so
+# the window features have the same names and order in every E4 dataset.
+E4_CHANNELS = {
+    "ACC": ["acc_x", "acc_y", "acc_z"],  # raw, 1/64 g
+    "BVP": ["bvp"],
+    "EDA": ["eda"],  # μS
+    "TEMP": ["temp"],  # °C
+    "HR": ["hr"],  # beats per minute, computed by the device from BVP
+    "IBI": ["ibi"],  # seconds between beats, at irregular times
+}
+E4_DEFAULT = "ACC,BVP,EDA,TEMP"
+
+
+def _e4_signals(value: list[str] | str | None, available: Mapping[str, Any]) -> list:
+    chosen = _split(value) or _split(E4_DEFAULT)
+    unknown = [s for s in chosen if s not in available]
+    if unknown:
+        raise ValueError(f"unknown E4 signals {unknown}; available {list(available)}")
+    if len(set(chosen)) != len(chosen):
+        raise ValueError(f"signals are repeated: {chosen}")
+    return [s for s in available if s in chosen]  # the canonical order
+
+
+def _e4_table(blocks: list[tuple[np.ndarray, dict[str, np.ndarray]]]) -> pd.DataFrame:
+    """Stack signals sampled at different times into one table sorted by ``time``.
+
+    Each row is one sample of one signal: its channels have values and every
+    other column is empty. The multi-rate window step reads each channel back
+    at its own rate.
+    """
+    total = sum(len(times) for times, _ in blocks)
+    names = [name for _, columns in blocks for name in columns]
+    out = {"time": np.concatenate([t for t, _ in blocks] or [np.empty(0)])}
+    out |= {name: np.full(total, np.nan) for name in names}
+    offset = 0
+    for times, columns in blocks:
+        for name, values in columns.items():
+            out[name][offset : offset + len(times)] = values
+        offset += len(times)
+    order = np.argsort(out["time"], kind="stable")
+    return pd.DataFrame({name: values[order] for name, values in out.items()})
+
+
+class E4CsvParams(BaseModel):
+    signals: list[str] | str | None = Field(
+        E4_DEFAULT,
+        description="Señales E4 (lista o 'A,B'): ACC, BVP, EDA, TEMP, HR, IBI",
+    )
+
+    @model_validator(mode="after")
+    def _known(self) -> E4CsvParams:
+        _e4_signals(self.signals, E4_CHANNELS)
+        return self
+
+
+@readers.register(
+    "empatica_e4_csv",
+    title="Empatica E4 (CSV)",
+    description="Carpeta de una sesión E4: un CSV por señal, cada una a su tasa nativa.",
+    params=E4CsvParams,
+    explain=(
+        "Cada CSV trae la marca de tiempo de inicio en la fila 1 (Unix en segundos, o "
+        "una fecha UTC como en PhysioNet) y la frecuencia en la fila 2; IBI.csv trae "
+        "el inicio y luego pares (desfase, IBI). La ruta es la carpeta o un fichero "
+        "suyo. La columna time es la marca de cada muestra en segundos Unix: es un "
+        "metadato, así que el descriptor necesita un paso time."
+    ),
+)
+class EmpaticaE4CsvReader:
+    """The CSV export of an Empatica E4 session (E4 connect, one file per signal)."""
+
+    def __init__(self, signals: list[str] | str | None = E4_DEFAULT) -> None:
+        self.signals = _e4_signals(signals, E4_CHANNELS)
+
+    def read(self, path: Path) -> pd.DataFrame:
+        folder = path if path.is_dir() else path.parent
+        blocks = []
+        for signal in self.signals:
+            file = folder / f"{signal}.csv"
+            if not file.exists():
+                raise DataError(f"{folder} has no {signal}.csv")
+            reader = self._ibi if signal == "IBI" else self._regular
+            blocks.append(reader(file, E4_CHANNELS[signal]))
+        return _e4_table(blocks)
+
+    @staticmethod
+    def _regular(file: Path, names: list[str]):
+        head = _e4_rows(file, 2)
+        if head.shape != (2, len(names)):
+            raise DataError(
+                f"{file}: expected {len(names)} columns and the start and rate rows"
+            )
+        starts = {e4_seconds(v, file) for v in head[0]}
+        rates = {e4_seconds(v, file) for v in head[1]}
+        if len(starts) > 1 or len(rates) > 1 or min(rates) <= 0:
+            raise DataError(f"{file}: columns with different starts or rates {head}")
+        values = _e4_values(file, 2, len(names))
+        times = starts.pop() + np.arange(len(values)) / rates.pop()
+        return times, {name: values[:, i] for i, name in enumerate(names)}
+
+    @staticmethod
+    def _ibi(file: Path, names: list[str]):
+        start = e4_seconds(_e4_rows(file, 1)[0, 0], file)
+        values = _e4_values(file, 1, 2)  # E4 connect may export an empty IBI
+        return start + values[:, 0], {names[0]: values[:, 1]}
+
+
+def e4_seconds(value: Any, file: Path | str = "") -> float:
+    """An E4 time as Unix seconds: a number, or a UTC date as PhysioNet writes it."""
+    text = str(value).strip()
+    try:
+        return float(text)
+    except ValueError:
+        pass
+    try:
+        stamp = pd.Timestamp(text)
+    except ValueError:
+        raise DataError(
+            f"{file}: {text!r} is neither Unix seconds nor a date"
+        ) from None
+    if stamp.tzinfo is not None:
+        stamp = stamp.tz_convert("UTC").tz_localize(None)
+    return (stamp - pd.Timestamp(0)).total_seconds()
+
+
+def _e4_rows(file: Path, n: int) -> np.ndarray:
+    """The first ``n`` rows as text: the start time (and the rate)."""
+    try:
+        rows = pd.read_csv(file, header=None, nrows=n, dtype=str)
+    except pd.errors.EmptyDataError:
+        raise DataError(f"{file} is empty") from None
+    if len(rows) < n:
+        raise DataError(f"{file}: expected {n} header rows, got {len(rows)}")
+    return rows.to_numpy()
+
+
+def _e4_values(file: Path, skip: int, width: int) -> np.ndarray:
+    try:
+        values = pd.read_csv(
+            file, header=None, skiprows=skip, skipinitialspace=True
+        ).to_numpy(np.float64)
+    except pd.errors.EmptyDataError:
+        return np.empty((0, width))
+    if values.shape[1] != width:
+        raise DataError(f"{file}: expected {width} columns, got {values.shape[1]}")
+    return values
+
+
+# Sessions of the first stage are S<nn> (protocol V1), of the second f<nn> (V2).
+PHYSIONET_STAGES = {"S": "V1", "f": "V2"}
+
+
+@readers.register(
+    "physionet_wearable",
+    title="PhysioNet Wearable Device (E4)",
+    description="Sesión E4 de PhysioNet (estrés inducido y ejercicio) con su tramo de protocolo.",
+    params=E4CsvParams,
+    explain=(
+        "Lee Wearable_Dataset/<ACTIVIDAD>/<sesión>/ como empatica_e4_csv y añade "
+        "session (ACTIVIDAD/sesión) y segment (ACTIVIDAD_V<versión>_<k>), donde k es "
+        "el número de tags pulsados hasta esa muestra: 0 antes del primero y k entre "
+        "el tag k y el k+1. La versión sale del prefijo de la sesión (S = V1, f = V2). "
+        "Ambas columnas son metadatos: la etiqueta se declara mapeando segment."
+    ),
+)
+class PhysioNetWearableReader:
+    """PhysioNet's Wearable Device Dataset: E4 sessions with protocol tags."""
+
+    def __init__(self, signals: list[str] | str | None = E4_DEFAULT) -> None:
+        self.e4 = EmpaticaE4CsvReader(signals)
+
+    def read(self, path: Path) -> pd.DataFrame:
+        folder = path if path.is_dir() else path.parent
+        activity, session = folder.parent.name, folder.name
+        version = PHYSIONET_STAGES.get(session[:1])
+        if version is None:
+            raise DataError(f"{folder}: a session starts with S or f, got {session!r}")
+        df = self.e4.read(folder)
+        tags = np.sort(_e4_tags(folder / "tags.csv"))
+        k = np.searchsorted(tags, df["time"].to_numpy(np.float64), side="right")
+        return df.assign(
+            session=f"{activity}/{session}",
+            segment=[f"{activity}_{version}_{i}" for i in k],
+        )
+
+
+def _e4_tags(file: Path) -> np.ndarray:
+    """The times of the button presses (one per line); a session may have none."""
+    if not file.exists():
+        raise DataError(f"{file.parent} has no tags.csv")
+    lines = [line.strip() for line in file.read_text(encoding="utf-8").splitlines()]
+    return np.array([e4_seconds(line, file) for line in lines if line], np.float64)
+
+
+class WesadE4Params(BaseModel):
+    signals: list[str] | str | None = Field(
+        E4_DEFAULT, description="Señales de muñeca (lista o 'A,B'): ACC, BVP, EDA, TEMP"
+    )
+
+    @model_validator(mode="after")
+    def _known(self) -> WesadE4Params:
+        _e4_signals(self.signals, WESAD_RATES["wrist"])
+        return self
+
+
+@readers.register(
+    "wesad_e4",
+    title="WESAD muñeca (E4)",
+    description="Muñeca de un S<n>.pkl de WESAD a tasas nativas, como el lector E4.",
+    params=WesadE4Params,
+    explain=(
+        "Da las mismas columnas que empatica_e4_csv (time en segundos desde el "
+        "inicio de la grabación) más condition, la etiqueta original (0-7) a 700 Hz "
+        "en filas propias."
+    ),
+)
+class WesadE4Reader:
+    """WESAD's wrist device is an Empatica E4: the same channels as its CSV export."""
+
+    def __init__(self, signals: list[str] | str | None = E4_DEFAULT) -> None:
+        self.signals = _e4_signals(signals, WESAD_RATES["wrist"])
+
+    def read(self, path: Path) -> pd.DataFrame:
+        with open(path, "rb") as handle:  # the dataset's own format; trusted files only
+            data = pickle.load(handle, encoding="latin1")
+        wrist = {k.upper(): v for k, v in data["signal"]["wrist"].items()}
+        blocks = []
+        for signal in self.signals:
+            if signal not in wrist:
+                raise DataError(f"{path} has no wrist signal {signal}")
+            values = np.asarray(wrist[signal], dtype=np.float64)
+            values = values.reshape(len(values), -1)
+            times = np.arange(len(values)) / WESAD_RATES["wrist"][signal]
+            names = E4_CHANNELS[signal]
+            blocks.append((times, {n: values[:, i] for i, n in enumerate(names)}))
+        labels = np.asarray(data["label"], dtype=np.float64)
+        blocks.append(
+            (np.arange(len(labels)) / WESAD_LABEL_RATE, {"condition": labels})
+        )
+        return _e4_table(blocks)
 
 
 class LeafParams(BaseModel):
@@ -596,21 +845,28 @@ class TimeStep:
         if self.rate is not None:
             return df.assign(**{TIME: np.arange(len(df)) / self.rate})
         _require(df, [self.column], "time")
-        raw = df[self.column]
-        if self.format is None and pd.api.types.is_numeric_dtype(raw):
-            seconds = raw.astype(float)
-        else:
-            text = raw.astype(str)
-            if self.pad_to is not None:
-                text = text.str.ljust(self.pad_to, "0")
-            stamps = pd.to_datetime(text, format=self.format, errors="coerce")
-            seconds = (stamps - pd.Timestamp(0)).dt.total_seconds()
-        bad = raw[seconds.isna()].unique()[:3].tolist()
-        if bad:
-            raise DataError(f"time: rows of {self.column!r} without a time: {bad}")
+        seconds = _seconds(df[self.column], self.format, self.pad_to, "time")
         if ctx is not None:
             ctx.meta_columns.add(self.column)
-        return df.assign(**{TIME: seconds.to_numpy(np.float64)})
+        return df.assign(**{TIME: seconds})
+
+
+def _seconds(
+    raw: pd.Series, format: str | None, pad_to: int | None, step: str
+) -> np.ndarray:
+    """Seconds since the epoch: numbers as they are, text parsed as dates."""
+    if format is None and pd.api.types.is_numeric_dtype(raw):
+        seconds = raw.astype(float)
+    else:
+        text = raw.astype(str)
+        if pad_to is not None:
+            text = text.str.ljust(pad_to, "0")
+        stamps = pd.to_datetime(text, format=format, errors="coerce")
+        seconds = (stamps - pd.Timestamp(0)).dt.total_seconds()
+    bad = raw[seconds.isna()].unique()[:3].tolist()
+    if bad:
+        raise DataError(f"{step}: rows of {raw.name!r} without a time: {bad}")
+    return seconds.to_numpy(np.float64)
 
 
 STATS: dict[str, Callable[[np.ndarray], np.ndarray]] = {
@@ -625,6 +881,8 @@ REDUCE: dict[str, Callable[[np.ndarray], float]] = {
     "mode": lambda a: float(np.bincount(a.astype(np.int64)).argmax()),
     "first": lambda a: float(a[0]),
     "last": lambda a: float(a[-1]),
+    # one class throughout, or no label: the window is dropped
+    "unanimous": lambda a: float(a[0]) if (a == a[0]).all() else float("nan"),
 }
 
 
@@ -686,6 +944,195 @@ class WindowStep:
         head = ["subject", "label"] if has_label else ["subject"]
         head += [TIME] if timed else []
         return pd.DataFrame(rows, columns=head + names)
+
+
+EPS = 1e-6  # seconds: below any sample interval, above float error on Unix times
+
+
+class MultirateWindowParams(BaseModel):
+    seconds: PositiveFloat = Field(description="Duración de cada ventana")
+    overlap: float = Field(0.0, ge=0, lt=1)
+    stats: list[Literal["mean", "std", "min", "max", "median"]] = Field(
+        default_factory=lambda: list(STATS)
+    )
+    columns: list[str] | None = Field(
+        None, description="Canales; por defecto los numéricos"
+    )
+    label: Literal["mean_round", "mode", "first", "last", "unanimous"] = Field(
+        "mean_round",
+        description="Cómo resume la ventana sus muestras de etiqueta; unanimous "
+        "descarta las ventanas que mezclan clases",
+    )
+    label_rows: str | None = Field(
+        None,
+        description="Columna cuyas filas con valor son las muestras de la etiqueta; "
+        "por defecto, todas las filas",
+    )
+
+
+@steps.register(
+    "multirate_window",
+    title="Ventanas multi-tasa",
+    description="Ventanas de N segundos por sujeto; cada canal, con sus muestras a su tasa.",
+    params=MultirateWindowParams,
+    explain=(
+        "Cada canal usa solo sus filas con valor, así que señales a tasas distintas "
+        "conviven en una tabla. Las ventanas van del último inicio al primer final de "
+        "los canales; se descartan las que dejan un canal sin muestras o tienen una "
+        "muestra de etiqueta sin clase. Cada ventana toma el tiempo de su final."
+    ),
+)
+class MultirateWindowStep:
+    def __init__(self, seconds, overlap, stats, columns, label, label_rows) -> None:
+        self.size, self.stats, self.columns = float(seconds), stats, columns
+        self.label, self.label_rows = label, label_rows
+        self.step = self.size * (1 - overlap)
+
+    def apply(self, df: pd.DataFrame, ctx: IngestContext | None) -> pd.DataFrame:
+        if "subject" not in df.columns:
+            raise DataError("window runs per subject: put a subject step before it")
+        if TIME not in df.columns:
+            raise DataError("multirate_window needs each row's time: add a time step")
+        reserved = {"subject", "label", TIME, self.label_rows}
+        reserved |= ctx.meta_columns if ctx else set()
+        columns = self.columns or [
+            c
+            for c in df.columns
+            if c not in reserved and pd.api.types.is_numeric_dtype(df[c])
+        ]
+        _require(df, columns + [c for c in [self.label_rows] if c], "multirate_window")
+        names = [f"{c}_{s}" for c in columns for s in self.stats]
+        has_label = "label" in df.columns
+        rows = []
+        for subject, group in df.groupby("subject", sort=False):
+            times = group[TIME].to_numpy(dtype=np.float64)
+            tracks = [_track(times, group[c].to_numpy(np.float64)) for c in columns]
+            labels = None
+            if has_label:
+                held = (
+                    group[self.label_rows].notna().to_numpy()
+                    if self.label_rows
+                    else np.ones(len(group), dtype=bool)
+                )
+                labels = _track(
+                    times, group["label"].to_numpy(np.float64), present=held
+                )
+            span = tracks + ([labels] if labels is not None else [])
+            if any(len(t) == 0 for t, _ in span):
+                continue
+            start = max(t[0] for t, _ in span)
+            end = min(t[-1] + _interval(t) for t, _ in span)
+            count = int(np.floor((end - start - self.size) / self.step + EPS)) + 1
+            for k in range(max(count, 0)):
+                lo = start + k * self.step
+                hi = lo + self.size
+                row: list[Any] = [subject]
+                if labels is not None:
+                    window = _within(labels, lo, hi)
+                    if len(window) == 0 or np.isnan(window).any():
+                        continue
+                    row.append(REDUCE[self.label](window))
+                values = [_within(track, lo, hi) for track in tracks]
+                if any(len(v) == 0 for v in values):
+                    continue
+                row.append(hi)  # observable once the window is complete
+                rows.append(row + [STATS[s](v) for v in values for s in self.stats])
+        head = ["subject", "label"] if has_label else ["subject"]
+        return pd.DataFrame(rows, columns=head + [TIME] + names)
+
+
+def _track(times: np.ndarray, values: np.ndarray, present: np.ndarray | None = None):
+    """One channel's samples (rows with a value, or ``present``), sorted by time."""
+    keep = ~np.isnan(values) if present is None else present
+    t, v = times[keep], values[keep]
+    order = np.argsort(t, kind="stable")
+    return t[order], v[order]
+
+
+def _interval(times: np.ndarray) -> float:
+    """The usual time between samples; signals sampled at one instant count once."""
+    distinct = np.unique(times)
+    return float(np.median(np.diff(distinct))) if len(distinct) > 1 else 0.0
+
+
+def _within(track: tuple[np.ndarray, np.ndarray], lo: float, hi: float) -> np.ndarray:
+    """Values sampled in ``[lo, hi)``."""
+    times, values = track
+    a, b = np.searchsorted(times, [lo - EPS, hi - EPS])
+    return values[a:b]
+
+
+class IntervalsParams(BaseModel):
+    source: SourceSpec = Field(description="Tabla con un intervalo por fila")
+    start: str = Field("start", description="Columna del inicio")
+    end: str = Field("end", description="Columna del final (no incluido)")
+    value: str = Field("class", description="Columna con la clase del intervalo")
+    column: str = Field("interval", description="Columna nueva con la clase por fila")
+    by: list[str] = Field(
+        default_factory=list, description="Claves comunes, como subject"
+    )
+    format: str | None = Field(
+        None,
+        description="Formato strptime de inicio y final; sin él, segundos o una "
+        "fecha que pandas entienda",
+    )
+
+
+@steps.register(
+    "intervals",
+    title="Etiquetar por intervalos",
+    description="Da a cada fila la clase del intervalo (inicio, fin) de otra tabla que la contiene.",
+    params=IntervalsParams,
+    explain=(
+        "Para tags de protocolo y eventos de encuesta. Compara con el tiempo de cada "
+        "fila, así que va después de un paso time y en sus unidades. Las filas fuera "
+        "de todo intervalo quedan sin clase; los intervalos de una misma clave no "
+        "pueden solaparse. La columna nueva es meta: nunca es una feature."
+    ),
+)
+class IntervalsStep:
+    def __init__(self, source, start, end, value, column, by, format) -> None:
+        self.source = SourceSpec.model_validate(source)
+        self.start, self.end, self.value, self.column = start, end, value, column
+        self.by, self.format = list(by), format
+        self._table: pd.DataFrame | None = None
+
+    def apply(self, df: pd.DataFrame, ctx: IngestContext) -> pd.DataFrame:
+        if TIME not in df.columns:
+            raise DataError("intervals compares with each row's time: add a time step")
+        if self._table is None:  # read once, then used with every source file
+            table = read_source(self.source, ctx.root)
+            _require(table, [self.start, self.end, self.value, *self.by], "intervals")
+            self._table = table.assign(
+                _start=_seconds(table[self.start], self.format, None, "intervals"),
+                _end=_seconds(table[self.end], self.format, None, "intervals"),
+            ).reset_index(drop=True)
+        table = self._table
+        _require(df, self.by, "intervals")
+        times = df[TIME].to_numpy(np.float64)
+        hit = np.full(len(df), -1)
+        if self.by:
+            left = df[self.by].astype(str).agg("\x1f".join, axis=1).to_numpy()
+            right = table[self.by].astype(str).agg("\x1f".join, axis=1).to_numpy()
+            groups = [(left == key, right == key) for key in np.unique(right)]
+        else:
+            groups = [(np.ones(len(df), bool), np.ones(len(table), bool))]
+        for rows, intervals in groups:
+            part = table[intervals].sort_values("_start")
+            if part.empty:
+                continue
+            starts, ends = part["_start"].to_numpy(), part["_end"].to_numpy()
+            if (ends <= starts).any() or (starts[1:] < ends[:-1]).any():
+                raise DataError(
+                    f"intervals: empty or overlapping intervals in {self.source.path}"
+                )
+            where = np.flatnonzero(rows)
+            pos = np.searchsorted(starts, times[where], side="right") - 1
+            inside = (pos >= 0) & (times[where] < ends[np.maximum(pos, 0)])
+            hit[where[inside]] = part.index.to_numpy()[pos[inside]]
+        classes = table[self.value].reindex(hit).set_axis(df.index)
+        ctx.meta_columns.add(self.column)
+        return df.assign(**{self.column: classes})
 
 
 class LabelRule(BaseModel):
@@ -962,7 +1409,8 @@ def ingest(
                 f"missing {missing}, extra {extra}"
             )
         frames.append(df)
-    df = pd.concat(frames, ignore_index=True)
+    # A file a select step emptied (an excluded session) adds no rows.
+    df = pd.concat([f for f in frames if len(f)] or frames[:1], ignore_index=True)
     ran = {name for name, _ in active}
 
     if "subject" not in df.columns:

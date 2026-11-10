@@ -8,9 +8,12 @@ bus). One loop thread runs every handler, so a node still handles one event
 at a time; transport threads only enqueue deliveries.
 
 A process hosts a subset of the nodes (``hosted``); the others are known so
-links can be declared, but they run elsewhere. Every message carries
-``meta.msg_id`` and ``meta.sent_at``: the receiver records the same id and the
-end-to-end latency, which needs NTP-synchronised clocks across machines.
+links can be declared, but they run elsewhere. Every message travels in a
+frame whose header carries ``msg_id`` and ``sent_at``, which the receiver puts
+in ``meta``: it records the same id and the end-to-end latency, which needs
+NTP-synchronised clocks across machines. The message itself is encoded as the
+simulation encodes it, so ``message.sent`` counts the same bytes in both
+(I1 §10); the frame's are in the ``frame`` tag.
 """
 
 import dataclasses
@@ -30,7 +33,7 @@ from onion_fl.core.node import Node
 from onion_fl.roles.policies import create
 from onion_fl.transports import transports
 
-SEPARATOR = b"\x00"  # codec name, separator, encoded message
+SEPARATOR = b"\x00"  # codec name, frame header (JSON), encoded message
 
 
 class RealRuntimeError(RuntimeError):
@@ -247,12 +250,18 @@ class RealRuntime:
         self._handle(node_id, "on_start", lambda node, ctx: node.on_start(ctx))
 
     def _on_deliver(self, node_id: str, data: bytes) -> None:
-        name, _, body = data.partition(SEPARATOR)
+        name, _, rest = data.partition(SEPARATOR)
+        header, _, body = rest.partition(SEPARATOR)
         try:
             codec = self._codecs.get(name.decode())
             if codec is None:
                 raise MessageError(f"no link here uses the codec {name[:40]!r}")
+            frame = json.loads(header)
+            if not isinstance(frame, dict):
+                raise MessageError("the frame header is not an object")
             msg = codec.decode(body)
+            known = {k: frame[k] for k in ("msg_id", "sent_at") if k in frame}
+            msg = dataclasses.replace(msg, meta={**msg.meta, **known})
         except Exception as exc:  # anything can arrive; the node goes on
             self._record(
                 node_id, "message.rejected", None, {"reason": f"undecodable: {exc}"}
@@ -323,11 +332,9 @@ class RealRuntime:
     def _transmit(self, msg: Message) -> None:
         codec, carrier = self._links[(msg.src, msg.dst)]
         msg_id = f"{msg.src}>{msg.dst}#{next(self._msg_ids)}@{self.run_id}"
-        msg = dataclasses.replace(
-            msg, meta={**msg.meta, "msg_id": msg_id, "sent_at": time.time()}
-        )
+        header = json.dumps({"msg_id": msg_id, "sent_at": time.time()}).encode()
         try:
-            data = codec.name.encode() + SEPARATOR + codec.encode(msg)
+            body = codec.encode(msg)
         except MessageError as exc:
             self._record(
                 msg.src,
@@ -343,7 +350,10 @@ class RealRuntime:
             "codec": codec.name,
             "msg_id": msg_id,
         }
-        self._record(msg.src, "message.sent", len(data), tags)
+        data = codec.name.encode() + SEPARATOR + header + SEPARATOR + body
+        # The message's bytes, as the simulation counts them; the frame apart.
+        tags["frame"] = len(data) - len(body)
+        self._record(msg.src, "message.sent", len(body), tags)
         carrier.send(self.inbox(msg.dst), data)
 
     def _record(
