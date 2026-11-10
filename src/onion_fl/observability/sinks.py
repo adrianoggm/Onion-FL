@@ -10,7 +10,7 @@ Prometheus series, all labelled ``run_id, topology_id, level, node, dataset``:
 =================================  ==============================================
 ``onionfl_metric``                 last value of a metric (+ ``name, model, source``)
 ``onionfl_diagnostic``             last value of a diagnostic (+ ``name, group,
-                                   metric, datasets, dst``)
+                                   metric, datasets, dst, child``)
 ``onionfl_round``                  current round of a node
 ``onionfl_messages_total``         messages sent (+ ``kind``)
 ``onionfl_message_bytes_total``    encoded bytes sent (+ ``kind``)
@@ -56,8 +56,9 @@ METRICS = (
     "onionfl_drift_detected_total",
 )
 # What tells apart the series of one diagnostic: its group, the metric
-# (fairness), the dataset pair (dataset_conflict) and the link (communication).
-DIAGNOSTIC_TAGS = ("group", "metric", "datasets", "dst")
+# (fairness), the dataset pair (dataset_conflict), the link (communication) and
+# the child (contribution).
+DIAGNOSTIC_TAGS = ("group", "metric", "datasets", "dst", "child")
 VERSION_EVENTS = ("candidate", "promoted", "rejected", "rollback")
 # A version event's tags that are versions or rounds, not scores.
 _NOT_SCORES = ("round", "superseded", "champion", "previous", "parent")

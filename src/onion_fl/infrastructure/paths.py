@@ -6,14 +6,20 @@ Two hosts on the same machine talk for free; on the same site, through the
 site's LAN; across sites, along the path of least latency. A path's profile adds
 the latencies, combines the jitters as independent (√Σσ²), takes the narrowest
 bandwidth in each direction and composes the losses as 1 − ∏(1 − pᵢ). A
-one-segment path keeps that segment's profile exactly.
+one-segment path keeps that segment's profile exactly. A host whose profile has
+a ``bandwidth`` reaches the network through its own access segment
+(``host:<host>``), crossed first when it sends and last when it receives.
 """
 
 import heapq
 import math
 from typing import Any
 
-from onion_fl.infrastructure.model import Infrastructure, InfrastructureError
+from onion_fl.infrastructure.model import (
+    Infrastructure,
+    InfrastructureError,
+    LinkFields,
+)
 
 LOOPBACK: dict[str, Any] = {
     "latency_s": 0.0,
@@ -48,8 +54,9 @@ def site_path(infra: Infrastructure, src: str, dst: str) -> list[str]:
     raise InfrastructureError(f"no physical path between sites {src!r} and {dst!r}")
 
 
-Hop = tuple[str, bool]  # a segment ("lan:<site>" or "link:<a>|<b>") and whether
-# it is crossed from between[0] to between[1]
+Hop = tuple[str, bool]  # a segment ("lan:<site>", "link:<a>|<b>" or
+# "host:<host>") and whether it is crossed from between[0] to between[1] (for a
+# host's access, from the host out)
 
 
 def hops(infra: Infrastructure, src: str, dst: str) -> tuple[list[str], list[Hop]]:
@@ -62,8 +69,10 @@ def hops(infra: Infrastructure, src: str, dst: str) -> tuple[list[str], list[Hop
     if src == dst:
         return [src], []
     (a, _), (b, _) = hosts[src], hosts[dst]
+    first = [(f"host:{src}", True)] if infra.profile_of(src).bandwidth else []
+    last = [(f"host:{dst}", False)] if infra.profile_of(dst).bandwidth else []
     if a == b:
-        return [a], [(f"lan:{a}", True)]
+        return [a], [*first, (f"lan:{a}", True), *last]
     sites = site_path(infra, a, b)
     links = {frozenset(link.between): link for link in infra.network.links}
     crossed = []
@@ -72,7 +81,7 @@ def hops(infra: Infrastructure, src: str, dst: str) -> tuple[list[str], list[Hop
         crossed.append(
             (f"link:{link.between[0]}|{link.between[1]}", link.between[0] == x)
         )
-    return sites, crossed
+    return sites, [*first, *crossed, *last]
 
 
 def segment(infra: Infrastructure, key: str) -> Any:
@@ -80,6 +89,8 @@ def segment(infra: Infrastructure, key: str) -> Any:
     kind, _, name = key.partition(":")
     if kind == "lan":
         return infra.sites[name].lan
+    if kind == "host":
+        return LinkFields(bandwidth=infra.profile_of(name).bandwidth)
     a, _, b = name.partition("|")
     return next(link for link in infra.network.links if link.between == (a, b))
 

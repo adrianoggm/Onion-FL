@@ -65,7 +65,11 @@ def test_the_diagnostic_legends_name_what_tells_their_series_apart() -> None:
         for panel in dashboard()["panels"]
         for target in panel.get("targets", [])
     }
-    for name, label in (("fairness", "metric"), ("dataset_conflict", "datasets")):
+    for name, label in (
+        ("fairness", "metric"),
+        ("dataset_conflict", "datasets"),
+        ("contribution_shapley", "child"),
+    ):
         (legend,) = [v for k, v in legends.items() if f'name="{name}"' in k]
         assert "{{" + label + "}}" in legend
 
