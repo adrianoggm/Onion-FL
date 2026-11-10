@@ -33,7 +33,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 | Area | Status | Summary |
 |---|---|---|
 | Topologies | ✅ | Trees of any depth in YAML (compact or general form), each with a `topology_id` (SHA-256 of its structure and links) and a JSON/Mermaid graph |
-| Data | ✅ / ⚠️ | Declarative ingestion (readers and steps), a signed cache, subject roles fixed across scenarios, and placement plugins. FEMNIST (LEAF, one subject per writer, 200 fixed writers) adds a dataset with hundreds of natural clients. The SWELL, WESAD and FEMNIST descriptors are checked against the published files and the loaders from before the redesign; **SWEET is not** ([§5](#5-datasets)) |
+| Data | ✅ / ⚠️ | Declarative ingestion (readers and steps), a signed cache, subject roles fixed across scenarios, and placement plugins. FEMNIST (LEAF, one subject per writer, 200 fixed writers) adds a dataset with hundreds of natural clients, and CIFAR-10 one with synthetic clients (`iid`, Dir(α) or k classes each, as NIID-Bench) and its official test batch. The SWELL, WESAD and FEMNIST descriptors are checked against the published files and the loaders from before the redesign; **SWEET is not** ([§5](#5-datasets)) |
 | Learning | ✅ | Modular model (adapter per dataset, shared or per-dataset trunk, head per task or dataset). Sharing scopes: global, per level, local. Per-key aggregators and server optimizers; trainers `standard`, `fedprox`; for personalisation `ditto`, `apfl`, `fedrep`, `fedbabu` and the `lg_fedavg` sharing preset; for non-IID drift `scaffold`, `moon`, and the trainer + server optimizer pairs `fednova` and `feddyn`. Algorithms exchange extra state (control variates) as auxiliary arrays, and the server optimizer gets each round's statistics (steps, edges). Robust aggregators (`krum`, `multi_krum`, `bulyan`, `geometric_median`, `norm_clip`), central and local differential privacy (`dp_fedavg`, `local_dp`) with ε per round, and an attack axis (`label_flip`, `sign_flip`, `gaussian`, `scale`) on a seeded fraction of edges. Edges also score personal and fine-tuned models; random or checkpoint init |
 | Round protocol | ✅ | Coordinator, aggregators at any level, edges and evaluators. Registration with acknowledged `hello`, quorum and deadline, staleness and participation plugins, per-key weights, evaluation at edge, zone and global level |
 | Simulation | ✅ | Virtual clock; links with latency, jitter, bandwidth and loss; compute and availability models; deterministic for a seed |
@@ -47,7 +47,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 
 ### What the results can and can't support today
 
-- **Twelve experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, and a FedAvg reference on 200 FEMNIST writers. Each has three seeds, so many intervals overlap.
+- **Thirteen experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, a FedAvg reference on 200 FEMNIST writers, and FedAvg with an MLP on CIFAR-10 (Dir(0.5) and IID; the NIID-Bench CNN reproduction waits for #245). Each has three seeds, so many intervals overlap.
   - The reference run and the mixing sweep have no strong result. On SWELL, no model beats always predicting "stress" on the held-out subjects. On WESAD, the federated model reaches 0.77 accuracy where centralised logistic regression reaches 0.91.
   - In the technique comparisons, the clearest effects are on WESAD: FedDyn and SCAFFOLD beat FedAvg under drift, the adaptive server optimizers beat it too, and a strong sign-flip attack collapses FedAvg while norm clipping holds.
 - **Checking the data found real problems,** now fixed. 999 means "missing" in the SWELL physiology file, for 53% of the heart-rate values, and both the old and the new loaders read it as a value. The facial and physiology joins and the WESAD chest signals `Resp` and `Temp` failed to load. The SWELL posture file has every date a month early, so posture is left out.
@@ -472,6 +472,18 @@ Source: [results/femnist_reference/](results/femnist_reference/INDEX.md), `confi
 | Always "1" (majority class) | 0.060 | 0.002 |
 
 The federated model clearly beats the majority class, so it is not a constant predictor; it was still improving at round 30 and stays below centralised logistic regression. [results/sim_scale/](results/sim_scale/INDEX.md) measures the simulator from 100 to 4,000 edges.
+
+### New framework: CIFAR-10 FedAvg with an MLP
+
+Source: [results/cifar10_mlp/](results/cifar10_mlp/INDEX.md), `config_id` `d0b01225…` (Dir(0.5)) and `71c75dfc…` (IID), `topology_id` `60f08e8d…`, commit `195443d`. It is `experiments/cifar10_mlp.yaml`: NIID-Bench's setting of 10 synthetic clients (`partition_seed` 0) under one server, tested on the official test batch (10,000 images), with `modular_mlp` on the 3,072 pixels. The schedule is NIID-Bench's, 50 rounds of 10 local epochs with SGD at lr 0.01 but without its momentum, and the seeds are 0–2.
+
+| Model | Dir(0.5) accuracy | IID accuracy |
+|---|---|---|
+| Federated MLP, round 50 (mean ± 95% CI over 3 seeds) | 0.477 ± 0.003 | 0.534 ± 0.011 |
+| NIID-Bench FedAvg, simple CNN (published, not run here) | 0.682 ± 0.007 | 0.704 ± 0.002 |
+| Constant predictor | 0.100 | 0.100 |
+
+**This is not the NIID-Bench reproduction.** The 17 to 20 point gap is the model: an MLP on raw pixels shares nothing across image positions. NIID-Bench publishes no MLP result on CIFAR-10. The CNN run, which is the ±3 point check, waits for torch_module presets (#245). The MLP overfits after about round 10: its test loss rises while its accuracy levels off.
 
 ### Before the redesign
 
