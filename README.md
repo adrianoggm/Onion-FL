@@ -84,6 +84,8 @@ The data is not in git. Download each dataset from its source and place it where
 | PhysioNet Wearable Device | [PhysioNet](https://physionet.org/content/wearable-device-dataset/1.0.1/) ("Wearable Device Dataset from Induced Stress and Structured Exercise Sessions", v1.0.1, ODC-By 1.0, open access; cite the dataset and PhysioNet): the official zip (`wearable-device-dataset-1.0.1.zip`, 73 MB; 259 MB extracted), checked against the project's `SHA256SUMS.txt`, or `wget -r -N -c -np https://physionet.org/files/wearable-device-dataset/1.0.1/`. Extract the contents of its top folder into `data/PhysioNetE4/` | `data/PhysioNetE4/Wearable_Dataset/{STRESS,AEROBIC,ANAEROBIC}/<session>/*.csv` | `datasets/physionet_e4.yaml` (Empatica E4 at native rates, harmonized E4 features; one subject per participant) |
 | FEMNIST | [LEAF](https://github.com/TalwalkarLab/leaf) (Caldas et al., 2018; BSD-2): `./preprocess.sh` in `leaf/data/femnist` downloads NIST SD19 and first writes `data/all_data/all_data_<k>.json`, every writer before LEAF's sampling (about 3,600); copy those files. A shorter route is the Flower Datasets copy, [flwrlabs/femnist](https://huggingface.co/datasets/flwrlabs/femnist) (one 201 MB Parquet file): `scripts/femnist_from_flower.py` writes the 200 declared writers in the same format (it needs pyarrow and Pillow, not dependencies of Onion-FL; the command is in the script) | `data/FEMNIST/all_data/*.json` | `datasets/femnist.yaml` (200 fixed writers) |
 
+FedScale's client device traces (issue #253; [FedScale](https://github.com/SymbioticLab/FedScale), Apache-2.0) are infrastructure, not data to learn from. Download `client_device_capacity` and `client_behave_trace` from [`benchmark/dataset/data/device_info/`](https://github.com/SymbioticLab/FedScale/tree/7ec441c2afa99510535adebe155d89fa8bb2c637/benchmark/dataset/data/device_info) (65 MB) into `data/FedScale/` and run `onion_fl traces import fedscale data/FedScale`. They are pickles: the import reads them with an unpickler that builds only plain values and writes `capacity.csv`, `behaviour.jsonl` and `manifest.json`, which is all the runs read. `infrastructures/fedscale_field.yaml` samples its phones from them.
+
 ### Run
 
 ```bash
@@ -665,4 +667,5 @@ The workflows run only on release PRs into `main`, to save CI minutes; task PRs 
 Licensed under the Apache License 2.0; see [LICENSE](LICENSE).
 
 - **Datasets:** WESAD (Schmidt et al.), SWELL-KW (Koldijk et al.) and SWEET.
+- **Device traces:** FedScale's client capacity and availability traces (Lai et al., 2022; Apache-2.0).
 - **Software:** [PyTorch](https://pytorch.org), [Eclipse Mosquitto](https://mosquitto.org), [paho-mqtt](https://eclipse.dev/paho/), [OpenTelemetry](https://opentelemetry.io), [Prometheus](https://prometheus.io), [Grafana](https://grafana.com), [Jaeger](https://www.jaegertracing.io) and [pydantic](https://docs.pydantic.dev).

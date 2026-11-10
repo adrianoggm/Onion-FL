@@ -1,0 +1,20 @@
+# One fog under the cloud for FEMNIST on FedScale's devices (issue #253). The
+# links take their profiles from the infrastructure (fedscale_field), so none is
+# given here. The phones are up only when their FedScale client was, so the
+# fog closes at its deadline with whoever answered.
+name: femnist_fedscale
+levels: [global, fog, edge]
+root:
+  id: cloud
+  aggregator: fedavg
+  server_optimizer: replace
+fog:
+  defaults:
+    aggregator: fedavg
+    quorum: 1
+    deadline: 900s
+    link_up: {transport: mqtt, codec: npz}
+  nodes:
+    - {id: fog_0}
+edge:
+  link_up: {transport: mqtt, codec: npz}
