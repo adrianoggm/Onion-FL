@@ -35,13 +35,20 @@ class PluginSpec:
 
     def build(self, params: Mapping[str, Any] | None = None) -> Any:
         """Validate ``params`` and call the factory with them as keyword arguments."""
+        validated = self.validate(params)
+        if validated is None:
+            return self.factory()
+        return self.factory(**dict(validated))
+
+    def validate(self, params: Mapping[str, Any] | None = None) -> BaseModel | None:
+        """``params`` checked against the plugin's model, without building it."""
         given = dict(params or {})
         if self.params is None:
             if given:
                 raise PluginError(
                     f"plugin {self.name!r} takes no parameters, got {sorted(given)}"
                 )
-            return self.factory()
+            return None
         expected = set(self.params.model_fields)
         unknown = sorted(set(given) - expected)
         if unknown:
@@ -55,7 +62,7 @@ class PluginSpec:
             raise PluginError(
                 f"plugin {self.name!r}: invalid parameters: {exc}"
             ) from exc
-        return self.factory(**dict(validated))
+        return validated
 
     def describe(self, kind: str) -> dict[str, Any]:
         return {

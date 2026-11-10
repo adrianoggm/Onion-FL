@@ -348,3 +348,32 @@ def test_unknown_node_lookup_and_non_mapping_input_are_errors() -> None:
         parse_topology(four_fogs()).node("fog_z9")
     with pytest.raises(TopologyError, match="mapping"):
         parse_topology(["not", "a", "mapping"])  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "transport",
+    [
+        {"name": "mqtt", "password": "hunter2"},  # no field holds a secret
+        {"name": "mqtt", "tls": {"ca": "-----BEGIN CERTIFICATE-----\nMII"}},
+        {"name": "grpc", "tls": {"ca": "ca.pem"}},  # gRPC TLS is mutual
+        {"name": "carrier-pigeon"},
+    ],
+)
+def test_a_link_transport_is_checked_when_the_topology_is_parsed(transport) -> None:
+    raw = four_fogs()
+    raw["edge"]["link_up"] = {"transport": transport}
+    with pytest.raises(TopologyError):
+        parse_topology(raw)
+
+
+def test_a_link_takes_tls_paths_and_secret_names() -> None:
+    raw = four_fogs()
+    secure = {
+        "name": "mqtt",
+        "broker": "broker.lab:8883",
+        "tls": {"ca": "~/tls/ca.pem", "cert": "$TLS/node.pem", "key": "$TLS/node.key"},
+        "username": "edge",
+        "password_env": "ONIONFL_MQTT_PASSWORD",
+    }
+    raw["edge"]["link_up"] = {"transport": secure}
+    assert parse_topology(raw).edge.link_up.transport == secure
