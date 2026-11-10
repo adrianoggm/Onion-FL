@@ -1,0 +1,124 @@
+{
+  "run_id": "20261103T092026Z-d414c2d6b5ce",
+  "topology_id": "ff55fe4d2ce1a807f764bcc5205a8d2d4d43ab3d533163a1d13e173a9a6725fa",
+  "config_id": "05207976110d2240201273f71929fb7ea794ca3d3518132ccf3aa147550e56a2",
+  "data_id": "9fd573754157d68b111f037ecd891bdb62abcbff1d5e5e818da789dde470257c",
+  "code_version": {
+    "commit": "07fb2c81a9a655d48d0b41066e6cd2aac0e48951",
+    "dirty": false
+  },
+  "seed": 0,
+  "scenario": "unlabelled=consistency(noise=0.1)",
+  "started_at": "2026-11-03T09:20:26.947632+00:00",
+  "status": "finished",
+  "config": {
+    "name": "stream_unlabelled_select",
+    "description": "Selecci\u00f3n de los ajustes de cada objetivo sin etiquetar sobre los sujetos de validaci\u00f3n.",
+    "topology": "four_fogs_swell_wesad_lossless",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        },
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.0,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.1
+      },
+      "init": "random"
+    },
+    "rounds": 60,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1",
+        "confusion_matrix"
+      ],
+      "edge": {
+        "every": null,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": 1,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 5,
+        "subjects": "val"
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    },
+    "stream": {
+      "order": "timestamp",
+      "batch_size": 1,
+      "speed": 60.0,
+      "start": "aligned",
+      "horizon": "session",
+      "bootstrap": 1200.0,
+      "round_every": 600.0,
+      "window": null
+    },
+    "labels": {
+      "fraction": 0.1,
+      "delay": 600.0
+    },
+    "unlabelled": {
+      "name": "consistency",
+      "noise": 0.1
+    }
+  },
+  "finished_at": "2026-11-03T09:20:43.897851+00:00",
+  "run_hash": "d3d00589602512887c0fb894adc6a46da84e7b5e6673d39ef3ef74287ff572ce"
+}

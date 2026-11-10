@@ -396,7 +396,7 @@ def replaying(
     before=lambda federation: None,
     **kw,
 ):
-    from onion_fl.continuum.memory import memories
+    from onion_fl.continual.memory import memories
 
     replay = memories.create(name, {} if name == "none" else {"capacity": 1000})
     replay.rng = np.random.default_rng(7)
@@ -586,7 +586,7 @@ def edge_with(replay, stream=None) -> EdgeSpec:
 
 
 def test_a_replay_memory_needs_a_stream() -> None:
-    from onion_fl.continuum.memory import memories
+    from onion_fl.continual.memory import memories
 
     memory = memories.create("fifo", {"capacity": 10})
     with pytest.raises(ValueError, match="stream"):
@@ -613,6 +613,281 @@ def test_an_edge_replays_the_configs_default_share() -> None:
     from onion_fl.experiment.config import ContinualConfig
 
     assert EdgeSpec("a1", None).replay_ratio == ContinualConfig().replay_ratio
+
+
+# --- unlabelled rows (continuum C5) -----------------------------------------------
+
+
+class Unlabelled(Recording):
+    """Records, per call, the pool's features and the objective's term over it."""
+
+    takes_unlabelled = True
+
+    def __init__(self, fail_first: bool = False) -> None:
+        super().__init__()
+        self.pools: list[tuple[float, np.ndarray, float]] = []
+        self.fail_first, self.failed = fail_first, None
+
+    def train(self, model, data=None, received=None, ctx=None, unlabelled=None):
+        if unlabelled is not None:
+            import torch
+
+            X = unlabelled.X.numpy().copy()
+            with torch.random.fork_rng(devices=[]):  # as the real trainers seed it
+                torch.manual_seed(0)
+                term = float(unlabelled.term(model, np.arange(unlabelled.size)))
+            self.pools.append((ctx.now() * SPEED, X, term))
+        if self.fail_first and self.failed is None:
+            self.failed = self.pools[-1][1]
+            raise RuntimeError("out of memory")
+        return super().train(model, data, received, ctx)
+
+
+class Spy:
+    """An objective that keeps every argument ``fit`` was given."""
+
+    def __init__(self, inner) -> None:
+        self.inner, self.given = inner, []
+
+    @property
+    def size(self) -> int:
+        return self.inner.size
+
+    @property
+    def X(self):
+        return self.inner.X
+
+    def fit(self, *args, **kwargs):
+        self.given.append((args, kwargs))
+        return self.inner.fit(*args, **kwargs)
+
+    def term(self, model, idx):
+        return self.inner.term(model, idx)
+
+
+def half_labelled(subject: str = "a-1"):
+    return stream_of(subject, fraction=0.5, delay=600)
+
+
+def pooling(trainer, objective="pseudo_label", stream=None, rounds=8, **params):
+    from onion_fl.continual.unlabelled import objectives
+
+    if isinstance(objective, str):
+        objective = objectives.create(objective, params)
+    spec = EdgeSpec(
+        "a1",
+        ModularMLP(CONFIG, [A], seed=0),
+        trainer=trainer,
+        stream=stream or half_labelled(),
+        unlabelled=objective,
+    )
+    federation = build_federation(
+        tree(1, fog={"deadline": 1}),
+        {"fog_0": [spec]},
+        initial_state=INITIAL,
+        rounds=rounds,
+        round_every=EVERY / SPEED,
+    )
+    federation.run()
+    return federation, federation.edges["a1"]
+
+
+def used_rounds(edge) -> list[int]:
+    return sorted(set(edge._unlabelled_by[edge._unlabelled_by >= 0].tolist()))
+
+
+def test_the_objective_gets_the_features_of_the_pool_only() -> None:
+    from onion_fl.continual.unlabelled import objectives
+
+    spy = Spy(objectives.create("pseudo_label", {"threshold": 0.0}))
+    _, edge = pooling(Unlabelled(), spy)
+
+    assert spy.given
+    for (_, X), kwargs in spy.given:
+        assert not kwargs and isinstance(X, np.ndarray)
+        assert X.shape[1] == edge.stream.data.X.shape[1]  # no label column
+
+
+def test_the_hidden_label_of_the_pool_changes_nothing() -> None:
+    def run(flip: bool):
+        stream = half_labelled()
+        never = ~np.isfinite(stream.label_at)
+        if flip:
+            stream.data.y[never] = 1 - stream.data.y[never]
+        trainer = Unlabelled()
+        federation, _ = pooling(trainer, stream=stream, threshold=0.0)
+        trace = [
+            (e["name"], e["tags"].get("round"), e["value"])
+            for e in federation.runtime.events
+            # prequential scores use the truth by design, and so message sizes
+            # and timings do: compare what was trained
+            if e["name"] in ("data.arrived", "data.labelled", "edge.trained")
+        ]
+        return trainer.pools, trace, federation.coordinator.state
+
+    (pools, trace, state), (again, trace2, state2) = run(False), run(True)
+    assert pools and len(pools) == len(again)
+    for (t, X, term), (t2, X2, term2) in zip(pools, again, strict=True):
+        assert t == t2 and term == term2
+        np.testing.assert_array_equal(X, X2)
+    assert trace == trace2
+    for key, value in state.items():
+        np.testing.assert_array_equal(state2[key], value)
+
+
+def test_the_pool_holds_the_arrived_rows_not_labelled_yet_and_unused() -> None:
+    trainer = Unlabelled()
+    _, edge = pooling(trainer)
+
+    s = edge.stream
+    used = np.zeros(len(s.data.y), bool)
+    assert len(trainer.pools) > 2
+    for (now, X, _), round in zip(trainer.pools, used_rounds(edge), strict=True):
+        expected = (s.available_at <= now) & (s.label_at > now) & ~used
+        np.testing.assert_array_equal(X, s.data.X[expected])
+        np.testing.assert_array_equal(edge._unlabelled_by == round, expected)
+        used |= expected
+    # a pool row whose label came later trained as labelled too
+    later = used & np.isfinite(s.label_at)
+    trained = np.concatenate([t for _, t in trainer.calls])
+    assert later.any() and set(s.data.t[later]) <= set(trained)
+
+
+def test_a_failed_round_keeps_its_pool() -> None:
+    trainer = Unlabelled(fail_first=True)
+    federation, edge = pooling(trainer)
+
+    s = edge.stream
+    assert events(federation, "edge.train_failed", "a1")
+    (_, failed, _), (then, retried, _) = trainer.pools[:2]
+    row = {tuple(x): i for i, x in enumerate(s.data.X.tolist())}
+    failed = np.array([row[tuple(x)] for x in failed.tolist()])
+    waiting = failed[s.label_at[failed] > then]  # still without their label
+    assert len(waiting)
+    assert {tuple(x) for x in s.data.X[waiting].tolist()} <= {
+        tuple(x) for x in retried.tolist()
+    }
+    reports = events(federation, "diagnostic.unlabelled", "a1")
+    trained = [e["tags"]["round"] for e in events(federation, "edge.trained", "a1")]
+    failed_round = events(federation, "edge.train_failed", "a1")[0]["tags"]["round"]
+    rounds = [e["tags"]["round"] for e in reports]
+    assert failed_round not in rounds and set(rounds) <= set(trained)
+    assert failed_round not in edge._unlabelled_by
+
+
+def test_an_idle_edge_uses_none_of_its_pool() -> None:
+    trainer = Unlabelled()
+    federation, edge = pooling(trainer, stream=stream_of("a-1", fraction=0.0))
+
+    assert not trainer.calls and not trainer.pools
+    assert (edge._unlabelled_by < 0).all()
+    assert not events(federation, "diagnostic.unlabelled")
+
+
+def test_the_report_and_the_audit_of_each_pseudo_label() -> None:
+    federation, edge = pooling(Unlabelled(), threshold=0.0)
+
+    s = edge.stream
+    reports = events(federation, "diagnostic.unlabelled", "a1")
+    assert reports
+    for report in reports:
+        round, tags = report["tags"]["round"], report["tags"]
+        rows = edge._unlabelled_by == round
+        assert report["value"] == rows.sum() == tags["pseudo_labels_accepted"]
+        assert tags["acceptance_rate"] == 1.0
+        assert (edge._generated_by[rows] == round).all()
+        hits = edge._pseudo_label[rows] == s.data.y[rows]
+        assert tags["pseudo_label_accuracy"] == pytest.approx(hits.mean())
+        confidence = edge._pseudo_confidence[rows]
+        assert tags["confidence"] == pytest.approx(confidence.mean())
+        assert ((confidence >= 0.5) & (confidence <= 1)).all()
+
+
+def test_rejected_rows_leave_no_pseudo_label() -> None:
+    federation, edge = pooling(Unlabelled(), threshold=1.0)
+
+    reports = events(federation, "diagnostic.unlabelled", "a1")
+    assert reports and all(r["tags"]["pseudo_labels_accepted"] == 0 for r in reports)
+    assert all("pseudo_label_accuracy" not in r["tags"] for r in reports)
+    assert (edge._unlabelled_by >= 0).any()  # seen, once
+    assert (edge._pseudo_label < 0).all() and (edge._generated_by < 0).all()
+
+
+def test_consistency_reports_no_pseudo_labels() -> None:
+    trainer = Unlabelled()
+    federation, edge = pooling(trainer, "consistency", noise=0.5)
+
+    reports = events(federation, "diagnostic.unlabelled", "a1")
+    assert reports and all(r["tags"]["acceptance_rate"] == 1.0 for r in reports)
+    assert all("pseudo_label_accuracy" not in r["tags"] for r in reports)
+    assert (edge._pseudo_label < 0).all()
+    assert any(term > 0 for _, _, term in trainer.pools)
+
+
+def test_an_unlabelled_run_is_deterministic() -> None:
+    def trace():
+        trainer = Unlabelled()
+        federation, _ = pooling(trainer, "consistency")
+        return [
+            (e["name"], e["node"], e["tags"].get("round"), e["value"])
+            for e in federation.runtime.events
+        ], [term for _, _, term in trainer.pools]
+
+    assert trace() == trace()
+
+
+@pytest.mark.parametrize("edge_state", [True, False])
+def test_the_audit_goes_with_the_edge_state(edge_state: bool) -> None:
+    from types import SimpleNamespace
+
+    from onion_fl.experiment.runner import _restore_parts
+    from onion_fl.roles import snapshot_federation
+
+    federation, edge = pooling(Unlabelled(), threshold=0.0)
+    saved = snapshot_federation(federation)
+    np.testing.assert_array_equal(
+        saved.nodes["a1"].arrays["unlabelled/generated_by_version"],
+        edge._generated_by,
+    )
+    restore = SimpleNamespace(model=True, server_state=True, edge_state=edge_state)
+
+    kept = _restore_parts(saved, restore, {"a1"})
+
+    parts = {k.split("/")[0] for k in kept.nodes["a1"].arrays}
+    assert ("unlabelled" in parts) == edge_state
+
+
+def unlabelled_edge(trainer, stream=None) -> EdgeSpec:
+    from onion_fl.continual.unlabelled import objectives
+
+    model = ModularMLP(CONFIG, [A], seed=0)
+    objective = objectives.create("pseudo_label")
+    return EdgeSpec("a1", model, trainer=trainer, stream=stream, unlabelled=objective)
+
+
+@pytest.mark.parametrize(
+    ("trainer", "stream", "error"),
+    [
+        ("unlabelled", None, "stream"),
+        ("ditto", "a-1", "own loops"),
+        ("recording", "a-1", "own loops"),  # a trainer must say it takes them
+    ],
+)
+def test_an_edge_refuses_an_objective_it_cannot_train_with(
+    trainer: str, stream: str | None, error: str
+) -> None:
+    built = {"unlabelled": Unlabelled, "recording": Recording}.get(trainer)
+    built = built() if built else trainers.create(trainer)
+    spec = unlabelled_edge(built, stream and stream_of(stream))
+    with pytest.raises(ValueError, match=error):
+        build_federation(tree(1), {"fog_0": [spec]}, initial_state=INITIAL, rounds=1)
+
+
+def test_an_objective_plugin_must_offer_what_the_edge_uses() -> None:
+    spec = unlabelled_edge(Unlabelled(), stream_of("a-1"))
+    spec.unlabelled = object()
+    with pytest.raises(TypeError, match="unlabelled objective"):
+        build_federation(tree(1), {"fog_0": [spec]}, initial_state=INITIAL, rounds=1)
 
 
 # --- statuses and the local trigger (continuum C6) --------------------------------
@@ -653,7 +928,7 @@ class Hand:
 
 def edge_by_hand(stream, edge_trigger=None, drift=None, status_every=60.0):
     """A streaming edge of a continuous federation, started by hand."""
-    from onion_fl.continuum.pace import Continuum
+    from onion_fl.continual.pace import Continuum
 
     pace = Continuum(
         trigger=None,
@@ -748,7 +1023,7 @@ def bypassed(edge, recording) -> int:
 
 
 def test_an_edge_trains_only_when_its_local_trigger_fires() -> None:
-    from onion_fl.continuum.triggers import triggers
+    from onion_fl.continual.triggers import triggers
 
     five = triggers.create("volume", {"samples": 5})
     edge, ctx, recording = edge_by_hand(stream_of("a-1"), edge_trigger=five)
@@ -783,8 +1058,8 @@ def continuous(
     **streams,
 ):
     """A continuous federation of stub edges, run to its end."""
-    from onion_fl.continuum.pace import Continuum
-    from onion_fl.continuum.triggers import drift_detectors, triggers
+    from onion_fl.continual.pace import Continuum
+    from onion_fl.continual.triggers import drift_detectors, triggers
 
     def built(spec):
         if spec is None:
@@ -994,7 +1269,7 @@ def test_a_lost_stop_does_not_keep_the_run_ticking(monkeypatch) -> None:
 
 def fog_by_hand():
     """A fog of a continuous federation with two registered edges, by hand."""
-    from onion_fl.continuum.pace import Continuum
+    from onion_fl.continual.pace import Continuum
 
     pace = Continuum(None, None, 1.0, SPEED, float("inf"), {})
     specs = [
@@ -1052,7 +1327,7 @@ def test_an_edge_tags_its_status_with_the_round_it_last_got() -> None:
 
 
 def test_the_bootstrap_round_trains_whatever_the_local_trigger() -> None:
-    from onion_fl.continuum.triggers import triggers
+    from onion_fl.continual.triggers import triggers
 
     never = triggers.create("volume", {"samples": 10_000})
     edge, ctx, recording = edge_by_hand(stream_of("a-1"), edge_trigger=never)
@@ -1063,7 +1338,7 @@ def test_the_bootstrap_round_trains_whatever_the_local_trigger() -> None:
 
 
 def test_an_edge_whose_stream_has_ended_trains_what_is_left() -> None:
-    from onion_fl.continuum.triggers import triggers
+    from onion_fl.continual.triggers import triggers
 
     never = triggers.create("volume", {"samples": 10_000})
     edge, ctx, recording = edge_by_hand(stream_of("a-1"), edge_trigger=never)

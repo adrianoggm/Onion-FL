@@ -1,0 +1,54 @@
+# CIFAR-10 (Krizhevsky, 2009): 60,000 32x32 colour images in 10 classes
+# (0 airplane, 1 automobile, 2 bird, 3 cat, 4 deer, 5 dog, 6 frog, 7 horse,
+# 8 ship, 9 truck), from the official python version (README §2): five training
+# batches of 10,000 images and one test batch of 10,000. The batches are read
+# with a restricted unpickler that runs no code from the files.
+#
+# CIFAR-10 has no natural clients, so the partition step cuts the 50,000
+# training images into `clients` synthetic clients, as NIID-Bench does (Li et
+# al., ICDE 2022): `iid`, `dirichlet_label` (Dir(alpha) per class, Hsu et al.,
+# 2019) or `label_skew` (k classes per client). The partition is synthetic, the
+# images are not; it depends on the labels, the scheme, alpha or k and its own
+# `partition_seed` only, never on the training seed. The official test batch is
+# one more subject, `test`, that experiments reserve as the test with
+# `data.roles.overrides.cifar10.test: [test]`.
+#
+# The 3,072 pixels are features in [0, 1], in the file's order (1,024 red, then
+# green, then blue, each row by row). The batch name and the label source are
+# meta and never features.
+name: cifar10
+description: CIFAR-10, imágenes en color de 32x32, 10 clases; clientes sintéticos (iid, Dir(α) o k clases) y el test oficial.
+root: data/CIFAR10
+source:
+  reader: cifar_pickle
+  path: "cifar-10-batches-py/*_batch*"
+options:
+  partition: dirichlet_label
+  clients: 10
+  alpha: 0.5
+  k: 2
+  partition_seed: 0
+steps:
+  - label: {task: object, column: y, n_classes: 10}
+  - partition:
+      scheme: iid
+      clients: "{clients}"
+      seed: "{partition_seed}"
+      test: {column: batch, values: [test_batch]}
+    when: {partition: iid}
+  - partition:
+      scheme: dirichlet_label
+      clients: "{clients}"
+      alpha: "{alpha}"
+      seed: "{partition_seed}"
+      test: {column: batch, values: [test_batch]}
+    when: {partition: dirichlet_label}
+  - partition:
+      scheme: label_skew
+      clients: "{clients}"
+      k: "{k}"
+      seed: "{partition_seed}"
+      test: {column: batch, values: [test_batch]}
+    when: {partition: label_skew}
+  - features:
+      regex: "^x_\\d+$"

@@ -814,7 +814,11 @@ class FedAsyncMixParams(BaseModel):
         "La regla de mezcla de FedAsync (Xie et al., 2019), aplicada una vez por "
         "ronda al agregado con la antigüedad media de la ronda (estadístico "
         "staleness). No es el protocolo FedAsync: allí el servidor actualiza con "
-        "cada llegada y el edge añade un término proximal."
+        "cada llegada y el edge añade un término proximal. Con next_round "
+        "polinómico en los fogs, una tardía se descuenta dos veces: en su peso "
+        "dentro del fog y en la mezcla, porque sube la antigüedad media. Para "
+        "descontarla una sola vez, usar weighting constant (factor 1) en los fogs "
+        "o a = 0 aquí."
     ),
 )
 class FedAsyncMix(_ServerState):

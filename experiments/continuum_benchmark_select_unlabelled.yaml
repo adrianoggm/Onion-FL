@@ -1,0 +1,46 @@
+# The continual benchmark (issue #163, continuum C8), step 3 of the selection:
+# warm start with replay and an objective on the unlabelled rows. The streams,
+# trainer and memory are step 2's choice (continuum_benchmark_select_replay:
+# reservoir of 512 rows, replay_ratio 0.25, SGD at lr 0.1 with 10 local
+# epochs; the three memories tied, since 512 never binds at a tenth of the
+# labels). The objective's settings are chosen here on the validation streams.
+#
+#   onion_fl run experiments/continuum_benchmark_select_unlabelled.yaml --workers 4
+name: continuum_benchmark_select_unlabelled
+description: Selección en validación del objetivo sobre las filas sin etiquetar del warm start con replay.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+rounds: 60                 # an upper bound: the run ends at the last label
+stream:
+  bootstrap: 20m
+  batch_size: 1
+  speed: 60
+labels: {fraction: 0.1, delay: 10m}
+continual: {memory: {name: reservoir, capacity: 512}, replay_ratio: 0.25}
+continuum:
+  trigger: {name: schedule, every: 10m}
+  status_every: 10m
+evaluation:
+  metrics: [loss, accuracy, macro_f1, confusion_matrix]
+  aggregators: {every: 1}
+  global: {every: 1, subjects: val}
+seeds: [0, 1, 2]
+sweep:
+  unlabelled:
+    - {name: pseudo_label, threshold: 0.8, weight: 0.5}
+    - {name: pseudo_label, threshold: 0.8, weight: 1.0}
+    - {name: pseudo_label, threshold: 0.9, weight: 0.5}
+    - {name: pseudo_label, threshold: 0.9, weight: 1.0}
+    - {name: pseudo_label, threshold: 0.95, weight: 0.5}
+    - {name: pseudo_label, threshold: 0.95, weight: 1.0}
+    - {name: consistency, noise: 0.05}
+    - {name: consistency, noise: 0.1}

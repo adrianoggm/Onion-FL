@@ -87,8 +87,30 @@ class Profile(Strict):
     )
     cpus: int | None = Field(None, gt=0, description="Trabajos a la vez")
     memory: float | None = Field(None, gt=0, description="Bytes de memoria")
+    # The fields below are left out of the infrastructure_id when unset, so the
+    # ids of infrastructures that do not use them do not change.
+    bandwidth: float | None = Field(
+        None,
+        gt=0,
+        description="Ancho de banda del acceso del dispositivo (bps, cada sentido)",
+        exclude_if=lambda v: v is None,
+    )
+    availability: dict[str, Any] | None = Field(
+        None,
+        description="Modelo de disponibilidad de los edges del host",
+        exclude_if=lambda v: v is None,
+    )
+    origin: Literal["declared", "trace"] = Field(
+        "declared",
+        description="De dónde salen las tasas: declaradas o de una traza; "
+        "ninguna de las dos está calibrada",
+        exclude_if=lambda v: v == "declared",
+    )
 
     _memory = field_validator("memory", mode="before")(lambda v: quantity(v, "memory"))
+    _bandwidth = field_validator("bandwidth", mode="before")(
+        lambda v: quantity(v, "bandwidth")
+    )
 
 
 class LinkFields(Strict):
@@ -128,6 +150,22 @@ class LinkFields(Strict):
 LAN = LinkFields(latency=0.001, jitter=0.0002, distribution="normal", bandwidth=1e9)
 
 
+class TracePool(Strict):
+    """Devices sampled from a trace of real clients: each becomes a profile
+    ``<source>_<site>_<i>`` with one device in the site's pool."""
+
+    source: Literal["fedscale"] = "fedscale"
+    devices: int = Field(gt=0, description="Cuántos clientes de la traza")
+    seed: int = Field(0, description="Semilla del muestreo de clientes")
+    availability: bool = Field(
+        True, description="Usar también su traza de disponibilidad"
+    )
+    cpus: int | None = Field(None, gt=0, description="Trabajos a la vez")
+    memory: float | None = Field(None, gt=0, description="Bytes de memoria")
+
+    _memory = field_validator("memory", mode="before")(lambda v: quantity(v, "memory"))
+
+
 class Site(Strict):
     """Hosts in one place: named ones, and a pool of identical devices."""
 
@@ -136,6 +174,11 @@ class Site(Strict):
         default_factory=dict, description="perfil -> cuántos dispositivos"
     )
     lan: LinkFields = Field(default=LAN, description="Red local entre sus hosts")
+    traces: TracePool | None = Field(
+        None,
+        description="Dispositivos muestreados de una traza (FedScale)",
+        exclude_if=lambda v: v is None,
+    )
 
     @field_validator("hosts")
     @classmethod
@@ -161,16 +204,19 @@ class Link(LinkFields):
 
 
 class Change(Strict):
-    """A change of a physical link at a time of the experiment (I1 §8).
+    """A change of a physical link, or of a host, at a time of the experiment
+    (I1 §8, §9).
 
-    ``set`` overrides some of its fields (``{latency: 50ms, loss: 0.1}``);
-    ``down: true`` cuts it and ``down: false`` brings it back; ``trace`` is a
-    CSV of measurements (a ``t`` column plus any of ``latency``, ``jitter``,
-    ``bandwidth``, ``bandwidth_up``, ``bandwidth_down``, ``loss``), one change
-    per row.
+    For a link (``between``), ``set`` overrides some of its fields
+    (``{latency: 50ms, loss: 0.1}``); ``down: true`` cuts it and ``down: false``
+    brings it back; ``trace`` is a CSV of measurements (a ``t`` column plus any
+    of ``latency``, ``jitter``, ``bandwidth``, ``bandwidth_up``,
+    ``bandwidth_down``, ``loss``), one change per row. A ``host`` only goes
+    ``down`` (with every logical node on it) and back up.
     """
 
-    between: tuple[str, str]
+    between: tuple[str, str] | None = Field(None, exclude_if=lambda v: v is None)
+    host: str | None = Field(None, exclude_if=lambda v: v is None)
     at: float = Field(0.0, ge=0, description="Instante del cambio (s)")
     set: dict[str, Any] | None = None
     down: bool | None = None
@@ -185,11 +231,15 @@ class Change(Strict):
 
     @model_validator(mode="after")
     def _one_kind(self) -> Change:
+        if (self.between is None) == (self.host is None):
+            raise ValueError("a change takes either between (a link) or host")
         given = [k for k in ("set", "down", "trace") if getattr(self, k) is not None]
         if len(given) != 1:
             raise ValueError(
                 f"a change takes exactly one of set, down or trace, got {given}"
             )
+        if self.host is not None and given != ["down"]:
+            raise ValueError(f"host {self.host}: a host change takes down only")
         return self
 
 
@@ -207,7 +257,8 @@ class Network(Strict):
         "comparten su ancho de banda; dedicated: cada uno lo tiene entero",
     )
     schedule: list[Change] = Field(
-        default_factory=list, description="Cambios de la red con el tiempo"
+        default_factory=list,
+        description="Cambios de la red con el tiempo: de enlaces y caídas de hosts",
     )
 
 
@@ -220,6 +271,11 @@ class Infrastructure(Strict):
     network: Network = Field(default_factory=Network)
     services: dict[str, str] = Field(
         default_factory=dict, description="servicio -> host (p. ej. mqtt_broker)"
+    )
+    device_traces: dict[str, dict[str, Any]] | None = Field(
+        None,
+        description="Por sitio, la traza, sus hashes y los clientes muestreados",
+        exclude_if=lambda v: v is None,
     )
 
     @model_validator(mode="after")
@@ -254,13 +310,24 @@ class Infrastructure(Strict):
                 raise ValueError(f"network.links[{i}]: {a} and {b} are linked twice")
             pairs.add(frozenset((a, b)))
         for i, change in enumerate(self.network.schedule):
-            if frozenset(change.between) not in pairs:
+            if change.host is not None:
+                if change.host not in seen:
+                    raise ValueError(
+                        f"network.schedule[{i}]: unknown host {change.host!r}"
+                    )
+            elif frozenset(change.between) not in pairs:
                 raise ValueError(
                     f"network.schedule[{i}]: no link between {list(change.between)}"
                 )
         for service, host in self.services.items():
             if host not in seen:
                 raise ValueError(f"services.{service}: unknown host {host!r}")
+        for site, spec in self.sites.items():
+            if spec.traces is not None and site not in (self.device_traces or {}):
+                raise ValueError(
+                    f"sites.{site}.traces: not sampled; load the infrastructure "
+                    "with load_infrastructure or expand_traces"
+                )
         return self
 
     @staticmethod
@@ -313,7 +380,11 @@ def parse_infrastructure(raw: Mapping[str, Any]) -> Infrastructure:
         raise InfrastructureError(details) from exc
 
 
-def load_infrastructure(path: str | Path) -> Infrastructure:
+def load_infrastructure(
+    path: str | Path, device_traces: str | Path = "data"
+) -> Infrastructure:
+    """The infrastructure in ``path``; its trace pools are sampled from the
+    traces under ``device_traces`` (``<device_traces>/FedScale/``)."""
     import yaml
 
     path = Path(path)
@@ -323,7 +394,16 @@ def load_infrastructure(path: str | Path) -> Infrastructure:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as exc:
         raise InfrastructureError(f"{path.name} is not valid YAML: {exc}") from None
-    return parse_infrastructure(anchor_traces(raw, path.parent))
+    return parse_infrastructure(
+        expand_traces(anchor_traces(raw, path.parent), device_traces)
+    )
+
+
+def expand_traces(raw: Any, root: str | Path) -> Any:
+    """Sample the trace pools of ``raw`` (see :mod:`onion_fl.infrastructure.fedscale`)."""
+    from onion_fl.infrastructure.fedscale import expand
+
+    return expand(raw, root)
 
 
 def anchor_traces(raw: Any, folder: str | Path) -> Any:
