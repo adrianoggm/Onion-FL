@@ -1549,3 +1549,29 @@ def test_an_attack_picks_the_same_edges_as_before_without_merging(
     attacked, old = _attacked(workspace, {"name": "mixing", "alpha": 0.0})
 
     assert attacked == old and attacked
+
+
+# --- per-dataset preprocessing (issue #246) ----------------------------------------
+
+
+def tokens_descriptor(workspace: Path) -> None:
+    path = workspace / "datasets" / "demo.yaml"
+    path.write_text(path.read_text(encoding="utf-8") + "tokens: true\n", "utf-8")
+
+
+def test_a_token_dataset_with_scaling_is_refused(workspace: Path) -> None:
+    tokens_descriptor(workspace)
+
+    with pytest.raises(ConfigError, match="demo.*tokens.*scaler: none"):
+        plan(parse_experiment(experiment(workspace)))
+
+
+def test_a_token_dataset_without_scaling_runs(workspace: Path) -> None:
+    tokens_descriptor(workspace)
+    raw = experiment(workspace)
+    raw["data"]["roles"]["overrides"] = {"demo": {"scaler": "none"}}
+
+    path = run_scenario(scenarios(parse_experiment(raw))[0], evaluate=stub_score)
+
+    assert verify_run(path)
+
