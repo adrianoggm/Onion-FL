@@ -219,7 +219,7 @@ class _Collector(Node):
         self.bootstrapped.discard(child)
         self.owed.pop(child, None)
         self.responses.pop(child, None)
-        for held in (self.stale, self.stale_age, self.stale_round):
+        for held in (self.stale, self.stale_carried, self.stale_round):
             held.pop(child, None)
         self.participants = [c for c in self.participants if c != child]
 
