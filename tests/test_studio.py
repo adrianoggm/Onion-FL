@@ -390,6 +390,28 @@ def test_the_sharing_preview_shows_what_crosses_each_link(client: TestClient) ->
     assert preview["held"]["global"] == ["adapter.a", "adapter.b", "trunk"]
 
 
+def test_the_sharing_preview_works_for_another_model_family(
+    client: TestClient,
+) -> None:
+    body = {
+        "topology": TOPOLOGY,
+        "sharing": "independent",
+        "datasets": ["a", "b"],
+        "model": {"name": "feature_transformer", "token_dim": 8},
+    }
+
+    preview = client.post("/api/preview/sharing", json=body).json()
+
+    assert set(preview["groups"]) == {
+        "adapter.a",
+        "adapter.b",
+        "trunk.a",
+        "trunk.b",
+        "head.a",
+        "head.b",
+    }
+
+
 def test_the_placement_preview_moves_with_alpha(client: TestClient) -> None:
     topology = TOPOLOGY | {
         "fog": {"nodes": [{"id": "fog_a", "home": "a"}, {"id": "fog_b", "home": "b"}]}

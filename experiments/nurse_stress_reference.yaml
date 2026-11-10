@@ -1,0 +1,27 @@
+# Nurse Stress (issue #241): one edge per nurse under one hospital fog, with
+# the labels of datasets/nurse_stress.yaml (stress = a survey event rated >= 1).
+# A quarter of the nurses, drawn with the role seed, are the test subjects; the
+# preprocessing is fitted on the training nurses only.
+#
+#   onion_fl baseline experiments/nurse_stress_reference.yaml --models lr rf --seeds 0 1 2 3 4
+#   onion_fl baseline experiments/nurse_stress_reference.yaml --models lr rf --cv 5
+#
+# The federated part is declared but has not been run (results/nurse_stress/).
+name: nurse_stress_reference
+description: Nurse Stress, una enfermera por edge bajo un fog del hospital; test con un cuarto de las enfermeras.
+topology: one_hospital
+data:
+  datasets:
+    nurse_stress: {}
+  roles: {test: 0.25, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 1.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, local_epochs: 1, batch_size: 32, lr: 0.001}
+  init: random
+rounds: 30
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  global: {every: 1}
+seeds: [0, 1, 2]

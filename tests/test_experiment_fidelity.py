@@ -223,7 +223,7 @@ def test_the_report_goes_to_csv_and_html(workspace: Path) -> None:  # noqa: F811
     assert levels == {"functional", "performance", "decision"}
     regret = [r for r in table if r["metric"] == "time" and r["statistic"] == "regret"]
     assert regret and regret[0]["ceiling"] != ""
-    assert "Functional" in page and "predictor (A7)" in page
+    assert "Functional" in page and "predictor regret" in page
     assert result["pairs"][0]["a"]["run_hash"] in page
 
 

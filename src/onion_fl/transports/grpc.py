@@ -61,7 +61,6 @@ from onion_fl.transports import transports
 from onion_fl.transports.tls import TlsParams, read
 
 Callback = Callable[[bytes], None]
-METHOD = "/onionfl.Transport/Deliver"
 ADDRESS = "onionfl-address"
 UNLIMITED = [
     ("grpc.max_send_message_length", -1),
@@ -124,11 +123,16 @@ def _common_name(context: Any) -> str | None:
     params=GrpcParams,
 )
 class GrpcTransport:
+    # A subclass changes what travels (``_wrap``/``_unwrap``) under its own
+    # service and discovery folder, so two kinds of transport never mix.
+    SERVICE = "onionfl.Transport"
+    DISCOVERY = "onionfl-grpc"
+
     def __init__(self, **params: Any) -> None:
         self._grpc = _require_grpc()
         self.params = GrpcParams(**params)
         self.directory = Path(
-            self.params.directory or Path(tempfile.gettempdir()) / "onionfl-grpc"
+            self.params.directory or Path(tempfile.gettempdir()) / self.DISCOVERY
         )
         self.stats = {"sent": 0, "bytes_sent": 0, "received": 0, "bytes_received": 0}
         self.endpoint: str | None = None
@@ -148,6 +152,16 @@ class GrpcTransport:
         if tls is None:
             return None
         return read(tls.ca, "ca"), read(tls.cert, "cert"), read(tls.key, "key")
+
+    # --- the bytes on the wire -----------------------------------------------
+
+    def _wrap(self, address: str, data: bytes) -> bytes:
+        """What travels for a frame to ``address``: the frame itself."""
+        return data
+
+    def _unwrap(self, address: str, request: bytes) -> bytes:
+        """The frame in what arrived for ``address``; ``ValueError`` if none."""
+        return request
 
     # --- receiving -----------------------------------------------------------
 
@@ -172,27 +186,31 @@ class GrpcTransport:
 
     def _deliver(self, request: bytes, context: Any) -> bytes:
         address = dict(context.invocation_metadata()).get(ADDRESS, "")
+        try:
+            data = self._unwrap(address, request)
+        except ValueError as error:  # no frame for this inbox in it
+            context.abort(self._grpc.StatusCode.INVALID_ARGUMENT, str(error))
         with self._lock:
             callbacks = list(self._inboxes.get(address, []))
             if callbacks:
                 self.stats["received"] += 1
-                self.stats["bytes_received"] += len(request)
+                self.stats["bytes_received"] += len(data)
         if not callbacks:  # the sender read a stale file: let it look again
             context.abort(self._grpc.StatusCode.NOT_FOUND, f"no inbox {address!r} here")
         if self.params.tls is None:
             for callback in callbacks:
-                callback(request)
+                callback(data)
             return b""
         principal = _common_name(context)
         for callback in callbacks:
-            callback(request, principal=principal)
+            callback(data, principal=principal)
         return b""
 
     def start(self) -> None:
         grpc = self._grpc
         self._stopping.clear()
         handler = grpc.method_handlers_generic_handler(
-            "onionfl.Transport",
+            self.SERVICE,
             {"Deliver": grpc.unary_unary_rpc_method_handler(self._deliver)},
         )
         self._server = grpc.server(
@@ -236,7 +254,7 @@ class GrpcTransport:
                 )
                 self._threads.append(thread)
                 thread.start()
-        outbox.put(data)
+        outbox.put(self._wrap(address, data))
 
     def _resolve(self, address: str) -> str | None:
         if self.params.peers is not None:
@@ -268,7 +286,7 @@ class GrpcTransport:
         if endpoint is None:
             return False
         try:
-            call = self._channel(endpoint).unary_unary(METHOD)
+            call = self._channel(endpoint).unary_unary(f"/{self.SERVICE}/Deliver")
             call(data, timeout=timeout, metadata=((ADDRESS, address),))
         except (self._grpc.RpcError, ValueError):  # ValueError: channel closed
             return False

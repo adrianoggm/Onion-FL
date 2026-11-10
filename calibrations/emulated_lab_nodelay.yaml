@@ -1,0 +1,34 @@
+# Paths of the emulated lab with messages close together, to measure Nagle
+# (issue #197): TCP_NODELAY on the clients and the broker (no Nagle). It
+# differs from its pair (emulated_lab_nagle.yaml, emulated_lab_nodelay.yaml)
+# only in links.nodelay. Neither is fitted: their sessions are compared.
+#
+#   onion_fl calibrate measure calibrations/emulated_lab_nodelay.yaml --out <session>
+#
+# A message goes 50 ms after the last one was acknowledged, not 0.5 s as in
+# calibrations/emulated_lab.yaml, so the connections are never idle long.
+name: emulated_lab_nodelay
+description: MQTT paths of the emulated lab, messages 50 ms apart, nodelay true.
+infrastructure: emulated_lab
+data:
+  datasets:
+    swell: {descriptor: datasets/swell_physiology.yaml}
+  roles: {test: 0.2, scaler: global, seed: 0}
+workloads:
+  - model: {name: modular_mlp, adapter_width: 32, trunk_hidden: [16]}
+    trainer: {name: standard, local_epochs: 5, batch_size: 32, lr: 0.01}
+links:
+  pairs:
+    - [fog-a, cloud-1]
+    - [field-edge_device-1, fog-a]
+    - [cloud-1, cloud-1]
+  sizes: [100, 1000, 5000, 10000, 30000]
+  fit_up_to: 10000
+  repeats: 15
+  qos: 1
+  gap: 0.05
+  nodelay: true
+seed: 0
+pin:
+  cpus: [2, 4, 6, 8, 10, 12, 14, 16, 18]
+  others: 20-23

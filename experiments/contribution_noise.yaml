@@ -1,0 +1,35 @@
+# Contribution scores under noisy edges on SWELL and WESAD (issue #230): every
+# aggregator runs the `contribution` diagnostic (on by default) and FedAvg; in
+# each dataset a seeded 20% of the edges flip their labels (noisy data) or send
+# Gaussian noise instead of their update, or nobody attacks. The scores are
+# then compared against the known noisy edges (`data.attack` event).
+# Training as in techniques_robustness (SGD, lr 0.3, 10 local epochs), with 10
+# rounds. sigma = 0.01 was fixed before running, near the per-coordinate size
+# of an honest update; it was not tuned on the scores.
+#
+#   onion_fl plan experiments/contribution_noise.yaml
+#   onion_fl run experiments/contribution_noise.yaml --workers 3
+name: contribution_noise
+description: Puntuación de contribuciones con edges ruidosos sobre SWELL y WESAD.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, local_val: 0.2, local_val_split: class_tail, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.5}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.3}
+  init: random
+rounds: 10
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  global: {every: 1}
+seeds: [0, 1, 2, 3, 4]
+sweep:
+  attack:
+    - null
+    - {name: label_flip, fraction: 0.2}
+    - {name: gaussian, fraction: 0.2, sigma: 0.01}

@@ -1,0 +1,501 @@
+{
+  "spec": {
+    "name": "emulated_lab",
+    "description": "Training, aggregation and MQTT paths of the small emulated lab.",
+    "infrastructure": "emulated_lab",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": "datasets/swell_physiology.yaml",
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.0,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.0,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "workloads": [
+      {
+        "model": {
+          "name": "modular_mlp",
+          "adapter_width": 32,
+          "trunk_hidden": [
+            16
+          ]
+        },
+        "trainer": {
+          "name": "standard",
+          "local_epochs": 5,
+          "batch_size": 32,
+          "lr": 0.01
+        }
+      },
+      {
+        "model": {
+          "name": "modular_mlp",
+          "adapter_width": 64,
+          "trunk_hidden": [
+            64,
+            32
+          ]
+        },
+        "trainer": {
+          "name": "standard",
+          "local_epochs": 5,
+          "batch_size": 32,
+          "lr": 0.01
+        }
+      }
+    ],
+    "train": {
+      "hosts": [
+        "field-edge_device-1",
+        "field-edge_device-2",
+        "field-edge_device-3",
+        "field-edge_device-4",
+        "field-edge_device-5"
+      ],
+      "per_host": 4,
+      "jobs": 14,
+      "warmup": 2
+    },
+    "aggregate": {
+      "hosts": [
+        "fog-a",
+        "fog-b",
+        "cloud-1"
+      ],
+      "workload": 0,
+      "updates": [
+        10,
+        20
+      ],
+      "seconds": 5.0,
+      "batch": 100
+    },
+    "links": {
+      "pairs": [
+        [
+          "fog-a",
+          "cloud-1"
+        ],
+        [
+          "fog-b",
+          "cloud-1"
+        ],
+        [
+          "field-edge_device-1",
+          "cloud-1"
+        ],
+        [
+          "field-edge_device-1",
+          "fog-a"
+        ],
+        [
+          "field-edge_device-1",
+          "fog-b"
+        ],
+        [
+          "cloud-1",
+          "cloud-1"
+        ]
+      ],
+      "sizes": [
+        100,
+        1000,
+        5000,
+        10000,
+        30000,
+        100000
+      ],
+      "fit_up_to": 10000,
+      "repeats": 15,
+      "qos": 1,
+      "gap": 0.5,
+      "wait": 30.0,
+      "nodelay": false
+    },
+    "seed": 0,
+    "lead": 20.0,
+    "pin": {
+      "cpus": [
+        2,
+        4,
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        18
+      ],
+      "others": "20-23"
+    },
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    },
+    "emulation": {
+      "image": "onionfl-a197b-emulated:latest",
+      "broker_image": "eclipse-mosquitto:2",
+      "project": "onionfl-a197b",
+      "subnet": "10.197.0.0/16",
+      "max_containers": 64,
+      "ready_timeout": 120.0
+    }
+  },
+  "infrastructure_id": "da875674ad22d77f7aabcc6d9ac2fe642e9e8be204889668bb4adc5f238df43e",
+  "hosts": {
+    "cloud-1": "cloud_vm",
+    "field-edge_device-1": "edge_device",
+    "field-edge_device-2": "edge_device",
+    "field-edge_device-3": "edge_device",
+    "field-edge_device-4": "edge_device",
+    "field-edge_device-5": "edge_device",
+    "fog-a": "fog_small",
+    "fog-b": "fog_small"
+  },
+  "broker": "cloud-1",
+  "workloads": {
+    "0ed95108ec44feea": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 32,
+        "trunk_hidden": [
+          16
+        ]
+      },
+      "trainer": {
+        "name": "standard",
+        "local_epochs": 5,
+        "batch_size": 32,
+        "lr": 0.01
+      },
+      "batch_size": 32,
+      "shapes": {
+        "adapter.swell.0.weight": [
+          32,
+          3
+        ],
+        "adapter.swell.0.bias": [
+          32
+        ],
+        "trunk.0.weight": [
+          16,
+          32
+        ],
+        "trunk.0.bias": [
+          16
+        ],
+        "head.stress_binary.weight": [
+          2,
+          16
+        ],
+        "head.stress_binary.bias": [
+          2
+        ]
+      },
+      "flops_per_sample": 4140.0
+    },
+    "f81f0235a3520d08": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ]
+      },
+      "trainer": {
+        "name": "standard",
+        "local_epochs": 5,
+        "batch_size": 32,
+        "lr": 0.01
+      },
+      "batch_size": 32,
+      "shapes": {
+        "adapter.swell.0.weight": [
+          64,
+          3
+        ],
+        "adapter.swell.0.bias": [
+          64
+        ],
+        "trunk.0.weight": [
+          64,
+          64
+        ],
+        "trunk.0.bias": [
+          64
+        ],
+        "trunk.3.weight": [
+          32,
+          64
+        ],
+        "trunk.3.bias": [
+          32
+        ],
+        "head.stress_binary.weight": [
+          2,
+          32
+        ],
+        "head.stress_binary.bias": [
+          2
+        ]
+      },
+      "flops_per_sample": 39372.0
+    }
+  },
+  "clients": {
+    "field-edge_device-1": [
+      "swell-3",
+      "swell-4",
+      "swell-5",
+      "swell-6"
+    ],
+    "field-edge_device-2": [
+      "swell-7",
+      "swell-8",
+      "swell-9",
+      "swell-10"
+    ],
+    "field-edge_device-3": [
+      "swell-11",
+      "swell-13",
+      "swell-14",
+      "swell-15"
+    ],
+    "field-edge_device-4": [
+      "swell-16",
+      "swell-17",
+      "swell-20",
+      "swell-21"
+    ],
+    "field-edge_device-5": [
+      "swell-22",
+      "swell-23",
+      "swell-24",
+      "swell-25"
+    ]
+  },
+  "code": {
+    "commit": "d3d050e95e06f6b390630184cda88b4c9a1d9d1f",
+    "dirty": false
+  },
+  "project": "onionfl-a197b-cal-20261109t161037",
+  "shaping": {
+    "router-dc": [
+      "tc qdisc add dev $(dev 10.197.6.3) root netem limit 1034 delay 40000us rate 10000000bit",
+      "tc qdisc add dev $(dev 10.197.7.3) root netem limit 1050 delay 60000us rate 10000000bit"
+    ],
+    "router-field": [
+      "tc qdisc add dev $(dev 10.197.4.2) root netem limit 1042 delay 10000us rate 50000000bit",
+      "tc qdisc add dev $(dev 10.197.5.2) root netem limit 1025 delay 15000us rate 20000000bit"
+    ],
+    "router-fog-a": [
+      "tc qdisc add dev $(dev 10.197.4.3) root netem limit 1042 delay 10000us rate 50000000bit",
+      "tc qdisc add dev $(dev 10.197.6.2) root netem limit 1034 delay 40000us rate 10000000bit"
+    ],
+    "router-fog-b": [
+      "tc qdisc add dev $(dev 10.197.5.3) root netem limit 1025 delay 15000us rate 20000000bit",
+      "tc qdisc add dev $(dev 10.197.7.2) root netem limit 1050 delay 60000us rate 10000000bit"
+    ],
+    "host-cloud-1": [],
+    "host-field-edge-device-1": [
+      "tc qdisc add dev $(dev 10.197.1.3) root handle 1: prio bands 2 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+      "tc qdisc add dev $(dev 10.197.1.3) parent 1:2 handle 20: netem limit 1133 delay 1000us 200us distribution normal rate 1000000000bit",
+      "tc filter add dev $(dev 10.197.1.3) parent 1: protocol ip prio 1 u32 match ip dst 10.197.1.0/24 flowid 1:2"
+    ],
+    "host-field-edge-device-2": [
+      "tc qdisc add dev $(dev 10.197.1.4) root handle 1: prio bands 2 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+      "tc qdisc add dev $(dev 10.197.1.4) parent 1:2 handle 20: netem limit 1133 delay 1000us 200us distribution normal rate 1000000000bit",
+      "tc filter add dev $(dev 10.197.1.4) parent 1: protocol ip prio 1 u32 match ip dst 10.197.1.0/24 flowid 1:2"
+    ],
+    "host-field-edge-device-3": [
+      "tc qdisc add dev $(dev 10.197.1.5) root handle 1: prio bands 2 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+      "tc qdisc add dev $(dev 10.197.1.5) parent 1:2 handle 20: netem limit 1133 delay 1000us 200us distribution normal rate 1000000000bit",
+      "tc filter add dev $(dev 10.197.1.5) parent 1: protocol ip prio 1 u32 match ip dst 10.197.1.0/24 flowid 1:2"
+    ],
+    "host-field-edge-device-4": [
+      "tc qdisc add dev $(dev 10.197.1.6) root handle 1: prio bands 2 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+      "tc qdisc add dev $(dev 10.197.1.6) parent 1:2 handle 20: netem limit 1133 delay 1000us 200us distribution normal rate 1000000000bit",
+      "tc filter add dev $(dev 10.197.1.6) parent 1: protocol ip prio 1 u32 match ip dst 10.197.1.0/24 flowid 1:2"
+    ],
+    "host-field-edge-device-5": [
+      "tc qdisc add dev $(dev 10.197.1.7) root handle 1: prio bands 2 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+      "tc qdisc add dev $(dev 10.197.1.7) parent 1:2 handle 20: netem limit 1133 delay 1000us 200us distribution normal rate 1000000000bit",
+      "tc filter add dev $(dev 10.197.1.7) parent 1: protocol ip prio 1 u32 match ip dst 10.197.1.0/24 flowid 1:2"
+    ],
+    "host-fog-a": [],
+    "host-fog-b": []
+  },
+  "cpusets": {
+    "host-cloud-1": "2,4",
+    "host-field-edge-device-1": "6",
+    "host-field-edge-device-2": "8",
+    "host-field-edge-device-3": "10",
+    "host-field-edge-device-4": "12",
+    "host-field-edge-device-5": "14",
+    "host-fog-a": "16",
+    "host-fog-b": "18",
+    "router-dc": "20-23",
+    "router-field": "20-23",
+    "router-fog-a": "20-23",
+    "router-fog-b": "20-23",
+    "broker": "20-23"
+  },
+  "environment": {
+    "machine": {
+      "platform": "Windows-10-10.0.26300-SP0",
+      "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel"
+    },
+    "docker": {
+      "docker": "28.3.2",
+      "ncpu": 24,
+      "memory": 16559284224,
+      "kernel": "6.6.87.2-microsoft-standard-WSL2",
+      "os": "Docker Desktop (containerized)"
+    },
+    "image": {
+      "name": "onionfl-a197b-emulated:latest",
+      "id": "sha256:a826e66ea506c34a6105933b94102ed2a9824ed42e896164763a2c1851aa5a8f",
+      "pins": {
+        "torch": "2.14.1",
+        "numpy": "2.4.6",
+        "scipy": "1.17.1",
+        "pandas": "2.3.3",
+        "scikit-learn": "1.9.1"
+      }
+    }
+  },
+  "load": [
+    {
+      "phase": "train 0ed95108ec44feea before",
+      "at": 1794240643.819385,
+      "machine": {
+        "busy_percent": 15.0,
+        "performance_percent": 112.0,
+        "frequency_mhz": 1993.0
+      },
+      "vm_loadavg": [
+        1.49,
+        0.55,
+        0.46
+      ]
+    },
+    {
+      "phase": "train 0ed95108ec44feea after",
+      "at": 1794240666.6155617,
+      "machine": {
+        "busy_percent": 21.0,
+        "performance_percent": 182.0,
+        "frequency_mhz": 2028.0
+      },
+      "vm_loadavg": [
+        1.29,
+        0.56,
+        0.46
+      ]
+    },
+    {
+      "phase": "train f81f0235a3520d08 before",
+      "at": 1794240667.5364685,
+      "machine": {
+        "busy_percent": 17.0,
+        "performance_percent": 90.0,
+        "frequency_mhz": 1938.0
+      },
+      "vm_loadavg": [
+        1.29,
+        0.56,
+        0.46
+      ]
+    },
+    {
+      "phase": "train f81f0235a3520d08 after",
+      "at": 1794240690.2216558,
+      "machine": {
+        "busy_percent": 19.0,
+        "performance_percent": 121.0,
+        "frequency_mhz": 2056.0
+      },
+      "vm_loadavg": [
+        0.9,
+        0.53,
+        0.45
+      ]
+    },
+    {
+      "phase": "aggregate before",
+      "at": 1794240691.1106417,
+      "machine": {
+        "busy_percent": 2.0,
+        "performance_percent": 89.0,
+        "frequency_mhz": 1970.0
+      },
+      "vm_loadavg": [
+        0.9,
+        0.53,
+        0.45
+      ]
+    },
+    {
+      "phase": "aggregate after",
+      "at": 1794240722.356507,
+      "machine": {
+        "busy_percent": 28.0,
+        "performance_percent": 94.0,
+        "frequency_mhz": 2056.0
+      },
+      "vm_loadavg": [
+        1.46,
+        0.7,
+        0.51
+      ]
+    },
+    {
+      "phase": "links before",
+      "at": 1794240723.2488108,
+      "machine": {
+        "busy_percent": 27.0,
+        "performance_percent": 122.0,
+        "frequency_mhz": 1966.0
+      },
+      "vm_loadavg": [
+        1.34,
+        0.69,
+        0.51
+      ]
+    },
+    {
+      "phase": "links after",
+      "at": 1794241449.3455157,
+      "machine": {
+        "busy_percent": 25.0,
+        "performance_percent": 122.0,
+        "frequency_mhz": 1966.0
+      },
+      "vm_loadavg": [
+        0.3,
+        0.56,
+        0.5
+      ]
+    }
+  ],
+  "started_at": "2026-11-09T16:10:38.662241+00:00",
+  "duration_s": 829.424
+}

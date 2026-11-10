@@ -23,7 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from onion_fl.core.registry import Registry
 from onion_fl.core.topology import Topology
-from onion_fl.learning.model import ModularMLPConfig, group_of
+from onion_fl.learning.model import group_of
 
 SCOPE = r"^(global|local|level:[A-Za-z0-9_.-]+)$"
 
@@ -72,8 +72,13 @@ class SharingPolicy(BaseModel):
                     f"scope {scope!r}: the level must be one of the aggregation levels {allowed}"
                 )
 
-    def check_model(self, config: ModularMLPConfig) -> None:
+    def check_model(self, config: BaseModel) -> None:
         for field, required in self.model_requirements.items():
+            if field not in type(config).model_fields:
+                raise SharingError(
+                    f"sharing {self.name!r} needs the model with {field}={required!r}, "
+                    "and this model family has no such option"
+                )
             actual = getattr(config, field)
             if actual != required:
                 raise SharingError(

@@ -1,0 +1,18 @@
+# One fog under the cloud: the single hospital of Nurse Stress (issue #241),
+# with one edge per nurse. Lossless links: the reference runs measure learning,
+# not the network.
+name: one_hospital
+levels: [global, fog, edge]
+root:
+  id: cloud
+  aggregator: fedavg
+  server_optimizer: replace
+fog:
+  defaults:
+    aggregator: fedavg
+    quorum: 1.0
+    link_up: {transport: mqtt, codec: npz, profile: lan}
+  nodes:
+    - {id: hospital}
+edge:
+  link_up: {transport: mqtt, codec: npz, profile: lan}

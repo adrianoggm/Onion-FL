@@ -1,0 +1,24 @@
+{
+  "physionet_e4": {
+    "lr": {
+      "train_samples": 2033,
+      "test": {
+        "accuracy": 0.7081967213114754,
+        "balanced_accuracy": 0.5350167988860358,
+        "f1_macro": 0.5237002070186727,
+        "n_samples": 610
+      },
+      "val": null
+    },
+    "rf": {
+      "train_samples": 2033,
+      "test": {
+        "accuracy": 0.8540983606557377,
+        "balanced_accuracy": 0.6586741441936321,
+        "f1_macro": 0.6617078249213968,
+        "n_samples": 610
+      },
+      "val": null
+    }
+  }
+}
