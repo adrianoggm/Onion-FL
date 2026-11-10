@@ -1,0 +1,268 @@
+{
+  "run_id": "20261110T095514Z-cc1d80b4ccd1",
+  "run_hash": "be7bce87fc60b395a724671b198b782bc2d836a83f940296013f841fc59843cb",
+  "config_id": "d2254d008132c860230fcd017471ec453a38a0f78a38b596b48b9fed7313b0c1",
+  "topology_id": "ff55fe4d2ce1a807f764bcc5205a8d2d4d43ab3d533163a1d13e173a9a6725fa",
+  "code_version": {
+    "commit": "f257ac401bed43b1624629e2572cabba40548457",
+    "dirty": false
+  },
+  "explainer": {
+    "name": "permutation"
+  },
+  "datasets": {
+    "swell": {
+      "metric": "macro_f1",
+      "baseline": 0.3663366336633663,
+      "features": [
+        {
+          "feature": "snappchange",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "sndirectionkeys",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "sndoubleclicked",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "sndragged",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "snrightclicked",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "sntabfocuschange",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "snwheel",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "snkeystrokes",
+          "importance": -0.0008644927710164229,
+          "std": 0.00985785389390273
+        },
+        {
+          "feature": "snerrorkeys",
+          "importance": -0.0018759796067182699,
+          "std": 0.0006227574043665917
+        },
+        {
+          "feature": "snspaces",
+          "importance": -0.0020166671662954936,
+          "std": 0.004033334332590987
+        },
+        {
+          "feature": "snleftclicked",
+          "importance": -0.0023469013568023557,
+          "std": 0.004693802713604711
+        },
+        {
+          "feature": "snshortcutkeys",
+          "importance": -0.0026598215377093503,
+          "std": 0.004577627603730505
+        },
+        {
+          "feature": "snspecialkeys",
+          "importance": -0.012035089732011572,
+          "std": 0.007476383043889859
+        },
+        {
+          "feature": "snmouseact",
+          "importance": -0.018415672970058028,
+          "std": 0.011677062380155121
+        },
+        {
+          "feature": "snmousedistance",
+          "importance": -0.0385678902648348,
+          "std": 0.008907935378503325
+        },
+        {
+          "feature": "snchars",
+          "importance": -0.050383278375651964,
+          "std": 0.012045789903520485
+        }
+      ],
+      "subjects": [
+        "10",
+        "25"
+      ],
+      "rows": 256
+    },
+    "wesad": {
+      "metric": "macro_f1",
+      "baseline": 0.9904714557958405,
+      "features": [
+        {
+          "feature": "bvp_0_median",
+          "importance": 0.10212628551677502,
+          "std": 0.019475660190797245
+        },
+        {
+          "feature": "acc_1_max",
+          "importance": 0.0204678561781388,
+          "std": 0.015886167410888115
+        },
+        {
+          "feature": "acc_1_min",
+          "importance": 0.011288232920077478,
+          "std": 0.0037297968325213037
+        },
+        {
+          "feature": "acc_0_std",
+          "importance": 0.007538667603053462,
+          "std": 0.003769333801526731
+        },
+        {
+          "feature": "acc_1_median",
+          "importance": 0.0074805888492335045,
+          "std": 0.010879905761068773
+        },
+        {
+          "feature": "acc_1_mean",
+          "importance": 0.005654000702290096,
+          "std": 0.004616472241982825
+        },
+        {
+          "feature": "acc_1_std",
+          "importance": 0.005654000702290096,
+          "std": 0.004616472241982825
+        },
+        {
+          "feature": "acc_2_min",
+          "importance": 0.0019065825524328783,
+          "std": 0.007131767064024483
+        },
+        {
+          "feature": "acc_2_mean",
+          "importance": 0.0018846669007633655,
+          "std": 0.003769333801526731
+        },
+        {
+          "feature": "acc_0_max",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "acc_0_mean",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "acc_0_median",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "acc_2_median",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "acc_2_std",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "bvp_0_mean",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "bvp_0_min",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "eda_0_max",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "eda_0_mean",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "eda_0_median",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "eda_0_min",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "eda_0_std",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "temp_0_max",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "temp_0_mean",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "temp_0_median",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "temp_0_min",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "temp_0_std",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "bvp_0_max",
+          "importance": -0.003811417681663798,
+          "std": 0.004668014258348957
+        },
+        {
+          "feature": "bvp_0_std",
+          "importance": -0.005717126522495697,
+          "std": 0.004668014258348957
+        },
+        {
+          "feature": "acc_2_max",
+          "importance": -0.007622835363327596,
+          "std": 0.0038114176816637976
+        },
+        {
+          "feature": "acc_0_min",
+          "importance": -0.009528544204159495,
+          "std": 0.0
+        }
+      ],
+      "subjects": [
+        "S4",
+        "S11"
+      ],
+      "rows": 115
+    }
+  },
+  "skipped": {}
+}

@@ -149,6 +149,8 @@ def build_federation(
     continuum: Any = None,
     promotion: Any = None,
     operators: Sequence[str] = ("operator",),
+    operator_keys: Mapping[str, str] | None = None,
+    audience: str = "",
     link_profiles: Mapping[str, Any] | None = None,
     link_channels: Mapping[str, Any] | None = None,
 ) -> Federation:
@@ -161,7 +163,9 @@ def build_federation(
     physical network. ``promotion`` (a ``promotions`` plugin) keeps the
     round's model as a challenger until the root's validators decide on it:
     the root's specs with ``validates``, and only they. ``operators`` are the
-    ids whose control messages may roll back or promote a version.
+    ids whose control messages may roll back or promote a version; with
+    ``operator_keys`` (id -> token) they are its ids instead, and each order
+    must be signed for ``audience``, the run's id (``continual.control``).
     """
     profiles = link_profiles or {}
     channels = link_channels or {}
@@ -204,6 +208,8 @@ def build_federation(
         promotion=promotion,
         validators=[e.id for e in edges.get(root.id, []) if e.validates],
         operators=operators,
+        operator_keys=operator_keys,
+        audience=audience,
         server_optimizer=server_optimizer
         or create(server_optimizers, root.settings.get("server_optimizer"), "replace"),
         level=root.level,

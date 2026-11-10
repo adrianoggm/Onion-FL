@@ -21,6 +21,7 @@ def test_both_model_families_are_registered() -> None:
         "bernoulli",
         "crash_at",
         "schedule",
+        "windows",
     ]
 
 

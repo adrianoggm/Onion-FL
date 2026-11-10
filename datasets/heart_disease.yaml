@@ -1,0 +1,34 @@
+# Fed-Heart-Disease (FLamby, Ogier du Terrail et al., NeurIPS 2022): the UCI
+# Heart Disease processed files of four hospitals (Janosi et al., 1988, CC BY
+# 4.0, doi:10.24432/C52P4X), one natural silo per hospital: Cleveland,
+# Hungarian (Budapest), Switzerland (Zurich and Basel) and VA Long Beach.
+#
+# scripts/heart_disease_flamby.py writes FLamby's preprocessing and its fixed
+# split (train_test_split, random_state 43, 66 % train, stratified when it can)
+# as one file per center and split: <center>.csv holds the train rows and
+# <center>_test.csv the test rows. The file name is the subject, so the center
+# is never a column and never a feature. In a cross-silo run, <center> is the
+# hospital's client and <center>_test its test evaluator (docs/RULES.md §2): the
+# experiment lists the *_test subjects as its test role.
+#
+# Checked on 2026-11-10 against the four UCI files (FLamby's MD5 sums) and a
+# transcription of FLamby's HeartDiseaseRaw: the same 13 features, labels and
+# split, row by row. Train/test counts: cleveland 199/104, hungarian 172/89,
+# switzerland 30/16 and va 85/45 (740 patients). The Switzerland train split
+# has no healthy patient (30 of 30 with disease, 15 of 16 in its test).
+#
+# The features are FLamby's: age, sex, trestbps, chol, fbs, thalach, exang,
+# oldpeak and the dummies of cp (2-4) and restecg (1-2); slope, ca and thal are
+# dropped for their missing values. chol is 0 in every Switzerland row, as in
+# the source. The label is FLamby's: no disease (num 0) or disease (num 1-4).
+name: heart_disease
+description: Fed-Heart-Disease (FLamby), 4 hospitales con su split oficial de train y test; un sujeto por hospital y split, y el centro nunca es feature.
+root: data/HeartDisease/flamby
+source:
+  reader: csv
+  path: "{subject}.csv"
+steps:
+  - label: {task: heart_disease, column: num, threshold: 1}
+  - features:
+      include: [age, sex, trestbps, chol, fbs, thalach, exang, oldpeak,
+                cp_2, cp_3, cp_4, restecg_1, restecg_2]

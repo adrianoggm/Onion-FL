@@ -144,6 +144,12 @@ promotion:
   - **Falla cerrado.** Solo deciden los validadores que construye la federación, no un hijo que diga serlo. Un informe con valores no finitos o muestras negativas se descarta, y una puntuación que falta o no es finita no promueve nunca. Champion y challenger necesitan ambos `min_samples`.
   - **Rollback y promoción manual** son órdenes del operador, un mensaje `control` al coordinador, aceptado solo de los `operators` configurados (nunca de un hijo); autenticar al emisor en el transporte es de #203. La versión restaurada llega a los edges en la ronda siguiente. El rollback por política queda para cuando C8 mida cuándo hace falta.
   - **Alcance.** Se rechazan los grupos que guarda un agregador intermedio, porque los del challenger llegarían a los edges sin validar. El estado de los edges no se versiona.
+- **Decisiones de C7b** (#203):
+  - **Operadores con token.** Un YAML `id: token` que nombra `ONIONFL_OPERATORS` (o `serve --operators`), fuera de la config para que ningún secreto llegue al `config_id`. Sin él no se acepta ninguna orden.
+  - **Órdenes firmadas.** Cada orden lleva un nonce de un solo uso y un HMAC-SHA256 con el token sobre el operador, la `run_id`, el nonce y la orden. El coordinador la comprueba sea cual sea el transporte: una sin firmar, falsificada, repetida o de otra ejecución se rechaza.
+  - **Control en vivo.** La API escribe las órdenes firmadas en `runs/<run_id>/control.jsonl` y la simulación las lee mientras corre: pausar y reanudar paran el reloj virtual; promover y revertir llegan al coordinador al momento, también en pausa. Programar es dar una orden con `at` (tiempo virtual): se aplica exactamente ahí, así que se repite igual.
+  - **Métricas por versión.** Las puntuaciones de la decisión (reciente y referencia) y el prequential de las filas que sirvió: `round.started` nombra la versión de cada ronda, y lo que llega antes de la ronda `r` lo predice la de `r - 1`.
+  - **Fuera.** Entregar órdenes a una ejecución real por MQTT.
 
 ## 6. `ModelBundle` (C2)
 

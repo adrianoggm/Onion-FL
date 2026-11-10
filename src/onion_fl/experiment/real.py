@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Real runs: one process per group of nodes over MQTT or gRPC (spec §9.2).
+"""Real runs: one process per group of nodes over MQTT, gRPC or Flower (§9.2).
 
 The ``local`` backend (``backend: local``, or its alias ``runtime.mode:
 real``) in three steps. ``prepare_local`` creates ``runs/<run_id>/`` and
@@ -25,6 +25,7 @@ from typing import Any
 
 import numpy as np
 
+from onion_fl.continual.control import load_operators
 from onion_fl.core.topology import Topology
 from onion_fl.experiment.config import ConfigError, parse_experiment
 from onion_fl.experiment.sweep import Scenario, identity
@@ -89,11 +90,11 @@ def _root_evaluators(config: Any, placement: Any) -> list[str]:
     return out
 
 
-CROSS_PROCESS = ("mqtt", "grpc")
+CROSS_PROCESS = ("mqtt", "grpc", "flower")
 
 
 def _check_links(topology: Topology) -> None:
-    """Every link of a real run must cross processes: MQTT or gRPC."""
+    """Every link of a real run must cross processes: MQTT, gRPC or Flower."""
     links = [n.link_up for n in topology.nodes if n.link_up is not None]
     links.append(topology.edge.link_up)
     for link in links:
@@ -101,8 +102,8 @@ def _check_links(topology: Topology) -> None:
         name = spec if isinstance(spec, str) else spec.get("name")
         if name not in CROSS_PROCESS:
             raise ConfigError(
-                f"runtime.mode: real needs mqtt or grpc links, but a link uses "
-                f"{name!r}; a memory bus does not cross processes"
+                f"runtime.mode: real needs mqtt, grpc or flower links, but a link "
+                f"uses {name!r}; a memory bus does not cross processes"
             )
 
 
@@ -329,7 +330,15 @@ def run_node(
         broker=launcher.get("broker"),
         grpc=grpc,
     )
-    federation = build_scenario(chosen, topology, split, placement, runtime=runtime)
+    federation = build_scenario(
+        chosen,
+        topology,
+        split,
+        placement,
+        runtime=runtime,
+        operator_keys=load_operators(),  # orders over the transport are signed
+        audience=run_id,
+    )
     if "initial" in launcher:
         take_initial(federation, Path(config).parent / launcher["initial"])
     roles = node_roles(federation, topology)
@@ -378,7 +387,7 @@ def _launcher(config: str | Path) -> dict[str, Any]:
 def keep_edges(federation: Any, runtime: Any, bundle: Path, resume: bool) -> None:
     """Save each hosted edge's state after every handler; with ``resume``,
     first bring each one back to what it saved, and say so in ``node.resumed``."""
-    from onion_fl.continuum.bundle import load_node, save_node
+    from onion_fl.continual.bundle import load_node, save_node
     from onion_fl.roles.snapshot import checkpoint_edge
 
     edges = {n: e for n, e in federation.edges.items() if runtime.is_hosted(n)}

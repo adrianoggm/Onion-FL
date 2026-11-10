@@ -7,9 +7,9 @@ same federation with ``build_federation``:
 
 - ``sim``: the virtual clock in one process, with the resources and network
   the infrastructure models;
-- ``local``: the wall clock, one process per group on this machine over MQTT
-  or gRPC, with its own resources and no emulated network. ``runtime.mode: real`` is
-  its alias.
+- ``local``: the wall clock, one process per group on this machine over MQTT,
+  gRPC or Flower, with its own resources and no emulated network.
+  ``runtime.mode: real`` is its alias.
 
 An experiment picks one with ``backend``; without it, ``runtime.mode`` does.
 """
@@ -35,6 +35,7 @@ def backend_name(ref: str | dict[str, Any]) -> str:
 class SimPlan:
     scenario: Any
     evaluate: Any = None
+    paused: bool = False  # for the operators to resume (continual.control)
     path: Path | None = None
     faults: Any = None
 
@@ -121,6 +122,7 @@ class SimBackend:
         infrastructure: Any = None,
         assignment: Any = None,
         evaluate: Any = None,
+        paused: bool = False,
     ) -> SimPlan:
         params = self.params
         faults = params if params.restarts or params.joins or params.start_in else None
@@ -129,12 +131,14 @@ class SimBackend:
                 "backend sim: start_in, restarts and joins are for hosts; give "
                 "the experiment an infrastructure"
             )
-        return SimPlan(scenario, evaluate, faults=faults)
+        return SimPlan(scenario, evaluate, paused, faults=faults)
 
     def run(self, plan: SimPlan) -> None:
         from onion_fl.experiment.runner import simulate
 
-        plan.path = simulate(plan.scenario, plan.evaluate, faults=plan.faults)
+        plan.path = simulate(
+            plan.scenario, plan.evaluate, plan.paused, faults=plan.faults
+        )
 
     def collect(self, plan: SimPlan) -> Path:
         if plan.path is None:
@@ -146,13 +150,14 @@ class SimBackend:
     "local",
     title="Local",
     description=(
-        "Reloj de pared, un proceso por grupo en esta máquina, sobre MQTT o gRPC"
+        "Reloj de pared, un proceso por grupo en esta máquina, sobre MQTT, gRPC "
+        "o Flower"
     ),
     explain=(
         "Arranca un proceso `onion_fl node` por coordinador o agregador, con "
-        "sus edges, y los comunica por MQTT o por gRPC (sin broker). Usa los "
-        "recursos de la máquina, sin límites ni red emulada: es la referencia "
-        "de la fidelidad "
+        "sus edges, y los comunica por MQTT, por gRPC (sin broker) o por "
+        "Flower (mensajes de Flower sobre gRPC). Usa los recursos de la "
+        "máquina, sin límites ni red emulada: es la referencia de la fidelidad "
         "funcional. `runtime.mode: real` es su alias."
     ),
 )

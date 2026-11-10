@@ -1,0 +1,480 @@
+{
+  "backend": "emulated",
+  "calibration_id": "5d7d0e7011bf1fd693725bcb85ac61c5abae3d460867169f8909954c1b937cde",
+  "code": {
+    "commit": "bad5145347fbb0726099dd70c69502a284e02fd7",
+    "dirty": false
+  },
+  "created_at": "2026-11-06T02:09:03.848634+00:00",
+  "environment": {
+    "docker": {
+      "docker": "28.3.2",
+      "kernel": "6.6.87.2-microsoft-standard-WSL2",
+      "memory": 16559267840,
+      "ncpu": 24,
+      "os": "Docker Desktop (containerized)"
+    },
+    "image": {
+      "id": "sha256:5434037afae0c765979d353cc2985bd1653989c25054229e4e21bf8297820246",
+      "name": "onionfl-a197-emulated:latest",
+      "pins": {
+        "numpy": "2.4.6",
+        "pandas": "2.3.3",
+        "scikit-learn": "1.9.1",
+        "scipy": "1.17.1",
+        "torch": "2.14.1"
+      }
+    },
+    "machine": {
+      "platform": "Windows-10-10.0.26300-SP0",
+      "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel"
+    }
+  },
+  "infrastructure_id": "da875674ad22d77f7aabcc6d9ac2fe642e9e8be204889668bb4adc5f238df43e",
+  "links": {
+    "field|fog_a": {
+      "bandwidth_down": {
+        "high": 38411632.80865649,
+        "low": 37906741.397019595,
+        "n": 354,
+        "value": 38236861.0827328
+      },
+      "bandwidth_up": {
+        "high": 38411632.80865649,
+        "low": 37906741.397019595,
+        "n": 354,
+        "value": 38236861.0827328
+      },
+      "derived": [
+        "bandwidth_up",
+        "bandwidth_down"
+      ],
+      "latency": {
+        "high": 0.010157194403829048,
+        "low": 0.009855608390004326,
+        "n": 354,
+        "value": 0.010040531843830771
+      },
+      "loss": {
+        "high": 0.06112937143219893,
+        "low": 0.0,
+        "n": 59,
+        "value": 0.0
+      },
+      "pairs": [
+        "cloud-1>field-edge_device-1",
+        "field-edge_device-1>cloud-1",
+        "field-edge_device-1>fog-a",
+        "field-edge_device-1>fog-b",
+        "fog-a>field-edge_device-1",
+        "fog-b>field-edge_device-1"
+      ]
+    },
+    "fog_a|dc": {
+      "bandwidth_down": {
+        "high": 6761390.584339879,
+        "low": 6686610.099166833,
+        "n": 472,
+        "value": 6722916.103245933
+      },
+      "bandwidth_up": {
+        "high": 6643865.624853153,
+        "low": 6471106.971358169,
+        "n": 472,
+        "value": 6591848.727112256
+      },
+      "derived": [],
+      "latency": {
+        "high": 0.040717328488314004,
+        "low": 0.040518755146240426,
+        "n": 472,
+        "value": 0.040588719021166134
+      },
+      "loss": {
+        "high": 0.06112937143219893,
+        "low": 0.0,
+        "n": 59,
+        "value": 0.0
+      },
+      "pairs": [
+        "cloud-1>field-edge_device-1",
+        "cloud-1>fog-a",
+        "field-edge_device-1>cloud-1",
+        "field-edge_device-1>fog-a",
+        "field-edge_device-1>fog-b",
+        "fog-a>cloud-1",
+        "fog-a>field-edge_device-1",
+        "fog-b>field-edge_device-1"
+      ]
+    },
+    "fog_b|dc": {
+      "bandwidth_down": {
+        "high": 7230055.22103141,
+        "low": 7167518.879813954,
+        "n": 236,
+        "value": 7201474.474774105
+      },
+      "bandwidth_up": {
+        "high": 7302687.243036067,
+        "low": 7221475.754596224,
+        "n": 236,
+        "value": 7260798.663723432
+      },
+      "derived": [],
+      "latency": {
+        "high": 0.06063802369308735,
+        "low": 0.06055146619625268,
+        "n": 236,
+        "value": 0.06059314261955108
+      },
+      "loss": {
+        "high": 0.06112937143219893,
+        "low": 0.0,
+        "n": 59,
+        "value": 0.0
+      },
+      "pairs": [
+        "cloud-1>fog-b",
+        "field-edge_device-1>fog-b",
+        "fog-b>cloud-1",
+        "fog-b>field-edge_device-1"
+      ]
+    }
+  },
+  "measurements_sha256": "77ce2216c7491dccbc31e028eea5628019a2735611f215ef7bd8b06307d01076",
+  "notes": [
+    "cloud-1 to itself through the broker: 0.49 ms, the transport's own one-way latency, which the links absorb"
+  ],
+  "profiles": {
+    "cloud_vm": {
+      "aggregate": {
+        "high": 217875960.91548392,
+        "low": 209236039.7441235,
+        "n": 538,
+        "value": 213477185.90843374
+      },
+      "cpus": 2,
+      "memory": 4294967296.0,
+      "train": {}
+    },
+    "edge_device": {
+      "aggregate": null,
+      "cpus": 1,
+      "memory": 2147483648.0,
+      "train": {
+        "0ed95108ec44feea": {
+          "high": 1051.2812482017653,
+          "low": 837.6283741467576,
+          "n": 41,
+          "value": 934.0117577591403
+        },
+        "f81f0235a3520d08": {
+          "high": 838.037295213692,
+          "low": 679.0907036483027,
+          "n": 40,
+          "value": 750.7637434282315
+        }
+      }
+    },
+    "fog_small": {
+      "aggregate": {
+        "high": 213360421.04287705,
+        "low": 207257515.03381166,
+        "n": 1060,
+        "value": 210268450.2276197
+      },
+      "cpus": 1,
+      "memory": 2147483648.0,
+      "train": {}
+    }
+  },
+  "spec": {
+    "aggregate": {
+      "batch": 100,
+      "hosts": [
+        "fog-a",
+        "fog-b",
+        "cloud-1"
+      ],
+      "seconds": 5.0,
+      "updates": [
+        10,
+        20
+      ],
+      "workload": 0
+    },
+    "clients": {
+      "field-edge_device-1": [
+        "swell-3",
+        "swell-4",
+        "swell-5",
+        "swell-6"
+      ],
+      "field-edge_device-2": [
+        "swell-7",
+        "swell-8",
+        "swell-9",
+        "swell-10"
+      ],
+      "field-edge_device-3": [
+        "swell-11",
+        "swell-13",
+        "swell-14",
+        "swell-15"
+      ],
+      "field-edge_device-4": [
+        "swell-16",
+        "swell-17",
+        "swell-20",
+        "swell-21"
+      ],
+      "field-edge_device-5": [
+        "swell-22",
+        "swell-23",
+        "swell-24",
+        "swell-25"
+      ]
+    },
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": "datasets/swell_physiology.yaml",
+          "options": {}
+        }
+      },
+      "placement": {
+        "alpha": 0.0,
+        "name": "mixing"
+      },
+      "roles": {
+        "drop_constant": true,
+        "impute": "mean",
+        "local_val": 0.0,
+        "overrides": {},
+        "scaler": "global",
+        "seed": 0,
+        "subjects_per_client": 1,
+        "test": 0.2,
+        "val": 0.0
+      }
+    },
+    "description": "Training, aggregation and MQTT paths of the small emulated lab.",
+    "emulation": {
+      "broker_image": "eclipse-mosquitto:2",
+      "image": "onionfl-a197-emulated:latest",
+      "max_containers": 64,
+      "project": "onionfl-a197",
+      "ready_timeout": 120.0,
+      "subnet": "10.197.0.0/16"
+    },
+    "hosts": {
+      "cloud-1": "cloud_vm",
+      "field-edge_device-1": "edge_device",
+      "field-edge_device-2": "edge_device",
+      "field-edge_device-3": "edge_device",
+      "field-edge_device-4": "edge_device",
+      "field-edge_device-5": "edge_device",
+      "fog-a": "fog_small",
+      "fog-b": "fog_small"
+    },
+    "infrastructure": "emulated_lab",
+    "lead": 20.0,
+    "links": {
+      "fit_up_to": 10000,
+      "gap": 0.5,
+      "pairs": [
+        [
+          "fog-a",
+          "cloud-1"
+        ],
+        [
+          "fog-b",
+          "cloud-1"
+        ],
+        [
+          "field-edge_device-1",
+          "cloud-1"
+        ],
+        [
+          "field-edge_device-1",
+          "fog-a"
+        ],
+        [
+          "field-edge_device-1",
+          "fog-b"
+        ],
+        [
+          "cloud-1",
+          "cloud-1"
+        ]
+      ],
+      "qos": 1,
+      "repeats": 15,
+      "sizes": [
+        100,
+        1000,
+        5000,
+        10000,
+        30000,
+        100000
+      ],
+      "wait": 30.0
+    },
+    "name": "emulated_lab",
+    "paths": {
+      "cache": "data/cache",
+      "datasets": "datasets",
+      "runs": "runs",
+      "topologies": "topologies"
+    },
+    "seed": 0,
+    "train": {
+      "hosts": [
+        "field-edge_device-1",
+        "field-edge_device-2",
+        "field-edge_device-3",
+        "field-edge_device-4",
+        "field-edge_device-5"
+      ],
+      "jobs": 13,
+      "per_host": 4
+    },
+    "workloads": [
+      {
+        "model": {
+          "adapter_width": 32,
+          "name": "modular_mlp",
+          "trunk_hidden": [
+            16
+          ]
+        },
+        "trainer": {
+          "batch_size": 32,
+          "local_epochs": 5,
+          "lr": 0.01,
+          "name": "standard"
+        }
+      },
+      {
+        "model": {
+          "adapter_width": 64,
+          "name": "modular_mlp",
+          "trunk_hidden": [
+            64,
+            32
+          ]
+        },
+        "trainer": {
+          "batch_size": 32,
+          "local_epochs": 5,
+          "lr": 0.01,
+          "name": "standard"
+        }
+      }
+    ]
+  },
+  "transport": {
+    "loopback_goodput_bps": {
+      "high": 11236045777.828953,
+      "low": 576595046.699083,
+      "n": 59,
+      "value": 1353774970.552193
+    },
+    "loopback_latency_s": {
+      "high": 0.0005401492350187788,
+      "low": 0.0004504613820064471,
+      "n": 59,
+      "value": 0.0004888336593858312
+    }
+  },
+  "workloads": {
+    "0ed95108ec44feea": {
+      "batch_size": 32,
+      "flops_per_sample": 4140.0,
+      "model": {
+        "adapter_width": 32,
+        "name": "modular_mlp",
+        "trunk_hidden": [
+          16
+        ]
+      },
+      "shapes": {
+        "adapter.swell.0.bias": [
+          32
+        ],
+        "adapter.swell.0.weight": [
+          32,
+          3
+        ],
+        "head.stress_binary.bias": [
+          2
+        ],
+        "head.stress_binary.weight": [
+          2,
+          16
+        ],
+        "trunk.0.bias": [
+          16
+        ],
+        "trunk.0.weight": [
+          16,
+          32
+        ]
+      },
+      "trainer": {
+        "batch_size": 32,
+        "local_epochs": 5,
+        "lr": 0.01,
+        "name": "standard"
+      }
+    },
+    "f81f0235a3520d08": {
+      "batch_size": 32,
+      "flops_per_sample": 39372.0,
+      "model": {
+        "adapter_width": 64,
+        "name": "modular_mlp",
+        "trunk_hidden": [
+          64,
+          32
+        ]
+      },
+      "shapes": {
+        "adapter.swell.0.bias": [
+          64
+        ],
+        "adapter.swell.0.weight": [
+          64,
+          3
+        ],
+        "head.stress_binary.bias": [
+          2
+        ],
+        "head.stress_binary.weight": [
+          2,
+          32
+        ],
+        "trunk.0.bias": [
+          64
+        ],
+        "trunk.0.weight": [
+          64,
+          64
+        ],
+        "trunk.3.bias": [
+          32
+        ],
+        "trunk.3.weight": [
+          32,
+          64
+        ]
+      },
+      "trainer": {
+        "batch_size": 32,
+        "local_epochs": 5,
+        "lr": 0.01,
+        "name": "standard"
+      }
+    }
+  }
+}

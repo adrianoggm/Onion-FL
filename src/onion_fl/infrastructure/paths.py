@@ -6,14 +6,30 @@ Two hosts on the same machine talk for free; on the same site, through the
 site's LAN; across sites, along the path of least latency. A path's profile adds
 the latencies, combines the jitters as independent (√Σσ²), takes the narrowest
 bandwidth in each direction and composes the losses as 1 − ∏(1 − pᵢ). A
-one-segment path keeps that segment's profile exactly.
+one-segment path keeps that segment's profile exactly. A host whose profile has
+a ``bandwidth`` reaches the network through its own access segment
+(``host:<host>``), crossed first when it sends and last when it receives.
+
+A path through a broker is two legs, from the sender to the broker and from
+the broker to the receiver, with the hop ``via:<host>`` between them. The
+broker receives a whole message before it forwards it (store and forward), so
+a message is transmitted once per leg: the path's bandwidth is that of its
+legs in series, 1 / Σ(1 / bₗ), each leg's ``bₗ`` its narrowest segment. A
+message through ``fog -> dc -> fog`` crosses the link twice and takes twice
+its transmission time (measured in the calibration of issue #197).
 """
 
 import heapq
 import math
+from collections.abc import Sequence
 from typing import Any
 
-from onion_fl.infrastructure.model import Infrastructure, InfrastructureError
+from onion_fl.infrastructure.calibration import link_fields
+from onion_fl.infrastructure.model import (
+    Infrastructure,
+    InfrastructureError,
+    LinkFields,
+)
 
 LOOPBACK: dict[str, Any] = {
     "latency_s": 0.0,
@@ -48,8 +64,20 @@ def site_path(infra: Infrastructure, src: str, dst: str) -> list[str]:
     raise InfrastructureError(f"no physical path between sites {src!r} and {dst!r}")
 
 
-Hop = tuple[str, bool]  # a segment ("lan:<site>" or "link:<a>|<b>") and whether
-# it is crossed from between[0] to between[1]
+Hop = tuple[str, bool]  # a segment ("lan:<site>", "link:<a>|<b>" or
+# "host:<host>") and whether it is crossed from between[0] to between[1] (for a
+# host's access, from the host out); or the broker ("via:<host>")
+
+
+class _StoreAndForward:
+    """The fields of the broker between two legs: nothing but the break."""
+
+    latency = jitter = loss = 0.0
+    distribution = "fixed"
+    bandwidth_up = bandwidth_down = None
+
+
+STORE = _StoreAndForward()
 
 
 def hops(infra: Infrastructure, src: str, dst: str) -> tuple[list[str], list[Hop]]:
@@ -62,8 +90,10 @@ def hops(infra: Infrastructure, src: str, dst: str) -> tuple[list[str], list[Hop
     if src == dst:
         return [src], []
     (a, _), (b, _) = hosts[src], hosts[dst]
+    first = [(f"host:{src}", True)] if infra.profile_of(src).bandwidth else []
+    last = [(f"host:{dst}", False)] if infra.profile_of(dst).bandwidth else []
     if a == b:
-        return [a], [(f"lan:{a}", True)]
+        return [a], [*first, (f"lan:{a}", True), *last]
     sites = site_path(infra, a, b)
     links = {frozenset(link.between): link for link in infra.network.links}
     crossed = []
@@ -72,22 +102,30 @@ def hops(infra: Infrastructure, src: str, dst: str) -> tuple[list[str], list[Hop
         crossed.append(
             (f"link:{link.between[0]}|{link.between[1]}", link.between[0] == x)
         )
-    return sites, crossed
+    return sites, [*first, *crossed, *last]
 
 
 def segment(infra: Infrastructure, key: str) -> Any:
-    """The fields of a segment as the infrastructure declares them."""
+    """The fields of a segment as the simulation sees them: as the
+    infrastructure declares them, or as calibrated for a link that cites a
+    calibration."""
     kind, _, name = key.partition(":")
+    if kind == "via":
+        return STORE
     if kind == "lan":
         return infra.sites[name].lan
+    if kind == "host":
+        return LinkFields(bandwidth=infra.profile_of(name).bandwidth)
     a, _, b = name.partition("|")
-    return next(link for link in infra.network.links if link.between == (a, b))
+    link = next(link for link in infra.network.links if link.between == (a, b))
+    return link_fields(infra, link)
 
 
 def route(
     infra: Infrastructure, src: str, dst: str, via: str | None = None
 ) -> tuple[list[str], list[Hop]]:
-    """:func:`hops`, through host ``via`` (a broker) when given."""
+    """:func:`hops`, through host ``via`` (a broker) when given: its two legs,
+    with ``via:<host>`` between them."""
     if via is None:
         return hops(infra, src, dst)
     first, second = hops(infra, src, via), hops(infra, via, dst)
@@ -96,7 +134,20 @@ def route(
         if first[0][-1:] == second[0][:1]
         else first[0] + second[0]
     )
-    return path, first[1] + second[1]
+    return path, [*first[1], (f"via:{via}", True), *second[1]]
+
+
+def legs(items: Sequence[tuple[Any, bool]]) -> list[list[tuple[Any, bool]]]:
+    """``items`` (hops, or segments with their direction) split at the broker;
+    a leg crossing nothing is left out."""
+    out: list[list[tuple[Any, bool]]] = [[]]
+    for item in items:
+        here = item[0]
+        if here is STORE or (isinstance(here, str) and here.startswith("via:")):
+            out.append([])
+        else:
+            out[-1].append(item)
+    return [leg for leg in out if leg]
 
 
 def effective(
@@ -110,17 +161,26 @@ def effective(
 
 
 def combine(segments: list[tuple[Any, bool]]) -> dict[str, Any]:
-    """The profile of segments crossed in a row; none at all is the loopback."""
+    """The profile of segments crossed in a row, with ``STORE`` between the
+    legs of a path through a broker; none at all is the loopback."""
+    parts = legs(segments)
+    segments = [x for leg in parts for x in leg]
     if not segments:
         return dict(LOOPBACK)
 
     def bandwidth(up: bool) -> float | None:
-        rates = [
-            s.bandwidth_up if forward == up else s.bandwidth_down
-            for s, forward in segments
-        ]
-        rates = [r for r in rates if r is not None]
-        return min(rates) if rates else None
+        narrowest = []
+        for leg in parts:
+            rates = [
+                s.bandwidth_up if forward == up else s.bandwidth_down
+                for s, forward in leg
+            ]
+            rates = [r for r in rates if r is not None]
+            if rates:
+                narrowest.append(min(rates))
+        if len(narrowest) < 2:  # one leg: exactly its narrowest segment
+            return narrowest[0] if narrowest else None
+        return 1.0 / sum(1.0 / r for r in narrowest)
 
     if len(segments) == 1:  # exactly the segment: no float drift in the loss
         only = segments[0][0]

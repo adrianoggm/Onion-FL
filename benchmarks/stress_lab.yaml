@@ -1,0 +1,43 @@
+# onion-bench-stress (issue #244), lab track: SWELL-KW and WESAD, the pair of
+# the existing baselines (techniques_*), with their roles, so the test subjects
+# are theirs (SWELL 1, 2, 12, 18, 19; WESAD S6, S7, S10). SWELL has no E4: the
+# features differ, there is no shared adapter, and this track never shares a
+# table with the E4 track (results/stress_e4/INDEX.md).
+#
+# Learning rates come from benchmarks/stress_lab_select.yaml (validation only):
+# FedAvg 0.1, SCAFFOLD 0.1, FedDyn 0.1, Ditto 0.1, FedRep 0.3, FedBABU 0.3.
+#
+#   onion_fl run benchmarks/stress_lab.yaml --workers 6
+name: stress_lab
+description: onion-bench-stress, pista de laboratorio (SWELL y WESAD). FedAvg plano y jerárquico, personalización y deriva.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, local_val: 0.2, local_val_split: class_tail, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: &sgd {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge:
+    every: 20
+    models: [received, local, personal, finetuned]
+    finetune: {name: standard, optimizer: sgd, local_epochs: 2, batch_size: 32, lr: 0.03}
+  aggregators: {every: 20}
+  global: {every: 1}
+seeds: [0, 1, 2, 3, 4]
+sweep:
+  topology,learning.sharing,learning.trainer,learning.server_optimizer:
+    - [four_fogs_swell_wesad_lossless, fedavg, {<<: *sgd, name: standard, lr: 0.1}, replace]  # reference
+    - [swell_wesad_flat_lossless, fedavg, {<<: *sgd, name: standard, lr: 0.1}, replace]
+    - [four_fogs_swell_wesad_lossless, fedavg, {<<: *sgd, name: ditto, lr: 0.1}, replace]
+    - [four_fogs_swell_wesad_lossless, fedper, {<<: *sgd, name: fedrep, lr: 0.3}, replace]
+    - [four_fogs_swell_wesad_lossless, fedavg, {<<: *sgd, name: fedbabu, lr: 0.3}, replace]
+    - [four_fogs_swell_wesad_lossless, fedavg, {<<: *sgd, name: scaffold, lr: 0.1}, scaffold]
+    - [four_fogs_swell_wesad_lossless, fedavg, {<<: *sgd, name: feddyn, lr: 0.1}, feddyn]
