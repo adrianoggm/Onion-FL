@@ -6,6 +6,7 @@ needs the real datasets under ``data/`` and is skipped when they are absent.
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
 import numpy as np
@@ -21,7 +22,8 @@ def descriptor(name: str):
 
 
 @pytest.mark.parametrize(
-    "name", ["swell", "sweet", "wesad", "wesad_e4", "physionet_e4", "femnist"]
+    "name",
+    ["swell", "sweet", "wesad", "wesad_e4", "physionet_e4", "femnist", "heart_disease"],
 )
 def test_descriptors_are_valid(name: str) -> None:
     spec = descriptor(name)
@@ -306,6 +308,60 @@ def test_femnist_reads_one_subject_per_declared_writer() -> None:
         assert data.X.min() >= 0 and data.X.max() <= 1, data.subject
     # No class is a near-constant answer: the majority is '1' with under 6%.
     assert np.bincount(labels.astype(int)).max() / len(labels) < 0.06
+
+
+# Fed-Heart-Disease (FLamby): train/test per center, from its README.
+FLAMBY_COUNTS = {
+    "cleveland": (199, 104),
+    "hungarian": (172, 89),
+    "switzerland": (30, 16),
+    "va": (85, 45),
+}
+FLAMBY_FEATURES = [
+    "age", "sex", "trestbps", "chol", "fbs", "thalach", "exang", "oldpeak",
+    "cp_2", "cp_3", "cp_4", "restecg_1", "restecg_2",
+]  # fmt: skip
+
+
+@pytest.mark.skipif(
+    not Path("data/HeartDisease/flamby").exists(),
+    reason="data/HeartDisease/flamby not available",
+)
+def test_heart_disease_has_flambys_split_per_center() -> None:
+    subjects = {s.subject: s for s in ingest(descriptor("heart_disease"))}
+
+    expected = {
+        name: n
+        for center, (train, test) in FLAMBY_COUNTS.items()
+        for name, n in ((center, train), (f"{center}_test", test))
+    }
+    assert {name: s.n_samples for name, s in subjects.items()} == expected
+    assert sum(expected.values()) == 740
+    for data in subjects.values():
+        assert data.feature_names == FLAMBY_FEATURES  # never the center
+        assert data.task == "heart_disease" and data.n_classes == 2
+    # FLamby's labels: Switzerland trains on disease only.
+    assert list(subjects["switzerland"].class_counts) == [0, 30]
+    assert list(subjects["cleveland"].class_counts) == [108, 91]
+
+
+@pytest.mark.skipif(
+    not Path("data/HeartDisease/raw").exists(),
+    reason="data/HeartDisease/raw not available",
+)
+def test_heart_disease_script_reproduces_flambys_counts() -> None:
+    spec = importlib.util.spec_from_file_location(
+        "heart_disease_flamby", "scripts/heart_disease_flamby.py"
+    )
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+
+    for center, (train, test) in FLAMBY_COUNTS.items():
+        df = script.read_center(Path(f"data/HeartDisease/raw/processed.{center}.data"))
+        held = script.split(df)
+        assert (int((~held).sum()), int(held.sum())) == (train, test), center
+        table = script.one_hot(df)
+        assert list(table.columns) == [*FLAMBY_FEATURES, "num"]
 
 
 # --- per-row time on the real recordings (continuum C3) ----------------------------
