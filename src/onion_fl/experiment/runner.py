@@ -28,6 +28,7 @@ from onion_fl.continuum.memory import NoMemory, memories
 from onion_fl.continuum.pace import Continuum
 from onion_fl.continuum.promotion import promotions
 from onion_fl.continuum.triggers import drift_detectors, triggers
+from onion_fl.continuum.unlabelled import NoObjective, objectives
 from onion_fl.core.context import node_rng
 from onion_fl.core.topology import Topology, load_topology, parse_topology
 from onion_fl.data.cache import load_prepared, prepare
@@ -511,7 +512,7 @@ def _restore_parts(
             return restore.server_state if is_aux(rest) else restore.model
         if part in ("zone", "previous", "model"):
             return restore.model
-        if part in ("replay", "stream"):
+        if part in ("replay", "stream", "unlabelled"):
             return restore.edge_state
         return restore.server_state if part == "server" else True
 
@@ -647,6 +648,13 @@ def _check_learning(config: ExperimentConfig, state: Mapping[str, Any]) -> None:
             f"learning.trainer: {name} contrasts with the global model's features, "
             f"but sharing {policy.name!r} keeps {features} on the edge, so the "
             "global ones never arrive; use fedavg, fedper or zone"
+        )
+    unlabelled = config.unlabelled is not None and _name(config.unlabelled) != "none"
+    if unlabelled and not getattr(trainer, "takes_unlabelled", False):
+        raise ConfigError(
+            f"unlabelled: trainer {name} runs its own training loops, which add "
+            "no term for unlabelled rows; use standard, fedprox, fedbabu, "
+            "scaffold, fednova, feddyn or moon"
         )
     topology = resolve_topology(config)
     if getattr(trainer, "sends_aux", False):
@@ -932,6 +940,17 @@ def _replay(scenario: Scenario, edge: str) -> dict[str, Any]:
     return {"replay": memory, "replay_ratio": continual.replay_ratio}
 
 
+def _unlabelled(scenario: Scenario) -> dict[str, Any]:
+    """An edge's own objective on its unlabelled rows; none runs as C3/C4 do."""
+    ref = scenario.config.unlabelled
+    objective = None if ref is None else create(objectives, ref)
+    return (
+        {}
+        if objective is None or isinstance(objective, NoObjective)
+        else {"unlabelled": objective}
+    )
+
+
 def edge_specs(
     scenario: Scenario, topology: Topology, split: DataSplit, placement: Placement
 ) -> tuple[dict[str, list[EdgeSpec]], dict[str, Any]]:
@@ -979,6 +998,7 @@ def edge_specs(
                 ),
                 stream=streams.get(client.id),
                 **_replay(scenario, client.id),
+                **_unlabelled(scenario),
                 **device,
             )
             for client in clients

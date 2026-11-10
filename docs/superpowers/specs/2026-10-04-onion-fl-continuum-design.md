@@ -288,6 +288,15 @@ unlabelled:
   - `pseudo_labels_seen`, `pseudo_labels_accepted`, `acceptance_rate` y `confidence`;
   - `pseudo_label_accuracy`, solo en simulación, con la etiqueta oculta.
 - **Auditoría.** Cada pseudoetiqueta guarda `pseudo_label`, `confidence` y `generated_by_version`, para saber después qué champion generó una etiqueta errónea.
+- **Decisiones de C5** (#160; el plan, `docs/superpowers/plans/2026-10-30-continuum-c5-unlabelled.md`, da el detalle):
+  - **El pool.** Filas llegadas (histórico incluido, con el límite de `stream.window`) cuya etiqueta aún no ha llegado y que ningún entrenamiento con éxito ha usado sin etiqueta. Una fila cuya etiqueta llega después entrena igualmente como etiquetada.
+    - Cada fila del pool se mira una vez: cuenta como usada, con su ronda, cuando el entrenamiento termina con pesos finitos, aunque `pseudo_label` la rechace. Una ronda fallida no gasta su pool.
+  - **Sin etiquetas, sin entrenamiento.** Un edge sin filas etiquetadas nuevas sigue ocioso, como en C3; su pool espera.
+  - **Qué recibe el entrenador.** El objetivo solo ve las features del pool, nunca `y`. `fit` las mira una vez con el modelo recibido, antes de entrenar; después cada lote etiquetado suma `term` sobre un trozo del pool, y cada época reparte una permutación nueva del pool en tantos trozos como lotes. La pérdida que se informa sigue siendo la supervisada.
+  - **Entrenadores.** El gancho está en `Standard.train` (y lo heredan FedProx, FedBABU, SCAFFOLD, FedNova, FedDyn y MOON). Ditto, APFL y FedRep tienen sus propios bucles y se rechazan, en la configuración y al construir el edge.
+  - **Peso y memoria.** El peso de agregación sigue siendo el de las filas etiquetadas nuevas. Las filas pseudoetiquetadas no entran en la memoria de replay, que repite con `stream.data.y`: para ellas sería la etiqueta oculta. Queda para después, con la etiqueta guardada.
+  - **`consistency`.** El ruido lo saca torch dentro del entrenamiento sembrado, así que la misma semilla da el mismo modelo. No genera pseudoetiquetas: su tasa de aceptación es 1 y no tiene `pseudo_label_accuracy`.
+  - **Bundle.** `generated_by_version` es la ronda cuyo modelo recibido generó la etiqueta. Las filas usadas y la auditoría van en `unlabelled/*`, con `edge_state`; restaurarlas espera, como la memoria, a que un stream pueda continuar.
 
 ## 10. Disparadores y federación continua (C6)
 
