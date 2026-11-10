@@ -33,6 +33,7 @@ def descriptor(name: str):
         "stress_predict",
         "femnist",
         "heart_disease",
+        "cifar10",
     ],
 )
 def test_descriptors_are_valid(name: str) -> None:
@@ -58,6 +59,9 @@ def test_descriptors_are_valid(name: str) -> None:
         ("physionet_e4", {"label": "three_class"}),
         ("nurse_stress", {"label": "high", "signals": "EDA,TEMP,HR"}),
         ("stress_predict", {"signals": "BVP,EDA", "window_seconds": 30}),
+        ("cifar10", {"partition": "iid"}),
+        ("cifar10", {"partition": "label_skew", "k": 3, "clients": 20}),
+        ("cifar10", {"alpha": 0.1, "partition_seed": 4}),
     ],
 )
 def test_descriptor_options_are_valid(name: str, options: dict) -> None:
@@ -484,6 +488,45 @@ def test_heart_disease_script_reproduces_flambys_counts() -> None:
         assert (int((~held).sum()), int(held.sum())) == (train, test), center
         table = script.one_hot(df)
         assert list(table.columns) == [*FLAMBY_FEATURES, "num"]
+
+
+CIFAR10 = Path("data/CIFAR10/cifar-10-batches-py")
+
+
+@pytest.mark.skipif(not CIFAR10.exists(), reason="data/CIFAR10 not available")
+@pytest.mark.parametrize("partition", ["iid", "dirichlet_label", "label_skew"])
+def test_cifar10_reads_the_training_batches_into_clients_and_the_official_test(
+    partition: str,
+) -> None:
+    subjects = {
+        s.subject: s for s in ingest(descriptor("cifar10"), {"partition": partition})
+    }
+
+    assert sorted(subjects) == [f"client_{i}" for i in range(10)] + ["test"]
+    test = subjects.pop("test")
+    assert test.n_samples == 10000
+    assert np.bincount(test.y.astype(int)).tolist() == [1000] * 10
+    labels = np.concatenate([s.y for s in subjects.values()])
+    if partition != "label_skew":  # k=2 of 10 classes may leave one out
+        assert len(labels) == 50000
+        assert np.bincount(labels.astype(int)).tolist() == [5000] * 10
+    for data in [test, *subjects.values()]:
+        assert data.n_classes == 10 and data.task == "object"
+        assert data.feature_names == [f"x_{i}" for i in range(3072)]  # no batch
+        assert data.X.min() >= 0 and data.X.max() <= 1, data.subject
+    sizes = [s.n_samples for s in subjects.values()]
+    if partition == "iid":
+        assert sizes == [5000] * 10
+
+
+@pytest.mark.skipif(not CIFAR10.exists(), reason="data/CIFAR10 not available")
+def test_cifar10_training_and_test_images_do_not_overlap() -> None:
+    subjects = ingest(descriptor("cifar10"), {"partition": "iid"})
+    test = {s.subject: s for s in subjects}["test"]
+    train = np.concatenate([s.X for s in subjects if s.subject != "test"])
+
+    seen = {row.tobytes() for row in train}
+    assert sum(row.tobytes() in seen for row in test.X) == 0
 
 
 # --- per-row time on the real recordings (continuum C3) ----------------------------

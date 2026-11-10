@@ -1,0 +1,51 @@
+# FedAvg on CIFAR-10 with modular_mlp (issue #247): the NIID-Bench setting
+# (Li et al., ICDE 2022) of 10 synthetic clients, all of them in every round,
+# under one server, with the partition swept between Dir(0.5) and IID. The
+# root takes evaluators only, so the clients hang from one fedavg fog with
+# quorum 1.0 on lossless links: a tree of fedavg is a flat FedAvg. The
+# partition has its own seed (partition_seed 0), so the three training seeds
+# see the same clients. The test is the official test batch (10,000 images),
+# reserved by the override; the 3,072 pixels are standardised with the
+# training clients' statistics.
+#
+# NIID-Bench's schedule: 50 rounds of 10 local epochs, batch 64, SGD with lr
+# 0.01 (NIID-Bench adds momentum 0.9, which the standard trainer lacks). It
+# trains a simple CNN, which needs torch_module presets (#245); this MLP is a
+# stand-in, not the reproduction. Set before the runs, not tuned.
+#
+#   onion_fl run experiments/cifar10_mlp.yaml --workers 6
+name: cifar10_mlp
+description: FedAvg con MLP en CIFAR-10, 10 clientes sintéticos (Dir(0,5) e IID) y el test oficial.
+topology:
+  name: cifar10_one_server
+  levels: [global, fog, edge]
+  root: {id: cloud, aggregator: fedavg, server_optimizer: replace}
+  fog:
+    defaults:
+      aggregator: fedavg
+      quorum: 1.0
+      link_up: {transport: mqtt, codec: npz, profile: lan}
+    nodes:
+      - {id: server}
+  edge:
+    link_up: {transport: mqtt, codec: npz, profile: lan}
+data:
+  datasets:
+    cifar10: {options: {partition: dirichlet_label, alpha: 0.5, clients: 10}}
+  roles:
+    seed: 0
+    scaler: global
+    overrides:
+      cifar10: {test: [test], val: []}
+learning:
+  model: {name: modular_mlp, adapter_width: 256, trunk_hidden: [128], dropout: 0.0}
+  sharing: fedavg
+  trainer: {name: standard, local_epochs: 10, batch_size: 64, lr: 0.01, optimizer: sgd}
+  init: random
+rounds: 50
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  global: {every: 1}
+seeds: [0, 1, 2]
+sweep:
+  data.datasets.cifar10.options.partition: [dirichlet_label, iid]

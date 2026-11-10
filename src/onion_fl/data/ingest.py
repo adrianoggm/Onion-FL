@@ -44,6 +44,7 @@ from pydantic import (
 
 from onion_fl.core.registry import Registry
 from onion_fl.data.contract import DataError, SubjectData, natural_key
+from onion_fl.data.partition import partition_labels
 from onion_fl.learning.model import NAME
 
 
@@ -675,6 +676,95 @@ class LeafJsonReader:
         return frame.assign(
             user=pd.Series(users, dtype=object), y=np.concatenate(labels)
         )
+
+
+def _cifar_array(subtype: Any, shape: Any, dtype: Any) -> np.ndarray:
+    if subtype is not np.ndarray:
+        raise pickle.UnpicklingError(f"array subtype {subtype!r} is not allowed")
+    return np.ndarray.__new__(np.ndarray, shape, _cifar_dtype(dtype))
+
+
+def _cifar_dtype(name: Any, align: Any = False, copy: Any = False) -> np.dtype:
+    if isinstance(name, bytes):
+        name = name.decode("latin1")
+    dtype = np.dtype(name, align=bool(align), copy=bool(copy))
+    if dtype.hasobject:
+        raise pickle.UnpicklingError("object arrays are not allowed")
+    return dtype
+
+
+def _latin1(text: Any, encoding: Any = "latin1") -> bytes:
+    # How Python 3 writes bytes at protocol 2: _codecs.encode(str, "latin1").
+    if not isinstance(text, str) or encoding not in ("latin1", "latin-1"):
+        raise pickle.UnpicklingError("only latin1 text can become bytes")
+    return text.encode("latin1")
+
+
+class _CifarUnpickler(pickle.Unpickler):
+    """Only plain values and numeric numpy arrays: nothing in the file runs code.
+
+    The batches are a dict of bytes, lists and one uint8 array; the array is
+    rebuilt by numpy's ``_reconstruct`` and ``dtype``, here replaced by checked
+    versions that refuse any subtype but ``ndarray`` and any object dtype.
+    """
+
+    SAFE = {
+        ("numpy.core.multiarray", "_reconstruct"): _cifar_array,
+        ("numpy._core.multiarray", "_reconstruct"): _cifar_array,
+        ("numpy", "ndarray"): np.ndarray,
+        ("numpy", "dtype"): _cifar_dtype,
+        ("_codecs", "encode"): _latin1,
+    }
+
+    def find_class(self, module: str, name: str) -> Any:
+        try:
+            return self.SAFE[(module, name)]
+        except KeyError:
+            raise pickle.UnpicklingError(f"{module}.{name} is not allowed") from None
+
+    def persistent_load(self, pid: Any) -> Any:
+        raise pickle.UnpicklingError("persistent ids are not allowed")
+
+
+CIFAR_PIXELS = 3 * 32 * 32
+
+
+@readers.register(
+    "cifar_pickle",
+    title="CIFAR (Python)",
+    description="Lote de la versión Python de CIFAR-10: una fila por imagen, 3072 píxeles.",
+    explain=(
+        "Los píxeles se leen en [0, 1] como x_0…x_3071 en el orden del fichero "
+        "(1024 rojos, 1024 verdes, 1024 azules, por filas); la clase queda en y y "
+        "el nombre del lote (data_batch_1, test_batch…) en batch. Se lee sin "
+        "ejecutar código del fichero."
+    ),
+)
+class CifarPickleReader:
+    """One batch of the CIFAR-10 python version (Krizhevsky, 2009)."""
+
+    def read(self, path: Path) -> pd.DataFrame:
+        with open(path, "rb") as handle:
+            try:
+                batch = _CifarUnpickler(handle, encoding="bytes").load()
+            except (pickle.UnpicklingError, EOFError, ValueError) as error:
+                raise DataError(f"{path}: not a CIFAR batch: {error}") from None
+        if not isinstance(batch, dict) or not {b"data", b"labels"} <= set(batch):
+            raise DataError(f"{path}: a CIFAR batch is a dict with data and labels")
+        pixels, labels = batch[b"data"], np.asarray(batch[b"labels"], dtype=np.int64)
+        if (
+            not isinstance(pixels, np.ndarray)
+            or pixels.dtype != np.uint8
+            or pixels.shape != (len(labels), CIFAR_PIXELS)
+        ):
+            raise DataError(
+                f"{path}: data must be uint8 of shape ({len(labels)}, {CIFAR_PIXELS})"
+            )
+        frame = pd.DataFrame(
+            pixels.astype(np.float32) / 255,
+            columns=[f"x_{i}" for i in range(CIFAR_PIXELS)],
+        )
+        return frame.assign(y=labels, batch=path.stem)
 
 
 def source_files(source: SourceSpec, root: Path) -> list[tuple[Path, str | None]]:
@@ -1424,6 +1514,98 @@ class LabelStep:
         return df.assign(label=rule.apply(df[rule.column]))
 
 
+class TestRows(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    column: str = Field(description="Columna que marca la partición oficial")
+    values: list[str] = Field(
+        min_length=1, description="Valores de esa columna que son el test oficial"
+    )
+
+
+class PartitionParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scheme: Literal["iid", "dirichlet_label", "label_skew"] = Field(
+        description="iid, dirichlet_label (Dir(α) por clase) o label_skew (k clases)"
+    )
+    clients: PositiveInt = Field(description="Número de clientes (sujetos)")
+    alpha: PositiveFloat | None = Field(
+        None, description="Concentración α de dirichlet_label"
+    )
+    k: PositiveInt | None = Field(None, description="Clases por cliente de label_skew")
+    seed: int = Field(
+        0, description="Semilla de la partición, aparte de la del entrenamiento"
+    )
+    min_size: PositiveInt = Field(
+        10, description="Filas mínimas por cliente en dirichlet_label"
+    )
+    test: TestRows | None = Field(
+        None, description="Filas del test oficial: un sujeto aparte, sin partir"
+    )
+    test_subject: str = "test"
+    prefix: str = Field("client_", description="Prefijo de los sujetos cliente")
+
+    @model_validator(mode="after")
+    def _parameter(self) -> PartitionParams:
+        if (self.scheme == "dirichlet_label") != (self.alpha is not None):
+            raise ValueError("alpha goes with dirichlet_label, and only with it")
+        if (self.scheme == "label_skew") != (self.k is not None):
+            raise ValueError("k goes with label_skew, and only with it")
+        if self.test_subject.startswith(self.prefix):
+            raise ValueError("test_subject cannot start with the client prefix")
+        return self
+
+
+@steps.register(
+    "partition",
+    title="Partición en clientes",
+    description="Reparte un dataset sin sujetos en clientes: iid, Dir(α) por clase o k clases.",
+    params=PartitionParams,
+    explain=(
+        "Como NIID-Bench (Li et al., 2022). La partición es sintética, los datos "
+        "no: depende solo de las etiquetas, del esquema, de α o k y de su semilla, "
+        "así que es idéntica en todos los escenarios. Las filas del test oficial "
+        "forman un sujeto aparte, que data.roles.overrides reserva como test. "
+        "Trabaja sobre la tabla entera, no fichero a fichero."
+    ),
+)
+class PartitionStep:
+    whole_table = True  # ingest joins the files before this step
+
+    def __init__(self, **params: Any) -> None:
+        self.p = PartitionParams.model_validate(params)
+
+    def apply(self, df: pd.DataFrame, ctx: IngestContext | None) -> pd.DataFrame:
+        p = self.p
+        if "label" not in df.columns or ctx is None or ctx.n_classes is None:
+            raise DataError("partition splits by label: put a label step before it")
+        if "subject" in df.columns:
+            raise DataError("partition makes the subjects: drop the subject step")
+        test = np.zeros(len(df), dtype=bool)
+        if p.test is not None:
+            _require(df, [p.test.column], "partition")
+            test = df[p.test.column].astype(str).isin(p.test.values).to_numpy()
+            ctx.meta_columns.add(p.test.column)
+        train = np.flatnonzero(~test & df["label"].notna().to_numpy())
+        parts = partition_labels(
+            df["label"].to_numpy()[train],
+            p.scheme,
+            p.clients,
+            n_classes=ctx.n_classes,
+            seed=p.seed,
+            alpha=p.alpha,
+            k=p.k,
+            min_size=p.min_size,
+        )
+        order = np.concatenate([train[part] for part in parts] + [np.flatnonzero(test)])
+        names = np.concatenate(
+            [np.repeat(f"{p.prefix}{i}", len(part)) for i, part in enumerate(parts)]
+            + [np.repeat(p.test_subject, int(test.sum()))]
+        ).astype(object)
+        return df.iloc[order].reset_index(drop=True).assign(subject=names)
+
+
 class FeaturesParams(BaseModel):
     include: list[str] | None = Field(None, description="Lista exacta de features")
     exclude: list[str] = Field(default_factory=list)
@@ -1581,10 +1763,16 @@ def ingest(
     ctx = IngestContext(
         root=Path(_fill(str(root or spec.root), resolved)), options=resolved
     )
+    # Steps up to the first whole-table one (partition) run file by file; that
+    # one and the rest run once on the files joined.
+    cut = next(
+        (i for i, (_, s) in enumerate(active) if getattr(s, "whole_table", False)),
+        len(active),
+    )
     frames, first = [], None
     for path, subject in source_files(source, ctx.root):
         df = read_file(reader, source, path, subject)
-        for _, step in active:
+        for _, step in active[:cut]:
             df = step.apply(df, ctx)
         if first is None:
             first = (path, list(df.columns))
@@ -1600,6 +1788,9 @@ def ingest(
     # session without labelled windows) are left out of the concatenation,
     # which would otherwise warn about them.
     df = pd.concat([f for f in frames if len(f)] or frames[:1], ignore_index=True)
+    del frames
+    for _, step in active[cut:]:
+        df = step.apply(df, ctx)
     ran = {name for name, _ in active}
 
     if "subject" not in df.columns:
