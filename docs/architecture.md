@@ -312,9 +312,12 @@ infrastructure:
 **Diagnostics** run at each aggregator when it closes a round:
 - divergence, conflict between datasets, drift and zone distance;
 - participation and fairness;
+- contribution: each child's leave-one-out and Shapley value per group (exact up to `exact_max` children, Monte Carlo permutations beyond), in the game v(S) = ‖Σ_{i∈S} Δ_i/‖Δ_i‖‖ − √|S|. It uses only the updates the aggregator already holds: an aggregator has no data, and scoring coalitions on its zone evaluators would cost a round trip per coalition. A child that agrees with the others scores high, an orthogonal one (noise) near 0 and an opposed one below 0; size and samples do not count. Prometheus labels it by `child`;
 - communication, derived by the run recorder from the message events.
 
 **Analysis and report.** `load_runs(...).metrics(...)` gives one row per event with every tag as a column. `.compare(level, metric, by, over="seed")` combines the nodes of a level inside each run (mean, min, max and spread), then the runs over the seeds, with a 95% t interval per round. `report()` and `onion_fl report` render it as HTML. **Time to target** (spec N5): `.time_to_target(level, metric, target)` gives, per run, the first `t_virtual` at which the level's per-round mean reaches a threshold fixed before running (`>=`, or `<=` with `lower=True`), and censors the runs that never reach it at their duration (last event), flagged `censored`. `.compare(..., target=x)` summarises it per group: runs reached and censored, and the mean time with a seeded 95% percentile bootstrap interval; censored runs count at their duration, so the mean is then a lower bound.
+
+**Explainability.** `onion_fl explain <run folder>` rebuilds the run's scenario from `run.json`, loads `model.npz` and runs an `explainer` plugin on the `val` subjects of each dataset whose groups the global model holds (the `test` subjects stay the global evaluation; a dataset with local groups is listed as skipped). `permutation` gives each feature's mean drop in a metric when its column is shuffled within each subject, with the spread over `repeats`. The result, `explain.json`, carries the run's identifiers; `run_hash` does not cover it.
 
 **Noise ceiling.** `experiment.ceiling` reruns every swept scenario in R replicas (new seeds and, optionally, a redrawn `search`) and scores each from the root's last score in `summary.json`, the best trial of a search winning its cell. Over every ordered pair of replicas `(a, b)` it reports whether they pick the same winner (top-1) and the selection regret: the best score of `b` minus `b`'s score of `a`'s winner. A decision metric (I1 §12) only counts above this ceiling.
 
@@ -397,7 +400,8 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | trainer | `standard`, `fedprox`, `ditto`, `apfl`, `fedrep`, `fedbabu`, `scaffold`, `fednova`, `feddyn`, `moon`, `stub` |
 | init | `random`, `checkpoint`, `run` |
 | metric | `loss`, `accuracy`, `macro_f1`, `recall_per_class`, `confusion_matrix` |
-| diagnostic | `divergence`, `dataset_conflict`, `drift`, `participation`, `fairness` |
+| diagnostic | `divergence`, `dataset_conflict`, `drift`, `participation`, `fairness`, `contribution` |
+| explainer | `permutation` |
 | participation | `all`, `fraction`, `fastest_k`, `deadline_feasible`, `utility` |
 | staleness | `drop`, `next_round` |
 | stale_weighting | `constant`, `polynomial` |

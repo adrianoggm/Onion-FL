@@ -79,6 +79,7 @@ from onion_fl.learning.privacy import privacies
 from onion_fl.learning.sharing import sharing
 from onion_fl.learning.trainers import inits, trainers
 from onion_fl.observability.diagnostics import diagnostics
+from onion_fl.observability.explain import explainers
 from onion_fl.roles.policies import (
     create,
     participations,
@@ -108,6 +109,7 @@ REGISTRIES: dict[str, Registry] = {
     "init": inits,
     "metric": metrics,
     "diagnostic": diagnostics,
+    "explainer": explainers,
     "participation": participations,
     "staleness": stalenesses,
     "stale_weighting": stale_weightings,

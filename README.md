@@ -95,6 +95,7 @@ onion_fl plan experiments/mix_ab.yaml         # composition per fog and groups p
 onion_fl run experiments/mix_ab.yaml --workers 3
 onion_fl report experiments/mix_ab.yaml --by topology_id --by scenario
 onion_fl baseline experiments/mix_ab.yaml     # LR, RF, XGBoost on the same test subjects
+onion_fl explain runs/<run_id>                # feature importance on val subjects
 ```
 
 For a real run over MQTT, start the stack (`just docker-up`, [docker/README.md](docker/README.md)), point the links at the broker and run `onion_fl run <experiment> --backend local` (`--mode real` is its alias). Links with `transport: grpc` need no broker (`uv pip install -e ".[grpc]"`, already in dev), and neither do links with `transport: flower`, which carry each frame as a Flower message (`uv pip install -e ".[flower]"`, Flower >= 1.21; not in dev).
@@ -419,6 +420,19 @@ Source: [results/model_families/](results/model_families/INDEX.md), `topology_id
 
 - **The two families tie on this benchmark.** The transformer varies much more between seeds on SWELL (0.426 to 0.613).
 - **The transformer sends 60% fewer bytes, but costs 2.7 times as much compute.** Only the learning rate was tuned per family.
+
+### New framework: contribution scores under noisy edges
+
+Source: [results/contribution_noise/](results/contribution_noise/INDEX.md), `topology_id` `ff55fe4d…`, commit `f257ac4`. It is `experiments/contribution_noise.yaml`: SWELL + WESAD on four fogs at α = 0.5, FedAvg, 10 rounds, 5 seeds; in each dataset a seeded 20% of the edges flip their labels or send Gaussian noise (σ = 0.01). The fogs' `contribution` diagnostic is compared against the known noisy edges: AUC = P(honest edge scores above a noisy one) within a fog and round, mean ± 95% CI over seeds.
+
+| Noisy edges | Shapley AUC | Leave-one-out AUC |
+|---|---|---|
+| Gaussian noise | 0.772 ± 0.054 | 0.780 ± 0.052 |
+| Label flipping | 0.697 ± 0.238 | 0.704 ± 0.240 |
+
+- **Edges that send noise score below the honest ones in every seed.**
+- **Flipped labels score lower on average, but one seed of five goes the other way** (AUC 0.43); the interval includes 0.5.
+- **Permutation importance on the val subjects** (`onion_fl explain`) puts `snkeystrokes` first on SWELL and `bvp_0_median` far ahead on WESAD; the INDEX lists the caveats.
 
 ### New framework: continuing a trained model
 
