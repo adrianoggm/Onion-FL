@@ -1,0 +1,34 @@
+# The logical federations of architectures A and B of
+# infrastructure_architectures.yaml (issue #192) without their infrastructure,
+# for the decision fidelity of `sim` against `local`: the `local` backend runs
+# on this machine's own resources and network and refuses an infrastructure
+# (I10, I14), so only what tells A from B in the federation itself can run on
+# it. C and D differ from B in their devices and host failures only. The
+# same subjects, seeds, model and trainer as the main experiment.
+#
+#   python scripts/run_architectures_fidelity.py --backend sim --broker localhost:1883
+#   python scripts/run_architectures_fidelity.py --backend local --broker localhost:1883
+#   onion_fl fidelity runs/architectures_local runs/architectures_sim --metric macro_f1 --metric time --metric bytes
+name: infrastructure_architectures_logical
+description: Las federaciones lógicas de las arquitecturas A y B, sin infraestructura, para la fidelidad de decisión entre sim y local.
+topology: four_fogs_swell_wesad_physical
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, local_val: 0.2, local_val_split: class_tail, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge: {every: 5, models: [received, local]}
+  aggregators: {every: 5}
+  global: {every: 1}
+seeds: [0, 1, 2, 3, 4]
+sweep:
+  topology: [cloud_swell_wesad, four_fogs_swell_wesad_physical]

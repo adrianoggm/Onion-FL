@@ -84,6 +84,13 @@ def _root_evaluators(config: Any, placement: Any) -> list[str]:
     return [f"test-{e.dataset}-{e.subject}" for e in placement.test]
 
 
+def _root_members(config: Any, topology: Topology, placement: Any) -> list[str]:
+    """The edges under the root: its training clients when it is the leaf (two
+    levels), then its evaluators; as edge_specs builds them."""
+    clients = [c.id for c in placement.edges.get(topology.root.id, [])]
+    return clients + _root_evaluators(config, placement)
+
+
 CROSS_PROCESS = ("mqtt", "grpc", "flower")
 
 
@@ -193,7 +200,8 @@ def write_scenario(
     run: Run, scenario: Scenario, config: Mapping[str, Any], **launcher: Any
 ) -> Path:
     """``scenario.json``: what every node process rebuilds. ``launcher`` adds
-    what the processes take from the launcher (``groups``, ``broker``)."""
+    what the processes take from the launcher (``groups``, ``broker``,
+    ``grpc``, ``initial``)."""
     document = {
         "name": scenario.name,
         "seed": scenario.seed,
@@ -210,13 +218,14 @@ def write_scenario(
 def edge_groups(
     config: Any, topology: Topology, placement: Any
 ) -> dict[str, list[str]]:
-    """The edges and evaluators under each leaf, and the root's evaluators."""
+    """The edges and evaluators under each leaf, and the root's members: its
+    training clients when it is the leaf (two levels), then its evaluators."""
     out = {leaf: [c.id for c in clients] for leaf, clients in placement.edges.items()}
     for leaf, evaluators in placement.zone_evaluators.items():
         out.setdefault(leaf, []).extend(
             f"val-{e.dataset}-{e.subject}" for e in evaluators
         )
-    out[topology.root.id] = _root_evaluators(config, placement)
+    out[topology.root.id] = _root_members(config, topology, placement)
     return out
 
 
@@ -304,6 +313,9 @@ def run_node(
         federation_nodes = set(launcher["groups"][group])
     else:
         federation_nodes = _group_members(chosen.config, topology, placement, group)
+    grpc = launcher.get("grpc")  # across machines: where each node listens
+    if grpc is not None:
+        grpc = {"listen": grpc["listen"][group], "peers": grpc["peers"]}
     runtime = RealRuntime(
         run_id,
         seed=chosen.seed,
@@ -311,6 +323,7 @@ def run_node(
         epoch=epoch,
         heartbeat_s=chosen.config.runtime.heartbeat,
         broker=launcher.get("broker"),
+        grpc=grpc,
     )
     federation = build_scenario(
         chosen,
@@ -359,7 +372,7 @@ def _launcher(config: str | Path) -> dict[str, Any]:
     if path.suffix != ".json":
         return {}
     doc = json.loads(path.read_text(encoding="utf-8"))
-    return {k: doc[k] for k in ("groups", "broker", "initial") if k in doc}
+    return {k: doc[k] for k in ("groups", "broker", "grpc", "initial") if k in doc}
 
 
 def take_initial(federation: Any, path: str | Path) -> None:
@@ -381,7 +394,7 @@ def _group_members(
     config: Any, topology: Topology, placement: Any, group: str
 ) -> set[str]:
     if group == topology.root.id:
-        return {group, *_root_evaluators(config, placement)}
+        return {group, *_root_members(config, topology, placement)}
     topology.node(group)  # raises for an unknown id
     members = {group, *(c.id for c in placement.edges.get(group, []))}
     members |= {

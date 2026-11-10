@@ -53,6 +53,7 @@ from onion_fl.infrastructure.assignment import (
     resolve,
 )
 from onion_fl.infrastructure.backends import backends, execute
+from onion_fl.infrastructure.calibration import aggregate_rate, cited, workload_key
 from onion_fl.infrastructure.failover import NoFailover, failovers
 from onion_fl.infrastructure.model import (
     Infrastructure,
@@ -160,13 +161,18 @@ def resolve_infrastructure(config: ExperimentConfig) -> Infrastructure | None:
         return None
     ref = config.infrastructure.name
     try:
+        calibrations = config.paths.calibrations
         if isinstance(ref, dict):  # its traces live with the infrastructures
             raw = anchor_traces(deepcopy(ref), config.paths.infrastructures)
-            return parse_infrastructure(expand_traces(raw, config.paths.device_traces))
+            return parse_infrastructure(
+                expand_traces(raw, config.paths.device_traces), calibrations
+            )
         path = Path(ref)
         if path.suffix not in (".yaml", ".yml"):
             path = Path(config.paths.infrastructures) / f"{ref}.yaml"
-        return load_infrastructure(path, config.paths.device_traces)
+        return load_infrastructure(
+            path, calibrations, device_traces=config.paths.device_traces
+        )
     except InfrastructureError as exc:
         raise ConfigError(f"infrastructure: {exc}") from None
 
@@ -1046,14 +1052,20 @@ def edge_specs(
             )
             for client in clients
         ] + [evaluator("val", data) for data in placement.zone_evaluators.get(leaf, [])]
+    # In a two-level topology the root is the leaf: it keeps its training edges,
+    # and its zone evaluators give way to the global ones (no zone model there).
+    root = topology.root.id
+    trainers_at_root = [s for s in edges.get(root, []) if s.train]
     if config.evaluation.global_.subjects == "val":  # selection runs: no test
-        edges[topology.root.id] = [
+        edges[root] = trainers_at_root + [
             evaluator("gval", data)
             for leaf in sorted(placement.zone_evaluators)
             for data in placement.zone_evaluators[leaf]
         ]
     else:
-        edges[topology.root.id] = [evaluator("test", data) for data in placement.test]
+        edges[root] = trainers_at_root + [
+            evaluator("test", data) for data in placement.test
+        ]
     if config.promotion is not None:  # the validation streams decide (C7)
         validators = [
             evaluator("validate", data)
@@ -1069,24 +1081,78 @@ def edge_specs(
     return edges, initial
 
 
+def workload(spec: EdgeSpec) -> tuple[str, float]:
+    """The workload of an edge for a calibration: its model's parameter shapes
+    and its trainer's batch size."""
+    shapes = {k: list(np.shape(v)) for k, v in state_arrays(spec.model).items()}
+    params = getattr(spec.trainer, "params", None)
+    return workload_key(shapes, getattr(params, "batch_size", None))
+
+
+def valid_sizes(resolved: Resolved) -> dict[str, tuple[str, int]]:
+    """Per logical link (its child) that crosses a calibrated link, its parent
+    and the largest message the calibrations' path models hold."""
+    infra = resolved.infrastructure
+    limits = {}
+    for x in infra.network.links:
+        if x.calibration:
+            limit = infra._calibrations[x.calibration].valid_up_to
+            if limit is not None:
+                limits[f"link:{x.between[0]}|{x.between[1]}"] = limit
+    out = {}
+    for child, hops in resolved.hops.items():
+        crossed = [limits[k] for k, _ in hops if k in limits]
+        if crossed:
+            out[child] = (resolved.parents[child], min(crossed))
+    return out
+
+
+def _largest_messages(
+    federation: Any, limits: Mapping[str, tuple[str, int]] | None
+) -> dict[str, list[int]]:
+    """Follow the largest message each way of the logical links in
+    ``limits``: child -> [largest bytes, limit], filled as the run goes."""
+    if not limits:
+        return {}
+    largest = {child: [0, limit] for child, (_, limit) in limits.items()}
+
+    def listen(raw: Mapping[str, Any]) -> None:
+        if raw["name"] != "message.sent":
+            return
+        src, dst = raw["node"], (raw.get("tags") or {}).get("dst")
+        for child, other in ((src, dst), (dst, src)):
+            if child in limits and limits[child][0] == other:
+                largest[child][0] = max(largest[child][0], int(raw.get("value") or 0))
+
+    federation.runtime.listeners.append(listen)
+    return largest
+
+
 def _on_hosts(
-    edges: Mapping[str, Sequence[EdgeSpec]], resolved: Resolved
+    edges: Mapping[str, Sequence[EdgeSpec]],
+    resolved: Resolved,
+    estimated: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, list[EdgeSpec]], dict[str, Any]]:
     """Edges that compute at their host's rate, and the compiled link profiles.
 
-    Evaluators are not physical clients: they sit on their parent's host.
+    Evaluators are not physical clients: they sit on their parent's host. A
+    rate estimated by FLOPs from a calibration is noted in ``estimated``.
     """
+
+    def on_host(spec: EdgeSpec) -> EdgeSpec:
+        rate, note = resolved.rate(spec.id, workload(spec))
+        if note is not None and estimated is not None:
+            estimated.append({"node": spec.id, **note})
+        return replace(
+            spec,
+            host=resolved.hosts[spec.id],
+            compute=_rate(rate, resolved.train_sigma(spec.id)),
+            availability=_availability(spec, resolved),
+        )
 
     out = {
         leaf: [
-            replace(
-                s,
-                host=resolved.hosts[s.id],
-                compute=_rate(resolved.train_rate(s.id), resolved.train_sigma(s.id)),
-                availability=_availability(s, resolved),
-            )
-            if s.train
-            else replace(s, host=resolved.hosts[leaf])
+            on_host(s) if s.train else replace(s, host=resolved.hosts[leaf])
             for s in specs
         ]
         for leaf, specs in edges.items()
@@ -1165,7 +1231,7 @@ def _on_machines(
     for node, host in resolved.hosts.items():
         runtime.place(node, host)
     for node in topology.nodes:  # combining costs bytes / aggregate_rate
-        rate = infra.profile_of(resolved.hosts[node.id]).aggregate_rate
+        rate = aggregate_rate(infra, resolved.hosts[node.id])
         if rate is not None:
             runtime.set_compute(node.id, _rate(rate))
 
@@ -1319,10 +1385,16 @@ def build_scenario(
     evaluate: Callable[..., Any] | None = None,
     runtime: Any = None,
     parent: Any = ...,
+    calibrations: dict[str, Any] | None = None,
     operator_keys: Mapping[str, str] | None = None,
     audience: str = "",
 ) -> Any:
     """The federation of a scenario, on ``runtime`` (a new SimRuntime by default).
+
+    ``calibrations``, when given, gets the ids of the calibrations the
+    infrastructure cites, the rates estimated by FLOPs (``estimated``) and,
+    per logical link whose path crosses a calibrated link, the largest
+    message its path model holds (``valid_up_to``).
 
     ``operator_keys`` (``continual.control``) are who may give the coordinator
     orders, signed for ``audience``, the run's id."""
@@ -1333,7 +1405,12 @@ def build_scenario(
     if resolved is not None:
         check_memory(resolved, placement, initial)
         check_capacity(config, topology, placement)
-        edges, link_profiles = _on_hosts(edges, resolved)
+        estimated: list[dict[str, Any]] = []
+        edges, link_profiles = _on_hosts(edges, resolved, estimated)
+        if calibrations is not None:
+            calibrations["ids"] = cited(resolved.infrastructure)
+            calibrations["estimated"] = estimated
+            calibrations["valid_up_to"] = valid_sizes(resolved)
         network, channels = _paths(resolved)
     if parent is ...:
         parent = _parent(config, scenario.seed)
@@ -1451,6 +1528,7 @@ def simulate(
         run.meta["device_traces"] = infra.device_traces
     try:
         record_data(run, scenario, split, placement)
+        calibrations: dict[str, Any] = {}
         federation = build_scenario(
             scenario,
             topology,
@@ -1458,9 +1536,15 @@ def simulate(
             placement,
             evaluate=evaluate,
             parent=parent,
+            calibrations=calibrations,
             operator_keys=operators,
             audience=run.run_id,
         )
+        if calibrations.get("ids"):  # signed with the rest at finish
+            run.meta["calibrations"] = calibrations["ids"]
+        if calibrations.get("estimated"):  # no fidelity result may rest on it
+            run.meta["estimated"] = calibrations["estimated"]
+        largest = _largest_messages(federation, calibrations.get("valid_up_to"))
         run.attach(federation)
         run.meta["diagnostic"] = _diagnostic(federation, scenario, placement)
         if config.stream is not None:
@@ -1484,6 +1568,13 @@ def simulate(
                 paused=paused,
                 idle=run.sync,  # a paused run's events reach the Studio
             ).run(federation.runtime)
+        outside = [
+            {"link": child, "max_bytes": size, "valid_up_to": limit}
+            for child, (size, limit) in sorted(largest.items())
+            if size > limit
+        ]
+        if outside:  # nor on a path model used past what it was fitted on
+            run.meta["outside_calibration"] = outside
         save_model(run.path, federation.coordinator.state)
         # What the lineage knows of a dataset or node outlives a run without it.
         earlier = parent[1] if parent else None
