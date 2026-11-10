@@ -53,6 +53,7 @@ from onion_fl.infrastructure.model import (
     Infrastructure,
     InfrastructureError,
     anchor_traces,
+    expand_traces,
     load_infrastructure,
     parse_infrastructure,
 )
@@ -151,11 +152,11 @@ def resolve_infrastructure(config: ExperimentConfig) -> Infrastructure | None:
     try:
         if isinstance(ref, dict):  # its traces live with the infrastructures
             raw = anchor_traces(deepcopy(ref), config.paths.infrastructures)
-            return parse_infrastructure(raw)
+            return parse_infrastructure(expand_traces(raw, config.paths.device_traces))
         path = Path(ref)
         if path.suffix not in (".yaml", ".yml"):
             path = Path(config.paths.infrastructures) / f"{ref}.yaml"
-        return load_infrastructure(path)
+        return load_infrastructure(path, config.paths.device_traces)
     except InfrastructureError as exc:
         raise ConfigError(f"infrastructure: {exc}") from None
 
@@ -1009,7 +1010,10 @@ def _on_hosts(
     out = {
         leaf: [
             replace(
-                s, host=resolved.hosts[s.id], compute=_rate(resolved.train_rate(s.id))
+                s,
+                host=resolved.hosts[s.id],
+                compute=_rate(resolved.train_rate(s.id)),
+                availability=_availability(s, resolved),
             )
             if s.train
             else replace(s, host=resolved.hosts[leaf])
@@ -1024,6 +1028,24 @@ def _on_hosts(
         if not spec.train
     } | {child: profile for child, (_, profile) in resolved.links.items()}
     return out, profiles
+
+
+def _availability(spec: EdgeSpec, resolved: Resolved) -> Any:
+    """The availability of the edge's host profile (a device trace), if any."""
+    given = resolved.infrastructure.profile_of(resolved.hosts[spec.id]).availability
+    if given is None:
+        return spec.availability
+    if spec.availability is not None:
+        raise ConfigError(
+            f"edge {spec.id}: its host {resolved.hosts[spec.id]} has its own "
+            "availability; remove edge.availability from the topology"
+        )
+    try:
+        return create(availability_models, given)
+    except (KeyError, ValueError) as exc:
+        raise ConfigError(
+            f"infrastructure: host {resolved.hosts[spec.id]} availability: {exc}"
+        ) from None
 
 
 def _rate(rate: float | None) -> Any:
@@ -1187,6 +1209,8 @@ def run_scenario(
             "version": parent[1].snapshot.round,
         }
         run.meta["parent"] = lineage_parent  # signed with the rest at finish
+    if infra is not None and infra.device_traces:  # sampled devices, cited (G9)
+        run.meta["device_traces"] = infra.device_traces
     try:
         record_data(run, scenario, split, placement)
         federation = build_scenario(

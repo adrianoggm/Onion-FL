@@ -14,6 +14,7 @@ from __future__ import annotations
     onion_fl report <experiment.yaml | runs_dir>... [--out FILE] [--metric NAME]... [--by TAG]...
     onion_fl baseline <experiment.yaml> [--models lr rf xgboost] [--cv K]
     onion_fl schema [--out FILE]
+    onion_fl traces import fedscale [<folder>]
     onion_fl serve [--root .] [--host 127.0.0.1] [--port 8765]
 
 Results go to stdout as JSON (or a path per line); errors to stderr with
@@ -242,6 +243,13 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_traces(args: argparse.Namespace) -> int:
+    from onion_fl.infrastructure.fedscale import import_fedscale
+
+    _print_json(import_fedscale(args.folder))
+    return 0
+
+
 def cmd_schema(args: argparse.Namespace) -> int:
     from onion_fl.experiment.config import experiment_schema
 
@@ -367,6 +375,14 @@ def parser() -> argparse.ArgumentParser:
     )
     schema.add_argument("--out")
     schema.set_defaults(func=cmd_schema)
+
+    traces = sub.add_parser(
+        "traces", help="import device traces (FedScale) as plain files"
+    )
+    traces.add_argument("action", choices=["import"])
+    traces.add_argument("source", choices=["fedscale"])
+    traces.add_argument("folder", nargs="?", default="data/FedScale")
+    traces.set_defaults(func=cmd_traces)
     return p
 
 
