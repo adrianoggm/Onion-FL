@@ -1,0 +1,25 @@
+# FedAvg reference on FEMNIST (issue #206): the 200 writers of
+# datasets/femnist.yaml, one edge per writer, 40 of them reserved for the test,
+# spread uniformly over four fogs. modular_mlp on the 784 pixels (standardised
+# with the training writers' statistics), 62 classes.
+#
+#   onion_fl run experiments/femnist_reference.yaml --workers 3
+#   onion_fl baseline experiments/femnist_reference.yaml --models lr
+name: femnist_reference
+description: FedAvg de referencia en FEMNIST, 200 escritores (un edge por escritor) en cuatro fogs.
+topology: femnist_four_fogs
+data:
+  datasets:
+    femnist: {}
+  roles: {test: 0.2, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 1.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 128, trunk_hidden: [128], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, local_epochs: 1, batch_size: 32, lr: 0.001}
+  init: random
+rounds: 30
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  global: {every: 1}
+seeds: [0, 1, 2]

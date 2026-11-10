@@ -2,14 +2,15 @@ from __future__ import annotations
 
 """Real runs: one process per group of nodes over MQTT (spec §9.2).
 
-``run_real`` (``onion_fl run --mode real``) creates ``runs/<run_id>/``, writes
-``scenario.json`` and starts one ``onion_fl node`` process per group: the root
-with the test evaluators, and each aggregator with the edges and evaluators
-under it. Every process rebuilds the same scenario (same data, roles,
-placement and seed), hosts only its group and writes ``events.<group>.jsonl``.
-When the coordinator finishes, a stop travels down the tree and the
-processes exit; the launcher merges their events into ``events.jsonl`` and
-signs the run as usual.
+The ``local`` backend (``backend: local``, or its alias ``runtime.mode:
+real``) in three steps. ``prepare_local`` creates ``runs/<run_id>/`` and
+writes ``scenario.json``; ``launch`` starts one ``onion_fl node`` process per
+group: the root with the test evaluators, and each aggregator with the edges
+and evaluators under it. Every process rebuilds the same scenario (same data,
+roles, placement and seed), hosts only its group and writes
+``events.<group>.jsonl``. When the coordinator finishes, a stop travels down
+the tree and the processes exit; ``merge`` merges their events into
+``events.jsonl`` and signs the run as usual.
 """
 
 import json
@@ -18,6 +19,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -93,8 +95,29 @@ def _check_links(topology: Topology) -> None:
             )
 
 
+@dataclass
+class LocalPlan:
+    """What the ``local`` backend starts: one ``onion_fl node`` per group."""
+
+    run: Run
+    scenario: Scenario
+    groups: list[str]
+    scenario_file: Path
+    python: str
+    codes: list[int] = field(default_factory=list)
+
+
 def run_real(scenario: Scenario, python: str = sys.executable) -> Path:
-    from onion_fl.experiment.runner import _scenario_data, _sinks
+    """One scenario on the ``local`` backend: prepare, run and collect it."""
+    from onion_fl.experiment.backends import LocalBackend
+    from onion_fl.infrastructure.backends import execute
+
+    return execute(LocalBackend(python=python), scenario)
+
+
+def prepare_local(scenario: Scenario, python: str = sys.executable) -> LocalPlan:
+    """Check the links and brokers, create the run and write ``scenario.json``."""
+    from onion_fl.experiment.runner import _scenario_data, _sinks, record_data
 
     config = scenario.config
     topology, split, placement, digests = _scenario_data(scenario)
@@ -108,67 +131,72 @@ def run_real(scenario: Scenario, python: str = sys.executable) -> Path:
         data_ids=digests,
         scenario=scenario.name,
         sinks=_sinks(config),  # fed as the events are merged, once the run ends
-        backend="real",
+        backend="local",
     )
     try:
-        return _launch(run, scenario, topology, split, placement, python)
+        record_data(run, scenario, split, placement)
+        document = {
+            "name": scenario.name,
+            "seed": scenario.seed,
+            "config_id": scenario.config_id,
+            "config": config.dump(),
+            "epoch": time.time(),
+        }
+        scenario_file = run.path / "scenario.json"
+        scenario_file.write_text(
+            json.dumps(document, indent=2, default=str), encoding="utf-8"
+        )
+        edge_ids = {
+            leaf: [c.id for c in clients] for leaf, clients in placement.edges.items()
+        }
+        for leaf, evaluators in placement.zone_evaluators.items():
+            edge_ids.setdefault(leaf, []).extend(
+                f"val-{e.dataset}-{e.subject}" for e in evaluators
+            )
+        edge_ids[topology.root.id] = _root_evaluators(config, placement)
+        groups = list(process_groups(topology, edge_ids))
     except BaseException:  # never leave a run that looks still running
         run.finish(status="failed")
         raise
+    return LocalPlan(run, scenario, groups, scenario_file, python)
 
 
-def _launch(
-    run: Run, scenario: Scenario, topology: Topology, split, placement, python: str
-) -> Path:
-    from onion_fl.experiment.runner import record_data
+def launch(plan: LocalPlan) -> None:
+    """Start one node process per group and wait for them, up to the timeout."""
+    try:
+        processes = [
+            subprocess.Popen(
+                [
+                    plan.python,
+                    "-m",
+                    "onion_fl",
+                    "node",
+                    "--id",
+                    group,
+                    "--run",
+                    plan.run.run_id,
+                    "--config",
+                    str(plan.scenario_file),
+                ]
+            )
+            for group in plan.groups
+        ]
+        limit = time.monotonic() + plan.scenario.config.runtime.timeout + 30
+        for process in processes:
+            try:
+                wait = max(0.0, limit - time.monotonic())
+                plan.codes.append(process.wait(timeout=wait))
+            except subprocess.TimeoutExpired:
+                process.kill()
+                plan.codes.append(process.wait())
+    except BaseException:  # never leave a run that looks still running
+        plan.run.finish(status="failed")
+        raise
 
-    config = scenario.config
-    record_data(run, scenario, split, placement)
-    epoch = time.time()
-    document = {
-        "name": scenario.name,
-        "seed": scenario.seed,
-        "config_id": scenario.config_id,
-        "config": config.dump(),
-        "epoch": epoch,
-    }
-    scenario_file = run.path / "scenario.json"
-    scenario_file.write_text(
-        json.dumps(document, indent=2, default=str), encoding="utf-8"
-    )
-    edge_ids = {
-        leaf: [c.id for c in clients] for leaf, clients in placement.edges.items()
-    }
-    for leaf, evaluators in placement.zone_evaluators.items():
-        edge_ids.setdefault(leaf, []).extend(
-            f"val-{e.dataset}-{e.subject}" for e in evaluators
-        )
-    edge_ids[topology.root.id] = _root_evaluators(config, placement)
-    processes = [
-        subprocess.Popen(
-            [
-                python,
-                "-m",
-                "onion_fl",
-                "node",
-                "--id",
-                group,
-                "--run",
-                run.run_id,
-                "--config",
-                str(scenario_file),
-            ]
-        )
-        for group in process_groups(topology, edge_ids)
-    ]
-    limit = time.monotonic() + config.runtime.timeout + 30
-    codes = []
-    for process in processes:
-        try:
-            codes.append(process.wait(timeout=max(0.0, limit - time.monotonic())))
-        except subprocess.TimeoutExpired:
-            process.kill()
-            codes.append(process.wait())
+
+def merge(plan: LocalPlan) -> Path:
+    """Merge the events of every process into the run and sign it."""
+    run, codes = plan.run, plan.codes
     events = []
     for part in sorted(run.path.glob(PART.format(group="*"))):
         events += read_events(part)
@@ -180,7 +208,7 @@ def _launch(
         run.adopt(event)
     finished = any(e["name"] == "run.finished" for e in events)
     status = "finished" if finished else ("failed" if any(codes) else "incomplete")
-    run.meta["processes"] = {"groups": len(processes), "exit_codes": codes}
+    run.meta["processes"] = {"groups": len(plan.groups), "exit_codes": codes}
     run.finish(status=status)
     return run.path
 
