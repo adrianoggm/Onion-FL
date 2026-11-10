@@ -7,7 +7,7 @@ from __future__ import annotations
     onion_fl data prepare|inspect <dataset> [--option key=value]...
     onion_fl topology show <file> [--graph | --mermaid]
     onion_fl plan <experiment.yaml>
-    onion_fl run <experiment.yaml> [--scenario NAME] [--backend sim|local]
+    onion_fl run <experiment.yaml> [--scenario NAME] [--backend NAME]
                  [--mode sim|real] [--workers N]
     onion_fl node --id <node> --run <run_id> --config <experiment.yaml>
     onion_fl ceiling <experiment.yaml> [--replicas R] [--metric NAME] [--series KEY]
@@ -416,7 +416,10 @@ def parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="run an experiment")
     run.add_argument("experiment")
     run.add_argument("--scenario", help="only the scenario with this name")
-    run.add_argument("--backend", help="sim, local...; overrides the experiment's")
+    run.add_argument(
+        "--backend",
+        help="sim, local, emulated, distributed; overrides the experiment's",
+    )
     run.add_argument("--mode", choices=["sim", "real"], help="real: alias of local")
     run.add_argument("--workers", type=int, default=1)
     run.add_argument(

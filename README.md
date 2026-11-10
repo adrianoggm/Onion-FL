@@ -106,6 +106,7 @@ onion_fl explain runs/<run_id>                # feature importance on val subjec
 
 For a real run over MQTT, start the stack (`just docker-up`, [docker/README.md](docker/README.md)), point the links at the broker and run `onion_fl run <experiment> --backend local` (`--mode real` is its alias). Links with `transport: grpc` need no broker (`uv pip install -e ".[grpc]"`, already in dev), and neither do links with `transport: flower`, which carry each frame as a Flower message (`uv pip install -e ".[flower]"`, Flower >= 1.21; not in dev).
 With Docker, `--backend emulated` runs the same processes in one container per host of the experiment's `infrastructure`, with its CPU and memory limits and its links emulated by netem ([docs/architecture.md](docs/architecture.md), §7). The first run builds the host image, which takes a few minutes.
+On real machines, `--backend distributed` with an inventory of them (SSH address, user and key path) checks each one first (the same `onion_fl` source, the data, the clock against the launcher or NTP, the broker and the gRPC ports), starts one process per host over SSH and brings the events back ([docs/architecture.md](docs/architecture.md), §7; hardware still pending: [docs/distributed-hardware.md](docs/distributed-hardware.md)).
 
 The simulation's compute rates and links can come from measurements: `onion_fl calibrate measure <spec>` runs microbenchmarks (training per profile and model, aggregation, MQTT paths) in that emulation, `calibrate fit` turns several sessions into a signed `calibrations/<calibration_id>/` that profiles and links cite with `calibration: <id>`, each value with the 95 % interval one more session's value falls in, and `calibrate check` judges a session the fit never saw against it. A run whose rate for a model had to be estimated by FLOPs says so in `run.json` (`estimated`), as does one that sends past the sizes its calibrated paths hold (`outside_calibration`), and `onion_fl fidelity` refuses both ([docs/architecture.md](docs/architecture.md), §7a). The emulated lab's calibration `b55104b3…` ([results/calibration_emulated_pinned](results/calibration_emulated_pinned/INDEX.md)), fitted on four pinned sessions, passes every quantity on two check sessions of its day, and 49 of 54 per session three days later, when the machine computed about twice as fast; its compute intervals span a factor of 2.6 to 26, the network's a few tenths of a millisecond.
 
@@ -127,7 +128,7 @@ The Studio reads and writes the same files as the command line (`topologies/`, `
 
 ## 3. How it works
 
-The full design is in [docs/architecture.md](docs/architecture.md). In short:
+The full design is in [docs/architecture.md](docs/architecture.md), and how it compares with Flower, FedML, FedScale, Fogify, EmuFog, iFogSim and EdgeSimPy is in [docs/related-work.md](docs/related-work.md). In short:
 
 ```mermaid
 flowchart TD
@@ -250,7 +251,7 @@ Each run writes `runs/<run_id>/`:
 
 | File | Content |
 |---|---|
-| `run.json` | Identifiers (`topology_id`, `config_id`, `data_id`, `code_version`), resolved config, host, start and end, status (`running`, `finished`, `incomplete`, `failed`) and `run_hash` |
+| `run.json` | Identifiers (`topology_id`, `config_id`, `data_id`, `code_version`), resolved config, host, start and end, status (`running`, `finished`, `incomplete`, `failed`), the ex ante diagnostic of the deadline bias (`diagnostic`, in `sim`) and `run_hash` |
 | `events.jsonl` | Every event: messages, rounds, training, evaluation, diagnostics, data composition |
 | `summary.json` | Rounds, traffic, failures and the last scores at the root |
 | `model.npz` | The final global model, loadable as a `checkpoint` init |
@@ -704,7 +705,7 @@ datasets/            dataset descriptors (YAML)
 topologies/          topologies (YAML)
 experiments/         experiments (YAML): mix_ab, swell_reference
 docker/              MQTT broker, OTEL collector, Jaeger, Prometheus, Grafana
-docs/                architecture, rules, diagrams, release notes, the design spec
+docs/                architecture, rules, related work, diagrams, release notes, the design spec
 results/legacy/      results from before the redesign, with INDEX.md
 scripts/             data extraction (SWEET ZIPs) and real-sample creation
 tests/               pytest suite
