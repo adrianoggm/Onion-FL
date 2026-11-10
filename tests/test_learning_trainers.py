@@ -947,7 +947,7 @@ def test_importing_a_memory_without_some_entry_keeps_the_trainers_own() -> None:
 
 
 def objective(name: str, model, X, **params):
-    from onion_fl.continuum.unlabelled import objectives
+    from onion_fl.continual.unlabelled import objectives
 
     fitted = objectives.create(name, params)
     fitted.fit(model, X)

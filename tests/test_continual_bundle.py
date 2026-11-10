@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from onion_fl.continuum.bundle import load_bundle, save_bundle
+from onion_fl.continual.bundle import load_bundle, save_bundle
 from onion_fl.core.topology import parse_topology
 from onion_fl.learning.aggregators import server_optimizers
 from onion_fl.learning.model import (

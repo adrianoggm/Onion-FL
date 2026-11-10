@@ -10,9 +10,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from onion_fl.continuum.drift import Reference, detectors, window
-from onion_fl.continuum.pace import View
-from onion_fl.continuum.triggers import drift_detectors, triggers
+from onion_fl.continual.drift import Reference, detectors, window
+from onion_fl.continual.pace import View
+from onion_fl.continual.triggers import drift_detectors, triggers
 
 
 def ph(**params):

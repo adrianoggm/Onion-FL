@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from onion_fl.continuum.promotion import promotions
+from onion_fl.continual.promotion import promotions
 from onion_fl.core.message import Message, Payload
 from onion_fl.core.node import Node
 from onion_fl.core.topology import parse_topology
@@ -524,8 +524,8 @@ def test_a_versioned_run_is_deterministic() -> None:
 
 
 def test_a_trigger_opens_no_round_before_the_decision() -> None:
-    from onion_fl.continuum.pace import Continuum
-    from onion_fl.continuum.triggers import triggers
+    from onion_fl.continual.pace import Continuum
+    from onion_fl.continual.triggers import triggers
 
     pace = Continuum(
         trigger=triggers.create("schedule", {"every": 60}),

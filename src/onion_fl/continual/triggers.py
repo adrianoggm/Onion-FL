@@ -13,8 +13,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, PositiveInt, field_validator
 
-from onion_fl.continuum.drift import detectors
-from onion_fl.continuum.pace import View
+from onion_fl.continual.drift import detectors
+from onion_fl.continual.pace import View
 from onion_fl.core.registry import PluginError, Registry
 from onion_fl.data.stream import Positive
 from onion_fl.roles.policies import create

@@ -31,7 +31,7 @@ METRICS = ["loss", "accuracy", "macro_f1", "confusion_matrix"]
 
 def score(run: Path, subjects: str) -> list[dict]:
     meta = json.loads((run / "run.json").read_text(encoding="utf-8"))
-    config = parse_experiment(meta["config"])
+    config = parse_experiment(meta["config"], signed=True)
     scenario = Scenario(meta["scenario"], meta["seed"], config, meta["config_id"])
     _, split, _, _ = _scenario_data(scenario)
     family = create(model_families, config.learning.model)
