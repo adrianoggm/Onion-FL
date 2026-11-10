@@ -158,6 +158,11 @@ tr.clickable:hover td { background: var(--bg); }
 .badge.running { background: #dbeafe; color: var(--run); }
 .badge.incomplete { background: #fef3c7; color: var(--warn); }
 .badge.failed { background: #fee2e2; color: var(--bad); }
+.badge.paused, .badge.candidate { background: #fef3c7; color: var(--warn); }
+.badge.active { background: #dcfce7; color: var(--ok); }
+.badge.superseded { background: #dbeafe; color: var(--run); }
+.badge.rejected { background: #fee2e2; color: var(--bad); }
+.badge.rolled_back { background: var(--line); color: var(--muted); }
 
 .errors { color: var(--bad); background: #fee2e2; border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
 .errors:empty { display: none; }

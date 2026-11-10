@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Real runs: one process per group of nodes over MQTT (spec §9.2).
+"""Real runs: one process per group of nodes over MQTT or gRPC (spec §9.2).
 
 The ``local`` backend (``backend: local``, or its alias ``runtime.mode:
 real``) in three steps. ``prepare_local`` creates ``runs/<run_id>/`` and
@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from onion_fl.continual.control import load_operators
 from onion_fl.core.topology import Topology
 from onion_fl.experiment.config import ConfigError, parse_experiment
 from onion_fl.experiment.sweep import Scenario, identity
@@ -88,17 +89,20 @@ def _root_members(config: Any, topology: Topology, placement: Any) -> list[str]:
     return clients + _root_evaluators(config, placement)
 
 
+CROSS_PROCESS = ("mqtt", "grpc")
+
+
 def _check_links(topology: Topology) -> None:
-    """Every link of a real run must cross processes: MQTT."""
+    """Every link of a real run must cross processes: MQTT or gRPC."""
     links = [n.link_up for n in topology.nodes if n.link_up is not None]
     links.append(topology.edge.link_up)
     for link in links:
         spec = link.transport
         name = spec if isinstance(spec, str) else spec.get("name")
-        if name != "mqtt":
+        if name not in CROSS_PROCESS:
             raise ConfigError(
-                f"runtime.mode: real needs mqtt links, but a link uses {name!r}; a "
-                "memory bus does not cross processes"
+                f"runtime.mode: real needs mqtt or grpc links, but a link uses "
+                f"{name!r}; a memory bus does not cross processes"
             )
 
 
@@ -263,7 +267,15 @@ def run_node(
         epoch=epoch,
         heartbeat_s=chosen.config.runtime.heartbeat,
     )
-    federation = build_scenario(chosen, topology, split, placement, runtime=runtime)
+    federation = build_scenario(
+        chosen,
+        topology,
+        split,
+        placement,
+        runtime=runtime,
+        operator_keys=load_operators(),  # orders over the transport are signed
+        audience=run_id,
+    )
     roles = node_roles(federation, topology)
     (Path(chosen.config.paths.runs) / run_id).mkdir(parents=True, exist_ok=True)
     part = JsonlSink(

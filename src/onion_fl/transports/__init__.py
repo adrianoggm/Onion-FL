@@ -1,5 +1,8 @@
 """Transports that carry encoded messages between processes (spec §5.1, §9.2).
 
+The built-ins: ``memory`` (one process), ``mqtt`` (through a broker) and
+``grpc`` (direct, without a broker; needs the ``grpc`` extra).
+
 A transport delivers bytes to an address (a node's inbox) and calls back
 whoever listens on it::
 
@@ -16,6 +19,7 @@ from onion_fl.core.registry import Registry
 transports = Registry("transport")
 
 from onion_fl.transports import (  # noqa: E402, F401  (register the built-ins)
+    grpc,
     memory,
     mqtt,
 )
