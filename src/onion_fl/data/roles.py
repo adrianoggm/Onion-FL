@@ -12,6 +12,11 @@ shares the seed, and adding a dataset does not move another one's roles.
 ``train``   the bag the placement distributes, grouped into clients
 ==========  ===============================================================
 
+A ``held_out`` dataset (leave-one-dataset-out) draws its roles like any other,
+so its test subjects are the ones it has when it trains, and then keeps only
+them: its ``val`` and ``train`` subjects take no role. Nothing is fitted on
+it, so it needs ``scaler: local`` or ``none``.
+
 Imputation, scaling and the removal of constant features are fitted on the
 training portions only: never on val, test or the ``local_val`` rows. With
 ``scaler: local`` every data holder (client or evaluator) standardises with
@@ -39,6 +44,11 @@ class RoleOverride(BaseModel):
     val: Share | list[str] | None = None
     exclude: list[str] = Field(
         default_factory=list, description="Sujetos que no toman ningún rol"
+    )
+    held_out: bool = Field(
+        False,
+        description="Dataset fuera del entrenamiento: solo evalúan sus sujetos de test",
+        exclude_if=lambda v: not v,  # unset, it keeps existing config_ids
     )
 
 
@@ -186,6 +196,15 @@ def _assign(
     train = [s for s in names if s not in set(test) | set(val) | set(excluded)]
     if not train:
         raise DataError(f"{dataset}: no training subjects left after test and val")
+    if override.held_out:  # drawn as usual, so the test subjects do not move
+        held = sorted(val + train, key=natural_key)
+        return {
+            "test": test,
+            "val": [],
+            "train": [],
+            "excluded": excluded,
+            "held_out": held,
+        }
     return {"test": test, "val": val, "train": train, "excluded": excluded}
 
 
@@ -270,8 +289,17 @@ def split_subjects(
             s: ~held[s] & (True if fit_rows is None else fit_rows(pool[s]))
             for s in held
         }
-        bag = np.concatenate([pool[s].X[usable[s]] for s in held])
-        if not len(bag):
+        held_out = (config.overrides.get(dataset) or RoleOverride()).held_out
+        if held_out and config.scaler == "global":
+            raise DataError(
+                f"{dataset} is held out: no training rows fit a global scaler; "
+                "use scaler local or none"
+            )
+        n_features = pool[names[0]].X.shape[1]
+        bag = np.concatenate(
+            [pool[s].X[usable[s]] for s in held] or [np.empty((0, n_features))]
+        )
+        if not len(bag) and not held_out:
             raise DataError(
                 f"{dataset}: no training row before the bootstrap ends to fit the "
                 "preprocessing"
@@ -299,7 +327,7 @@ def split_subjects(
         else:
             fit = _Fit.on(bag, config.impute)
             keep = np.arange(bag.shape[1])
-            if config.drop_constant:
+            if config.drop_constant and not held_out:
                 keep = np.flatnonzero(
                     np.where(np.isnan(bag), fit.fill, bag).std(axis=0) > 0
                 )

@@ -519,3 +519,57 @@ def test_a_bootstrap_with_no_rows_is_an_error() -> None:
             RolesConfig(overrides={"swell": {"test": []}}),
             fit_rows=lambda d: d.t < 50,
         )
+
+
+# --- leave-one-dataset-out (issue #244) ---------------------------------------------
+
+
+def test_a_held_out_dataset_keeps_its_test_subjects_and_trains_nothing() -> None:
+    subjects = cohort(10, "swell") + cohort(10, "wesad")
+    base = RolesConfig(test=0.2, val=0.1, scaler="local")
+    lodo = RolesConfig(
+        test=0.2, val=0.1, scaler="local", overrides={"wesad": {"held_out": True}}
+    )
+
+    trained, held = split_subjects(subjects, base), split_subjects(subjects, lodo)
+
+    assert held.roles["wesad"]["test"] == trained.roles["wesad"]["test"]
+    assert held.roles["wesad"]["train"] == held.roles["wesad"]["val"] == []
+    assert held.roles["wesad"]["held_out"] == sorted(
+        trained.roles["wesad"]["train"] + trained.roles["wesad"]["val"], key=int
+    )
+    assert {c.dataset for c in held.clients} == {"swell"}
+    assert [s.dataset for s in held.val] == ["swell"]
+    assert [s.subject for s in held.test if s.dataset == "wesad"] == (
+        trained.roles["wesad"]["test"]
+    )
+    assert held.roles["swell"] == trained.roles["swell"]
+
+
+def test_a_held_out_dataset_scales_each_test_subject_with_its_own_rows() -> None:
+    subjects = cohort(4, "swell") + [
+        subject(str(i), [[10.0 * i], [10.0 * i + 4]], dataset="wesad")
+        for i in range(1, 5)
+    ]
+    config = RolesConfig(
+        test=0.25, scaler="local", overrides={"wesad": {"held_out": True}}
+    )
+
+    split = split_subjects(subjects, config)
+
+    (tested,) = [s for s in split.test if s.dataset == "wesad"]
+    np.testing.assert_allclose(tested.X[:, 0], [-1.0, 1.0])
+    assert split.preprocessing["wesad"]["features"] == ["f0"]
+
+
+def test_a_held_out_dataset_cannot_use_a_global_scaler() -> None:
+    config = RolesConfig(scaler="global", overrides={"wesad": {"held_out": True}})
+
+    with pytest.raises(DataError, match="held out"):
+        split_subjects(cohort(5, "swell") + cohort(5, "wesad"), config)
+
+
+def test_an_unset_held_out_stays_out_of_the_config() -> None:
+    config = RolesConfig(overrides={"wesad": {"exclude": ["S1"]}})
+
+    assert "held_out" not in config.model_dump()["overrides"]["wesad"]
