@@ -1052,14 +1052,20 @@ def edge_specs(
             )
             for client in clients
         ] + [evaluator("val", data) for data in placement.zone_evaluators.get(leaf, [])]
+    # In a two-level topology the root is the leaf: it keeps its training edges,
+    # and its zone evaluators give way to the global ones (no zone model there).
+    root = topology.root.id
+    trainers_at_root = [s for s in edges.get(root, []) if s.train]
     if config.evaluation.global_.subjects == "val":  # selection runs: no test
-        edges[topology.root.id] = [
+        edges[root] = trainers_at_root + [
             evaluator("gval", data)
             for leaf in sorted(placement.zone_evaluators)
             for data in placement.zone_evaluators[leaf]
         ]
     else:
-        edges[topology.root.id] = [evaluator("test", data) for data in placement.test]
+        edges[root] = trainers_at_root + [
+            evaluator("test", data) for data in placement.test
+        ]
     if config.promotion is not None:  # the validation streams decide (C7)
         validators = [
             evaluator("validate", data)
@@ -1140,7 +1146,7 @@ def _on_hosts(
         return replace(
             spec,
             host=resolved.hosts[spec.id],
-            compute=_rate(rate),
+            compute=_rate(rate, resolved.train_sigma(spec.id)),
             availability=_availability(spec, resolved),
         )
 
@@ -1178,12 +1184,15 @@ def _availability(spec: EdgeSpec, resolved: Resolved) -> Any:
         ) from None
 
 
-def _rate(rate: float | None) -> Any:
-    return (
-        None
-        if rate is None
-        else compute_models.create("samples_per_second", {"samples_per_second": rate})
-    )
+def _rate(rate: float | None, sigma: float | None = None) -> Any:
+    """A compute model at ``rate``, lognormal around it when ``sigma`` is given."""
+    if rate is None:
+        return None
+    if sigma:
+        return compute_models.create(
+            "lognormal_rate", {"samples_per_second": rate, "sigma": sigma}
+        )
+    return compute_models.create("samples_per_second", {"samples_per_second": rate})
 
 
 def _paths(resolved: Resolved) -> tuple[PhysicalNetwork, dict[str, Any] | None]:

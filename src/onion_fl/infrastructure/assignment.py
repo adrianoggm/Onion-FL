@@ -396,6 +396,9 @@ class Resolved:
         """:meth:`train_rate` and, when estimated by FLOPs, a note saying so."""
         return train_rate(self.infrastructure, self.hosts[node], workload)
 
+    def train_sigma(self, node: str) -> float | None:
+        return self.infrastructure.profile_of(self.hosts[node]).train_sigma
+
     def link(
         self, child: str, parent: str, transport: Any
     ) -> tuple[list[str], list[Hop], dict[str, Any]]:

@@ -1,0 +1,24 @@
+# The physical infrastructure of the architectures experiment (issue #192): the
+# lab of spec I1 §5 with a field pool large enough to give every one of the 28
+# training edges of SWELL + WESAD its own Raspberry Pi. No MQTT broker is
+# placed, so a logical link is the direct physical path between its two hosts
+# (as with a broker beside each aggregator). The numbers are illustrative, not
+# calibrated (I12, issue #197).
+name: architectures_lab
+profiles:
+  cloud_vm:      {cpus: 8, memory: 16GB, train_rate: 20000, aggregate_rate: 5.0e8}
+  fog_small:     {cpus: 4, memory: 4GB,  train_rate: 4000,  aggregate_rate: 1.0e8}
+  raspberry_pi:  {cpus: 4, memory: 4GB,  train_rate: 900}
+  desktop:       {cpus: 8, memory: 16GB, train_rate: 6000}
+  low_power_iot: {cpus: 1, memory: 512MB, train_rate: 150}
+sites:
+  dc:    {hosts: {cloud-1: cloud_vm}}
+  fog_1: {hosts: {fog-1: fog_small}}
+  fog_2: {hosts: {fog-2: fog_small}}
+  field: {pool: {raspberry_pi: 30, desktop: 10, low_power_iot: 10}}
+network:
+  links:
+    - {between: [field, fog_1], latency: 10ms, bandwidth: 100Mbps, loss: 0.0}
+    - {between: [field, fog_2], latency: 15ms, bandwidth: 50Mbps}
+    - {between: [fog_1, dc], latency: 70ms, bandwidth: 10Mbps}
+    - {between: [fog_2, dc], latency: 70ms, bandwidth: 10Mbps}
