@@ -82,6 +82,8 @@ The data is not in git. Download each dataset from its source and place it where
 | WESAD | [University of Siegen](https://uni-siegen.sciebo.de/s/HGdUkoNlW1Ub0Gx) (`WESAD.zip`, 2.2 GB; publications must cite Schmidt et al., 2018); extract the `S<n>/S<n>.pkl` files (13 GB) into `data/` | `data/WESAD/S<n>/S<n>.pkl` | `datasets/wesad.yaml` |
 | FEMNIST | [LEAF](https://github.com/TalwalkarLab/leaf) (Caldas et al., 2018; BSD-2): `./preprocess.sh` in `leaf/data/femnist` downloads NIST SD19 and first writes `data/all_data/all_data_<k>.json`, every writer before LEAF's sampling (about 3,600); copy those files. A shorter route is the Flower Datasets copy, [flwrlabs/femnist](https://huggingface.co/datasets/flwrlabs/femnist) (one 201 MB Parquet file): `scripts/femnist_from_flower.py` writes the 200 declared writers in the same format (it needs pyarrow and Pillow, not dependencies of Onion-FL; the command is in the script) | `data/FEMNIST/all_data/*.json` | `datasets/femnist.yaml` (200 fixed writers) |
 
+FedScale's client device traces (issue #253; [FedScale](https://github.com/SymbioticLab/FedScale), Apache-2.0) are infrastructure, not data to learn from. Download `client_device_capacity` and `client_behave_trace` from [`benchmark/dataset/data/device_info/`](https://github.com/SymbioticLab/FedScale/tree/7ec441c2afa99510535adebe155d89fa8bb2c637/benchmark/dataset/data/device_info) (65 MB) into `data/FedScale/` and run `onion_fl traces import fedscale data/FedScale`. They are pickles: the import reads them with an unpickler that builds only plain values and writes `capacity.csv`, `behaviour.jsonl` and `manifest.json`, which is all the runs read. `infrastructures/fedscale_field.yaml` samples its phones from them.
+
 ### Run
 
 ```bash
@@ -615,4 +617,5 @@ The workflows run only on release PRs into `main`, to save CI minutes; task PRs 
 Licensed under the Apache License 2.0; see [LICENSE](LICENSE).
 
 - **Datasets:** WESAD (Schmidt et al.), SWELL-KW (Koldijk et al.) and SWEET.
+- **Device traces:** FedScale's client capacity and availability traces (Lai et al., 2022; Apache-2.0).
 - **Software:** [PyTorch](https://pytorch.org), [Eclipse Mosquitto](https://mosquitto.org), [paho-mqtt](https://eclipse.dev/paho/), [OpenTelemetry](https://opentelemetry.io), [Prometheus](https://prometheus.io), [Grafana](https://grafana.com), [Jaeger](https://www.jaegertracing.io) and [pydantic](https://docs.pydantic.dev).
