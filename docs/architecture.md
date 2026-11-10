@@ -63,7 +63,7 @@ flowchart LR
 - **Descriptors** (`datasets/<name>.yaml`) declare a source with readers (`csv`, `excel`, `parquet`, `pickle`, `npz`, `wesad_pickle`) and ordered steps (`subject`, `label`, `features`, `replace`, `join`, `window`, `select`). Options fill `{placeholders}` and switch steps on with `when`. Each source file runs through the steps on its own, so memory stays bounded and windows never span two files. The `subject` and `label` source columns can never become features, and `features` must be explicit.
 - **The cache** stores one `npz` per subject plus `meta.json` with a digest per subject. Its key hashes the descriptor and the options, not the root path. Parallel writers are safe.
 - **Roles** are drawn per dataset with their own seed, before and apart from the placement:
-  - `test` subjects are the global evaluators, and they are identical in every scenario;
+  - `test` subjects are the global evaluators, and they are identical in every scenario; in cross-silo (`datasets/heart_disease.yaml`) a subject is one hospital's train or test split, and the overrides list each hospital's official test split as `test`;
   - `val` subjects become zone evaluators;
   - `train` subjects are grouped into clients (`subjects_per_client`), each keeping `local_val` rows: its last rows (`tail`) or the last rows of each class (`class_tail`);
   - imputation, scaling (`global`, `local` or `none`) and constant-feature removal are fitted on the training portions only.
