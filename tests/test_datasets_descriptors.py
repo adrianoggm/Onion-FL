@@ -240,6 +240,42 @@ def test_nurse_stress_labels_follow_the_survey() -> None:
     assert np.bincount(data.y.astype(int)).tolist() == [63, 92]
 
 
+NURSE_SAMPLE = Path("data/samples/NurseStress")
+
+
+@pytest.mark.skipif(
+    not NURSE_SAMPLE.exists(), reason="data/samples/NurseStress not available"
+)
+def test_nurse_stress_sample_reads_with_both_classes() -> None:
+    """The real extract of scripts/nurse_stress_sample.py: four nurses."""
+    subjects = {
+        s.subject: s for s in ingest(descriptor("nurse_stress"), root=NURSE_SAMPLE)
+    }
+
+    counts = {k: np.bincount(s.y.astype(int)).tolist() for k, s in subjects.items()}
+    assert counts == {"7E": [55, 52], "BG": [55, 36], "E4": [46, 48], "F5": [75, 24]}
+    for data in subjects.values():
+        assert data.task == "stress_binary" and data.n_classes == 2
+        assert len(data.feature_names) == 30  # 6 E4 channels x 5 statistics
+
+
+@pytest.mark.skipif(
+    not (NURSE_SAMPLE.exists() and (NURSE / "Stress_dataset").exists()),
+    reason="data/NurseStress or its sample not available",
+)
+def test_nurse_stress_sample_matches_the_full_dataset() -> None:
+    spec = descriptor("nurse_stress")
+    sample = {s.subject: s for s in ingest(spec, root=NURSE_SAMPLE)}
+    for session in ["E4_1593538007", "BG_1607735684"]:
+        nurse = session.split("_")[0]
+        spec.source = spec.source.model_copy(
+            update={"path": f"Stress_dataset/{{subject}}/{session}/EDA.csv"}
+        )
+        (full,) = ingest(spec)
+        np.testing.assert_array_equal(sample[nurse].y, full.y)
+        np.testing.assert_array_equal(sample[nurse].X, full.X)
+
+
 def test_femnist_declares_a_fixed_subsample_of_hundreds_of_writers() -> None:
     writers = descriptor("femnist").source.reader_params()["writers"]
 
