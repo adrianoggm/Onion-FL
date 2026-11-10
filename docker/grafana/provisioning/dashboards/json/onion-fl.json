@@ -815,6 +815,44 @@
           }
         }
       ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Contribution by child (Shapley)",
+      "id": 21,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Shapley value of each child's update per group at each aggregator, in the coherence game of the contribution diagnostic: near 1 agrees with the others, near 0 is noise, negative pushes against them.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "expr": "onionfl_diagnostic{name=\"contribution_shapley\", run_id=~\"$run_id\", topology_id=~\"$topology_id\"}",
+          "legendFormat": "{{node}} \u00b7 {{child}} \u00b7 {{group}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ]
     }
   ]
 }
