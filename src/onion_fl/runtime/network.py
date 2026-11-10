@@ -156,3 +156,46 @@ class LinkChannel:
             return None
         self._last_arrival = arrival
         return arrival
+
+
+class PathChannel:
+    """One direction of a logical link over a changing, maybe shared, network.
+
+    ``network`` gives the path's profile at a time (None while a segment is
+    down: the message is lost) and, when its bandwidth is shared, queues the
+    message on the path's segments. ``hops`` are opaque to this runtime: only
+    the network knows what they are. The draws are the ``LinkChannel`` ones,
+    in the same order, so a path that nothing shares or changes gives the
+    same arrivals.
+    """
+
+    def __init__(
+        self,
+        network: Any,
+        hops: list[Any],
+        direction: Direction,
+        rng: np.random.Generator,
+    ) -> None:
+        self.network = network
+        self.hops = hops  # in the direction of travel: its "up" is this direction
+        self.direction = direction
+        self._rng = rng
+        self._free_at = 0.0
+        self._last_arrival = 0.0
+
+    def schedule(self, t_send: float, size_bytes: int) -> float | None:
+        fields = self.network.profile(self.hops, t_send)
+        if fields is None:  # a segment is down: decided at sending time
+            return None
+        profile = LinkProfile(**fields)
+        if self.network.shared:
+            _, through = self.network.reserve(self.hops, t_send, size_bytes)
+        else:
+            start = max(t_send, self._free_at)
+            through = self._free_at = start + profile.transmission_s(size_bytes, "up")
+        lost = self._rng.random() < profile.loss
+        arrival = max(through + profile.sample_latency(self._rng), self._last_arrival)
+        if lost:
+            return None
+        self._last_arrival = arrival
+        return arrival

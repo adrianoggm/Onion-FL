@@ -34,9 +34,10 @@ flowchart LR
 | `learning` | `model`, `sharing`, `aggregators`, `trainers`, `metrics` | What is trained, what travels, how it is combined and scored |
 | `roles` | `nodes`, `policies`, `federation` | The round protocol and the assembly of a federation on a runtime |
 | `runtime` | `sim`, `real`, `network`, `devices` | Virtual-clock and wall-clock hosts for the nodes |
+| `infrastructure` | `model`, `paths`, `assignment` | The physical infrastructure, its paths and the assignment of the logical nodes to its hosts; depends on `core` only |
 | `transports` | `memory`, `mqtt` | Bytes between processes for the real runtime |
 | `observability` | `events`, `run`, `diagnostics`, `analysis`, `sinks` | Event schema, run records, diagnostics, analysis and live sinks |
-| `experiment` | `config`, `sweep`, `runner`, `real`, `cli` | From an experiment YAML to signed runs |
+| `experiment` | `config`, `sweep`, `runner`, `real`, `ceiling`, `cli` | From an experiment YAML to signed runs |
 
 ## 3. Topology
 
@@ -135,6 +136,7 @@ sequenceDiagram
 - One queue ordered by (virtual time, sequence), with `start`, `deliver`, `timer` and `compute_done` events.
 - Links schedule each direction FIFO, with latency (fixed, normal or lognormal), jitter, bandwidth and loss; the presets are `lan`, `wifi`, `4g` and `lora`.
 - `ctx.compute(samples)` keeps a node busy for the time its compute model gives. What it sends leaves when the work ends, and what arrives meanwhile waits.
+- Compute is `samples_per_second` (fixed rate), `measured` (wall time × factor), `lognormal_rate` (a lognormal rate per task, with the mean duration of `samples_per_second` and dispersion `sigma`) or `trace` (each task lasts one of the measured `durations`, drawn uniformly). A model whose `duration` takes `rng` draws from the node's compute stream, `node_rng(seed, "<node>/compute")`, apart from the node's own stream; the others are called as before.
 - Availability is `always`, `bernoulli`, `schedule` or `crash_at`. An offline node drops what it receives; its start and its timers wait until it is up again, and are dropped only after a crash.
 - Each node keeps one RNG stream for the whole run, so a seed gives the same events.
 
@@ -153,6 +155,29 @@ sequenceDiagram
 4. When the run finishes, a stop travels down the tree, the processes exit, and the launcher merges and signs the run.
 
 With full quorum and the same seed, simulation and MQTT give the same final model. `tests/test_runtime_equivalence.py` checks it.
+
+## 7a. Infrastructure
+
+The federation is logical; an `infrastructure:` puts it on machines (spec `docs/superpowers/specs/2026-11-03-onion-fl-infrastructure-design.md`).
+
+```yaml
+infrastructure:
+  name: edge_fog_cloud_lab           # infrastructures/<name>.yaml, a path, or inline
+  assignment:
+    root: cloud-1
+    aggregators: {fog_a1: fog-1, fog_a2: fog-1}
+    edges: {name: explicit, hosts: {"swell-*": field-raspberry_pi-1, "*": fog-1}}
+```
+
+- **Model.** Profiles (`train_rate`, `aggregate_rate`, `cpus`, `memory`), sites with named hosts and pools (`field: {pool: {raspberry_pi: 20}}` gives `field-raspberry_pi-1..20`), links between sites, and services such as the MQTT broker.
+- **Paths.** Two nodes on one host talk for free; on one site, through its `lan`; across sites, along the path of least latency. The path's profile adds latencies, combines jitters as √Σσ², takes the narrowest bandwidth per direction and composes losses as 1 − ∏(1 − pᵢ); one segment keeps its profile exactly.
+- **Assignment.** The coordinator and the aggregators go to hosts by name; the edges, by an `assignments` strategy: `explicit` (names or patterns), `one_per_device`, `profile_mix` (fractions rounded by largest remainder), `by_dataset` and `colocated` (`per_host` edges per device). The pool strategies draw devices from the pools (named hosts are servers), optionally from some `sites`, in an order drawn from their own `seed`: changing it moves edges, never their data. `coupled` takes the devices `profile_mix` would and pairs them with the edges so that a statistic of each edge's data (`samples`, `label_divergence`: the KL divergence of its labels from its dataset's, or `initial_loss`) and its device's `train_rate` have a target rank correlation `rho`: a Gaussian copula on the strategy's own seed, its latent correlation chosen so that the expected Spearman for that many edges is `rho` (Moran's formula). `rho = 0` is `profile_mix` in distribution, and `rho` only permutes edges over the same devices; `plan` shows the statistic and the Spearman achieved under `infrastructure.coupling` (devices of equal speed tie, so it can fall short of `rho`). `assignment.services` moves a service, such as the broker, to another host. The assignment is part of the `config_id` and can be swept.
+- **What the runtimes see.** Each logical link gets its path's profile and each edge computes at its host's `train_rate`; evaluators sit on their parent's host. `SimRuntime` knows nothing of sites or hosts.
+- **Network.** With `network.bandwidth: shared` (the default) each direction of a segment (a site's LAN or a link) is one FIFO queue for every logical link that crosses it: a message waits until all the segments of its path are free and is through after its size over the narrowest one, so two flows on a link of capacity c get c/2 each; `dedicated` gives each logical link its path's full bandwidth. Uncontended, the two are the same, and so on the implicit infrastructure. An MQTT link goes child → broker → parent when the infrastructure places an `mqtt_broker`. `network.schedule` changes a link at a time (`set` fields, `down: true/false`, or a `trace` CSV, one change per row), recorded as `link.changed`, `link.down` and `link.up` of the node `network`; a message sent while a segment of its path is down is lost (one already in flight still arrives). `SimRuntime` sees only channels (`add_link(channel=...)`), never segments.
+- **Resources.** Nodes on a host with `cpus` share it: at most `cpus` jobs at once, the others wait in FIFO order (`host.queued`, valued by the wait). Combining a round costs the aggregator's host the bytes combined / `aggregate_rate`, so an overloaded fog closes later; without `aggregate_rate` it is free, as before. `plan` refuses a host whose nodes' models and data do not fit in its `memory` (every node counted with the whole initial model, an upper bound); swapping is not simulated.
+- **One source of truth.** With an infrastructure, a `link_up.profile` or an edge `device` in the topology is refused. Without one, nothing changes: the ids are the same and the topology's links are the implicit infrastructure (`tests/test_infrastructure.py` checks that an infrastructure reproducing it gives the same events).
+- **Not yet.** Real runs refuse an infrastructure (I7, I14). Mobility (a host changing site) comes later.
+- `plan` shows each node's host, each host's load, the services and each link's path and profile; `run.json` records `backend` (`sim` or `real`) and `infrastructure_id`.
 
 ## 7b. Continuing a run (continuum)
 
@@ -245,6 +270,7 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
 | Identifier | Definition |
 |---|---|
 | `topology_id` | SHA-256 of the canonical tree |
+| `infrastructure_id` | SHA-256 of the canonical infrastructure; `null` without one (the topology's links are the infrastructure) |
 | `config_id` | SHA-256 of the validated config without seeds and sweep |
 | `data_id` | SHA-256 of the cache digests in use |
 | `code_version` | Git commit, and whether there were uncommitted changes |
@@ -256,7 +282,9 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
 - participation and fairness;
 - communication, derived by the run recorder from the message events.
 
-**Analysis and report.** `load_runs(...).metrics(...)` gives one row per event with every tag as a column. `.compare(level, metric, by, over="seed")` combines the nodes of a level inside each run (mean, min, max and spread), then the runs over the seeds, with a 95% t interval per round. `report()` and `onion_fl report` render it as HTML.
+**Analysis and report.** `load_runs(...).metrics(...)` gives one row per event with every tag as a column. `.compare(level, metric, by, over="seed")` combines the nodes of a level inside each run (mean, min, max and spread), then the runs over the seeds, with a 95% t interval per round. `report()` and `onion_fl report` render it as HTML. **Time to target** (spec N5): `.time_to_target(level, metric, target)` gives, per run, the first `t_virtual` at which the level's per-round mean reaches a threshold fixed before running (`>=`, or `<=` with `lower=True`), and censors the runs that never reach it at their duration (last event), flagged `censored`. `.compare(..., target=x)` summarises it per group: runs reached and censored, and the mean time with a seeded 95% percentile bootstrap interval; censored runs count at their duration, so the mean is then a lower bound.
+
+**Noise ceiling.** `experiment.ceiling` reruns every swept scenario in R replicas (new seeds and, optionally, a redrawn `search`) and scores each from the root's last score in `summary.json`, the best trial of a search winning its cell. Over every ordered pair of replicas `(a, b)` it reports whether they pick the same winner (top-1) and the selection regret: the best score of `b` minus `b`'s score of `a`'s winner. A decision metric (I1 §12) only counts above this ceiling.
 
 **Sinks.**
 - `jsonl` is always on.
@@ -269,9 +297,9 @@ With full quorum and the same seed, simulation and MQTT give the same final mode
 
 | Area | What it shows |
 |---|---|
-| Topologies | The library with graphs and `topology_id`, and an editor that validates through `POST /api/topologies/validate` |
+| Topologies | The library with graphs and `topology_id` (the plan draws each leaf with its number of edges, which the placement decides), and an editor that validates through `POST /api/topologies/validate` |
 | Experiments | Scenarios with their `config_id`, the dry-run plan with its warnings (and, for a stream, its rows, horizon, drain and rounds or trigger), and a launch that starts `onion_fl run` in a child process |
-| Runs | Status, identity, summary, the rounds a continuum trigger opened and the drift detected (`trigger.fired`, `drift.detected`), metric series per level, and events polled every two seconds while a run is `running` |
+| Runs | Status, identity, summary, the rounds a continuum trigger opened and the drift detected (`trigger.fired`, `drift.detected`), metric series per level, and events polled every two seconds while a run is `running`, which redraw the figures and the triggers when a round, a trigger or the end arrives. The runs list refreshes every three seconds |
 | Compare | `Runs.compare` by any tags, with the 95% CI band |
 | Tutorial | Every registry's plugins with their explanation and parameters, and dry-run previews (`studio.previews`) |
 
@@ -308,7 +336,7 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 |---|---|
 | codec | `json`, `npz` |
 | link_profile | `lan`, `wifi`, `4g`, `lora` |
-| compute_model | `samples_per_second`, `measured` |
+| compute_model | `samples_per_second`, `measured`, `lognormal_rate`, `trace` |
 | availability_model | `always`, `bernoulli`, `schedule`, `crash_at` |
 | transport | `memory`, `mqtt` |
 | model | `modular_mlp` |

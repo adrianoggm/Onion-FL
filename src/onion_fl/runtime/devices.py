@@ -1,7 +1,13 @@
 from __future__ import annotations
 
-"""Device models for simulation: compute time and availability (spec §9.1)."""
+"""Device models for simulation: compute time and availability (spec §9.1).
 
+A compute model whose ``duration`` takes an ``rng`` gets the node's compute
+stream, ``node_rng(seed, "<node>/compute")``: the same seed gives the same times,
+and the node's own stream (what its trainer draws) is not touched.
+"""
+
+import numpy as np
 from pydantic import BaseModel, Field, field_validator
 
 from onion_fl.core.context import node_rng
@@ -58,6 +64,90 @@ class Measured:
 
     def duration(self, samples: float, wall_s: float) -> float:
         return wall_s * self.factor
+
+
+class LognormalRateParams(BaseModel):
+    samples_per_second: float = Field(
+        gt=0, description="Muestras por segundo que dan la duración media"
+    )
+    sigma: float = Field(
+        ge=0, description="Dispersión: desviación típica del logaritmo de la tasa"
+    )
+    overhead_s: float = Field(
+        0.0, ge=0, description="Coste fijo de cada tarea con trabajo"
+    )
+
+
+@compute_models.register(
+    "lognormal_rate",
+    title="Tasa lognormal",
+    description=(
+        "Cada tarea con trabajo tiene su propia tasa lognormal; de media dura "
+        "overhead + muestras / muestras_por_segundo."
+    ),
+    params=LognormalRateParams,
+    explain=(
+        "Hace que cumplir el deadline sea una probabilidad y no un sí o no fijo; "
+        "la misma semilla da los mismos tiempos."
+    ),
+)
+class LognormalRate:
+    """``duration = overhead + samples / samples_per_second * exp(sigma Z - sigma²/2)``
+    with Z standard normal: the rate is lognormal and the mean duration is that of
+    ``samples_per_second`` at the same rate."""
+
+    def __init__(
+        self, samples_per_second: float, sigma: float, overhead_s: float = 0.0
+    ) -> None:
+        self.samples_per_second = samples_per_second
+        self.sigma = sigma
+        self.overhead_s = overhead_s
+
+    def duration(
+        self, samples: float, wall_s: float, rng: np.random.Generator
+    ) -> float:
+        if samples <= 0:
+            return 0.0
+        factor = np.exp(self.sigma * rng.standard_normal() - self.sigma**2 / 2)
+        return self.overhead_s + samples / self.samples_per_second * float(factor)
+
+
+class TraceParams(BaseModel):
+    durations: list[float] = Field(
+        min_length=1, description="Duraciones medidas de tareas con trabajo (s)"
+    )
+
+    @field_validator("durations")
+    @classmethod
+    def _non_negative(cls, durations: list[float]) -> list[float]:
+        if any(d < 0 for d in durations):
+            raise ValueError("durations must be >= 0")
+        return durations
+
+
+@compute_models.register(
+    "trace",
+    title="Tiempos medidos",
+    description=(
+        "Cada tarea con trabajo dura una de las duraciones medidas, elegida al "
+        "azar con la semilla del nodo."
+    ),
+    params=TraceParams,
+    explain="Reproduce la distribución observada en dispositivos reales.",
+)
+class Trace:
+    """Each task with work lasts one of ``durations``, drawn uniformly: the
+    empirical distribution of the trace, whatever the samples."""
+
+    def __init__(self, durations: list[float]) -> None:
+        self.durations = list(durations)
+
+    def duration(
+        self, samples: float, wall_s: float, rng: np.random.Generator
+    ) -> float:
+        if samples <= 0:
+            return 0.0
+        return float(self.durations[rng.integers(len(self.durations))])
 
 
 # --- availability ------------------------------------------------------------
