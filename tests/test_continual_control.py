@@ -1,6 +1,6 @@
 """Operator orders from outside the tree: signed, scheduled, paused (continuum #203).
 
-The federation is the one of ``test_continuum_versions``: edges with the stub
+The federation is the one of ``test_continual_versions``: edges with the stub
 trainer and a validator with a stub scorer that reads the model's weights, on a
 hand-written format fixture. Nothing learns (docs/RULES.md).
 """
@@ -30,7 +30,7 @@ from onion_fl.continual.promotion import promotions
 from onion_fl.core.message import Message
 from onion_fl.learning.model import ModularMLP
 from onion_fl.roles import EdgeSpec, build_federation
-from tests.test_continuum_versions import (
+from tests.test_continual_versions import (
     CONFIG,
     EVERY,
     INITIAL,

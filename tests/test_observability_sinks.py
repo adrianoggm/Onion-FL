@@ -263,8 +263,8 @@ def test_an_otlp_provider_points_at_the_collector() -> None:
 
 
 def test_versions_arrivals_and_drift_are_exported(tmp_path: Path) -> None:
-    from tests.test_continuum_control import ROUND, federation, signed
-    from tests.test_continuum_versions import Operator, tree
+    from tests.test_continual_control import ROUND, federation, signed
+    from tests.test_continual_versions import Operator, tree
 
     sink = PrometheusSink(registry=CollectorRegistry())
     fed = federation()
