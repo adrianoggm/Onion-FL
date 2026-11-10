@@ -405,3 +405,52 @@ def test_wesad_and_e4_csv_share_feature_names(tmp_path: Path) -> None:
 
     assert data.feature_names == HARMONIZED
     assert len(data.y) == 3 and (data.y[0], data.y[-1]) == (0, 1)
+
+
+# --- PhysioNet's E4 export (issue #240) ----------------------------------------------
+
+
+def _utc(seconds: float) -> str:
+    return pd.Timestamp(seconds, unit="s").strftime("%Y-%m-%d %H:%M:%S")
+
+
+def physionet_session(root: Path, activity: str, session: str, tags) -> Path:
+    """An E4 session as PhysioNet writes it: UTC dates instead of Unix starts."""
+    folder = e4_session(root / "Wearable_Dataset" / activity / session)
+    for file in folder.glob("*.csv"):
+        lines = file.read_text(encoding="utf-8").splitlines()
+        start = lines[0].split(",")
+        stamp = _utc(float(start[0]))
+        lines[0] = ",".join([stamp] * len(start))
+        file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    text = "".join(f"{_utc(START + t)}\n" for t in tags)
+    (folder / "tags.csv").write_text(text, encoding="utf-8")
+    return folder
+
+
+def test_e4_reader_reads_utc_dates_as_unix_seconds(tmp_path: Path) -> None:
+    folder = physionet_session(tmp_path, "STRESS", "S01", [])
+    unix = readers.create("empatica_e4_csv", {"signals": "ACC,EDA,IBI"})
+
+    df = unix.read(folder)
+
+    assert df["time"].min() == START
+    ibi = df.dropna(subset=["ibi"])
+    np.testing.assert_allclose(ibi["time"] - START, [0.5, 1.3, 6.0])
+
+
+def test_e4_reader_reads_an_empty_ibi_export(tmp_path: Path) -> None:
+    folder = physionet_session(tmp_path, "ANAEROBIC", "S01", [])
+    (folder / "IBI.csv").write_text(f"{_utc(START)},IBI\n", encoding="utf-8")
+
+    df = readers.create("empatica_e4_csv", {"signals": "EDA,IBI"}).read(folder)
+
+    assert df["ibi"].isna().all() and len(df) == SECONDS
+
+
+def test_e4_reader_rejects_a_start_that_is_not_a_time(tmp_path: Path) -> None:
+    folder = e4_session(tmp_path / "S1")
+    (folder / "EDA.csv").write_text("start\n4.0\n0.1\n", encoding="utf-8")
+
+    with pytest.raises(DataError, match="neither Unix seconds nor a date"):
+        readers.create("empatica_e4_csv", {"signals": "EDA"}).read(folder)
