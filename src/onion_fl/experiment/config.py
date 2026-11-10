@@ -498,6 +498,11 @@ class PathsConfig(Strict):
         "infrastructures",
         exclude_if=lambda v: v == "infrastructures",  # keeps existing config_ids
     )
+    device_traces: str = Field(
+        "data",
+        exclude_if=lambda v: v == "data",  # keeps existing config_ids
+        description="Carpeta de las trazas de dispositivos importadas (FedScale/)",
+    )
     datasets: str = "datasets"
     runs: str = "runs"
     cache: str = "data/cache"
