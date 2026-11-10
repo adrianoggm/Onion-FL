@@ -1,0 +1,192 @@
+{
+ "compared_with": "Processed_data/Improved_All_Combined_hr_rsp_binary.csv (Label, by Participant and Time(sec))",
+ "labels_from": "Processed_data/Time_logs.xlsx through datasets/stress_predict.yaml",
+ "unit": "one second of the CSV; 'unlabelled' falls in no phase with a class (between phases)",
+ "total": {
+  "seconds": 112516,
+  "unlabelled": 5201,
+  "disagree": 3952
+ },
+ "confusion_seconds": {
+  "authors_0_ours_0": 69601,
+  "authors_0_ours_1": 2178,
+  "authors_1_ours_0": 1774,
+  "authors_1_ours_1": 33762
+ },
+ "windows": {
+  "n": 3425,
+  "agree_with_the_authors_majority": 0.9623
+ },
+ "per_subject": {
+  "S02": {
+   "seconds": 3557,
+   "unlabelled": 140,
+   "disagree": 363
+  },
+  "S03": {
+   "seconds": 3309,
+   "unlabelled": 210,
+   "disagree": 401
+  },
+  "S04": {
+   "seconds": 3531,
+   "unlabelled": 51,
+   "disagree": 104
+  },
+  "S05": {
+   "seconds": 3269,
+   "unlabelled": 103,
+   "disagree": 94
+  },
+  "S06": {
+   "seconds": 3310,
+   "unlabelled": 139,
+   "disagree": 0
+  },
+  "S07": {
+   "seconds": 3371,
+   "unlabelled": 251,
+   "disagree": 134
+  },
+  "S08": {
+   "seconds": 3136,
+   "unlabelled": 120,
+   "disagree": 32
+  },
+  "S09": {
+   "seconds": 3178,
+   "unlabelled": 76,
+   "disagree": 157
+  },
+  "S10": {
+   "seconds": 3029,
+   "unlabelled": 120,
+   "disagree": 90
+  },
+  "S11": {
+   "seconds": 3270,
+   "unlabelled": 150,
+   "disagree": 55
+  },
+  "S12": {
+   "seconds": 3333,
+   "unlabelled": 170,
+   "disagree": 125
+  },
+  "S13": {
+   "seconds": 3337,
+   "unlabelled": 104,
+   "disagree": 54
+  },
+  "S14": {
+   "seconds": 3567,
+   "unlabelled": 439,
+   "disagree": 55
+  },
+  "S15": {
+   "seconds": 3450,
+   "unlabelled": 270,
+   "disagree": 112
+  },
+  "S16": {
+   "seconds": 3438,
+   "unlabelled": 265,
+   "disagree": 85
+  },
+  "S17": {
+   "seconds": 3303,
+   "unlabelled": 123,
+   "disagree": 72
+  },
+  "S18": {
+   "seconds": 3414,
+   "unlabelled": 234,
+   "disagree": 67
+  },
+  "S19": {
+   "seconds": 3185,
+   "unlabelled": 65,
+   "disagree": 229
+  },
+  "S20": {
+   "seconds": 3388,
+   "unlabelled": 268,
+   "disagree": 86
+  },
+  "S21": {
+   "seconds": 3218,
+   "unlabelled": 114,
+   "disagree": 81
+  },
+  "S22": {
+   "seconds": 3055,
+   "unlabelled": 128,
+   "disagree": 56
+  },
+  "S23": {
+   "seconds": 3080,
+   "unlabelled": 22,
+   "disagree": 130
+  },
+  "S24": {
+   "seconds": 3269,
+   "unlabelled": 130,
+   "disagree": 121
+  },
+  "S25": {
+   "seconds": 3204,
+   "unlabelled": 24,
+   "disagree": 141
+  },
+  "S26": {
+   "seconds": 3231,
+   "unlabelled": 51,
+   "disagree": 110
+  },
+  "S27": {
+   "seconds": 3370,
+   "unlabelled": 190,
+   "disagree": 110
+  },
+  "S28": {
+   "seconds": 3298,
+   "unlabelled": 118,
+   "disagree": 86
+  },
+  "S29": {
+   "seconds": 3286,
+   "unlabelled": 106,
+   "disagree": 74
+  },
+  "S30": {
+   "seconds": 3328,
+   "unlabelled": 148,
+   "disagree": 182
+  },
+  "S31": {
+   "seconds": 3299,
+   "unlabelled": 183,
+   "disagree": 71
+  },
+  "S32": {
+   "seconds": 3199,
+   "unlabelled": 32,
+   "disagree": 141
+  },
+  "S33": {
+   "seconds": 3228,
+   "unlabelled": 108,
+   "disagree": 162
+  },
+  "S34": {
+   "seconds": 3561,
+   "unlabelled": 201,
+   "disagree": 89
+  },
+  "S35": {
+   "seconds": 3515,
+   "unlabelled": 348,
+   "disagree": 83
+  }
+ }
+}

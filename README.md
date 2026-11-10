@@ -473,6 +473,18 @@ Source: [results/femnist_reference/](results/femnist_reference/INDEX.md), `confi
 
 The federated model clearly beats the majority class, so it is not a constant predictor; it was still improving at round 30 and stays below centralised logistic regression. [results/sim_scale/](results/sim_scale/INDEX.md) measures the simulator from 100 to 4,000 edges.
 
+### New framework: Stress-Predict centralised reference
+
+Source: [results/stress_predict_reference/](results/stress_predict_reference/INDEX.md), `config_id` `6a48914d…`, `data_id` `4d64cbd9…`, commit `e8ddfd9`. `onion_fl baseline experiments/stress_predict_reference.yaml --models lr rf --cv 5 --seed S`: subject-level 5-fold cross-validation on the 34 subjects of `datasets/stress_predict.yaml` (3,425 windows, 34% stress), seeds 0–4.
+
+| Model | Macro-F1 | Balanced accuracy | Accuracy |
+|---|---|---|---|
+| Random forest (mean ± 95% CI over 5 seeds) | 0.568 ± 0.017 | 0.574 ± 0.014 | 0.666 ± 0.012 |
+| Logistic regression | 0.521 ± 0.007 | 0.547 ± 0.004 | 0.666 ± 0.006 |
+| Always "rest" (majority class) | 0.399 | 0.500 | 0.664 |
+
+The E4 statistics carry some signal on unseen subjects, but little: accuracy is no better than always answering "rest". No federated run has been made on this dataset yet.
+
 ### Before the redesign
 
 The rest of this section lists centralised baselines from the old scripts (removed in F7.2). They live in `results/legacy/`, whose [INDEX.md](results/legacy/INDEX.md) gives each file's origin and caveats. Use `onion_fl baseline` to produce new ones on the current data layer.
