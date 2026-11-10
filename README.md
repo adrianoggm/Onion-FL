@@ -50,6 +50,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 - **Twelve experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, and a FedAvg reference on 200 FEMNIST writers. Each has three seeds, so many intervals overlap.
   - The reference run and the mixing sweep have no strong result. On SWELL, no model beats always predicting "stress" on the held-out subjects. On WESAD, the federated model reaches 0.77 accuracy where centralised logistic regression reaches 0.91.
   - In the technique comparisons, the clearest effects are on WESAD: FedDyn and SCAFFOLD beat FedAvg under drift, the adaptive server optimizers beat it too, and a strong sign-flip attack collapses FedAvg while norm clipping holds.
+- **The multi-dataset stress benchmark** (onion-bench-stress, [§7](#7-results)) ran on four E4 studies plus SWELL + WESAD with five seeds. Plain FedAvg beats the centralised logistic regression on no E4 study; FedBABU and FedDyn beat it on Stress-Predict and narrowly on PhysioNet; on Nurse Stress nothing is far from the majority class, and a model trained only on the laboratory studies transfers poorly to the hospital.
 - **Checking the data found real problems,** now fixed. 999 means "missing" in the SWELL physiology file, for 53% of the heart-rate values, and both the old and the new loaders read it as a value. The facial and physiology joins and the WESAD chest signals `Resp` and `Temp` failed to load. The SWELL posture file has every date a month early, so posture is left out.
 - **Tests that need data** skip without `data/` ([docs/RULES.md](docs/RULES.md)). Protocol tests use a stub trainer that learns nothing.
 - **Legacy numbers stay legacy.** [§7](#7-results) lists the baselines from before the redesign with their caveats. Some of them predate the `blok` leak fix.
@@ -501,6 +502,39 @@ Source: [results/stress_predict_reference/](results/stress_predict_reference/IND
 | Always "rest" (majority class) | 0.399 | 0.500 | 0.664 |
 
 The E4 statistics carry some signal on unseen subjects, but little: accuracy is no better than always answering "rest". No federated run has been made on this dataset yet.
+
+### New framework: onion-bench-stress, the multi-dataset stress benchmark
+
+Source: [results/stress_e4/](results/stress_e4/INDEX.md), issue #244. The protocol was committed before the benchmark ran (commit `8bf2343`), and every run's `run_id`, `run_hash`, `config_id`, `topology_id` and commit is in the INDEX. Code: commits `8bf2343`–`e965216`, all with the same `src/`.
+
+- **E4 track** (`benchmarks/stress.yaml`, `stress_lodo.yaml`, `stress_per_study.yaml`): WESAD wrist, PhysioNet, Nurse Stress and Stress-Predict with the same 30 harmonized E4 features. One edge per subject, one fog per study (`topology_id` `5f5cd72e…`, `data_id` `a5610d4e…`).
+- **Lab track** (`benchmarks/stress_lab.yaml`): SWELL and WESAD as in the existing baselines (`topology_id` `ff55fe4d…`, `data_id` `9fd57375…`). It is never in the same table as the E4 track.
+- **Protocol.** The test subjects are fixed by the roles seed and are the same in every scenario and seed: E4 4 / 9 / 4 / 8 per study, lab 5 + 3. Five seeds, 20 rounds, SGD with the lr chosen beforehand on validation subjects. Macro-F1 over the test windows of each study, mean ± 95% CI; differences paired by seed. The centralised logistic regression is one number.
+
+Macro-F1, E4 track:
+
+| | WESAD wrist | PhysioNet | Nurse | Stress-Predict |
+|---|---|---|---|---|
+| Majority class | 0.391 | 0.457 | 0.459 | 0.399 |
+| Centralised LR per study | 0.877 | 0.563 | 0.542 | 0.641 |
+| Centralised LR pooled over the four | 0.386 | 0.550 | 0.543 | 0.459 |
+| FedAvg, hierarchical, per-study adapters | 0.850 ± 0.032 | 0.495 ± 0.016 | 0.552 ± 0.014 | 0.660 ± 0.036 |
+| FedAvg, hierarchical, shared adapter | 0.493 ± 0.066 | 0.556 ± 0.020 | 0.557 ± 0.010 | 0.498 ± 0.026 |
+| FedBABU | 0.888 ± 0.011 | 0.603 ± 0.038 | 0.556 ± 0.015 | 0.673 ± 0.015 |
+| FedDyn | 0.853 ± 0.014 | 0.640 ± 0.072 | 0.552 ± 0.044 | 0.663 ± 0.011 |
+| Trained on the other three (leave-one-out, shared adapter) | 0.479 ± 0.062 | 0.558 ± 0.023 | 0.478 ± 0.031 | 0.493 ± 0.028 |
+
+**What beats the centralised regression and what doesn't:**
+- **Plain FedAvg beats it on no E4 study.** It is below the regression on WESAD wrist and PhysioNet, and its interval contains it on Nurse and Stress-Predict.
+- **FedBABU and FedDyn beat it on Stress-Predict and, by a small margin, on PhysioNet.** FedBABU ties it on WESAD wrist.
+- **On Nurse nothing separates from it, and everything is close to the majority class.**
+- **Lab track:** the federation beats the regression on SWELL (FedAvg 0.555 ± 0.033 against 0.433) and loses on WESAD (best FedDyn 0.856 ± 0.048 against 0.918).
+
+**The other comparisons:**
+- **Flat and hierarchical FedAvg give the same model** (paired differences within ±0.007): with full participation and sample weights the hierarchy only changes the traffic.
+- **The shared adapter hands the model to Nurse,** which holds 90% of the windows. WESAD wrist loses 0.357 ± 0.064 and Stress-Predict 0.162 ± 0.037. With per-study adapters, the federation beats one regression pooled over the four studies on the laboratory studies.
+- **Laboratory → hospital transfers poorly.** Trained on the three laboratory studies, the model scores 0.478 ± 0.031 on the test nurses, against 0.557 ± 0.010 when Nurse trains (paired −0.079 ± 0.039). The majority class is at 0.459.
+- **Not run:** the bootstrap by subject, `feature_transformer` (#229), the `mixing` scenario and the 3-class PhysioNet task. The INDEX lists them.
 
 ### Before the redesign
 
