@@ -44,6 +44,7 @@ from pydantic import (
 
 from onion_fl.core.registry import Registry
 from onion_fl.data.contract import DataError, SubjectData, natural_key
+from onion_fl.data.partition import partition_labels
 from onion_fl.learning.model import NAME
 
 
@@ -128,20 +129,25 @@ class CsvReader:
 
 class ExcelParams(BaseModel):
     sheet: str | int = Field(0, description="Hoja por nombre o posición")
+    na_values: list[str] = Field(
+        default_factory=list, description="Textos que se leen como vacíos"
+    )
 
 
 @readers.register(
     "excel",
     title="Excel",
-    description="Hoja de un .xlsx (necesita openpyxl).",
+    description="Hoja de un .xlsx (necesita openpyxl: extra excel).",
     params=ExcelParams,
 )
 class ExcelReader:
-    def __init__(self, sheet: str | int = 0) -> None:
-        self.sheet = sheet
+    def __init__(
+        self, sheet: str | int = 0, na_values: list[str] | None = None
+    ) -> None:
+        self.sheet, self.na_values = sheet, na_values or None
 
     def read(self, path: Path) -> pd.DataFrame:
-        return pd.read_excel(path, sheet_name=self.sheet)
+        return pd.read_excel(path, sheet_name=self.sheet, na_values=self.na_values)
 
 
 @readers.register(
@@ -531,6 +537,79 @@ class WesadE4Reader:
         return _e4_table(blocks)
 
 
+# The phases of Stress-Predict's protocol, in the order of the columns of
+# Time_logs.xlsx (its headers have typos, so they are named here).
+STRESS_PREDICT_PHASES = [
+    "consent",
+    "baseline",
+    "stroop",
+    "relax_1",
+    "interview",
+    "relax_2",
+    "hyperventilation",
+    "relax_3",
+    "questionnaire",
+    "relax_4",
+]
+
+
+@readers.register(
+    "stress_predict_time_logs",
+    title="Stress-Predict: Time_logs.xlsx",
+    description="Horario de cada fase del protocolo de Stress-Predict: una fila por fase.",
+    explain=(
+        "Da subject, phase, start y end (Unix, en segundos). La hoja trae horas de "
+        "reloj de 12 h sin AM/PM: las anteriores a las 08:00 son de la tarde. Son "
+        "hora de Irlanda, que en febrero y marzo de 2022 es UTC. Si una fase acaba "
+        "después de que empiece la siguiente, acaba donde esa empieza. Necesita "
+        "openpyxl."
+    ),
+)
+class StressPredictTimeLogsReader:
+    """``Processed_data/Time_logs.xlsx`` of Stress-Predict (Iqbal et al., 2022).
+
+    One row per subject, a (Start, End) pair of columns per phase under a
+    two-row header, and the session's day in the ``Date`` column.
+    """
+
+    def read(self, path: Path) -> pd.DataFrame:
+        raw = pd.read_excel(path, header=None)
+        head = [str(v).strip() for v in raw.iloc[0]]
+        sub = [str(v).strip() for v in raw.iloc[1]]
+        pairs = [j for j in range(len(sub) - 1) if sub[j : j + 2] == ["Start", "End"]]
+        if len(pairs) != len(STRESS_PREDICT_PHASES) or "Date" not in head:
+            raise DataError(
+                f"{path}: expected {len(STRESS_PREDICT_PHASES)} (Start, End) pairs "
+                f"and a Date column; found {len(pairs)} pairs"
+            )
+        day_column = head.index("Date")
+        rows = []
+        for _, row in raw.iloc[2:].iterrows():
+            subject = str(row.iloc[0]).strip()
+            if subject in ("", "nan"):
+                continue
+            day = pd.Timestamp(row.iloc[day_column]).normalize()
+            phases = [
+                (phase, _clock(day, row.iloc[j]), _clock(day, row.iloc[j + 1]))
+                for phase, j in zip(STRESS_PREDICT_PHASES, pairs, strict=True)
+            ]
+            phases.sort(key=lambda p: p[1])
+            for k, (phase, start, end) in enumerate(phases):
+                if k + 1 < len(phases):
+                    end = min(end, phases[k + 1][1])
+                rows.append((subject, phase, start, end))
+        return pd.DataFrame(rows, columns=["subject", "phase", "start", "end"])
+
+
+def _clock(day: pd.Timestamp, value: Any) -> float:
+    """Unix seconds of a 12-hour clock time without AM/PM, in a day session."""
+    if not hasattr(value, "hour"):
+        raise DataError(f"Time_logs: {value!r} is not a time")
+    hour = value.hour + (12 if value.hour < 8 else 0)
+    stamp = day + pd.Timedelta(hours=hour, minutes=value.minute, seconds=value.second)
+    return float((stamp - pd.Timestamp(0)).total_seconds())
+
+
 class LeafParams(BaseModel):
     writers: list[str] | None = Field(
         None,
@@ -597,6 +676,95 @@ class LeafJsonReader:
         return frame.assign(
             user=pd.Series(users, dtype=object), y=np.concatenate(labels)
         )
+
+
+def _cifar_array(subtype: Any, shape: Any, dtype: Any) -> np.ndarray:
+    if subtype is not np.ndarray:
+        raise pickle.UnpicklingError(f"array subtype {subtype!r} is not allowed")
+    return np.ndarray.__new__(np.ndarray, shape, _cifar_dtype(dtype))
+
+
+def _cifar_dtype(name: Any, align: Any = False, copy: Any = False) -> np.dtype:
+    if isinstance(name, bytes):
+        name = name.decode("latin1")
+    dtype = np.dtype(name, align=bool(align), copy=bool(copy))
+    if dtype.hasobject:
+        raise pickle.UnpicklingError("object arrays are not allowed")
+    return dtype
+
+
+def _latin1(text: Any, encoding: Any = "latin1") -> bytes:
+    # How Python 3 writes bytes at protocol 2: _codecs.encode(str, "latin1").
+    if not isinstance(text, str) or encoding not in ("latin1", "latin-1"):
+        raise pickle.UnpicklingError("only latin1 text can become bytes")
+    return text.encode("latin1")
+
+
+class _CifarUnpickler(pickle.Unpickler):
+    """Only plain values and numeric numpy arrays: nothing in the file runs code.
+
+    The batches are a dict of bytes, lists and one uint8 array; the array is
+    rebuilt by numpy's ``_reconstruct`` and ``dtype``, here replaced by checked
+    versions that refuse any subtype but ``ndarray`` and any object dtype.
+    """
+
+    SAFE = {
+        ("numpy.core.multiarray", "_reconstruct"): _cifar_array,
+        ("numpy._core.multiarray", "_reconstruct"): _cifar_array,
+        ("numpy", "ndarray"): np.ndarray,
+        ("numpy", "dtype"): _cifar_dtype,
+        ("_codecs", "encode"): _latin1,
+    }
+
+    def find_class(self, module: str, name: str) -> Any:
+        try:
+            return self.SAFE[(module, name)]
+        except KeyError:
+            raise pickle.UnpicklingError(f"{module}.{name} is not allowed") from None
+
+    def persistent_load(self, pid: Any) -> Any:
+        raise pickle.UnpicklingError("persistent ids are not allowed")
+
+
+CIFAR_PIXELS = 3 * 32 * 32
+
+
+@readers.register(
+    "cifar_pickle",
+    title="CIFAR (Python)",
+    description="Lote de la versión Python de CIFAR-10: una fila por imagen, 3072 píxeles.",
+    explain=(
+        "Los píxeles se leen en [0, 1] como x_0…x_3071 en el orden del fichero "
+        "(1024 rojos, 1024 verdes, 1024 azules, por filas); la clase queda en y y "
+        "el nombre del lote (data_batch_1, test_batch…) en batch. Se lee sin "
+        "ejecutar código del fichero."
+    ),
+)
+class CifarPickleReader:
+    """One batch of the CIFAR-10 python version (Krizhevsky, 2009)."""
+
+    def read(self, path: Path) -> pd.DataFrame:
+        with open(path, "rb") as handle:
+            try:
+                batch = _CifarUnpickler(handle, encoding="bytes").load()
+            except (pickle.UnpicklingError, EOFError, ValueError) as error:
+                raise DataError(f"{path}: not a CIFAR batch: {error}") from None
+        if not isinstance(batch, dict) or not {b"data", b"labels"} <= set(batch):
+            raise DataError(f"{path}: a CIFAR batch is a dict with data and labels")
+        pixels, labels = batch[b"data"], np.asarray(batch[b"labels"], dtype=np.int64)
+        if (
+            not isinstance(pixels, np.ndarray)
+            or pixels.dtype != np.uint8
+            or pixels.shape != (len(labels), CIFAR_PIXELS)
+        ):
+            raise DataError(
+                f"{path}: data must be uint8 of shape ({len(labels)}, {CIFAR_PIXELS})"
+            )
+        frame = pd.DataFrame(
+            pixels.astype(np.float32) / 255,
+            columns=[f"x_{i}" for i in range(CIFAR_PIXELS)],
+        )
+        return frame.assign(y=labels, batch=path.stem)
 
 
 def source_files(source: SourceSpec, root: Path) -> list[tuple[Path, str | None]]:
@@ -852,9 +1020,17 @@ class TimeStep:
 
 
 def _seconds(
-    raw: pd.Series, format: str | None, pad_to: int | None, step: str
+    raw: pd.Series,
+    format: str | None,
+    pad_to: int | None,
+    step: str,
+    timezone: str | None = None,
 ) -> np.ndarray:
-    """Seconds since the epoch: numbers as they are, text parsed as dates."""
+    """Seconds since the epoch: numbers as they are, text parsed as dates.
+
+    With ``timezone``, dates without a zone are local times there and the result
+    is in Unix UTC seconds; without it, they are taken as they read.
+    """
     if format is None and pd.api.types.is_numeric_dtype(raw):
         seconds = raw.astype(float)
     else:
@@ -862,7 +1038,13 @@ def _seconds(
         if pad_to is not None:
             text = text.str.ljust(pad_to, "0")
         stamps = pd.to_datetime(text, format=format, errors="coerce")
-        seconds = (stamps - pd.Timestamp(0)).dt.total_seconds()
+        epoch = pd.Timestamp(0)
+        if timezone is not None:
+            stamps = stamps.dt.tz_localize(
+                timezone, ambiguous="raise", nonexistent="raise"
+            ).dt.tz_convert("UTC")
+            epoch = pd.Timestamp(0, tz="UTC")
+        seconds = (stamps - epoch).dt.total_seconds()
     bad = raw[seconds.isna()].unique()[:3].tolist()
     if bad:
         raise DataError(f"{step}: rows of {raw.name!r} without a time: {bad}")
@@ -1068,14 +1250,45 @@ class IntervalsParams(BaseModel):
     end: str = Field("end", description="Columna del final (no incluido)")
     value: str = Field("class", description="Columna con la clase del intervalo")
     column: str = Field("interval", description="Columna nueva con la clase por fila")
-    by: list[str] = Field(
-        default_factory=list, description="Claves comunes, como subject"
+    by: list[str] | dict[str, str] = Field(
+        default_factory=list,
+        description="Claves comunes, como subject, o {columna de la fila: columna "
+        "de la tabla}",
     )
     format: str | None = Field(
         None,
         description="Formato strptime de inicio y final; sin él, segundos o una "
         "fecha que pandas entienda",
     )
+    date: str | None = Field(
+        None,
+        description="Columna con el día, si inicio y final son horas del día; un "
+        "final que no pasa del inicio es del día siguiente",
+    )
+    timezone: str | None = Field(
+        None,
+        description="Zona IANA de las fechas sin zona (p. ej. Etc/GMT+6); se pasan "
+        "a segundos Unix UTC",
+    )
+    overlap: Literal["error", "max"] = Field(
+        "error",
+        description="Intervalos solapados: error, o la clase mayor (numérica) en "
+        "las filas que caen en varios",
+    )
+    outside: float | str | None = Field(
+        None,
+        description="Clase de las filas fuera de todo intervalo, solo en los "
+        "ficheros con algún intervalo de su clave",
+    )
+
+    @model_validator(mode="after")
+    def _known_timezone(self) -> IntervalsParams:
+        if self.timezone is not None:
+            try:
+                pd.Timestamp(0).tz_localize(self.timezone)
+            except Exception as exc:
+                raise ValueError(f"unknown timezone {self.timezone!r}") from exc
+        return self
 
 
 @steps.register(
@@ -1086,53 +1299,114 @@ class IntervalsParams(BaseModel):
     explain=(
         "Para tags de protocolo y eventos de encuesta. Compara con el tiempo de cada "
         "fila, así que va después de un paso time y en sus unidades. Las filas fuera "
-        "de todo intervalo quedan sin clase; los intervalos de una misma clave no "
-        "pueden solaparse. La columna nueva es meta: nunca es una feature."
+        "de todo intervalo quedan sin clase, o con la clase outside si su fichero "
+        "tiene algún intervalo de su clave. Los intervalos de una clave no pueden "
+        "solaparse salvo con overlap: max. Con timezone, las fechas locales pasan a "
+        "Unix UTC. La columna nueva es meta: nunca es una feature."
     ),
 )
 class IntervalsStep:
-    def __init__(self, source, start, end, value, column, by, format) -> None:
+    def __init__(
+        self,
+        source,
+        start,
+        end,
+        value,
+        column,
+        by,
+        format,
+        date,
+        timezone,
+        overlap,
+        outside,
+    ) -> None:
         self.source = SourceSpec.model_validate(source)
         self.start, self.end, self.value, self.column = start, end, value, column
-        self.by, self.format = list(by), format
+        self.by = dict(by) if isinstance(by, Mapping) else {k: k for k in by}
+        self.format, self.date, self.timezone = format, date, timezone
+        self.overlap, self.outside = overlap, outside
         self._table: pd.DataFrame | None = None
+
+    def _read(self, root: Path) -> pd.DataFrame:
+        table = read_source(self.source, root)
+        dates = [self.date] if self.date else []
+        needed = [self.start, self.end, self.value, *dates, *self.by.values()]
+        _require(table, needed, "intervals")
+        start, end = table[self.start], table[self.end]
+        if self.date:
+            day = table[self.date]
+            if pd.api.types.is_datetime64_any_dtype(day):
+                day = day.dt.strftime("%Y-%m-%d")
+            day = day.astype(str) + " "
+            start = (day + start.astype(str)).rename(self.start)
+            end = (day + end.astype(str)).rename(self.end)
+        begins = _seconds(start, self.format, None, "intervals", self.timezone)
+        ends = _seconds(end, self.format, None, "intervals", self.timezone)
+        if self.date:  # a time of day that does not pass the start is the next day
+            ends = np.where(ends <= begins, ends + 86400.0, ends)
+        if self.overlap == "max":
+            numbers = pd.to_numeric(table[self.value], errors="coerce")
+            if numbers.isna().ne(table[self.value].isna()).any():
+                raise DataError(
+                    f"intervals: overlap max needs numeric classes in {self.value!r}"
+                )
+        return table.assign(_start=begins, _end=ends).reset_index(drop=True)
 
     def apply(self, df: pd.DataFrame, ctx: IngestContext) -> pd.DataFrame:
         if TIME not in df.columns:
             raise DataError("intervals compares with each row's time: add a time step")
         if self._table is None:  # read once, then used with every source file
-            table = read_source(self.source, ctx.root)
-            _require(table, [self.start, self.end, self.value, *self.by], "intervals")
-            self._table = table.assign(
-                _start=_seconds(table[self.start], self.format, None, "intervals"),
-                _end=_seconds(table[self.end], self.format, None, "intervals"),
-            ).reset_index(drop=True)
+            self._table = self._read(ctx.root)
         table = self._table
-        _require(df, self.by, "intervals")
+        _require(df, list(self.by), "intervals")
         times = df[TIME].to_numpy(np.float64)
         hit = np.full(len(df), -1)
+        left = _keys(df, list(self.by)) if self.by else np.zeros(len(df), str)
         if self.by:
-            left = df[self.by].astype(str).agg("\x1f".join, axis=1).to_numpy()
-            right = table[self.by].astype(str).agg("\x1f".join, axis=1).to_numpy()
+            right = _keys(table, list(self.by.values()))
             groups = [(left == key, right == key) for key in np.unique(right)]
         else:
             groups = [(np.ones(len(df), bool), np.ones(len(table), bool))]
         for rows, intervals in groups:
-            part = table[intervals].sort_values("_start")
-            if part.empty:
+            part = table[intervals].sort_values("_start", kind="stable")
+            where = np.flatnonzero(rows)
+            if part.empty or len(where) == 0:
                 continue
             starts, ends = part["_start"].to_numpy(), part["_end"].to_numpy()
-            if (ends <= starts).any() or (starts[1:] < ends[:-1]).any():
+            if (ends <= starts).any():
+                raise DataError(f"intervals: empty intervals in {self.source.path}")
+            if self.overlap == "error" and (starts[1:] < ends[:-1]).any():
                 raise DataError(
-                    f"intervals: empty or overlapping intervals in {self.source.path}"
+                    f"intervals: overlapping intervals in {self.source.path}"
                 )
-            where = np.flatnonzero(rows)
-            pos = np.searchsorted(starts, times[where], side="right") - 1
-            inside = (pos >= 0) & (times[where] < ends[np.maximum(pos, 0)])
-            hit[where[inside]] = part.index.to_numpy()[pos[inside]]
+            # Later writes win: in increasing class order (missing classes first),
+            # a row in several intervals keeps the largest class.
+            order = np.arange(len(part))
+            if self.overlap == "max":
+                numbers = pd.to_numeric(part[self.value]).fillna(-np.inf)
+                order = np.argsort(numbers.to_numpy(), kind="stable")
+            t = times[where]
+            for i in order:
+                inside = (t >= starts[i]) & (t < ends[i])
+                hit[where[inside]] = part.index[i]
         classes = table[self.value].reindex(hit).set_axis(df.index)
+        if self.outside is not None:
+            # Only in a file with an interval of its key: elsewhere, nothing says
+            # whether the rows are outside every event or simply not surveyed.
+            held = np.unique(left[hit >= 0])
+            lone = (hit < 0) & np.isin(left, held)
+            classes = classes.astype(object).where(~lone, self.outside)
+            classes = classes.infer_objects()
         ctx.meta_columns.add(self.column)
         return df.assign(**{self.column: classes})
+
+
+def _keys(df: pd.DataFrame, columns: list[str]) -> np.ndarray:
+    """One text key per row from ``columns``, so int and text ids compare equal."""
+    keys = df[columns[0]].astype(str)
+    for column in columns[1:]:  # by column, not by row: sessions have millions
+        keys = keys + "\x1f" + df[column].astype(str)
+    return keys.to_numpy()
 
 
 class LabelRule(BaseModel):
@@ -1171,8 +1445,11 @@ class LabelRule(BaseModel):
             values = values.round()
         if self.map is not None:
             text = {str(k): v for k, v in self.map.items()}
-            exact = values.map(lambda v: self.map.get(v, text.get(str(v).strip())))
-            return pd.to_numeric(exact, errors="coerce").astype(float)
+            codes, uniques = pd.factorize(values)  # each distinct value once
+            found = [self.map.get(v, text.get(str(v).strip())) for v in uniques]
+            exact = pd.to_numeric(pd.Series(found, dtype=object), errors="coerce")
+            exact = np.append(exact.to_numpy(np.float64), np.nan)  # code -1: missing
+            return pd.Series(exact[codes], index=values.index)
         if self.threshold is not None:
             return (values >= self.threshold).astype(float).where(values.notna())
         if self.bins is not None:
@@ -1235,6 +1512,98 @@ class LabelStep:
             ctx.task, ctx.n_classes = rule.task, rule.classes()
             ctx.meta_columns |= {r.column for r in self.rules.values()}
         return df.assign(label=rule.apply(df[rule.column]))
+
+
+class TestRows(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    column: str = Field(description="Columna que marca la partición oficial")
+    values: list[str] = Field(
+        min_length=1, description="Valores de esa columna que son el test oficial"
+    )
+
+
+class PartitionParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scheme: Literal["iid", "dirichlet_label", "label_skew"] = Field(
+        description="iid, dirichlet_label (Dir(α) por clase) o label_skew (k clases)"
+    )
+    clients: PositiveInt = Field(description="Número de clientes (sujetos)")
+    alpha: PositiveFloat | None = Field(
+        None, description="Concentración α de dirichlet_label"
+    )
+    k: PositiveInt | None = Field(None, description="Clases por cliente de label_skew")
+    seed: int = Field(
+        0, description="Semilla de la partición, aparte de la del entrenamiento"
+    )
+    min_size: PositiveInt = Field(
+        10, description="Filas mínimas por cliente en dirichlet_label"
+    )
+    test: TestRows | None = Field(
+        None, description="Filas del test oficial: un sujeto aparte, sin partir"
+    )
+    test_subject: str = "test"
+    prefix: str = Field("client_", description="Prefijo de los sujetos cliente")
+
+    @model_validator(mode="after")
+    def _parameter(self) -> PartitionParams:
+        if (self.scheme == "dirichlet_label") != (self.alpha is not None):
+            raise ValueError("alpha goes with dirichlet_label, and only with it")
+        if (self.scheme == "label_skew") != (self.k is not None):
+            raise ValueError("k goes with label_skew, and only with it")
+        if self.test_subject.startswith(self.prefix):
+            raise ValueError("test_subject cannot start with the client prefix")
+        return self
+
+
+@steps.register(
+    "partition",
+    title="Partición en clientes",
+    description="Reparte un dataset sin sujetos en clientes: iid, Dir(α) por clase o k clases.",
+    params=PartitionParams,
+    explain=(
+        "Como NIID-Bench (Li et al., 2022). La partición es sintética, los datos "
+        "no: depende solo de las etiquetas, del esquema, de α o k y de su semilla, "
+        "así que es idéntica en todos los escenarios. Las filas del test oficial "
+        "forman un sujeto aparte, que data.roles.overrides reserva como test. "
+        "Trabaja sobre la tabla entera, no fichero a fichero."
+    ),
+)
+class PartitionStep:
+    whole_table = True  # ingest joins the files before this step
+
+    def __init__(self, **params: Any) -> None:
+        self.p = PartitionParams.model_validate(params)
+
+    def apply(self, df: pd.DataFrame, ctx: IngestContext | None) -> pd.DataFrame:
+        p = self.p
+        if "label" not in df.columns or ctx is None or ctx.n_classes is None:
+            raise DataError("partition splits by label: put a label step before it")
+        if "subject" in df.columns:
+            raise DataError("partition makes the subjects: drop the subject step")
+        test = np.zeros(len(df), dtype=bool)
+        if p.test is not None:
+            _require(df, [p.test.column], "partition")
+            test = df[p.test.column].astype(str).isin(p.test.values).to_numpy()
+            ctx.meta_columns.add(p.test.column)
+        train = np.flatnonzero(~test & df["label"].notna().to_numpy())
+        parts = partition_labels(
+            df["label"].to_numpy()[train],
+            p.scheme,
+            p.clients,
+            n_classes=ctx.n_classes,
+            seed=p.seed,
+            alpha=p.alpha,
+            k=p.k,
+            min_size=p.min_size,
+        )
+        order = np.concatenate([train[part] for part in parts] + [np.flatnonzero(test)])
+        names = np.concatenate(
+            [np.repeat(f"{p.prefix}{i}", len(part)) for i, part in enumerate(parts)]
+            + [np.repeat(p.test_subject, int(test.sum()))]
+        ).astype(object)
+        return df.iloc[order].reset_index(drop=True).assign(subject=names)
 
 
 class FeaturesParams(BaseModel):
@@ -1394,10 +1763,16 @@ def ingest(
     ctx = IngestContext(
         root=Path(_fill(str(root or spec.root), resolved)), options=resolved
     )
+    # Steps up to the first whole-table one (partition) run file by file; that
+    # one and the rest run once on the files joined.
+    cut = next(
+        (i for i, (_, s) in enumerate(active) if getattr(s, "whole_table", False)),
+        len(active),
+    )
     frames, first = [], None
     for path, subject in source_files(source, ctx.root):
         df = read_file(reader, source, path, subject)
-        for _, step in active:
+        for _, step in active[:cut]:
             df = step.apply(df, ctx)
         if first is None:
             first = (path, list(df.columns))
@@ -1409,8 +1784,13 @@ def ingest(
                 f"missing {missing}, extra {extra}"
             )
         frames.append(df)
-    # A file a select step emptied (an excluded session) adds no rows.
+    # Files that end without rows (a session a select step excluded, an E4
+    # session without labelled windows) are left out of the concatenation,
+    # which would otherwise warn about them.
     df = pd.concat([f for f in frames if len(f)] or frames[:1], ignore_index=True)
+    del frames
+    for _, step in active[cut:]:
+        df = step.apply(df, ctx)
     ran = {name for name, _ in active}
 
     if "subject" not in df.columns:

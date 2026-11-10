@@ -58,6 +58,7 @@ from onion_fl.infrastructure.model import (
     Infrastructure,
     InfrastructureError,
     anchor_traces,
+    expand_traces,
     load_infrastructure,
     parse_infrastructure,
 )
@@ -161,11 +162,11 @@ def resolve_infrastructure(config: ExperimentConfig) -> Infrastructure | None:
     try:
         if isinstance(ref, dict):  # its traces live with the infrastructures
             raw = anchor_traces(deepcopy(ref), config.paths.infrastructures)
-            return parse_infrastructure(raw)
+            return parse_infrastructure(expand_traces(raw, config.paths.device_traces))
         path = Path(ref)
         if path.suffix not in (".yaml", ".yml"):
             path = Path(config.paths.infrastructures) / f"{ref}.yaml"
-        return load_infrastructure(path)
+        return load_infrastructure(path, config.paths.device_traces)
     except InfrastructureError as exc:
         raise ConfigError(f"infrastructure: {exc}") from None
 
@@ -797,9 +798,15 @@ def plan(config: ExperimentConfig) -> list[dict[str, Any]]:
         topology, split, placement, digests = _scenario_data(scenario)
         _, state = _initial_state(scenario.config, _shapes(split), scenario.seed)
         resolved = physical(scenario, topology, placement, state)
+        backend = {}
         if resolved is not None:
             check_memory(resolved, placement, state)
             check_capacity(scenario.config, topology, placement)
+            # A backend that runs on machines it builds (emulated) shows and
+            # checks them here: its container cap, what it cannot emulate.
+            backend_ref = scenario.config.backend_ref
+            inspect = getattr(create(backends, backend_ref), "inspect", None)
+            backend = {} if inspect is None else {"backend": inspect(resolved)}
         policy = create(sharing, scenario.config.learning.sharing)
         previews.append(
             {
@@ -815,6 +822,7 @@ def plan(config: ExperimentConfig) -> list[dict[str, Any]]:
                 "warnings": link_warnings(topology, resolved),
             }
             | ({} if resolved is None else {"infrastructure": resolved.preview()})
+            | backend
             | (
                 {}
                 if scenario.config.stream is None
@@ -1072,7 +1080,10 @@ def _on_hosts(
     out = {
         leaf: [
             replace(
-                s, host=resolved.hosts[s.id], compute=_rate(resolved.train_rate(s.id))
+                s,
+                host=resolved.hosts[s.id],
+                compute=_rate(resolved.train_rate(s.id)),
+                availability=_availability(s, resolved),
             )
             if s.train
             else replace(s, host=resolved.hosts[leaf])
@@ -1087,6 +1098,24 @@ def _on_hosts(
         if not spec.train
     } | {child: profile for child, (_, profile) in resolved.links.items()}
     return out, profiles
+
+
+def _availability(spec: EdgeSpec, resolved: Resolved) -> Any:
+    """The availability of the edge's host profile (a device trace), if any."""
+    given = resolved.infrastructure.profile_of(resolved.hosts[spec.id]).availability
+    if given is None:
+        return spec.availability
+    if spec.availability is not None:
+        raise ConfigError(
+            f"edge {spec.id}: its host {resolved.hosts[spec.id]} has its own "
+            "availability; remove edge.availability from the topology"
+        )
+    try:
+        return create(availability_models, given)
+    except (KeyError, ValueError) as exc:
+        raise ConfigError(
+            f"infrastructure: host {resolved.hosts[spec.id]} availability: {exc}"
+        ) from None
 
 
 def _rate(rate: float | None) -> Any:
@@ -1415,6 +1444,8 @@ def simulate(
             "version": parent[1].snapshot.round,
         }
         run.meta["parent"] = lineage_parent  # signed with the rest at finish
+    if infra is not None and infra.device_traces:  # sampled devices, cited (G9)
+        run.meta["device_traces"] = infra.device_traces
     try:
         record_data(run, scenario, split, placement)
         federation = build_scenario(

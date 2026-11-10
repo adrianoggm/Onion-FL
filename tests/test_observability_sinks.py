@@ -121,7 +121,7 @@ def test_traffic_is_counted_per_node_and_kind(prometheus) -> None:
     assert updates == 2 and size > 0
 
 
-NO_TAGS = {"metric": "", "datasets": "", "dst": ""}
+NO_TAGS = {"metric": "", "datasets": "", "dst": "", "child": ""}
 
 
 def test_diagnostics_are_exported_per_group(prometheus) -> None:
@@ -135,6 +135,18 @@ def test_diagnostics_are_exported_per_group(prometheus) -> None:
     assert value == pytest.approx(0.0)  # both edges add the same constant
 
 
+def test_contributions_are_exported_per_child(prometheus) -> None:
+    sink, run = prometheus
+    tags = NO_TAGS | {"name": "contribution_shapley", "group": "trunk"}
+
+    for edge in ("e1", "e2"):
+        value = sink.registry.get_sample_value(
+            "onionfl_diagnostic",
+            labels(run, "fog", "fog_0", **(tags | {"child": edge})),
+        )
+        assert value == pytest.approx(1 - 2**-0.5)  # equal deltas: v(N) = 2 − √2
+
+
 def test_diagnostics_keep_apart_what_their_tags_tell_apart() -> None:
     sink = PrometheusSink(registry=CollectorRegistry())
     node = {"run_id": "r", "topology_id": "t", "level": "fog", "node": "fog_0"}
@@ -145,12 +157,14 @@ def test_diagnostics_keep_apart_what_their_tags_tell_apart() -> None:
         ("dataset_conflict", {"group": "trunk", "datasets": "a|c"}),
         ("communication", {"src": "fog_0", "dst": "cloud"}),
         ("communication", {"src": "fog_0", "dst": "e1"}),
+        ("contribution_shapley", {"group": "trunk", "child": "e1"}),
+        ("contribution_shapley", {"group": "trunk", "child": "e2"}),
     ]:
         event = {"kind": "diagnostic", "name": f"diagnostic.{name}", "tags": tags}
         sink.write(node | event | {"value": 1.0})
 
     (family,) = [f for f in sink.registry.collect() if f.name == "onionfl_diagnostic"]
-    assert len(family.samples) == 6
+    assert len(family.samples) == 8
 
 
 def test_drops_and_failed_quorums_are_counted(tmp_path: Path) -> None:

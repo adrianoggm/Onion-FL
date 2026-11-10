@@ -1,0 +1,20 @@
+# The flat counterpart of four_fogs_swell_wesad_lossless (issue #244): the same
+# links and devices, with every edge under a single aggregator.
+name: swell_wesad_flat_lossless
+levels: [global, fog, edge]
+root:
+  id: cloud
+  aggregator: fedavg
+  server_optimizer: replace
+  deadline: 300s
+fog:
+  defaults:
+    aggregator: fedavg
+    quorum: 1.0
+    deadline: 120s
+    link_up: {transport: mqtt, codec: json, profile: {preset: wifi, loss: 0.0}}
+  nodes:
+    - {id: fog_all}
+edge:
+  link_up: {transport: mqtt, codec: json, profile: {preset: 4g, loss: 0.0}}
+  device: {samples_per_second: 2000}

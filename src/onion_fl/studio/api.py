@@ -172,6 +172,12 @@ AXES: list[tuple[str, str, str, str | None]] = [
         None,
     ),
     (
+        "explainer",
+        "Explicabilidad",
+        "Qué se calcula sobre el modelo final, después de la ejecución (onion_fl explain).",
+        None,
+    ),
+    (
         "compute_model",
         "Cómputo",
         "Cuánto tarda en simulación el entrenamiento de un edge.",
@@ -186,7 +192,8 @@ AXES: list[tuple[str, str, str, str | None]] = [
     (
         "backend",
         "Backend",
-        "Dónde y con qué reloj se ejecuta cada escenario: simulación o local.",
+        "Dónde y con qué reloj se ejecuta cada escenario: simulación, local o "
+        "emulado en contenedores.",
         None,
     ),
     (

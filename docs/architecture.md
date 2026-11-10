@@ -34,10 +34,10 @@ flowchart LR
 | `learning` | `model`, `sharing`, `aggregators`, `trainers`, `metrics` | What is trained, what travels, how it is combined and scored |
 | `roles` | `nodes`, `policies`, `federation` | The round protocol and the assembly of a federation on a runtime |
 | `runtime` | `sim`, `real`, `network`, `devices` | Virtual-clock and wall-clock hosts for the nodes |
-| `infrastructure` | `model`, `paths`, `assignment`, `network`, `failover`, `backends` | The physical infrastructure, its paths, the assignment of the logical nodes to its hosts, its changes over time, the failover policies and the backends that run a scenario; depends on `core` only |
-| `transports` | `memory`, `mqtt` | Bytes between processes for the real runtime |
+| `infrastructure` | `model`, `paths`, `assignment`, `network`, `failover`, `backends`, `emulators` | The physical infrastructure, its paths, the assignment of the logical nodes to its hosts, its changes over time, the failover policies, the backends that run a scenario and the emulators they drive; depends on `core` only |
+| `transports` | `memory`, `mqtt`, `grpc`, `flower` | Bytes between processes for the real runtime |
 | `observability` | `events`, `run`, `diagnostics`, `analysis`, `sinks` | Event schema, run records, diagnostics, analysis and live sinks |
-| `experiment` | `config`, `sweep`, `runner`, `backends`, `real`, `ceiling`, `fidelity`, `predictor`, `cli` | From an experiment YAML to signed runs, and their fidelity |
+| `experiment` | `config`, `sweep`, `runner`, `backends`, `real`, `emulated`, `ceiling`, `fidelity`, `predictor`, `cli` | From an experiment YAML to signed runs, and their fidelity |
 
 ## 3. Topology
 
@@ -60,15 +60,16 @@ flowchart LR
     split -->|placement| leaves["edges and evaluators under each leaf"]
 ```
 
-- **Descriptors** (`datasets/<name>.yaml`) declare a source with readers (`csv`, `excel`, `parquet`, `pickle`, `npz`, `wesad_pickle`, `leaf_json`, `empatica_e4_csv`, `wesad_e4`, `physionet_wearable`) and ordered steps (`subject`, `label`, `features`, `replace`, `join`, `window`, `multirate_window`, `intervals`, `select`, `time`). Options fill `{placeholders}` and switch steps on with `when`. Each source file runs through the steps on its own, so memory stays bounded and windows never span two files. The `subject` and `label` source columns can never become features, and `features` must be explicit.
-- **Empatica E4.** The E4 readers give one table with one row per sample of one signal, sorted by a `time` column: each signal keeps its native rate and the other columns of its rows are empty. `empatica_e4_csv` reads a session folder (one CSV per signal: the start in row 1, as Unix seconds or a UTC date, the rate in row 2; `IBI.csv` has offsets and may be empty), and `wesad_e4` reads WESAD's wrist, which is an E4, with the same columns plus `condition` at 700 Hz. Channels are always `acc_x`, `acc_y`, `acc_z`, `bvp`, `eda`, `temp`, `hr`, `ibi`, in that order, so every E4 dataset gets the same feature names. `multirate_window` cuts windows of N seconds from the latest start to the earliest end of the channels, reads each channel only from its own rows, takes the label from the rows of `label_rows` (all rows by default), and times a window at its end; with `label: unanimous` a window whose label samples mix classes is dropped. `intervals` gives each row the class of the (start, end) interval of another table that holds its time, for protocol tags and survey events; its column is meta. `physionet_wearable` reads PhysioNet's Wearable Device Dataset (STRESS, AEROBIC and ANAEROBIC sessions) like `empatica_e4_csv` and adds two meta columns: `session` and `segment` (`ACTIVITY_V<version>_<k>`, with k the protocol tags pressed so far), which `datasets/physionet_e4.yaml` maps to classes. `datasets/wesad_e4.yaml` gives the same windows, labels and times as `datasets/wesad.yaml` on the wrist; the tolerances on the statistics are in its header. It is a new descriptor, not an option of `wesad.yaml`, because the cache key hashes the descriptor.
+- **Descriptors** (`datasets/<name>.yaml`) declare a source with readers (`csv`, `excel`, `parquet`, `pickle`, `npz`, `wesad_pickle`, `leaf_json`, `empatica_e4_csv`, `wesad_e4`, `physionet_wearable`, `stress_predict_time_logs`, `cifar_pickle`) and ordered steps (`subject`, `label`, `features`, `replace`, `join`, `window`, `multirate_window`, `intervals`, `select`, `time`, `partition`). Options fill `{placeholders}` and switch steps on with `when`. Each source file runs through the steps on its own, so memory stays bounded and windows never span two files. A whole-table step (`partition`) is the exception: the files are joined before it, and it and the steps after it run once. `partition` gives a dataset without natural subjects synthetic clients (`iid`, `dirichlet_label`, `label_skew`, as NIID-Bench) from its labels and its own seed, and makes the rows of an official test split one more subject, which `overrides.<dataset>.test` reserves. The `subject` and `label` source columns can never become features, and `features` must be explicit.
+- **Empatica E4.** The E4 readers give one table with one row per sample of one signal, sorted by a `time` column: each signal keeps its native rate and the other columns of its rows are empty. `empatica_e4_csv` reads a session folder (one CSV per signal: the start in row 1, as Unix seconds or a UTC date, the rate in row 2; `IBI.csv` has offsets and may be empty), and `wesad_e4` reads WESAD's wrist, which is an E4, with the same columns plus `condition` at 700 Hz. Channels are always `acc_x`, `acc_y`, `acc_z`, `bvp`, `eda`, `temp`, `hr`, `ibi`, in that order, so every E4 dataset gets the same feature names. `multirate_window` cuts windows of N seconds from the latest start to the earliest end of the channels, reads each channel only from its own rows, takes the label from the rows of `label_rows` (all rows by default), and times a window at its end; with `label: unanimous` a window whose label samples mix classes is dropped. `intervals` gives each row the class of the (start, end) interval of another table that holds its time, for protocol tags and survey events; its column is meta. For surveys it joins a `date` column with times of day (an end that does not pass its start is the next day), reads local times in an IANA `timezone` as Unix UTC, keeps the largest class where intervals overlap (`overlap: max`), and gives the `outside` class to the rows outside every interval, but only in a source file that holds an interval of the row's key. `physionet_wearable` reads PhysioNet's Wearable Device Dataset (STRESS, AEROBIC and ANAEROBIC sessions) like `empatica_e4_csv` and adds two meta columns: `session` and `segment` (`ACTIVITY_V<version>_<k>`, with k the protocol tags pressed so far), which `datasets/physionet_e4.yaml` maps to classes. `datasets/wesad_e4.yaml` gives the same windows, labels and times as `datasets/wesad.yaml` on the wrist; the tolerances on the statistics are in its header. It is a new descriptor, not an option of `wesad.yaml`, because the cache key hashes the descriptor. `datasets/stress_predict.yaml` reads Stress-Predict's raw E4 sessions with the same features, labelled by the phases of its time log (`stress_predict_time_logs`, one row per phase in Unix seconds).
 - **The cache** stores one `npz` per subject plus `meta.json` with a digest per subject. Its key hashes the descriptor and the options, not the root path. Parallel writers are safe.
 - **Roles** are drawn per dataset with their own seed, before and apart from the placement:
-  - `test` subjects are the global evaluators, and they are identical in every scenario;
+  - `test` subjects are the global evaluators, and they are identical in every scenario; in cross-silo (`datasets/heart_disease.yaml`) a subject is one hospital's train or test split, and the overrides list each hospital's official test split as `test`;
   - `val` subjects become zone evaluators;
   - `train` subjects are grouped into clients (`subjects_per_client`), each keeping `local_val` rows: its last rows (`tail`) or the last rows of each class (`class_tail`);
   - imputation, scaling (`global`, `local` or `none`) and constant-feature removal are fitted on the training portions only;
   - `overrides.<dataset>` can set `scaler`, `impute` and `drop_constant` for one dataset, for raw columns such as pixels or tokens. Unset, they stay out of the `config_id`. A descriptor with `tokens: true` holds indices, and the runner refuses it unless its scaler is `none`.
+  - a dataset with `overrides.<ds>.held_out` (leave-one-dataset-out) draws its roles as usual and keeps only its `test` subjects: nothing of it trains or is fitted, so it needs `scaler: local` or `none`.
 - **Placement** gives each leaf aggregator its clients and its zone evaluators:
   - `mixing(α)` weights each dataset by home fog (declared, inherited or assigned in turns), from segregated at α = 0 to uniform at α = 1;
   - the others are `dirichlet(β)`, `label_skew(β)`, `explicit` and `pooled`, the centralised baseline with the same model and trainer.
@@ -77,6 +78,8 @@ flowchart LR
 ## 5. Learning
 
 **Model.** `modular_mlp` holds an adapter per dataset (or one shared adapter over harmonised features), a shared or per-dataset trunk, and a head per task or per dataset. Its parameter keys are namespaced (`adapter.<ds>.*`, `trunk.*`, `head.<task>.*`), so an edge instantiates only its own parts. Every layer is initialised from (seed, layer path), so a part starts identical everywhere.
+
+`feature_transformer` (after FT-Transformer) keeps the same keys and options: its adapter turns each feature into a token (`adapter.<ds>`), its trunk is a class token plus attention blocks that do not depend on `n_features`, and its head reads the class token. Both families derive from `ModularModule`, which checks the datasets and heads and routes each dataset through its parts. Why these two families and not others is in `docs/superpowers/specs/2026-11-10-onion-fl-model-families-design.md`.
 
 **Sharing.** Each parameter group has a scope:
 
@@ -139,7 +142,7 @@ sequenceDiagram
 - Links schedule each direction FIFO, with latency (fixed, normal or lognormal), jitter, bandwidth and loss; the presets are `lan`, `wifi`, `4g` and `lora`.
 - `ctx.compute(samples)` keeps a node busy for the time its compute model gives. What it sends leaves when the work ends, and what arrives meanwhile waits.
 - Compute is `samples_per_second` (fixed rate), `measured` (wall time × factor), `lognormal_rate` (a lognormal rate per task, with the mean duration of `samples_per_second` and dispersion `sigma`) or `trace` (each task lasts one of the measured `durations`, drawn uniformly). A model whose `duration` takes `rng` draws from the node's compute stream, `node_rng(seed, "<node>/compute")`, apart from the node's own stream; the others are called as before.
-- Availability is `always`, `bernoulli`, `schedule` or `crash_at`. An offline node drops what it receives; its start and its timers wait until it is up again, and are dropped only after a crash.
+- Availability is `always`, `bernoulli`, `schedule`, `crash_at` or `windows` (up inside `[active[i], inactive[i]]`, repeated every `period` when given: FedScale's availability trace). An offline node drops what it receives; its start and its timers wait until it is up again, and are dropped only after a crash.
 - Each node keeps one RNG stream for the whole run, so a seed gives the same events.
 
 **RealRuntime.**
@@ -148,21 +151,36 @@ sequenceDiagram
 - Messages travel in a frame `codec \0 header \0 message`. The JSON header carries `msg_id` and `sent_at`, which the receiver puts in `meta`, so it records the same id and the end-to-end latency. The message is encoded as in simulation: `message.sent` counts its bytes, and the frame's go in the `frame` tag.
 - Every node emits `node.heartbeat`.
 
-**Transports.** `mqtt` gives each node an inbox at `onionfl/<run_id>/<node>/inbox`, with QoS and broker per link; it reconnects and resubscribes after a broker restart. `memory` is an in-process bus for tests.
+**Transports.** `mqtt` gives each node an inbox at `onionfl/<run_id>/<node>/inbox`, with QoS and broker per link; it reconnects and resubscribes after a broker restart. `grpc` has no broker: each process serves its inboxes on one gRPC server (`127.0.0.1` and a free port by default), announced by a file per inbox in a discovery folder, and a sender delivers the frame straight to it (one generic bytes method, no `.proto`). One queue and one thread per inbox keep the order; a failed delivery retries with backoff and reads the inbox's file again, so a receiver not up yet, or restarted on another port, is found; on `stop` what is queued gets one more try within `flush_timeout`. It needs the `grpc` extra. `flower` (issue #204, the `flower` extra, Flower >= 1.21) uses the same links, under its own service and discovery folder, and puts each frame in a Flower `Message`: a `RecordDict` with the frame, and `Metadata` with the inbox as `group_id` and `message_type` `query`, as Flower's protobuf. Flower carries the bytes and never drives the rounds; its SuperLink and SuperNodes are not used, because the Fleet API only lets a SuperNode reply to what the ServerApp sent (a `hello` or an update could not leave unasked), one SuperLink is a single level, and Flower starts the apps itself. `memory` is an in-process bus for tests.
 
 **Backends** (I1 §10). Every scenario runs on a backend from the `backends` registry (`infrastructure.backends`), chosen by the experiment's `backend:` or, without it, by `runtime.mode` (`real` is an alias of `local`; unset, the `config_id` does not change). The contract is `supports(infrastructure)` (the reasons it cannot reproduce it; the config refuses any), `prepare(scenario, infrastructure, assignment)` (an execution plan), `run(plan)` and `collect(plan)` (the signed run). `execute` chains them. The backends live in `experiment.backends`, since they build federations:
 - `sim`: the simulator in one process (`runner.simulate`);
-- `local`: the real runs below, on this machine; it refuses an infrastructure.
+- `local`: the real runs below, on this machine; it refuses an infrastructure;
+- `emulated`: the same processes in containers, one per host, with the infrastructure's resources and network emulated (below).
 
 `onion_fl run --backend NAME` overrides the experiment's; `--mode real` still works.
 
 **Real runs** (the `local` backend).
-1. `prepare` checks the links and the brokers and writes `scenario.json`.
+1. `prepare` checks the links (MQTT or gRPC) and the MQTT brokers and writes `scenario.json`.
 2. `run` starts one `onion_fl node` process per group: the root with the test evaluators, and each aggregator with its edges.
 3. Each process rebuilds the same scenario and writes its own event file.
 4. When the run finishes, a stop travels down the tree and the processes exit; `collect` merges and signs the run.
 
-With full quorum and the same seed, simulation and MQTT give the same final model. `tests/test_runtime_equivalence.py` checks it.
+With full quorum and the same seed, simulation, MQTT, gRPC and Flower give the same final model. `tests/test_runtime_equivalence.py` checks it (Flower only with its extra; the tests skip without it), pairs `local` over gRPC with `local` over Flower (the same model bit for bit and the same bytes per link), and compares `local` over MQTT with `local` over gRPC through the fidelity harness: the design id ignores the links' `transport`, so the two pair, and the harness measures their difference in time while the bytes per link stay the same.
+
+**Emulated runs** (the `emulated` backend, I1 §11; the emulator was chosen in `docs/decisions/2026-11-06-i9-emulator.md`). It needs Docker and an infrastructure with an `mqtt_broker`.
+1. `prepare` resolves the assignment and writes `runs/<run_id>/emulation/`: the Compose project that `infrastructure.emulators` generates and one setup script per container.
+   - One container per host that runs logical nodes, with `NET_ADMIN` and its profile's `cpus` (CPU quota) and `memory` (memory limit).
+   - A router per site, and a Docker network per site LAN and per physical link on a path between the hosts. netem runs on each router's end of a link (the `up` rate at `between[0]`, the `down` rate at the other end), and static routes follow the path of least latency.
+   - The LAN is shaped on each host's egress, for destinations in its own site only. The broker runs in the network namespace of its host.
+   - `scenario.json` carries the paths as the containers see them (under `/onionfl`; only the runs are writable, and the prepared data comes from the cache), the logical nodes of each host (`groups`) and the broker's address.
+2. `run` brings the project up and waits until every container has shaped its interfaces and the broker answers. It then restarts the run's clock and starts one `onion_fl node` per host with `docker exec`. The project is always taken down, and its logs are kept in `compose.log`.
+3. `collect` merges and signs the run as `local` does. `run.json` adds `emulation`: the project, the image, the containers, every tc command and the setup time.
+- **Image.** `onionfl-emulated:latest` by default. It is built from `infrastructure/emulated.Dockerfile` the first time, with the launcher's versions of torch, numpy, scipy, pandas and scikit-learn; a label records them, and other versions rebuild it. Another torch initialises the model with other bits. The `onion_fl` source is mounted, not copied.
+- **What the shaping means.** `bandwidth` is the rate netem shapes, Ethernet frames included; TCP gets about 95.6 % of it. netem's queue holds the link's bandwidth-delay product plus 1000 packets. `loss` is per packet: over MQTT and TCP it becomes retransmissions and delay, never a lost message as in `sim`. A physical link is one queue for all its traffic, as with `shared` in `sim`; a LAN is shaped per host, not shared.
+- **Refused.** `network.schedule`, `bandwidth: dedicated`, lognormal jitter and an infrastructure without `mqtt_broker`. `plan` shows the containers and refuses more than `max_containers`.
+- **Parameters.** `image`, `broker_image`, `project` (the prefix of every container and network), `subnet` (`10.195.0.0/16`, a /24 per network), `max_containers` (64) and `ready_timeout` (120 s, also the processes' extra time to start).
+- With Docker and the image present, `tests/test_runtime_equivalence.py` checks that the final model is the simulation's bit for bit and that the bytes per logical link and round are the same. The comparison of `sim` and `emulated` is in `results/fidelity_emulated/`.
 
 ## 7a. Infrastructure
 
@@ -180,13 +198,14 @@ infrastructure:
 - **Model.** Profiles (`train_rate`, `aggregate_rate`, `cpus`, `memory`), sites with named hosts and pools (`field: {pool: {raspberry_pi: 20}}` gives `field-raspberry_pi-1..20`), links between sites, and services such as the MQTT broker.
 - **Paths.** Two nodes on one host talk for free; on one site, through its `lan`; across sites, along the path of least latency. The path's profile adds latencies, combines jitters as √Σσ², takes the narrowest bandwidth per direction and composes losses as 1 − ∏(1 − pᵢ); one segment keeps its profile exactly.
 - **Assignment.** The coordinator and the aggregators go to hosts by name; the edges, by an `assignments` strategy: `explicit` (names or patterns), `one_per_device`, `profile_mix` (fractions rounded by largest remainder), `by_dataset` and `colocated` (`per_host` edges per device). The pool strategies draw devices from the pools (named hosts are servers), optionally from some `sites`, in an order drawn from their own `seed`: changing it moves edges, never their data. `coupled` takes the devices `profile_mix` would and pairs them with the edges so that a statistic of each edge's data (`samples`, `label_divergence`: the KL divergence of its labels from its dataset's, or `initial_loss`) and its device's `train_rate` have a target rank correlation `rho`: a Gaussian copula on the strategy's own seed, its latent correlation chosen so that the expected Spearman for that many edges is `rho` (Moran's formula). `rho = 0` is `profile_mix` in distribution, and `rho` only permutes edges over the same devices; `plan` shows the statistic and the Spearman achieved under `infrastructure.coupling` (devices of equal speed tie, so it can fall short of `rho`). `assignment.services` moves a service, such as the broker, to another host. The assignment is part of the `config_id` and can be swept.
-- **What the runtimes see.** Each logical link gets its path's profile and each edge computes at its host's `train_rate`; evaluators sit on their parent's host. `SimRuntime` knows nothing of sites or hosts.
+- **Device traces.** A site's `traces: {source: fedscale, devices: N, seed: S}` samples `N` of FedScale's real clients (`onion_fl.infrastructure.fedscale`, issue #253): each becomes a profile `fedscale_<site>_<i>` with one device in the site's pool, so the pool strategies (and `coupled`, by speed) take them as any other. Capacity and availability clients are drawn without replacement from `node_rng(S, "fedscale/<site>/...")`, so the same seed gives the same profiles. The mapping is FedScale's: `computation` is a model's inference latency in ms per sample and training costs three times it, so `train_rate = 1000 / (3 · computation)` samples/s; `communication` is kbit/s, so the profile's `bandwidth` (the device's own access segment, `host:<host>`, crossed first when it sends and last when it receives) is `1000 · communication` bit/s; the availability client's windows become the profile's `availability` (`windows` with its `finish_time` as period), which its edges take (a topology `edge.availability` on such a host is refused). The traces are pickles: `onion_fl traces import fedscale` reads them once with an unpickler that builds only plain values and writes `capacity.csv`, `behaviour.jsonl` and a `manifest.json` with every file's SHA-256; a run reads only those, refuses them if they no longer match, and records under `device_traces` in `run.json` (and in `plan`) the source, license, hashes, seed and the clients drawn. These profiles say `origin: trace`: like declared ones they are not calibrated (§13 of the spec, #197), and a fidelity result cannot rest on them. The fields an infrastructure leaves unset (`bandwidth`, `availability`, `origin`, `traces`, `device_traces`) are not part of its `infrastructure_id`, so existing ids do not change.
+- **What the runtimes see.** Each logical link gets its path's profile and each edge computes at its host's `train_rate`, and with its host's `availability` when the profile has one; evaluators sit on their parent's host. `SimRuntime` knows nothing of sites or hosts.
 - **Network.** With `network.bandwidth: shared` (the default) each direction of a segment (a site's LAN or a link) is one FIFO queue for every logical link that crosses it: a message waits until all the segments of its path are free and is through after its size over the narrowest one, so two flows on a link of capacity c get c/2 each; `dedicated` gives each logical link its path's full bandwidth. Uncontended, the two are the same, and so on the implicit infrastructure. An MQTT link goes child → broker → parent when the infrastructure places an `mqtt_broker`. `network.schedule` changes a link at a time (`set` fields, `down: true/false`, or a `trace` CSV, one change per row), recorded as `link.changed`, `link.down` and `link.up` of the node `network`; a message sent while a segment of its path is down is lost (one already in flight still arrives). `SimRuntime` sees only channels (`add_link(channel=...)`), never segments.
 - **Resources.** Nodes on a host with `cpus` share it: at most `cpus` jobs at once, the others wait in FIFO order (`host.queued`, valued by the wait). Combining a round costs the aggregator's host the bytes combined / `aggregate_rate`, so an overloaded fog closes later; without `aggregate_rate` it is free, as before. `plan` refuses a host whose nodes' models and data do not fit in its `memory` (every node counted with the whole initial model, an upper bound); swapping is not simulated.
 - **Dynamic continuum.** A `network.schedule` entry with `host:` takes a host `down: true` with every logical node on it, and `down: false` brings it back (`host.down`, `host.up` of the node `network`; `SimRuntime.host_offline`): what reaches its nodes meanwhile is dropped and their timers wait, as with a node's own availability. `infrastructure.failover` (registry `failovers`: `none`, the default and today's behaviour, `nearest_alive`, `explicit`) moves the training edges of a leaf aggregator whose host is still down `after` seconds later: the policy picks among the leaves whose host is up and that have room (`max_children`, a leaf setting), the old parent releases the edge, the new one adopts it and a link is compiled between their hosts, and the edge says hello to it (`edge.reparented`; `edge.unparented` when no candidate is left). The same way, at the start, a leaf with more edges than its `max_children` sends the rest on; without a failover, `plan` refuses it. Protocol rules: the update an edge had in flight goes to its old parent and is lost, or dropped as from a stranger if that parent comes back; the old parent's quorum counts the children it has left; the edge enters only rounds its new parent opens after its hello, and answers idle to a round it already took, so no edge contributes twice to a round. Its first model from the new parent is whole, with that zone's groups; its data do not move. The control plane is the simulator's: it knows when a host is down, so no heartbeat is modelled.
 - **One source of truth.** With an infrastructure, a `link_up.profile` or an edge `device` in the topology is refused. Without one, nothing changes: the ids are the same and the topology's links are the implicit infrastructure (`tests/test_infrastructure.py` checks that an infrastructure reproducing it gives the same events).
-- **Not yet.** The `local` backend refuses an infrastructure (I10, I14). Mobility (a host changing site) comes later; so do a down broker cutting the links through it, failover of aggregators that are not leaves, and edges moving back when their parent returns.
-- `plan` shows each node's host, each host's load, the services and each link's path and profile; `run.json` records `backend` (`sim` or `local`; runs from before the backends say `real`) and `infrastructure_id`.
+- **Not yet.** The `local` backend refuses an infrastructure (I10, I14); `emulated` takes one. Mobility (a host changing site) comes later; so do a down broker cutting the links through it, failover of aggregators that are not leaves, and edges moving back when their parent returns.
+- `plan` shows each node's host, each host's load, the services and each link's path and profile; `run.json` records `backend` (`sim`, `local` or `emulated`; runs from before the backends say `real`), `infrastructure_id` and, with device traces, `device_traces`.
 
 ## 7b. Continuing a run (continual)
 
@@ -299,7 +318,7 @@ infrastructure:
 | Identifier | Definition |
 |---|---|
 | `topology_id` | SHA-256 of the canonical tree |
-| `infrastructure_id` | SHA-256 of the canonical infrastructure; `null` without one (the topology's links are the infrastructure) |
+| `infrastructure_id` | SHA-256 of the canonical infrastructure; `null` without one (the topology's links are the infrastructure). Sampled device traces are part of it, with the clients drawn and the hashes of their files |
 | `config_id` | SHA-256 of the validated config without seeds and sweep |
 | `data_id` | SHA-256 of the cache digests in use |
 | `code_version` | Git commit, and whether there were uncommitted changes |
@@ -309,9 +328,12 @@ infrastructure:
 **Diagnostics** run at each aggregator when it closes a round:
 - divergence, conflict between datasets, drift and zone distance;
 - participation and fairness;
+- contribution: each child's leave-one-out and Shapley value per group (exact up to `exact_max` children, Monte Carlo permutations beyond), in the game v(S) = ‖Σ_{i∈S} Δ_i/‖Δ_i‖‖ − √|S|. It uses only the updates the aggregator already holds: an aggregator has no data, and scoring coalitions on its zone evaluators would cost a round trip per coalition. A child that agrees with the others scores high, an orthogonal one (noise) near 0 and an opposed one below 0; size and samples do not count. Prometheus labels it by `child`;
 - communication, derived by the run recorder from the message events.
 
 **Analysis and report.** `load_runs(...).metrics(...)` gives one row per event with every tag as a column. `.compare(level, metric, by, over="seed")` combines the nodes of a level inside each run (mean, min, max and spread), then the runs over the seeds, with a 95% t interval per round. `report()` and `onion_fl report` render it as HTML. **Time to target** (spec N5): `.time_to_target(level, metric, target)` gives, per run, the first `t_virtual` at which the level's per-round mean reaches a threshold fixed before running (`>=`, or `<=` with `lower=True`), and censors the runs that never reach it at their duration (last event), flagged `censored`. `.compare(..., target=x)` summarises it per group: runs reached and censored, and the mean time with a seeded 95% percentile bootstrap interval; censored runs count at their duration, so the mean is then a lower bound.
+
+**Explainability.** `onion_fl explain <run folder>` rebuilds the run's scenario from `run.json`, loads `model.npz` and runs an `explainer` plugin on the `val` subjects of each dataset whose groups the global model holds (the `test` subjects stay the global evaluation; a dataset with local groups is listed as skipped). `permutation` gives each feature's mean drop in a metric when its column is shuffled within each subject, with the spread over `repeats`. The result, `explain.json`, carries the run's identifiers; `run_hash` does not cover it.
 
 **Noise ceiling.** `experiment.ceiling` reruns every swept scenario in R replicas (new seeds and, optionally, a redrawn `search`) and scores each from the root's last score in `summary.json`, the best trial of a search winning its cell. Over every ordered pair of replicas `(a, b)` it reports whether they pick the same winner (top-1) and the selection regret: the best score of `b` minus `b`'s score of `a`'s winner. A decision metric (I1 §12) only counts above this ceiling.
 
@@ -389,9 +411,9 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | codec | `json`, `npz` |
 | link_profile | `lan`, `wifi`, `4g`, `lora` |
 | compute_model | `samples_per_second`, `measured`, `lognormal_rate`, `trace` |
-| availability_model | `always`, `bernoulli`, `schedule`, `crash_at` |
-| transport | `memory`, `mqtt` |
-| model | `modular_mlp` |
+| availability_model | `always`, `bernoulli`, `schedule`, `crash_at`, `windows` |
+| transport | `memory`, `mqtt`, `grpc`, `flower` |
+| model | `modular_mlp`, `feature_transformer` |
 | sharing | `fedavg`, `fedper`, `lg_fedavg`, `zone`, `independent`, `harmonized`, `custom` |
 | aggregator | `fedavg`, `mean`, `median`, `trimmed_mean`, `krum`, `multi_krum`, `geometric_median`, `bulyan`, `norm_clip`, `dp_fedavg` |
 | attack | `label_flip`, `sign_flip`, `gaussian`, `scale` |
@@ -400,14 +422,15 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | trainer | `standard`, `fedprox`, `ditto`, `apfl`, `fedrep`, `fedbabu`, `scaffold`, `fednova`, `feddyn`, `moon`, `stub` |
 | init | `random`, `checkpoint`, `run` |
 | metric | `loss`, `accuracy`, `macro_f1`, `recall_per_class`, `confusion_matrix` |
-| diagnostic | `divergence`, `dataset_conflict`, `drift`, `participation`, `fairness` |
+| diagnostic | `divergence`, `dataset_conflict`, `drift`, `participation`, `fairness`, `contribution` |
+| explainer | `permutation` |
 | participation | `all`, `fraction`, `fastest_k`, `deadline_feasible`, `utility` |
 | staleness | `drop`, `next_round` |
 | stale_weighting | `constant`, `polynomial` |
 | placement | `explicit`, `mixing`, `dirichlet`, `label_skew`, `pooled` |
-| reader | `csv`, `excel`, `parquet`, `pickle`, `npz`, `wesad_pickle`, `leaf_json`, `empatica_e4_csv`, `wesad_e4`, `physionet_wearable` |
-| step | `subject`, `label`, `features`, `replace`, `join`, `window`, `multirate_window`, `intervals`, `select`, `time` |
+| reader | `csv`, `excel`, `parquet`, `pickle`, `npz`, `wesad_pickle`, `leaf_json`, `empatica_e4_csv`, `wesad_e4`, `physionet_wearable`, `stress_predict_time_logs`, `cifar_pickle` |
+| step | `subject`, `label`, `features`, `replace`, `join`, `window`, `multirate_window`, `intervals`, `select`, `time`, `partition` |
 | memory | `none`, `fifo`, `reservoir`, `class_balanced` |
 | unlabelled | `none`, `pseudo_label`, `consistency` |
 | baseline | `lr`, `rf`, `xgboost` |
-| backend | `sim`, `local` |
+| backend | `sim`, `local`, `emulated` |

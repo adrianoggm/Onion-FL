@@ -120,6 +120,16 @@ def test_a_home_dataset_that_is_not_loaded_is_an_error() -> None:
         place(split(), topology(["swell", "wesad"]), "mixing", {"alpha": 0.0})
 
 
+def test_edges_cannot_hang_from_the_root() -> None:
+    # The root takes evaluators only; the runner used to drop the clients silently.
+    flat = parse_topology(
+        {"name": "flat", "levels": ["global", "edge"], "root": {"id": "cloud"}}
+    )
+
+    with pytest.raises(DataError, match="evaluators only"):
+        place(split(), flat)
+
+
 @pytest.mark.parametrize("alpha", [-0.1, 1.1])
 def test_alpha_is_validated(alpha: float) -> None:
     with pytest.raises(PluginError, match="alpha"):
