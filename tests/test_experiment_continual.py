@@ -31,12 +31,26 @@ TRIGGERS = ROOT / "experiments" / "stream_triggers_swell_wesad.yaml"
 def committed() -> dict[str, set[tuple[str, str]]]:
     """(scenario, config_id) of every committed run, by experiment."""
     runs = defaultdict(set)
-    for path in sorted((ROOT / "results").glob("*/*/run.json")):
-        if path.parts[-3] == "legacy":
-            continue
-        meta = json.loads(path.read_text(encoding="utf-8"))
+    for meta in _metas():
         runs[meta["config"]["name"]].add((meta["scenario"], meta["config_id"]))
     return dict(runs)
+
+
+def _metas() -> list[dict]:
+    out = []
+    for path in sorted((ROOT / "results").glob("*/*/run.json")):
+        if path.parts[-3] != "legacy":
+            out.append(json.loads(path.read_text(encoding="utf-8")))
+    return out
+
+
+def recorded(name: str) -> dict[tuple[str, str], dict]:
+    """The config each committed run of ``name`` recorded, by (scenario, id)."""
+    return {
+        (m["scenario"], m["config_id"]): m["config"]
+        for m in _metas()
+        if m["config"]["name"] == name
+    }
 
 
 def new_form(raw: dict) -> dict:
@@ -77,6 +91,17 @@ def test_a_committed_config_keeps_its_config_ids_in_either_form(name: str) -> No
     raw = yaml.safe_load((ROOT / "experiments" / f"{name}.yaml").read_text("utf-8"))
     as_written = {(s.name, s.config_id) for s in scenarios(quiet(raw))}
     rewritten = {s.config_id for s in scenarios(quiet(new_form(raw)))}
+    # Runs a script made from the experiment with changes (C9's backends and
+    # failures) are checked on the config they recorded instead.
+    for (scenario, cid), config in recorded(name).items():
+        if (scenario, cid) not in as_written:
+            for form in (config, new_form(config)):
+                again = {
+                    s.config_id for s in scenarios(quiet(form)) if s.name == scenario
+                }
+                assert cid in again, (scenario, cid)
+            as_written.add((scenario, cid))
+            rewritten.add(cid)
 
     assert RUNS[name] <= as_written  # the same scenarios, with the same ids
     assert {cid for _, cid in RUNS[name]} <= rewritten
