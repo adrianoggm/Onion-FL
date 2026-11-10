@@ -878,6 +878,24 @@ def _final_model(path: Path) -> dict:
         return {k: archive[k] for k in archive.files}
 
 
+def test_the_second_model_family_runs_end_to_end(workspace: Path) -> None:
+    model = {"name": "feature_transformer", "token_dim": 4, "attention_heads": 2}
+    learning = experiment(workspace)["learning"] | {"model": model}
+    config = parse_experiment(experiment(workspace, learning=learning))
+
+    (scenario,) = scenarios(config)
+    path = run_scenario(scenario, evaluate=stub_score)
+
+    final = _final_model(path)
+    assert {"adapter.demo.0.weight", "trunk.0.token", "head.stress.weight"} <= set(
+        final
+    )
+    assert final["adapter.demo.0.weight"].shape == (2, 4)  # one token per feature
+    assert verify_run(path)
+    catalogue = experiment_schema()["plugins"]["model"]
+    assert {p["name"] for p in catalogue} == {"feature_transformer", "modular_mlp"}
+
+
 def _noisy(workspace: Path, **learning) -> dict:
     base = experiment(workspace)["learning"] | {
         "trainer": {"name": "stub", "noise": 0.1}

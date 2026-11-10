@@ -78,6 +78,8 @@ flowchart LR
 
 **Model.** `modular_mlp` holds an adapter per dataset (or one shared adapter over harmonised features), a shared or per-dataset trunk, and a head per task or per dataset. Its parameter keys are namespaced (`adapter.<ds>.*`, `trunk.*`, `head.<task>.*`), so an edge instantiates only its own parts. Every layer is initialised from (seed, layer path), so a part starts identical everywhere.
 
+`feature_transformer` (after FT-Transformer) keeps the same keys and options: its adapter turns each feature into a token (`adapter.<ds>`), its trunk is a class token plus attention blocks that do not depend on `n_features`, and its head reads the class token. Both families derive from `ModularModule`, which checks the datasets and heads and routes each dataset through its parts. Why these two families and not others is in `docs/superpowers/specs/2026-11-10-onion-fl-model-families-design.md`.
+
 **Sharing.** Each parameter group has a scope:
 
 | Scope | Meaning |
@@ -386,7 +388,7 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | compute_model | `samples_per_second`, `measured`, `lognormal_rate`, `trace` |
 | availability_model | `always`, `bernoulli`, `schedule`, `crash_at`, `windows` |
 | transport | `memory`, `mqtt`, `grpc`, `flower` |
-| model | `modular_mlp` |
+| model | `modular_mlp`, `feature_transformer` |
 | sharing | `fedavg`, `fedper`, `lg_fedavg`, `zone`, `independent`, `harmonized`, `custom` |
 | aggregator | `fedavg`, `mean`, `median`, `trimmed_mean`, `krum`, `multi_krum`, `geometric_median`, `bulyan`, `norm_clip`, `dp_fedavg` |
 | attack | `label_flip`, `sign_flip`, `gaussian`, `scale` |

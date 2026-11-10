@@ -272,8 +272,7 @@ def test_models_registry_validates_and_describes_the_config() -> None:
     with pytest.raises(PluginError, match="dropout"):
         models.create("modular_mlp", {"dropout": 2})
 
-    (entry,) = models.describe()
-    assert entry["name"] == "modular_mlp"
+    entry = next(e for e in models.describe() if e["name"] == "modular_mlp")
     assert set(entry["params"]["properties"]) >= {
         "adapter_width",
         "trunk_hidden",
