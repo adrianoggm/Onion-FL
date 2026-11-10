@@ -965,6 +965,79 @@ def _within(track: tuple[np.ndarray, np.ndarray], lo: float, hi: float) -> np.nd
     return values[a:b]
 
 
+class IntervalsParams(BaseModel):
+    source: SourceSpec = Field(description="Tabla con un intervalo por fila")
+    start: str = Field("start", description="Columna del inicio")
+    end: str = Field("end", description="Columna del final (no incluido)")
+    value: str = Field("class", description="Columna con la clase del intervalo")
+    column: str = Field("interval", description="Columna nueva con la clase por fila")
+    by: list[str] = Field(
+        default_factory=list, description="Claves comunes, como subject"
+    )
+    format: str | None = Field(
+        None,
+        description="Formato strptime de inicio y final; sin él, segundos o una "
+        "fecha que pandas entienda",
+    )
+
+
+@steps.register(
+    "intervals",
+    title="Etiquetar por intervalos",
+    description="Da a cada fila la clase del intervalo (inicio, fin) de otra tabla que la contiene.",
+    params=IntervalsParams,
+    explain=(
+        "Para tags de protocolo y eventos de encuesta. Compara con el tiempo de cada "
+        "fila, así que va después de un paso time y en sus unidades. Las filas fuera "
+        "de todo intervalo quedan sin clase; los intervalos de una misma clave no "
+        "pueden solaparse. La columna nueva es meta: nunca es una feature."
+    ),
+)
+class IntervalsStep:
+    def __init__(self, source, start, end, value, column, by, format) -> None:
+        self.source = SourceSpec.model_validate(source)
+        self.start, self.end, self.value, self.column = start, end, value, column
+        self.by, self.format = list(by), format
+        self._table: pd.DataFrame | None = None
+
+    def apply(self, df: pd.DataFrame, ctx: IngestContext) -> pd.DataFrame:
+        if TIME not in df.columns:
+            raise DataError("intervals compares with each row's time: add a time step")
+        if self._table is None:  # read once, then used with every source file
+            table = read_source(self.source, ctx.root)
+            _require(table, [self.start, self.end, self.value, *self.by], "intervals")
+            self._table = table.assign(
+                _start=_seconds(table[self.start], self.format, None, "intervals"),
+                _end=_seconds(table[self.end], self.format, None, "intervals"),
+            ).reset_index(drop=True)
+        table = self._table
+        _require(df, self.by, "intervals")
+        times = df[TIME].to_numpy(np.float64)
+        hit = np.full(len(df), -1)
+        if self.by:
+            left = df[self.by].astype(str).agg("\x1f".join, axis=1).to_numpy()
+            right = table[self.by].astype(str).agg("\x1f".join, axis=1).to_numpy()
+            groups = [(left == key, right == key) for key in np.unique(right)]
+        else:
+            groups = [(np.ones(len(df), bool), np.ones(len(table), bool))]
+        for rows, intervals in groups:
+            part = table[intervals].sort_values("_start")
+            if part.empty:
+                continue
+            starts, ends = part["_start"].to_numpy(), part["_end"].to_numpy()
+            if (ends <= starts).any() or (starts[1:] < ends[:-1]).any():
+                raise DataError(
+                    f"intervals: empty or overlapping intervals in {self.source.path}"
+                )
+            where = np.flatnonzero(rows)
+            pos = np.searchsorted(starts, times[where], side="right") - 1
+            inside = (pos >= 0) & (times[where] < ends[np.maximum(pos, 0)])
+            hit[where[inside]] = part.index.to_numpy()[pos[inside]]
+        classes = table[self.value].reindex(hit).set_axis(df.index)
+        ctx.meta_columns.add(self.column)
+        return df.assign(**{self.column: classes})
+
+
 class LabelRule(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

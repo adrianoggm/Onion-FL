@@ -16,7 +16,14 @@ import pandas as pd
 import pytest
 
 from onion_fl.data.contract import DataError
-from onion_fl.data.ingest import TIME, IngestContext, readers, steps
+from onion_fl.data.ingest import (
+    TIME,
+    DatasetSpec,
+    IngestContext,
+    ingest,
+    readers,
+    steps,
+)
 
 START = 1_600_000_000.0  # a Unix time, as in the first row of every E4 CSV
 SECONDS = 10
@@ -260,3 +267,141 @@ def test_multirate_window_needs_time_and_subject(tmp_path: Path) -> None:
         window({"seconds": 2}, df.drop(columns=[TIME]))
     with pytest.raises(DataError, match="subject"):
         window({"seconds": 2}, df.drop(columns=["subject"]))
+
+
+# --- intervals ----------------------------------------------------------------------
+
+
+def _intervals(root: Path, rows: list[tuple]) -> None:
+    lines = ["subject,start,end,class"] + [",".join(map(str, r)) for r in rows]
+    (root / "protocol.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def intervals(root: Path, df: pd.DataFrame, **params) -> pd.DataFrame:
+    params = {"source": {"reader": "csv", "path": "protocol.csv"}, **params}
+    return steps.create("intervals", params).apply(df, _ctx(root))
+
+
+def test_intervals_give_each_row_the_class_that_contains_it(tmp_path: Path) -> None:
+    _intervals(
+        tmp_path,
+        [("S1", START, START + 4, "rest"), ("S1", START + 6, START + 10, "tsst")],
+    )
+    df = pd.DataFrame({"subject": "S1", TIME: START + np.array([0, 3.9, 4, 5, 6, 9.5])})
+
+    out = intervals(tmp_path, df, by=["subject"])
+
+    assert out["interval"].tolist()[:2] == ["rest", "rest"]
+    assert out["interval"].isna().tolist() == [False, False, True, True, False, False]
+    assert out["interval"].iloc[-1] == "tsst"
+
+
+def test_intervals_are_matched_by_key(tmp_path: Path) -> None:
+    _intervals(tmp_path, [("S1", 0, 10, "rest"), ("S2", 0, 10, "tsst")])
+    df = pd.DataFrame({"subject": ["S1", "S2", "S3"], TIME: [5.0, 5.0, 5.0]})
+
+    out = intervals(tmp_path, df, by=["subject"])
+
+    assert out["interval"].tolist()[:2] == ["rest", "tsst"]
+    assert pd.isna(out["interval"].iloc[2])
+
+
+def test_intervals_read_dates(tmp_path: Path) -> None:
+    (tmp_path / "protocol.csv").write_text(
+        "start,end,class\n2020-09-13 12:00:00,2020-09-13 12:05:00,1\n",
+        encoding="utf-8",
+    )
+    noon = (pd.Timestamp("2020-09-13 12:00:00") - pd.Timestamp(0)).total_seconds()
+    df = pd.DataFrame({"subject": "S1", TIME: [noon - 1, noon, noon + 299]})
+
+    out = intervals(tmp_path, df)
+
+    assert out["interval"].isna().tolist() == [True, False, False]
+
+
+def test_intervals_must_not_overlap(tmp_path: Path) -> None:
+    _intervals(tmp_path, [("S1", 0, 10, "rest"), ("S1", 5, 15, "tsst")])
+    df = pd.DataFrame({"subject": "S1", TIME: [1.0]})
+
+    with pytest.raises(DataError, match="overlapping"):
+        intervals(tmp_path, df, by=["subject"])
+
+
+def test_intervals_need_a_time_step(tmp_path: Path) -> None:
+    _intervals(tmp_path, [("S1", 0, 10, "rest")])
+
+    with pytest.raises(DataError, match="time step"):
+        intervals(tmp_path, pd.DataFrame({"subject": ["S1"]}))
+
+
+# --- the whole E4 path --------------------------------------------------------------
+
+
+def e4_spec(root: Path, source: dict, label: dict, label_rows=None) -> DatasetSpec:
+    return DatasetSpec(
+        name="demo_e4",
+        root=str(root),
+        source=source,
+        steps=[
+            {"time": {"column": "time"}},
+            *label,
+            {"label": {"task": "stress_binary", **label_rows_rule(label_rows)}},
+            {
+                "multirate_window": {
+                    "seconds": 4,
+                    "overlap": 0.5,
+                    "label": "mode",
+                    "label_rows": label_rows,
+                }
+            },
+            {"features": {"regex": "_(mean|std|min|max|median)$"}},
+        ],
+    )
+
+
+def label_rows_rule(label_rows) -> dict:
+    if label_rows == "condition":
+        return {"column": "condition", "map": {1: 0, 2: 1}}
+    return {"column": "interval", "map": {"rest": 0, "tsst": 1}}
+
+
+def test_e4_sessions_ingest_with_interval_labels(tmp_path: Path) -> None:
+    e4_session(tmp_path / "S1")
+    e4_session(tmp_path / "S2")
+    _intervals(
+        tmp_path,
+        [
+            ("S1", START, START + 4, "rest"),
+            ("S1", START + 6, START + 10, "tsst"),
+            ("S2", START, START + 10, "tsst"),
+        ],
+    )
+    steps_intervals = [
+        {
+            "intervals": {
+                "source": {"reader": "csv", "path": "protocol.csv"},
+                "by": ["subject"],
+            }
+        }
+    ]
+    source = {"reader": "empatica_e4_csv", "path": "{subject}/EDA.csv"}
+
+    subjects = ingest(e4_spec(tmp_path, source, steps_intervals))
+
+    s1, s2 = subjects
+    assert (s1.subject, s2.subject) == ("S1", "S2")
+    assert s1.y.tolist() == [0, 1]  # the windows across the gap are dropped
+    assert s2.y.tolist() == [1, 1, 1, 1]
+    np.testing.assert_allclose(s1.t, [0, 6])
+    # No timestamp, subject or interval column reaches the features.
+    assert s1.feature_names == HARMONIZED
+
+
+def test_wesad_and_e4_csv_share_feature_names(tmp_path: Path) -> None:
+    wesad_file(tmp_path / "S2" / "S2.pkl", seconds=8)
+    source = {"reader": "wesad_e4", "path": "{subject}/{subject}.pkl"}
+
+    (data,) = ingest(e4_spec(tmp_path, source, [], label_rows="condition"))
+
+    assert data.feature_names == HARMONIZED
+    assert len(data.y) == 3 and (data.y[0], data.y[-1]) == (0, 1)
