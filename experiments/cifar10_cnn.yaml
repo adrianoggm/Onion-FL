@@ -1,0 +1,48 @@
+# The NIID-Bench reproduction on CIFAR-10 (issue #247): experiments/cifar10_mlp.yaml
+# with only the model and the optimizer changed, to the torch_module preset
+# niid_bench_cnn (NIID-Bench's simple CNN, conv 6 and 16, dense 120 and 84) and
+# SGD with NIID-Bench's momentum 0.9. Same 10 synthetic clients (Dir(0.5) and
+# IID, partition_seed 0), official test batch, one fedavg server, 50 rounds of
+# 10 local epochs with batch 64 and lr 0.01, and seeds 0-2. The pixels keep the
+# MLP run's standardisation with the training clients' statistics, per pixel
+# rather than NIID-Bench's per channel. Set before the runs, not tuned.
+#
+# The acceptance check: FedAvg within about 3 points of NIID-Bench's CIFAR-10
+# accuracy (Li et al., ICDE 2022, Table 3: 68.2% on Dir(0.5), 70.4% on IID).
+#
+#   onion_fl run experiments/cifar10_cnn.yaml --workers 6
+name: cifar10_cnn
+description: FedAvg con la CNN de NIID-Bench en CIFAR-10, 10 clientes sintéticos (Dir(0,5) e IID) y el test oficial.
+topology:
+  name: cifar10_one_server
+  levels: [global, fog, edge]
+  root: {id: cloud, aggregator: fedavg, server_optimizer: replace}
+  fog:
+    defaults:
+      aggregator: fedavg
+      quorum: 1.0
+      link_up: {transport: mqtt, codec: npz, profile: lan}
+    nodes:
+      - {id: server}
+  edge:
+    link_up: {transport: mqtt, codec: npz, profile: lan}
+data:
+  datasets:
+    cifar10: {options: {partition: dirichlet_label, alpha: 0.5, clients: 10}}
+  roles:
+    seed: 0
+    scaler: global
+    overrides:
+      cifar10: {test: [test], val: []}
+learning:
+  model: {name: torch_module, module: niid_bench_cnn}
+  sharing: fedavg
+  trainer: {name: standard, local_epochs: 10, batch_size: 64, lr: 0.01, optimizer: sgd, momentum: 0.9}
+  init: random
+rounds: 50
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  global: {every: 1}
+seeds: [0, 1, 2]
+sweep:
+  data.datasets.cifar10.options.partition: [dirichlet_label, iid]
