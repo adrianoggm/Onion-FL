@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import os
 import shutil
+import socket
+import ssl
 import subprocess
 import threading
 import time
@@ -117,6 +119,27 @@ def refused(**params) -> str:
     return str(error.value)
 
 
+def handshake(address: str, tls: dict, name: str | None = None) -> str | None:
+    """The TLS error with the transport's own context, or ``None`` if it connects.
+
+    paho retries a failed handshake quietly, so the transport only says the
+    broker "did not answer"; this tells a TLS refusal from a broker that is down.
+    """
+    context = MqttTransport(broker=address, tls=tls)._tls_context()
+    host, _, port = address.rpartition(":")
+    with socket.create_connection((host, int(port)), timeout=10) as raw:
+        try:
+            with context.wrap_socket(raw, server_hostname=name or host) as secure:
+                secure.settimeout(0.5)
+                try:  # a TLS 1.3 server rejects the client after the handshake
+                    secure.recv(1)
+                except TimeoutError:
+                    pass
+        except ssl.SSLError as exc:
+            return str(exc)
+    return None
+
+
 def test_mqtts_with_a_client_certificate_delivers(broker) -> None:
     pki, address = broker
     assert roundtrip(broker=address[CERT_PORT], tls=tls(pki, "edge-1")) == [b"sealed"]
@@ -144,9 +167,13 @@ def test_mqtts_rejects_clients_without_credentials(
     cert, key = stranger.issue("stranger", ["stranger"])
     monkeypatch.setenv("ONIONFL_TEST_WRONG", "not-the-password")
 
-    # No certificate, or one another CA signed: the TLS handshake fails.
+    # No certificate, or one another CA signed: the TLS handshake fails, while
+    # one this CA signed gets through the same listener.
+    assert handshake(by_cert, tls(pki, "edge-2")) is None
+    assert handshake(by_cert, tls(pki)) is not None
     assert "did not answer" in refused(broker=by_cert, tls=tls(pki))
     foreign = tls(pki) | {"cert": str(cert), "key": str(key)}
+    assert handshake(by_cert, foreign) is not None
     assert "did not answer" in refused(broker=by_cert, tls=foreign)
     # No password, or a wrong one: the broker says no, and start fails at once.
     started = time.monotonic()
@@ -154,13 +181,17 @@ def test_mqtts_rejects_clients_without_credentials(
     assert time.monotonic() - started < 3
     wrong = {"username": USER, "password_env": "ONIONFL_TEST_WRONG"}
     assert "refused" in refused(broker=by_password, tls=tls(pki), **wrong)
-    # Plain MQTT on a TLS port never connects.
+    # Plain MQTT on a TLS port never connects, though TLS on it does.
+    assert handshake(by_password, tls(pki)) is None
     assert "did not answer" in refused(broker=by_password)
 
 
 def test_mqtts_checks_the_brokers_certificate(broker, tmp_path: Path) -> None:
-    _, address = broker
+    pki, address = broker
     stranger = Pki(tmp_path / "other", name="another-ca")
+    assert handshake(address[PASSWORD_PORT], tls(pki)) is None
+    error = handshake(address[PASSWORD_PORT], {"ca": str(stranger.ca)})
+    assert "certificate verify failed" in str(error)
     assert "did not answer" in refused(
         broker=address[PASSWORD_PORT], tls={"ca": str(stranger.ca)}
     )
