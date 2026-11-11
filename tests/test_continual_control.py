@@ -8,6 +8,7 @@ hand-written format fixture. Nothing learns (docs/RULES.md).
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -324,13 +325,34 @@ def test_a_run_can_start_paused(tmp_path: Path) -> None:
     assert fed.coordinator.finished and read_state(tmp_path)["listening"] is False
 
 
-def test_forged_and_broken_lines_never_reach_the_coordinator(tmp_path: Path) -> None:
+def _signed_at(at: float) -> dict:
+    """A pause signed for ``at`` = 1.0, then given ``at``: NaN or an infinity
+    cannot be signed, so its signature cannot be checked either."""
+    return signed({"pause": True, "at": 1.0}) | {"at": at}
+
+
+@pytest.mark.parametrize(
+    ("extra", "reason"),
+    [
+        pytest.param(None, None, id="forged"),
+        pytest.param(_signed_at(math.nan), "unsigned order", id="nan-at"),
+        pytest.param(_signed_at(math.inf), "unsigned order", id="inf-at"),
+        pytest.param(signed({"stop": True}), "not an order", id="unknown-order"),
+        pytest.param(signed({"pause": True, "at": "soon"}), "bad time", id="bad-at"),
+        pytest.param(signed({"resume": True}), "not paused", id="resume-unpaused"),
+    ],
+)
+def test_forged_and_broken_lines_never_reach_the_coordinator(
+    tmp_path: Path, extra, reason
+) -> None:
     good = signed({"rollback": None, "at": 4.5 * ROUND})
     inbox(tmp_path, {"rollback": None}, signed({"pause": True}, audience="run-2"))
     inbox(tmp_path, signed({"pause": True}), operator="mallory")
     inbox(tmp_path, good, good)
     with (tmp_path / INBOX).open("a", encoding="utf-8") as out:
         out.write("not json\n")
+        if extra is not None:  # NaN and Infinity as Python's json reads them back
+            out.write(json.dumps({"operator": "alice", "order": extra}) + "\n")
     fed = live(tmp_path)
 
     reasons = [e["tags"]["reason"] for e in events(fed, "control.refused")]
@@ -340,7 +362,7 @@ def test_forged_and_broken_lines_never_reach_the_coordinator(tmp_path: Path) -> 
         "mallory is not an operator",
         "replayed order",
         "not an order",
-    ]
+    ] + ([reason] if reason else [])
     assert not events(fed, "control.paused") and not rejected(fed)
     assert len(events(fed, "version.rollback")) == 1
     assert [o["order"] for o in read_inbox(tmp_path)][0] == {"rollback": None}
