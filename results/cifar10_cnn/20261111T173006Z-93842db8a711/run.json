@@ -1,0 +1,230 @@
+{
+  "run_id": "20261111T173006Z-93842db8a711",
+  "topology_id": "60f08e8ddbcfa14cc1e8f3aacbffc97e7a2765ee375a4c063b7a7333953289ee",
+  "config_id": "c6d9b6a957f56e4dccc315975762f339d8eb93a05319ce05e46d3964f26f0e69",
+  "backend": "sim",
+  "infrastructure_id": null,
+  "data_id": "9b532eefac6c222371863d1f210b9b855917f293b53f92f10f21a1c926f5a23f",
+  "code_version": {
+    "commit": "8b8ec67f03076c1b8d0e9cd69ef75ccf0849a444",
+    "dirty": false
+  },
+  "seed": 1,
+  "scenario": "data.datasets.cifar10.options.partition=dirichlet_label",
+  "started_at": "2026-11-11T17:30:06.464210+00:00",
+  "status": "finished",
+  "config": {
+    "name": "cifar10_cnn",
+    "description": "FedAvg con la CNN de NIID-Bench en CIFAR-10, 10 clientes sintéticos (Dir(0,5) e IID) y el test oficial.",
+    "topology": {
+      "name": "cifar10_one_server",
+      "levels": [
+        "global",
+        "fog",
+        "edge"
+      ],
+      "root": {
+        "id": "cloud",
+        "aggregator": "fedavg",
+        "server_optimizer": "replace"
+      },
+      "fog": {
+        "defaults": {
+          "aggregator": "fedavg",
+          "quorum": 1.0,
+          "link_up": {
+            "transport": "mqtt",
+            "codec": "npz",
+            "profile": "lan"
+          }
+        },
+        "nodes": [
+          {
+            "id": "server"
+          }
+        ]
+      },
+      "edge": {
+        "link_up": {
+          "transport": "mqtt",
+          "codec": "npz",
+          "profile": "lan"
+        }
+      }
+    },
+    "data": {
+      "datasets": {
+        "cifar10": {
+          "descriptor": null,
+          "options": {
+            "partition": "dirichlet_label",
+            "alpha": 0.5,
+            "clients": 10
+          }
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.0,
+        "overrides": {
+          "cifar10": {
+            "test": [
+              "test"
+            ],
+            "val": [],
+            "exclude": []
+          }
+        },
+        "seed": 0,
+        "local_val": 0.0,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "torch_module",
+        "module": "niid_bench_cnn"
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "local_epochs": 10,
+        "batch_size": 64,
+        "lr": 0.01,
+        "optimizer": "sgd",
+        "momentum": 0.9
+      },
+      "init": "random"
+    },
+    "rounds": 50,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": null,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": null,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    }
+  },
+  "diagnostic": {
+    "statistic": "label_divergence",
+    "covariance": 0.0,
+    "D": 0.0,
+    "statistics": {
+      "label_divergence": {
+        "covariance": 0.0,
+        "D": 0.0
+      },
+      "gradient_norm": {
+        "covariance": 0.0,
+        "D": 0.0
+      }
+    },
+    "participation": 1.0,
+    "floss": {
+      "participation": 1.0,
+      "rounds_factor": 1.0
+    },
+    "deadlines": [],
+    "unknown": [],
+    "edges": {
+      "cifar10-client_0": {
+        "p": 1.0,
+        "w": 0.10618,
+        "label_divergence": 1.022762596634729,
+        "gradient_norm": 0.7907296419143677
+      },
+      "cifar10-client_1": {
+        "p": 1.0,
+        "w": 0.10218,
+        "label_divergence": 1.177758203655898,
+        "gradient_norm": 0.8307269811630249
+      },
+      "cifar10-client_2": {
+        "p": 1.0,
+        "w": 0.13088,
+        "label_divergence": 1.2510957334985877,
+        "gradient_norm": 0.7635247111320496
+      },
+      "cifar10-client_3": {
+        "p": 1.0,
+        "w": 0.10582,
+        "label_divergence": 0.8240284248057126,
+        "gradient_norm": 0.5805836319923401
+      },
+      "cifar10-client_4": {
+        "p": 1.0,
+        "w": 0.0935,
+        "label_divergence": 0.7604074360831584,
+        "gradient_norm": 0.6464390158653259
+      },
+      "cifar10-client_5": {
+        "p": 1.0,
+        "w": 0.1072,
+        "label_divergence": 0.5600146971230529,
+        "gradient_norm": 0.4856327176094055
+      },
+      "cifar10-client_6": {
+        "p": 1.0,
+        "w": 0.08646,
+        "label_divergence": 0.765295777220415,
+        "gradient_norm": 0.6180339455604553
+      },
+      "cifar10-client_7": {
+        "p": 1.0,
+        "w": 0.10434,
+        "label_divergence": 0.8654747772739011,
+        "gradient_norm": 0.7084918022155762
+      },
+      "cifar10-client_8": {
+        "p": 1.0,
+        "w": 0.04738,
+        "label_divergence": 0.565117394205271,
+        "gradient_norm": 0.534411609172821
+      },
+      "cifar10-client_9": {
+        "p": 1.0,
+        "w": 0.11606,
+        "label_divergence": 1.0700259626702664,
+        "gradient_norm": 0.6066316962242126
+      }
+    },
+    "seconds": 9.727395800000522
+  },
+  "finished_at": "2026-11-11T19:14:47.718329+00:00",
+  "run_hash": "3e174e8b7bece0ddd3ef424964fe20fc2990ff1a6a08e8531f1348f26ef3fdbd"
+}

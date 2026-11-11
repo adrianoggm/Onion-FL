@@ -1,0 +1,26 @@
+{
+  "rounds": 50,
+  "finished": true,
+  "t_virtual_end": 0.6323993767774638,
+  "wall_seconds": 6287.217549999998,
+  "messages": {
+    "sent": 1236,
+    "bytes": 288895280,
+    "dropped": 0
+  },
+  "quorum_failed": 0,
+  "final": {
+    "global/*": {
+      "round": 50,
+      "accuracy": 0.5552,
+      "loss": 3.6736637692278133,
+      "macro_f1": 0.5553929596717119
+    },
+    "global/cifar10": {
+      "round": 50,
+      "accuracy": 0.5552,
+      "loss": 3.6736637692278133,
+      "macro_f1": 0.5553929596717119
+    }
+  }
+}
