@@ -379,6 +379,29 @@ def test_an_order_whose_time_passed_applies_at_once(tmp_path: Path) -> None:
     assert rollback["t"] >= 4.5 * ROUND
 
 
+def test_an_order_during_a_validation_applies_after_the_decision() -> None:
+    fed = federation()
+    runtime = fed.runtime
+    while len(events(fed, "version.candidate")) < 3:  # v3 waits for its validators
+        runtime.run(until=runtime.next_time())
+    decisions = events(fed, "version.promoted") + events(fed, "version.rejected")
+    assert {e["value"] for e in decisions} == {1, 2}  # v3 is not decided yet
+    order = signed({"rollback": None})
+    runtime.inject(Message(kind="control", src="alice", dst="cloud", meta=order))
+    runtime.run(until=runtime.now)
+    assert not events(fed, "version.rollback")  # queued, not refused
+    fed.run()
+
+    (rollback,) = events(fed, "version.rollback")
+    (decided,) = [e for e in events(fed, "version.promoted") if e["value"] == 3]
+    # on what was decided: v3 became the champion, so the rollback leaves it
+    assert rollback["tags"]["previous"] == 3 and rollback["value"] == 2
+    assert rollback["t"] == decided["t"]
+    names = [(e["name"], e["value"]) for e in fed.runtime.events]
+    assert names.index(("version.promoted", 3)) < names.index(("version.rollback", 2))
+    assert not rejected(fed)
+
+
 def test_an_external_message_to_an_unknown_node_is_dropped() -> None:
     fed = federation()
     fed.runtime.inject(Message(kind="control", src="alice", dst="nobody", meta={}))
