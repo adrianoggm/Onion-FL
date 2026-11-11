@@ -14,6 +14,7 @@ import functools
 import hashlib
 import json
 import math
+import multiprocessing
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from copy import deepcopy
@@ -1786,7 +1787,10 @@ def run_scenarios(
 def _in_parallel(fn: Callable[[Any], Any], items: Sequence[Any], workers: int) -> list:
     """``fn`` over ``items`` in worker processes, in order; the first failure, in
     whatever order they finish, cancels what has not started and is raised."""
-    with ProcessPoolExecutor(max_workers=workers) as pool:
+    # spawn everywhere, as on Windows: forking a process that already runs
+    # threads (torch, MQTT clients) can leave the child deadlocked on Linux.
+    context = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=workers, mp_context=context) as pool:
         futures = [pool.submit(fn, item) for item in items]
         for done in as_completed(futures):
             if done.exception() is not None:

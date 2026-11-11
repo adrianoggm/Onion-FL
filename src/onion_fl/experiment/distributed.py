@@ -174,11 +174,8 @@ class Probe:
 
     def close(self) -> str:
         """End the session; what the probe wrote to stderr."""
-        try:
-            if self.process.stdin is not None:
-                self.process.stdin.close()
-        except OSError:
-            pass
+        # communicate() closes stdin itself; closing it first makes the POSIX
+        # implementation fail flushing a closed file and leaves the probe running.
         try:
             _, err = self.process.communicate(timeout=10)
         except subprocess.TimeoutExpired:
@@ -430,7 +427,6 @@ def push(
         ) as tar:
             for arcname, path in sorted(entries.items()):
                 tar.add(path, arcname=arcname)
-        process.stdin.close()
         _, err = process.communicate(timeout=600)
     except BaseException:
         process.kill()
