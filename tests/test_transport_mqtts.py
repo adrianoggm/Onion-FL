@@ -9,6 +9,7 @@ Skips without Docker or ``cryptography``.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import socket
@@ -58,21 +59,19 @@ def _docker(*args: str) -> str:
     return done.stdout.strip()
 
 
-@pytest.fixture(scope="module")
-def broker(tmp_path_factory: pytest.TempPathFactory):
-    """A TLS-only Mosquitto; yields its PKI and ``container port -> host:port``."""
-    if not docker_up():
-        pytest.skip("no Docker")
-    folder = tmp_path_factory.mktemp("mqtts")
-    pki = Pki(folder / "pki")
-    command = mosquitto_tls(
-        pki, folder / "broker", ["localhost", "127.0.0.1"], USER, PASSWORD
-    )
-    ports = ["", ""] if PORT is None else [PORT, str(int(PORT) + 1)]
-    mount = f"type=bind,source={(folder / 'broker').as_posix()},target={BROKER_TLS}"
-    subprocess.run(["docker", "rm", "-f", NAME], capture_output=True, timeout=60)
+@contextlib.contextmanager
+def running_broker(pki: Pki, folder: Path, names: list[str], name: str = NAME):
+    """A TLS-only Mosquitto whose certificate ``pki`` issued for ``names``.
+
+    Yields ``container port -> host:port``, always on 127.0.0.1.
+    """
+    command = mosquitto_tls(pki, folder, names, USER, PASSWORD)
+    fixed = PORT is not None and name == NAME
+    ports = [PORT, str(int(PORT) + 1)] if fixed else ["", ""]
+    mount = f"type=bind,source={folder.as_posix()},target={BROKER_TLS}"
+    subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=60)
     _docker(
-        "run", "-d", "--name", NAME, "--mount", mount,
+        "run", "-d", "--name", name, "--mount", mount,
         "-p", f"127.0.0.1:{ports[0]}:{CERT_PORT}",
         "-p", f"127.0.0.1:{ports[1]}:{PASSWORD_PORT}",
         "eclipse-mosquitto:2", *command,
@@ -80,13 +79,24 @@ def broker(tmp_path_factory: pytest.TempPathFactory):
     try:
         address = {
             port: "127.0.0.1:"
-            + _docker("port", NAME, str(port)).splitlines()[0].rsplit(":")[-1]
+            + _docker("port", name, str(port)).splitlines()[0].rsplit(":")[-1]
             for port in (CERT_PORT, PASSWORD_PORT)
         }
-        wait_for_mosquitto(NAME)
-        yield pki, address
+        wait_for_mosquitto(name)
+        yield address
     finally:
-        subprocess.run(["docker", "rm", "-f", NAME], capture_output=True, timeout=60)
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=60)
+
+
+@pytest.fixture(scope="module")
+def broker(tmp_path_factory: pytest.TempPathFactory):
+    """A TLS-only Mosquitto; yields its PKI and ``container port -> host:port``."""
+    if not docker_up():
+        pytest.skip("no Docker")
+    folder = tmp_path_factory.mktemp("mqtts")
+    pki = Pki(folder / "pki")
+    with running_broker(pki, folder / "broker", ["localhost", "127.0.0.1"]) as address:
+        yield pki, address
 
 
 def tls(pki: Pki, client: str | None = None) -> dict:
@@ -195,6 +205,21 @@ def test_mqtts_checks_the_brokers_certificate(broker, tmp_path: Path) -> None:
     assert "did not answer" in refused(
         broker=address[PASSWORD_PORT], tls={"ca": str(stranger.ca)}
     )
+
+
+def test_mqtts_checks_the_brokers_name(broker, tmp_path: Path) -> None:
+    """The right CA is not enough: the certificate must name the broker."""
+    pki, _ = broker
+    folder = tmp_path / "broker"
+    with running_broker(pki, folder, ["other.invalid"], f"{NAME}-name") as address:
+        by_password = address[PASSWORD_PORT]
+        assert handshake(by_password, tls(pki), name="other.invalid") is None
+        error = handshake(by_password, tls(pki))
+        assert "mismatch" in str(error) and "127.0.0.1" in str(error)
+        secret = tmp_path / "mqtt-password"
+        secret.write_text(PASSWORD, encoding="utf-8")
+        login = {"username": USER, "password_file": str(secret)}
+        assert "did not answer" in refused(broker=by_password, tls=tls(pki), **login)
 
 
 @pytest.mark.parametrize(
