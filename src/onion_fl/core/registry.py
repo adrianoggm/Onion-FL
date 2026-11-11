@@ -3,12 +3,16 @@ from __future__ import annotations
 """Named plugins with metadata, one registry per experimental axis (spec §4, §11).
 
 A config picks a plugin by name, or by a ``package.module:Name`` path for
-plugins that live outside the framework. The metadata (title, description,
+plugins that live outside the framework. Importing a module runs its code, and
+the Studio validates configs that arrive over HTTP, so a path is imported only
+when its module is the framework's own or lies under a prefix the operator lists
+in ``ONIONFL_TRUSTED_MODULES`` (comma separated, empty by default). The metadata (title, description,
 explanation and the pydantic model of the parameters) is what the front uses
 to build forms and the tutorial without plugin-specific UI code.
 """
 
 import importlib
+import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, TypeVar
@@ -16,6 +20,10 @@ from typing import Any, TypeVar
 from pydantic import BaseModel, ValidationError
 
 F = TypeVar("F", bound=Callable[..., Any])
+
+TRUSTED_ENV = "ONIONFL_TRUSTED_MODULES"
+# The framework's own modules are already installed and loaded: always trusted.
+BUILTIN = "onion_fl"
 
 
 class PluginError(ValueError):
@@ -126,11 +134,29 @@ class Registry:
         return [self._specs[name].describe(self.kind) for name in self.names()]
 
 
+def trusted_prefixes() -> list[str]:
+    """The module prefixes the operator trusts, from ``ONIONFL_TRUSTED_MODULES``."""
+    return [p.strip() for p in os.environ.get(TRUSTED_ENV, "").split(",") if p.strip()]
+
+
+def is_trusted(module_name: str) -> bool:
+    """Whether a module may be imported: the framework's own or a trusted prefix."""
+    return any(
+        module_name == p or module_name.startswith(p + ".")
+        for p in (BUILTIN, *trusted_prefixes())
+    )
+
+
 def _import_spec(path: str) -> PluginSpec:
     module_name, _, attr = path.partition(":")
     if not module_name or not attr:
         raise PluginError(
             f"plugin path must look like 'package.module:Name', got {path!r}"
+        )
+    if not is_trusted(module_name):
+        raise PluginError(
+            f"external plugin {path!r} is not trusted: the operator must list its "
+            f"package in {TRUSTED_ENV} (comma separated) before it can be imported"
         )
     try:
         obj = getattr(importlib.import_module(module_name), attr)

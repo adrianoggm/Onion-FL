@@ -217,6 +217,29 @@ def test_validating_an_experiment_names_the_error_path(
     assert bad.status_code == 422 and any("rounds" in e for e in bad.json()["errors"])
 
 
+def test_validating_an_experiment_imports_no_untrusted_plugin(
+    client: TestClient, root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    from onion_fl.core.registry import TRUSTED_ENV
+
+    boom = "onionfl_untrusted_studio_plugin"
+    (root / f"{boom}.py").write_text("raise RuntimeError('boom')", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(root))
+    monkeypatch.delenv(TRUSTED_ENV, raising=False)
+    raw = yaml.safe_load(
+        (root / "experiments" / "demo_exp.yaml").read_text(encoding="utf-8")
+    )
+    raw["learning"]["trainer"] = f"{boom}:Trainer"
+
+    bad = client.post("/api/experiments/validate", json=raw)
+
+    assert bad.status_code == 422
+    assert any("not trusted" in e for e in bad.json()["errors"])
+    assert boom not in sys.modules
+
+
 def test_the_plan_of_an_experiment(client: TestClient) -> None:
     previews = client.post("/api/experiments/demo_exp/plan").json()
 
