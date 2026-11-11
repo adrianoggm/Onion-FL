@@ -69,9 +69,11 @@ def test_descriptor_options_are_valid(name: str, options: dict) -> None:
 
 
 def _same_where_present(new, old_X: np.ndarray, old_names: list[str]) -> None:
+    # A feature the old loader lacks (a meta column the descriptor stopped
+    # excluding) fails, rather than going unseen.
+    extra = sorted(set(new.feature_names) - set(old_names))
+    assert not extra, f"features the previous loader does not have: {extra}"
     for j, name in enumerate(new.feature_names):
-        if name not in old_names:
-            continue
         values, legacy = new.X[:, j], old_X[:, old_names.index(name)]
         present = ~np.isnan(values)  # the old loaders imputed over the whole dataset
         np.testing.assert_allclose(
