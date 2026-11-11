@@ -5,7 +5,7 @@ This document describes the framework as built in v0.2.0. The design it implemen
 ## 1. Principles
 
 1. **Nodes are state machines.** A node reacts to `on_start`, `on_message` and `on_timer`. It reaches the world only through a `Context`: `send`, `set_timer`, `cancel_timer`, `now`, `rng`, `emit` and `compute`. The same node therefore runs in the simulator and over real transports.
-2. **Every experimental axis is a plugin.** A plugin is chosen by name, or by `package.module:Name`, with pydantic-validated parameters. Its metadata (title, description, parameters and explanation) feeds the JSON Schema that the front will use.
+2. **Every experimental axis is a plugin.** A plugin is chosen by name, or by `package.module:Name`, with pydantic-validated parameters. Importing a module runs its code and the Studio validates configs that arrive over HTTP, so a path is imported only if its module is the framework's own (`onion_fl.*`) or lies under a prefix listed in `ONIONFL_TRUSTED_MODULES` (comma separated, empty by default); otherwise it is refused without importing anything. Its metadata (title, description, parameters and explanation) feeds the JSON Schema that the front will use.
 3. **Nothing generic knows a dataset.** `roles/`, `learning/`, `runtime/` and `core/` never name SWELL, SWEET or WESAD, and a test enforces it. Datasets enter only through descriptors and `SubjectData`.
 4. **Everything is measured and signed.** Each run leaves its events, a summary and the final model, under identifiers that tie a number to the topology, config, data and code that produced it.
 
