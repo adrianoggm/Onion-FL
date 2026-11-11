@@ -1,0 +1,96 @@
+{
+  "run_id": "20261110T213011Z-c391efc4a77d",
+  "topology_id": "80d45cbee3ed481093da8f2e29f7fde652ac1049eec791d7406cd7e3e1ac2067",
+  "config_id": "0dd4b57bba9ae7e1c9770be376d30161754a49c873e735e86ca565e18e925c0b",
+  "backend": "sim",
+  "infrastructure_id": null,
+  "data_id": "7d8238e25baf310766da9c287196bd4e42a45a3a709873d21edc89830d10ad20",
+  "code_version": {
+    "commit": "8ab0ba54c7dce05c7ee910c3953b9c832f332176",
+    "dirty": false
+  },
+  "seed": 1,
+  "scenario": "base",
+  "started_at": "2026-11-10T21:30:11.577217+00:00",
+  "status": "finished",
+  "config": {
+    "name": "femnist_cnn",
+    "description": "La CNN de LEAF en FEMNIST, 200 escritores en cuatro fogs; la referencia FedAvg cambiando solo el modelo.",
+    "topology": "femnist_four_fogs",
+    "data": {
+      "datasets": {
+        "femnist": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.0,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.0,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 1.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "torch_module",
+        "module": "leaf_femnist_cnn"
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "local_epochs": 1,
+        "batch_size": 32,
+        "lr": 0.001
+      },
+      "init": "random"
+    },
+    "rounds": 30,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": null,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": null,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    }
+  },
+  "finished_at": "2026-11-10T22:40:34.660183+00:00",
+  "run_hash": "8a7fc0691be63305f28d818efab9f983a85977c5cbe88a5f2f3099f7894e17c3"
+}

@@ -82,6 +82,8 @@ flowchart LR
 
 `feature_transformer` (after FT-Transformer) keeps the same keys and options: its adapter turns each feature into a token (`adapter.<ds>`), its trunk is a class token plus attention blocks that do not depend on `n_features`, and its head reads the class token. Both families derive from `ModularModule`, which checks the datasets and heads and routes each dataset through its parts. Why these two families and not others is in `docs/superpowers/specs/2026-11-10-onion-fl-model-families-design.md`.
 
+`torch_module` takes any `nn.Module`, by preset name or `package.module:Class`, built as `Class(shapes, input_shape, **params)`. The family wraps it without prefixing its keys and adds three things: it rebuilds each example of `input_shape` ((C, H, W) or (L,)) from the `x_<i>` columns that preprocessing kept, with the dropped constant columns at 0 (`DataShape.features` carries the column names); it rejects any key outside `adapter.<ds>`/`trunk`/`trunk.<ds>`/`head.<task>` (a shared part must be an `nn.Sequential`, so its keys are `trunk.<i>.*`); and it resets every submodule from (seed, module path) unless the class has its own `init_parameters`. A zero batch through each dataset checks the input and the number of logits at build time. The presets (`learning/presets.py`) are LEAF's FEMNIST CNN, NIID-Bench's simple CNN for CIFAR-10, LEAF's two-layer Shakespeare LSTM and a small 1D CNN for audio; each puts its first layer in the adapter, the rest of the body in the trunk and the last linear layer in the head. Importing a module runs its code, and the Studio validates configs that arrive over HTTP, so validating a `torch_module` config never imports anything: a reference is checked as text, and the class is imported only when a model is built. Presets always resolve; an external class only when its module is under a prefix the operator lists in `ONIONFL_TRUSTED_MODULES` (comma separated, empty by default), so by default the Studio and any config can only use the presets.
+
 **Sharing.** Each parameter group has a scope:
 
 | Scope | Meaning |
@@ -445,7 +447,7 @@ Outside the package, a config can name a plugin as `my_package.my_module:Geometr
 | compute_model | `samples_per_second`, `measured`, `lognormal_rate`, `trace` |
 | availability_model | `always`, `bernoulli`, `schedule`, `crash_at`, `windows` |
 | transport | `memory`, `mqtt`, `grpc`, `flower` |
-| model | `modular_mlp`, `feature_transformer` |
+| model | `modular_mlp`, `feature_transformer`, `torch_module` |
 | sharing | `fedavg`, `fedper`, `lg_fedavg`, `zone`, `independent`, `harmonized`, `custom` |
 | aggregator | `fedavg`, `mean`, `median`, `trimmed_mean`, `krum`, `multi_krum`, `geometric_median`, `bulyan`, `norm_clip`, `dp_fedavg` |
 | attack | `label_flip`, `sign_flip`, `gaussian`, `scale` |
