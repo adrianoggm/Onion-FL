@@ -7,11 +7,25 @@ from __future__ import annotations
     onion_fl data prepare|inspect <dataset> [--option key=value]...
     onion_fl topology show <file> [--graph | --mermaid]
     onion_fl plan <experiment.yaml>
-    onion_fl run <experiment.yaml> [--scenario NAME] [--mode sim|real] [--workers N]
+    onion_fl run <experiment.yaml> [--scenario NAME] [--backend NAME]
+                 [--mode sim|real] [--workers N]
     onion_fl node --id <node> --run <run_id> --config <experiment.yaml>
+    onion_fl ceiling <experiment.yaml> [--replicas R] [--metric NAME] [--series KEY]
+                     [--resample] [--paired] [--workers N]
+    onion_fl fidelity <runs A | predictor> <runs B | predictor[:floss]>
+                      [--metric NAME]... [--target METRIC=VALUE] [--control RUNS]
+                      [--no-predictor] [--ceiling FILE] [--calibration ID]
+                      [--csv FILE] [--html FILE]
+    onion_fl calibrate measure <spec.yaml> --out <session> [--image IMAGE]
+                       [--project NAME] [--subnet CIDR]
+    onion_fl calibrate fit <session>... [--out calibrations] [--infrastructure-out FILE]
+    onion_fl calibrate check <session> --infrastructure FILE [--calibrations DIR]
+                       [--out FILE]
     onion_fl report <experiment.yaml | runs_dir>... [--out FILE] [--metric NAME]... [--by TAG]...
-    onion_fl baseline <experiment.yaml> [--models lr rf xgboost] [--cv K]
+    onion_fl baseline <experiment.yaml> [--models lr rf xgboost] [--cv K | --seeds 0 1 2]
+                      [--seed S]
     onion_fl schema [--out FILE]
+    onion_fl traces import fedscale [<folder>]
     onion_fl serve [--root .] [--host 127.0.0.1] [--port 8765]
 
 Results go to stdout as JSON (or a path per line); errors to stderr with
@@ -21,6 +35,7 @@ exit code 2.
 import argparse
 import json
 import sys
+import warnings
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -151,7 +166,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         config = parse_experiment(
             config.dump() | {"runtime": config.dump()["runtime"] | {"mode": args.mode}}
         )
-    for path in run_experiment(config, workers=args.workers, only=args.scenario):
+    if args.backend:
+        config = parse_experiment(config.dump() | {"backend": args.backend})
+    for path in run_experiment(
+        config, workers=args.workers, only=args.scenario, paused=args.paused
+    ):
         print(path)
     return 0
 
@@ -162,8 +181,106 @@ def cmd_node(args: argparse.Namespace) -> int:
     if not Path(args.config).exists():
         raise FileNotFoundError(f"config not found: {args.config}")
     return run_node(
-        args.id, args.run, args.config, scenario=args.scenario, seed=args.seed
+        args.id,
+        args.run,
+        args.config,
+        scenario=args.scenario,
+        seed=args.seed,
+        resume=args.resume,
     )
+
+
+def cmd_ceiling(args: argparse.Namespace) -> int:
+    from onion_fl.experiment.ceiling import run_ceiling
+
+    _print_json(
+        run_ceiling(
+            _experiment(args.experiment),
+            n=args.replicas,
+            metric=args.metric,
+            series=args.series,
+            resample=args.resample,
+            paired=args.paired,
+            minimize=args.minimize,
+            workers=args.workers,
+        )
+    )
+    return 0
+
+
+def _target(text: str | None) -> tuple[str, float] | None:
+    if text is None:
+        return None
+    metric, sep, value = text.partition("=")
+    if not sep:
+        raise ValueError(f"--target {text!r}: use metric=value, as accuracy=0.8")
+    return metric, float(value)
+
+
+def cmd_fidelity(args: argparse.Namespace) -> int:
+    from onion_fl.experiment.fidelity import fidelity, write_csv, write_html
+
+    noise = None
+    if args.ceiling:
+        noise = json.loads(Path(args.ceiling).read_text(encoding="utf-8"))
+    result = fidelity(
+        args.a,
+        args.b,
+        metrics=args.metric or ["accuracy", "time"],
+        series=args.series,
+        target=_target(args.target),
+        experiment=args.experiment,
+        noise_ceiling=noise,
+        minimize=args.minimize or [],
+        resamples=args.bootstrap,
+        seed=args.seed,
+        calibration=args.calibration,
+        control=args.control,
+        predictor=not args.no_predictor,
+    )
+    if args.csv:
+        write_csv(result, args.csv)
+    if args.html:
+        write_html(result, args.html)
+    _print_json(result)
+    return 0
+
+
+def cmd_calibrate(args: argparse.Namespace) -> int:
+    from onion_fl.experiment import calibrate
+
+    if args.step == "measure":
+        given = {"image": args.image, "project": args.project, "subnet": args.subnet}
+        params = {k: v for k, v in given.items() if v is not None}
+        print(calibrate.measure(args.spec, args.out, params))
+        return 0
+    if args.step == "fit":
+        from onion_fl.infrastructure.calibration import load_calibration
+
+        folder = calibrate.fit(args.sessions, args.out)
+        if args.infrastructure_out:
+            meta, _ = calibrate.read_session(args.sessions[0])
+            spec = calibrate.CalibrationSpec.model_validate(meta["spec"])
+            source = Path(spec.infrastructure)
+            if source.suffix not in (".yaml", ".yml"):
+                source = Path(spec.paths.infrastructures) / f"{source}.yaml"
+            raw = calibrate.calibrated_infrastructure(
+                source, load_calibration(args.out, folder.name)
+            )
+            head = (
+                f"# {source.name} with the profiles and links that calibration\n"
+                f"# {folder.name} measured citing it (onion_fl calibrate fit).\n"
+            )
+            Path(args.infrastructure_out).write_text(
+                head + yaml.safe_dump(raw, sort_keys=False), encoding="utf-8"
+            )
+        print(folder)
+        return 0
+    result = calibrate.check(args.session, args.infrastructure, args.calibrations)
+    if args.out:
+        Path(args.out).write_text(json.dumps(result, indent=2), encoding="utf-8")
+    _print_json(result)
+    return 0
 
 
 def cmd_report(args: argparse.Namespace) -> int:
@@ -185,23 +302,48 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_explain(args: argparse.Namespace) -> int:
+    from onion_fl.experiment.explain import explain_run
+
+    explainer = {"name": args.explainer}
+    if args.metric:
+        explainer["metric"] = args.metric
+    if args.repeats:
+        explainer["repeats"] = args.repeats
+    for run in args.runs:
+        print(explain_run(run, explainer))
+    return 0
+
+
 def cmd_baseline(args: argparse.Namespace) -> int:
-    from onion_fl.baselines import cross_validate, evaluate
+    from onion_fl.baselines import cross_validate, evaluate, over_role_seeds
     from onion_fl.data.roles import split_subjects
     from onion_fl.experiment.runner import load_data
 
+    if args.cv and args.seeds:
+        raise ValueError("use --cv or --seeds, not both")
     config = _experiment(args.experiment)
     subjects, _ = load_data(config)
-    if args.cv:
+    if args.seeds:
+        _print_json(
+            over_role_seeds(subjects, args.models, args.seeds, config.data.roles)
+        )
+    elif args.cv:
         _print_json(
             {
-                m: cross_validate(subjects, m, k=args.cv, roles=config.data.roles)
+                m: cross_validate(
+                    subjects, m, k=args.cv, seed=args.seed, roles=config.data.roles
+                )
                 for m in args.models
             }
         )
     else:
         _print_json(
-            evaluate(split_subjects(subjects, config.data.roles), models=args.models)
+            evaluate(
+                split_subjects(subjects, config.data.roles),
+                models=args.models,
+                seed=args.seed,
+            )
         )
     return 0
 
@@ -218,7 +360,16 @@ def cmd_serve(args: argparse.Namespace) -> int:
     print(
         f"Onion-FL Studio on http://{args.host}:{args.port}  (root {Path(args.root).resolve()})"
     )
-    uvicorn.run(create_app(args.root), host=args.host, port=args.port)
+    uvicorn.run(
+        create_app(args.root, operators=args.operators), host=args.host, port=args.port
+    )
+    return 0
+
+
+def cmd_traces(args: argparse.Namespace) -> int:
+    from onion_fl.infrastructure.fedscale import import_fedscale
+
+    _print_json(import_fedscale(args.folder))
     return 0
 
 
@@ -272,8 +423,18 @@ def parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="run an experiment")
     run.add_argument("experiment")
     run.add_argument("--scenario", help="only the scenario with this name")
-    run.add_argument("--mode", choices=["sim", "real"])
+    run.add_argument(
+        "--backend",
+        help="sim, local, emulated, distributed; overrides the experiment's",
+    )
+    run.add_argument("--mode", choices=["sim", "real"], help="real: alias of local")
     run.add_argument("--workers", type=int, default=1)
+    run.add_argument(
+        "--paused",
+        action="store_true",
+        help="start each simulation paused, for an operator to resume "
+        "(needs ONIONFL_OPERATORS)",
+    )
     run.set_defaults(func=cmd_run)
 
     node = sub.add_parser("node", help="start one node of a real run")
@@ -286,7 +447,109 @@ def parser() -> argparse.ArgumentParser:
     )
     node.add_argument("--scenario", help="with an experiment YAML: which scenario")
     node.add_argument("--seed", type=int, help="with an experiment YAML: which seed")
+    node.add_argument(
+        "--resume",
+        action="store_true",
+        help="restart a node of a real run from the state its edges saved",
+    )
     node.set_defaults(func=cmd_node)
+
+    ceiling = sub.add_parser(
+        "ceiling", help="noise ceiling: top-1 and regret between replicas"
+    )
+    ceiling.add_argument("experiment")
+    ceiling.add_argument(
+        "--replicas", type=int, help="replicas per configuration; default len(seeds)"
+    )
+    ceiling.add_argument("--metric", default="accuracy")
+    ceiling.add_argument(
+        "--series", help="model/dataset of the root score, when there are several"
+    )
+    ceiling.add_argument(
+        "--resample", action="store_true", help="draw the search anew per replica"
+    )
+    ceiling.add_argument(
+        "--paired", action="store_true", help="one seed per replica, for every config"
+    )
+    ceiling.add_argument(
+        "--minimize",
+        action=argparse.BooleanOptionalAction,
+        help="lower is better; default only for loss",
+    )
+    ceiling.add_argument("--workers", type=int, default=1)
+    ceiling.set_defaults(func=cmd_ceiling)
+
+    fidelity = sub.add_parser(
+        "fidelity", help="fidelity of the runs of B against those of A (reference)"
+    )
+    fidelity.add_argument(
+        "a", help="runs folder of the reference backend, or predictor"
+    )
+    fidelity.add_argument(
+        "b",
+        help="runs folder of the backend under test, or predictor (predictor:floss "
+        "for its corrected variant), which decides on the other side's runs",
+    )
+    fidelity.add_argument(
+        "--metric",
+        action="append",
+        help="decide on it: a root score, time, bytes or time_to_target; "
+        "default accuracy and time",
+    )
+    fidelity.add_argument(
+        "--series", help="model/dataset of the root score, when there are several"
+    )
+    fidelity.add_argument("--target", help="metric=value for the time to target")
+    fidelity.add_argument("--experiment", help="only the runs of this experiment")
+    fidelity.add_argument(
+        "--ceiling", help="output of onion_fl ceiling; default: the seeds of A"
+    )
+    fidelity.add_argument(
+        "--minimize", action="append", help="a metric where lower is better"
+    )
+    fidelity.add_argument(
+        "--control",
+        help="synchronous runs without deadline of the same designs, whose rounds "
+        "to target the factorised predictor takes; default: the runs of A",
+    )
+    fidelity.add_argument(
+        "--no-predictor",
+        action="store_true",
+        help="do not show the factorised predictor next to each decision",
+    )
+    fidelity.add_argument("--bootstrap", type=int, default=2000)
+    fidelity.add_argument("--seed", type=int, default=0, help="of the bootstrap")
+    fidelity.add_argument(
+        "--calibration", help="the calibration_id every run of B must cite, alone"
+    )
+    fidelity.add_argument("--csv", help="also write the result as CSV rows")
+    fidelity.add_argument("--html", help="also write an HTML report")
+    fidelity.set_defaults(func=cmd_fidelity)
+
+    cal = sub.add_parser(
+        "calibrate", help="microbenchmarks that calibrate profiles and links"
+    )
+    steps = cal.add_subparsers(dest="step", required=True)
+    measure = steps.add_parser("measure", help="run the microbenchmarks of a spec")
+    measure.add_argument("spec")
+    measure.add_argument("--out", required=True, help="a new session folder")
+    measure.add_argument("--image")
+    measure.add_argument("--project", help="prefix of the containers and networks")
+    measure.add_argument("--subnet")
+    fit = steps.add_parser("fit", help="sign the calibration of sessions of a spec")
+    fit.add_argument("sessions", nargs="+", help="sessions of one spec (3 or more)")
+    fit.add_argument("--out", default="calibrations")
+    fit.add_argument(
+        "--infrastructure-out", help="write the infrastructure citing the calibration"
+    )
+    check = steps.add_parser(
+        "check", help="predict another session with a calibrated infrastructure"
+    )
+    check.add_argument("session")
+    check.add_argument("--infrastructure", required=True)
+    check.add_argument("--calibrations", default="calibrations")
+    check.add_argument("--out", help="also write the result to this file")
+    cal.set_defaults(func=cmd_calibrate)
 
     report = sub.add_parser("report", help="HTML report comparing runs")
     report.add_argument(
@@ -297,6 +560,15 @@ def parser() -> argparse.ArgumentParser:
     report.add_argument("--by", action="append")
     report.set_defaults(func=cmd_report)
 
+    explain = sub.add_parser(
+        "explain", help="feature importance of a run's final model on val subjects"
+    )
+    explain.add_argument("runs", nargs="+", help="run folders")
+    explain.add_argument("--explainer", default="permutation")
+    explain.add_argument("--metric")
+    explain.add_argument("--repeats", type=int)
+    explain.set_defaults(func=cmd_explain)
+
     baseline = sub.add_parser(
         "baseline", help="classical baselines on the experiment's subject roles"
     )
@@ -304,6 +576,15 @@ def parser() -> argparse.ArgumentParser:
     baseline.add_argument("--models", nargs="+", default=["lr", "rf", "xgboost"])
     baseline.add_argument(
         "--cv", type=int, help="subject-level k-fold instead of the test role"
+    )
+    baseline.add_argument(
+        "--seeds",
+        type=int,
+        nargs="+",
+        help="repeat with each seed drawing the test subjects; mean and 95%% CI",
+    )
+    baseline.add_argument(
+        "--seed", type=int, default=0, help="seed of the models and of the folds"
     )
     baseline.set_defaults(func=cmd_baseline)
 
@@ -315,6 +596,11 @@ def parser() -> argparse.ArgumentParser:
     )
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
+    serve.add_argument(
+        "--operators",
+        help="YAML of operator ids and tokens that may give orders "
+        "(default: the file ONIONFL_OPERATORS names; none: no orders)",
+    )
     serve.set_defaults(func=cmd_serve)
 
     schema = sub.add_parser(
@@ -322,6 +608,14 @@ def parser() -> argparse.ArgumentParser:
     )
     schema.add_argument("--out")
     schema.set_defaults(func=cmd_schema)
+
+    traces = sub.add_parser(
+        "traces", help="import device traces (FedScale) as plain files"
+    )
+    traces.add_argument("action", choices=["import"])
+    traces.add_argument("source", choices=["fedscale"])
+    traces.add_argument("folder", nargs="?", default="data/FedScale")
+    traces.set_defaults(func=cmd_traces)
     return p
 
 
@@ -337,6 +631,9 @@ def _utf8_output() -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     _utf8_output()
+    # Python hides a DeprecationWarning outside __main__; the old config forms
+    # (M1, #193) should reach whoever runs them.
+    warnings.filterwarnings("default", "continuum: ", DeprecationWarning)
     args = parser().parse_args(argv)
     try:
         return args.func(args)

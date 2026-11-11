@@ -116,6 +116,16 @@ def test_proportions_count_every_subject_of_the_dataset() -> None:
     assert len(roles["val"]) == 5 and not {"1", "2"} & set(roles["val"])
 
 
+@pytest.mark.parametrize("seed", range(10))
+def test_a_test_share_is_drawn_around_the_listed_val_subjects(seed: int) -> None:
+    config = RolesConfig(test=0.5, seed=seed, overrides={"swell": {"val": ["3"]}})
+
+    roles = roles_of(split_subjects(cohort(6), config))
+
+    assert roles["val"] == ["3"] and len(roles["test"]) == 3
+    assert "3" not in roles["test"]
+
+
 @pytest.mark.parametrize(
     "override, message",
     [
@@ -334,6 +344,46 @@ def test_datasets_are_preprocessed_separately() -> None:
         np.testing.assert_allclose(client.train.X[:, 0], [-1.0, 1.0], rtol=1e-6)
 
 
+def test_a_dataset_can_set_its_own_preprocessing() -> None:
+    swell = [subject("1", [[0.0, 5.0], [2.0, 5.0]])]
+    raw = [subject("1", [[0.0, 5.0], [np.nan, 5.0], [4.0, 5.0]], dataset="femnist")]
+    config = RolesConfig(
+        test=0.0,
+        overrides={
+            "femnist": {"scaler": "none", "drop_constant": False, "impute": "median"}
+        },
+    )
+
+    split = split_subjects(swell + raw, config)
+
+    swell_client, raw_client = sorted(split.clients, key=lambda c: c.dataset != "swell")
+    np.testing.assert_allclose(swell_client.train.X[:, 0], [-1.0, 1.0], rtol=1e-6)
+    assert swell_client.train.feature_names == ["f0"]
+    assert raw_client.train.X.tolist() == [[0.0, 5.0], [2.0, 5.0], [4.0, 5.0]]
+    assert split.preprocessing["femnist"]["scaler"] == "none"
+    assert split.preprocessing["femnist"]["impute"] == "median"
+    assert split.preprocessing["swell"]["scaler"] == "global"
+
+
+def test_unset_per_dataset_preprocessing_stays_out_of_the_config() -> None:
+    config = RolesConfig(overrides={"swell": {"test": 0.5}})
+
+    assert config.model_dump()["overrides"]["swell"] == {
+        "test": 0.5,
+        "val": None,
+        "exclude": [],
+    }
+    assert config.of("swell") == config
+    assert config.of("swell").overrides == config.overrides
+
+
+def test_the_scalers_in_use_include_the_overrides() -> None:
+    config = RolesConfig(overrides={"a": {"scaler": "local"}, "b": {"test": 0.1}})
+
+    assert config.scalers() == {"global", "local"}
+    assert config.of("a").scaler == "local" and config.of("b").scaler == "global"
+
+
 def test_describe_lists_roles_and_clients() -> None:
     split = split_subjects(cohort(4), RolesConfig(test=0.25, scaler="none"))
 
@@ -390,3 +440,176 @@ def test_a_test_subject_cannot_also_be_excluded() -> None:
 
     with pytest.raises(DataError, match="1"):
         split_subjects(cohort(4), config)
+
+
+# --- preprocessing as an artifact ----------------------------------------------------
+
+
+def test_the_split_records_its_preprocessing_per_dataset() -> None:
+    import json
+
+    split = two_way([[3.0], [8.0]])
+
+    prep = split.preprocessing["swell"]
+    assert prep["features"] == ["f0"] and prep["scaler"] == "global"
+    np.testing.assert_allclose(prep["mean"], [3.0])
+    np.testing.assert_allclose(prep["std"], [np.sqrt(5)])
+    assert json.loads(json.dumps(split.preprocessing)) == split.preprocessing
+
+
+def test_a_frozen_preprocessing_is_applied_instead_of_refitted() -> None:
+    parent = two_way([[3.0], [8.0]])
+    shifted = [subject("1", [[100.0], [102.0]]), subject("2", [[104.0], [106.0]])]
+    held = [subject("3", [[3.0], [8.0]])]
+    config = RolesConfig(overrides={"swell": {"test": ["3"]}})
+
+    child = split_subjects(shifted + held, config, frozen=parent.preprocessing)
+
+    np.testing.assert_array_equal(child.test[0].X, parent.test[0].X)
+    assert child.preprocessing["swell"] == parent.preprocessing["swell"]
+
+
+def test_a_frozen_preprocessing_keeps_its_features_and_new_datasets_are_fitted() -> (
+    None
+):
+    flat = [
+        subject("1", [[0.0, 1.0], [2.0, 1.0]]),
+        subject("2", [[4.0, 1.0], [6.0, 1.0]]),
+    ]
+    parent = split_subjects(flat, RolesConfig(test=0.0))  # f1 is constant: dropped
+    varied = [
+        subject("1", [[0.0, 5.0], [2.0, 1.0]]),
+        subject("2", [[4.0, 9.0], [6.0, 3.0]]),
+    ]
+    wesad = [subject(str(i), [[i], [i + 2.0]], dataset="wesad") for i in (1, 2)]
+
+    child = split_subjects(
+        varied + wesad, RolesConfig(test=0.0), frozen=parent.preprocessing
+    )
+
+    swell = [c for c in child.clients if c.dataset == "swell"]
+    assert all(c.train.feature_names == ["f0"] for c in swell)
+    assert child.preprocessing["swell"] == parent.preprocessing["swell"]
+    np.testing.assert_allclose(child.preprocessing["wesad"]["mean"], [2.5])
+
+
+def test_a_frozen_feature_the_data_lacks_is_an_error() -> None:
+    parent = two_way([[3.0], [8.0]])
+    renamed = dict(parent.preprocessing["swell"], features=["missing"])
+
+    with pytest.raises(DataError, match="missing"):
+        split_subjects(cohort(4), RolesConfig(test=0.0), frozen={"swell": renamed})
+
+
+def test_a_frozen_preprocessing_reproduces_the_parents_arrays_bit_for_bit() -> None:
+    # Heavy-tailed values, where x - mean is inexact in float32 (HRV, EDA, ...).
+    values = np.random.default_rng(0).lognormal(3, 2, size=(5, 40, 2))
+    data = [subject(str(i), v) for i, v in enumerate(values, 1)]
+    parent = split_subjects(data, RolesConfig(test=0.2))
+
+    child = split_subjects(data, RolesConfig(test=0.2), frozen=parent.preprocessing)
+
+    for mine, theirs in zip(child.clients, parent.clients, strict=True):
+        assert mine.train.X.dtype == theirs.train.X.dtype
+        np.testing.assert_array_equal(mine.train.X, theirs.train.X)
+    np.testing.assert_array_equal(child.test[0].X, parent.test[0].X)
+
+
+# --- streams: time is kept, the fit uses the bootstrap only (continuum C3) ----------
+
+
+def timed(name: str, X, t) -> SubjectData:
+    from dataclasses import replace
+
+    return replace(subject(name, X), t=np.asarray(t, float))
+
+
+def test_each_row_keeps_its_time_through_the_split() -> None:
+    train = [timed("1", [[0.0], [2.0], [4.0]], [0, 60, 120]), timed("2", [[1.0]], [5])]
+    held = timed("3", [[3.0], [8.0]], [0, 30])
+    config = RolesConfig(
+        overrides={"swell": {"test": ["3"]}}, subjects_per_client=2, drop_constant=False
+    )
+
+    split = split_subjects([*train, held], config)
+
+    (client,) = split.clients
+    assert sorted(client.train.t.tolist()) == [0, 5, 60, 120]
+    assert split.test[0].t.tolist() == [0, 30]
+
+
+def test_the_preprocessing_is_fitted_on_the_bootstrap_rows_only() -> None:
+    early = [[0.0], [2.0]]
+    train = [timed("1", early + [[100.0]], [0, 60, 600]), timed("2", early, [0, 60])]
+    config = RolesConfig(overrides={"swell": {"test": []}})
+
+    split = split_subjects(train, config, fit_rows=lambda d: d.t < 120)
+
+    # the bag is {0, 2, 0, 2}: mean 1 and std 1, whatever comes after t0
+    assert split.preprocessing["swell"]["mean"] == [1.0]
+    assert split.preprocessing["swell"]["std"] == [1.0]
+
+
+def test_a_bootstrap_with_no_rows_is_an_error() -> None:
+    train = [timed("1", [[0.0], [2.0]], [100, 200])]
+
+    with pytest.raises(DataError, match="bootstrap"):
+        split_subjects(
+            train,
+            RolesConfig(overrides={"swell": {"test": []}}),
+            fit_rows=lambda d: d.t < 50,
+        )
+
+
+# --- leave-one-dataset-out (issue #244) ---------------------------------------------
+
+
+def test_a_held_out_dataset_keeps_its_test_subjects_and_trains_nothing() -> None:
+    subjects = cohort(10, "swell") + cohort(10, "wesad")
+    base = RolesConfig(test=0.2, val=0.1, scaler="local")
+    lodo = RolesConfig(
+        test=0.2, val=0.1, scaler="local", overrides={"wesad": {"held_out": True}}
+    )
+
+    trained, held = split_subjects(subjects, base), split_subjects(subjects, lodo)
+
+    assert held.roles["wesad"]["test"] == trained.roles["wesad"]["test"]
+    assert held.roles["wesad"]["train"] == held.roles["wesad"]["val"] == []
+    assert held.roles["wesad"]["held_out"] == sorted(
+        trained.roles["wesad"]["train"] + trained.roles["wesad"]["val"], key=int
+    )
+    assert {c.dataset for c in held.clients} == {"swell"}
+    assert [s.dataset for s in held.val] == ["swell"]
+    assert [s.subject for s in held.test if s.dataset == "wesad"] == (
+        trained.roles["wesad"]["test"]
+    )
+    assert held.roles["swell"] == trained.roles["swell"]
+
+
+def test_a_held_out_dataset_scales_each_test_subject_with_its_own_rows() -> None:
+    subjects = cohort(4, "swell") + [
+        subject(str(i), [[10.0 * i], [10.0 * i + 4]], dataset="wesad")
+        for i in range(1, 5)
+    ]
+    config = RolesConfig(
+        test=0.25, scaler="local", overrides={"wesad": {"held_out": True}}
+    )
+
+    split = split_subjects(subjects, config)
+
+    (tested,) = [s for s in split.test if s.dataset == "wesad"]
+    np.testing.assert_allclose(tested.X[:, 0], [-1.0, 1.0])
+    assert split.preprocessing["wesad"]["features"] == ["f0"]
+
+
+def test_a_held_out_dataset_cannot_use_a_global_scaler() -> None:
+    config = RolesConfig(scaler="global", overrides={"wesad": {"held_out": True}})
+
+    with pytest.raises(DataError, match="held out"):
+        split_subjects(cohort(5, "swell") + cohort(5, "wesad"), config)
+
+
+def test_an_unset_held_out_stays_out_of_the_config() -> None:
+    config = RolesConfig(overrides={"wesad": {"exclude": ["S1"]}})
+
+    assert "held_out" not in config.model_dump()["overrides"]["wesad"]

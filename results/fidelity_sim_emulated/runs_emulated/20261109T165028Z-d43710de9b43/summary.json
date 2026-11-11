@@ -1,0 +1,26 @@
+{
+  "rounds": 10,
+  "finished": true,
+  "t_virtual_end": 18.536524057388306,
+  "wall_seconds": 30.24265970000124,
+  "messages": {
+    "sent": 602,
+    "bytes": 2342047,
+    "dropped": 0
+  },
+  "quorum_failed": 0,
+  "final": {
+    "global/*": {
+      "round": 10,
+      "accuracy": 0.678343949044586,
+      "loss": 0.5909865810447026,
+      "macro_f1": 0.41874956696731436
+    },
+    "global/swell": {
+      "round": 10,
+      "accuracy": 0.678343949044586,
+      "loss": 0.5909865810447026,
+      "macro_f1": 0.41874956696731436
+    }
+  }
+}

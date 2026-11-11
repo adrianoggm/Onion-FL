@@ -222,6 +222,23 @@ def test_the_plan_of_an_experiment(client: TestClient) -> None:
 
     assert len(previews) == 4
     assert set(previews[0]["composition"]) == {"fog_a", "fog_b"}
+    # the graph labels each leaf with its number of edges, from the composition
+    trained = len(previews[0]["roles"]["demo"]["train"])
+    assert sum(c["clients"] for c in previews[0]["composition"].values()) == trained
+
+
+def test_the_plan_shows_the_config_id_a_run_from_the_root_signs(
+    client: TestClient, root: Path
+) -> None:
+    from onion_fl.experiment.config import load_experiment
+    from onion_fl.experiment.sweep import scenarios
+
+    previews = client.post("/api/experiments/demo_exp/plan").json()
+
+    config = load_experiment(root / "experiments" / "demo_exp.yaml")
+    assert [p["config_id"] for p in previews] == [
+        s.config_id for s in scenarios(config)
+    ]
 
 
 def test_a_plan_without_data_says_what_is_missing(
@@ -289,6 +306,40 @@ def test_the_run_list_and_detail(client: TestClient, recorded: list[str]) -> Non
     assert detail["summary"]["rounds"] == 2
     assert set(detail["composition"]) == {"fog_a", "fog_b"}
     assert set(detail["roles"]["demo"]) >= {"test", "train"}
+    assert detail["triggers"] == [] and detail["drift"] == []
+
+
+def test_a_run_detail_lists_the_rounds_triggers_and_drift(
+    client: TestClient, root: Path, recorded: list[str]
+) -> None:
+    def event(node, role, level, name, value, **tags):
+        where = {"node": node, "role": role, "level": level}
+        return where | {"name": name, "value": value, "tags": tags}
+
+    lines = [
+        event("cloud", "coordinator", "global", "trigger.fired", 0.0,
+              trigger="start", at=0.0, round=1, drift={}),
+        event("e1", "edge", "edge", "trigger.fired", 40.0,
+              trigger="volume", at=300.0, round=1),
+        event("e1", "edge", "edge", "drift.detected", 0.7,
+              kind="prior", window=0.4, at=3600.0),
+        event("cloud", "coordinator", "global", "trigger.fired", 1100.0,
+              trigger="drift", at=3600.0, round=2, drift={"prior": 2}),
+    ]  # fmt: skip
+    events = root / "runs" / recorded[0] / "events.jsonl"
+    with events.open("a", encoding="utf-8") as out:
+        out.writelines(json.dumps(line) + "\n" for line in lines)
+
+    detail = client.get(f"/api/runs/{recorded[0]}").json()
+
+    assert detail["triggers"] == [
+        {"round": 1, "trigger": "start", "at": 0.0, "volume": 0.0, "drift": {}},
+        {"round": 2, "trigger": "drift", "at": 3600.0, "volume": 1100.0,
+         "drift": {"prior": 2}},
+    ]  # fmt: skip
+    assert detail["drift"] == [
+        {"node": "e1", "level": "edge", "kind": "prior", "at": 3600.0, "window": 0.4}
+    ]
 
 
 def test_events_come_in_pages_for_live_monitoring(
@@ -337,6 +388,28 @@ def test_the_sharing_preview_shows_what_crosses_each_link(client: TestClient) ->
         g.startswith("head") for g in edge_link["groups"]
     )
     assert preview["held"]["global"] == ["adapter.a", "adapter.b", "trunk"]
+
+
+def test_the_sharing_preview_works_for_another_model_family(
+    client: TestClient,
+) -> None:
+    body = {
+        "topology": TOPOLOGY,
+        "sharing": "independent",
+        "datasets": ["a", "b"],
+        "model": {"name": "feature_transformer", "token_dim": 8},
+    }
+
+    preview = client.post("/api/preview/sharing", json=body).json()
+
+    assert set(preview["groups"]) == {
+        "adapter.a",
+        "adapter.b",
+        "trunk.a",
+        "trunk.b",
+        "head.a",
+        "head.b",
+    }
 
 
 def test_the_placement_preview_moves_with_alpha(client: TestClient) -> None:
@@ -452,6 +525,35 @@ def test_broken_files_are_left_out_of_the_lists(client: TestClient, root: Path) 
     assert client.get("/api/experiments/broken").status_code == 422
 
 
+@pytest.mark.parametrize(
+    "text",
+    ["name: [unclosed\n", "- a list\n- not a mapping\n"],
+    ids=["syntax", "list"],
+)
+def test_files_that_are_not_yaml_mappings_are_reported(
+    client: TestClient, root: Path, text: str
+) -> None:
+    for kind in ("topologies", "experiments"):
+        (root / kind / "odd.yaml").write_text(text, encoding="utf-8")
+
+    assert [t["name"] for t in client.get("/api/topologies").json()] == ["two_fogs"]
+    assert [e["name"] for e in client.get("/api/experiments").json()] == ["demo_exp"]
+    assert client.get("/api/experiments/odd").status_code == 422
+    assert client.get("/api/topologies/odd").status_code == 422
+
+
+def test_an_experiment_whose_sweep_breaks_is_reported(
+    client: TestClient, root: Path
+) -> None:
+    raw = yaml.safe_load((root / "experiments" / "demo_exp.yaml").read_text("utf-8"))
+    raw["sweep"] = {"rounds": [0]}  # valid as a sweep, not as a scenario
+    (root / "experiments" / "swept.yaml").write_text(yaml.safe_dump(raw), "utf-8")
+
+    response = client.get("/api/experiments/swept")
+
+    assert response.status_code == 422 and "rounds" in response.json()["errors"][0]
+
+
 def test_preview_errors_name_the_problem(client: TestClient) -> None:
     placement = client.post(
         "/api/preview/placement",
@@ -466,14 +568,12 @@ def test_preview_errors_name_the_problem(client: TestClient) -> None:
 def test_a_file_error_is_reported_without_the_local_path(
     client: TestClient, monkeypatch
 ) -> None:
-    import onion_fl.experiment.runner as runner
-
     def missing(config):
         raise FileNotFoundError(
             2, "No such file or directory", "C:/private/place/x.csv"
         )
 
-    monkeypatch.setattr(runner, "plan", missing)
+    monkeypatch.setattr("onion_fl.experiment.runner.plan", missing)
     response = client.post("/api/experiments/demo_exp/plan")
 
     text = json.dumps(response.json())

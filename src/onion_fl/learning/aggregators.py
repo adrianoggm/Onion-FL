@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, PositiveInt
 
 from onion_fl.core.registry import Registry
 from onion_fl.learning.model import group_of, is_aux
-from onion_fl.learning.privacy import gaussian_epsilon
+from onion_fl.learning.privacy import ORDERS, Accountant
 
 
 class AggregationError(ValueError):
@@ -213,10 +213,13 @@ class _Selection:
     excluded: list[str] = []
     f_used: int = 0
     rescued: dict[str, list[str]] = {}
+    scored_keys: int = 0
 
     def report(self) -> list[tuple[str, float, dict[str, Any]]]:
         """``dropped`` lost the selection on the common keys; ``excluded`` were not
-        used at all; ``rescued`` names the sources of each key only they held."""
+        used at all; ``rescued`` names the sources of each key only they held.
+        ``scored_keys`` counts the common keys: with none, the scores are all
+        alike and the selection is arbitrary."""
         return [
             (
                 "diagnostic.selection",
@@ -227,7 +230,8 @@ class _Selection:
                     "f_used": self.f_used,
                     "rescued": {k: list(v) for k, v in self.rescued.items()},
                 },
-            )
+            ),
+            ("diagnostic.scored_keys", float(self.scored_keys), {}),
         ]
 
     def _select(
@@ -304,7 +308,9 @@ class Krum(_Selection):
         reference: Mapping[str, np.ndarray] | None,
     ) -> tuple[np.ndarray, int]:
         f = self._feasible(len(ordered))
-        vectors = _vectors(ordered, _common_model_keys(ordered), reference)
+        keys = _common_model_keys(ordered)
+        self.scored_keys = len(keys)
+        vectors = _vectors(ordered, keys, reference)
         return np.argsort(_krum_scores(vectors, f), kind="stable"), f
 
     def aggregate(
@@ -371,8 +377,14 @@ class GeometricMedianParams(BaseModel):
     ),
 )
 class GeometricMedian:
+    scored_keys: int = 0
+
     def __init__(self, iterations: int = 10, eps: float = 1e-6) -> None:
         self.iterations, self.eps = iterations, eps
+
+    def report(self) -> list[tuple[str, float, dict[str, Any]]]:
+        """The common keys the median was found over; with none, it is a mean."""
+        return [("diagnostic.scored_keys", float(self.scored_keys), {})]
 
     def aggregate(
         self,
@@ -383,6 +395,7 @@ class GeometricMedian:
     ) -> Contribution:
         ordered = sorted(contributions, key=lambda item: item.source)
         keys = _common_model_keys(ordered)
+        self.scored_keys = len(keys)
         vectors = _vectors(ordered, keys, reference)
         alpha = np.array(
             [float(c.weights.get(keys[0], 1.0)) if keys else 1.0 for c in ordered]
@@ -427,7 +440,9 @@ class Bulyan(Krum):
         """The θ = n − 2f picks of Krum, one at a time over what is left, in the
         order they were picked; then the rest by their Krum score over everyone."""
         f = self._feasible(len(ordered))
-        vectors = _vectors(ordered, _common_model_keys(ordered), reference)
+        keys = _common_model_keys(ordered)
+        self.scored_keys = len(keys)
+        vectors = _vectors(ordered, keys, reference)
         left = list(range(len(ordered)))
         picked: list[int] = []
         while len(picked) < len(ordered) - 2 * f:
@@ -533,17 +548,17 @@ class DPFedAvgParams(BaseModel):
         "No admite entrenadores con claves auxiliares (SCAFFOLD, FedNova)."
     ),
 )
-class DPFedAvg:
+class DPFedAvg(Accountant):
     bounds_updates = True
 
     def __init__(
         self, clip: float = 1.0, sigma: float = 1.0, delta: float = 1e-5
     ) -> None:
         self.clip, self.sigma, self.delta = clip, sigma, delta
-        self.rounds = 0
+        self.rdp = np.zeros_like(ORDERS)
 
     def report(self) -> list[tuple[str, float, dict[str, Any]]]:
-        epsilon = gaussian_epsilon(self.sigma, self.rounds, self.delta)
+        epsilon = self.spent(self.delta)
         return [("diagnostic.privacy_epsilon", epsilon, {"mechanism": "central"})]
 
     def aggregate(
@@ -573,7 +588,7 @@ class DPFedAvg:
                 0.0, scale, size=np.shape(value)
             )
             state[key] = noisy.astype(np.asarray(value).dtype)
-        self.rounds += 1
+        self.spend(self.sigma)
         return Contribution(source, state, totals.weights)
 
 
@@ -581,6 +596,26 @@ class DPFedAvg:
 
 server_optimizers = Registry("server_optimizer")
 State = dict[str, np.ndarray]
+
+
+class _ServerState:
+    """Arrays a server optimizer keeps between rounds, saved as ``<attribute>/<key>``."""
+
+    _state_attrs: tuple[str, ...] = ()
+
+    def state(self) -> dict[str, np.ndarray]:
+        return {
+            f"{attribute}/{key}": np.asarray(value)
+            for attribute in self._state_attrs
+            for key, value in getattr(self, attribute).items()
+        }
+
+    def load_state(self, arrays: Mapping[str, np.ndarray]) -> None:
+        for attribute in self._state_attrs:
+            setattr(self, attribute, {})
+        for name, value in arrays.items():
+            attribute, _, key = name.partition("/")
+            getattr(self, attribute)[key] = np.asarray(value)
 
 
 def _share(stats: Mapping[str, float], key: str) -> float:
@@ -602,7 +637,7 @@ def _share(stats: Mapping[str, float], key: str) -> float:
     title="Reemplazo (FedAvg clásico)",
     description="El modelo global pasa a ser el agregado.",
 )
-class Replace:
+class Replace(_ServerState):
     def apply(
         self,
         global_state: Mapping[str, np.ndarray],
@@ -623,7 +658,9 @@ class FedAvgMParams(BaseModel):
     description="Momento de servidor sobre el pseudo-gradiente (agregado − global).",
     params=FedAvgMParams,
 )
-class FedAvgM:
+class FedAvgM(_ServerState):
+    _state_attrs = ("_velocity",)
+
     def __init__(self, server_lr: float = 1.0, momentum: float = 0.9) -> None:
         self.server_lr = server_lr
         self.momentum = momentum
@@ -659,13 +696,14 @@ class FedAdamParams(BaseModel):
     tau: float = Field(1e-3, gt=0, description="Término de estabilidad")
 
 
-class _Adaptive:
+class _Adaptive(_ServerState):
     """Reddi et al. (2021): x ← x + η·m/(√v + τ) over the pseudo-gradient Δ = x̄ − x.
 
     The optimizers differ only in how v follows Δ² and where it starts.
     """
 
     v_starts_at_tau2 = True  # Algorithm 2: v_{-1} = τ²
+    _state_attrs = ("_m", "_v")
 
     def __init__(
         self,
@@ -776,10 +814,14 @@ class FedAsyncMixParams(BaseModel):
         "La regla de mezcla de FedAsync (Xie et al., 2019), aplicada una vez por "
         "ronda al agregado con la antigüedad media de la ronda (estadístico "
         "staleness). No es el protocolo FedAsync: allí el servidor actualiza con "
-        "cada llegada y el edge añade un término proximal."
+        "cada llegada y el edge añade un término proximal. Con next_round "
+        "polinómico en los fogs, una tardía se descuenta dos veces: en su peso "
+        "dentro del fog y en la mezcla, porque sube la antigüedad media. Para "
+        "descontarla una sola vez, usar weighting constant (factor 1) en los fogs "
+        "o a = 0 aquí."
     ),
 )
-class FedAsyncMix:
+class FedAsyncMix(_ServerState):
     def __init__(self, alpha: float = 0.6, a: float = 0.5) -> None:
         self.alpha, self.a = alpha, a
 
@@ -808,7 +850,7 @@ class FedAsyncMix:
     description="x + τ̄·d̄: la media de las actualizaciones normalizadas por la media de pasos.",
     explain="Va con el entrenador fednova; con pasos iguales coincide con FedAvg (Wang et al., 2020).",
 )
-class FedNovaOptimizer:
+class FedNovaOptimizer(_ServerState):
     PREFIX = "fednova/"
     STEPS = "fednova_steps/"
 
@@ -859,7 +901,9 @@ class FedDynOptimizerParams(BaseModel):
         "(Acar et al., 2021)."
     ),
 )
-class FedDynOptimizer:
+class FedDynOptimizer(_ServerState):
+    _state_attrs = ("_h",)
+
     def __init__(self, alpha: float = 0.01) -> None:
         self.alpha = alpha
         self._h: dict[str, np.ndarray] = {}
@@ -904,7 +948,7 @@ class FedDynOptimizer:
         "le toca (Karimireddy et al., 2020)."
     ),
 )
-class ScaffoldOptimizer:
+class ScaffoldOptimizer(_ServerState):
     PREFIX = "scaffold/"
 
     def check_trainer(self, name: str, trainer: Any) -> None:

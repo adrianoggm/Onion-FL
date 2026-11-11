@@ -12,15 +12,22 @@ shares the seed, and adding a dataset does not move another one's roles.
 ``train``   the bag the placement distributes, grouped into clients
 ==========  ===============================================================
 
+A ``held_out`` dataset (leave-one-dataset-out) draws its roles like any other,
+so its test subjects are the ones it has when it trains, and then keeps only
+them: its ``val`` and ``train`` subjects take no role. Nothing is fitted on
+it, so it needs ``scaler: local`` or ``none``.
+
 Imputation, scaling and the removal of constant features are fitted on the
 training portions only: never on val, test or the ``local_val`` rows. With
 ``scaler: local`` every data holder (client or evaluator) standardises with
-its own statistics, which use no labels.
+its own statistics, which use no labels. ``overrides.<dataset>`` can set
+``scaler``, ``impute`` and ``drop_constant`` for one dataset, for raw columns
+such as pixels or token indices; unset, the global value applies.
 """
 
 import warnings
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Annotated, Any, Literal
 
 import numpy as np
@@ -30,6 +37,8 @@ from onion_fl.core.context import node_rng
 from onion_fl.data.contract import DataError, SubjectData, natural_key
 
 Share = Annotated[float, Field(ge=0, lt=1)]
+Scaler = Literal["global", "local", "none"]
+Impute = Literal["mean", "median"]
 
 
 class RoleOverride(BaseModel):
@@ -39,6 +48,27 @@ class RoleOverride(BaseModel):
     val: Share | list[str] | None = None
     exclude: list[str] = Field(
         default_factory=list, description="Sujetos que no toman ningún rol"
+    )
+    # Unset, they take the global value and keep existing config_ids.
+    scaler: Scaler | None = Field(
+        None,
+        description="Escalado de este dataset; sin él, el global",
+        exclude_if=lambda v: v is None,
+    )
+    impute: Impute | None = Field(
+        None,
+        description="Imputación de este dataset; sin ella, la global",
+        exclude_if=lambda v: v is None,
+    )
+    drop_constant: bool | None = Field(
+        None,
+        description="Quitar features constantes en este dataset; sin ello, el global",
+        exclude_if=lambda v: v is None,
+    )
+    held_out: bool = Field(
+        False,
+        description="Dataset fuera del entrenamiento: solo evalúan sus sujetos de test",
+        exclude_if=lambda v: not v,  # unset, it keeps existing config_ids
     )
 
 
@@ -65,13 +95,31 @@ class RolesConfig(BaseModel):
         exclude_if=lambda v: v == "tail",  # unset, it keeps existing config_ids
     )
     subjects_per_client: PositiveInt = 1
-    scaler: Literal["global", "local", "none"] = Field(
+    scaler: Scaler = Field(
         "global", description="global: por dataset; local: cada nodo con sus datos"
     )
-    impute: Literal["mean", "median"] = "mean"
+    impute: Impute = "mean"
     drop_constant: bool = Field(
         True, description="Quitar features constantes en la bolsa de entrenamiento"
     )
+
+    def of(self, dataset: str) -> RolesConfig:
+        """This config with the preprocessing that ``overrides.<dataset>`` sets."""
+        override = self.overrides.get(dataset, RoleOverride())
+        keys = ("scaler", "impute", "drop_constant")
+        return self.model_copy(
+            update={
+                k: getattr(override, k)
+                for k in keys
+                if getattr(override, k) is not None
+            }
+        )
+
+    def scalers(self) -> set[str]:
+        """Every scaler some dataset uses: the global one and the overrides'."""
+        return {self.scaler} | {
+            o.scaler for o in self.overrides.values() if o.scaler is not None
+        }
 
 
 @dataclass(frozen=True)
@@ -91,6 +139,8 @@ class DataSplit:
     val: list[SubjectData]
     test: list[SubjectData]
     roles: dict[str, dict[str, list[str]]]  # dataset -> role -> subjects
+    # dataset -> kept features, fill, mean, std: JSON-ready, frozen by a continuation
+    preprocessing: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def describe(self) -> dict[str, Any]:
         return {
@@ -124,7 +174,7 @@ class _Fit:
             reduce = np.nanmedian if impute == "median" else np.nanmean
             fill = reduce(X, axis=0) if len(X) else np.full(X.shape[1], np.nan)
         if fallback is not None:
-            fill = np.where(np.isnan(fill), fallback, fill)
+            fill = np.where(np.isnan(fill), fallback.astype(fill.dtype), fill)
         fill = np.nan_to_num(fill)
         filled = np.where(np.isnan(X), fill, X)
         if not len(X):
@@ -177,15 +227,28 @@ def _assign(
     order = [names[i] for i in rng.permutation(len(names)) if names[i] not in excluded]
     test_share = config.test if override.test is None else override.test
     val_share = config.val if override.val is None else override.val
-    test = _pick(test_share, order, set(), "test", dataset)
+    # A listed val is taken before a test share is drawn, never drawn into it.
+    listed_val = set(val_share) if isinstance(val_share, list) else set()
+    test = _pick(test_share, order, listed_val, "test", dataset)
     val = _pick(val_share, order, set(test), "val", dataset)
     train = [s for s in names if s not in set(test) | set(val) | set(excluded)]
     if not train:
         raise DataError(f"{dataset}: no training subjects left after test and val")
+    if override.held_out:  # drawn as usual, so the test subjects do not move
+        held = sorted(val + train, key=natural_key)
+        return {
+            "test": test,
+            "val": [],
+            "train": [],
+            "excluded": excluded,
+            "held_out": held,
+        }
     return {"test": test, "val": val, "train": train, "excluded": excluded}
 
 
-def _like(data: SubjectData, X, y, subject: str, names: list[str]) -> SubjectData:
+def _like(
+    data: SubjectData, X, y, subject: str, names: list[str], t=None
+) -> SubjectData:
     return SubjectData(
         X=X,
         y=y,
@@ -194,7 +257,15 @@ def _like(data: SubjectData, X, y, subject: str, names: list[str]) -> SubjectDat
         task=data.task,
         n_classes=data.n_classes,
         feature_names=names,
+        t=t,
     )
+
+
+def _times(rows: Sequence[SubjectData], masks: Sequence[np.ndarray]):
+    """The time of the rows each mask keeps, or None when the data is untimed."""
+    if any(d.t is None for d in rows):
+        return None
+    return np.concatenate([d.t[m] for d, m in zip(rows, masks, strict=True)])
 
 
 def _held_out(y: np.ndarray, share: float, split: str) -> np.ndarray:
@@ -219,9 +290,18 @@ def _held_out(y: np.ndarray, share: float, split: str) -> np.ndarray:
 
 
 def split_subjects(
-    subjects: Sequence[SubjectData], config: RolesConfig | None = None
+    subjects: Sequence[SubjectData],
+    config: RolesConfig | None = None,
+    frozen: Mapping[str, Mapping[str, Any]] | None = None,
+    fit_rows: Callable[[SubjectData], np.ndarray] | None = None,
 ) -> DataSplit:
-    """Assign roles per dataset, group the training subjects into clients and preprocess."""
+    """Assign roles per dataset, group the training subjects into clients and preprocess.
+
+    A dataset in ``frozen`` (a parent run's ``preprocessing``) keeps those features
+    and statistics instead of fitting new ones; the other datasets are fitted.
+    ``fit_rows`` gives the rows of each training subject the fit may use (a
+    stream's bootstrap); by default, all but its local validation.
+    """
     config = config or RolesConfig()
     by_dataset: dict[str, dict[str, SubjectData]] = {}
     for data in subjects:
@@ -230,9 +310,12 @@ def split_subjects(
     if unknown:
         raise DataError(f"overrides for datasets {unknown} that are not loaded")
 
-    scale, local = config.scaler != "none", config.scaler == "local"
     clients, val, test, roles = [], [], [], {}
+    preprocessing: dict[str, dict[str, Any]] = {}
+    roles_config = config
     for dataset in sorted(by_dataset):
+        config = roles_config.of(dataset)
+        scale = config.scaler != "none"
         pool = by_dataset[dataset]
         names = sorted(pool, key=natural_key)
         roles[dataset] = _assign(names, dataset, config)
@@ -242,23 +325,74 @@ def split_subjects(
             name: _held_out(pool[name].y, config.local_val, config.local_val_split)
             for name in roles[dataset]["train"]
         }
-        bag = np.concatenate([pool[s].X[~held[s]] for s in held])
-
-        fit = _Fit.on(bag, config.impute)
-        keep = np.arange(bag.shape[1])
-        if config.drop_constant:
-            keep = np.flatnonzero(
-                np.where(np.isnan(bag), fit.fill, bag).std(axis=0) > 0
+        usable = {
+            s: ~held[s] & (True if fit_rows is None else fit_rows(pool[s]))
+            for s in held
+        }
+        held_out = (config.overrides.get(dataset) or RoleOverride()).held_out
+        if held_out and config.scaler == "global":
+            raise DataError(
+                f"{dataset} is held out: no training rows fit a global scaler; "
+                "use scaler local or none"
             )
-            if not len(keep):
-                raise DataError(
-                    f"{dataset}: every feature is constant in the training bag"
-                )
-        shared = fit.take(keep)
-        feature_names = [pool[names[0]].feature_names[i] for i in keep]
+        n_features = pool[names[0]].X.shape[1]
+        bag = np.concatenate(
+            [pool[s].X[usable[s]] for s in held] or [np.empty((0, n_features))]
+        )
+        if not len(bag) and not held_out:
+            raise DataError(
+                f"{dataset}: no training row before the bootstrap ends to fit the "
+                "preprocessing"
+            )
 
-        def holder_fit(X: np.ndarray, shared: _Fit = shared) -> _Fit:
-            return _Fit.on(X, config.impute, fallback=shared.fill) if local else shared
+        own = pool[names[0]].feature_names
+        if frozen is not None and dataset in frozen:
+            saved = dict(frozen[dataset])
+            missing = [f for f in saved["features"] if f not in own]
+            if missing:
+                raise DataError(
+                    f"{dataset}: the frozen preprocessing needs features {missing} "
+                    "that the data lacks"
+                )
+            if saved["scaler"] != config.scaler:
+                raise DataError(
+                    f"{dataset}: the frozen preprocessing scales {saved['scaler']!r}, "
+                    f"not {config.scaler!r}"
+                )
+            keep = np.array([own.index(f) for f in saved["features"]])
+            # float32 like the parent's fit, so re-applying it is bit for bit
+            shared = _Fit(
+                *(np.asarray(saved[k], np.float32) for k in ("fill", "mean", "std"))
+            )
+        else:
+            fit = _Fit.on(bag, config.impute)
+            keep = np.arange(bag.shape[1])
+            if config.drop_constant and not held_out:
+                keep = np.flatnonzero(
+                    np.where(np.isnan(bag), fit.fill, bag).std(axis=0) > 0
+                )
+                if not len(keep):
+                    raise DataError(
+                        f"{dataset}: every feature is constant in the training bag"
+                    )
+            shared = fit.take(keep)
+            saved = {
+                "scaler": config.scaler,
+                "impute": config.impute,
+                "features": [own[i] for i in keep],
+                **{k: getattr(shared, k).tolist() for k in ("fill", "mean", "std")},
+            }
+        preprocessing[dataset] = saved
+        feature_names = [own[i] for i in keep]
+
+        def holder_fit(
+            X: np.ndarray, shared: _Fit = shared, config: RolesConfig = config
+        ) -> _Fit:
+            return (
+                _Fit.on(X, config.impute, fallback=shared.fill)
+                if config.scaler == "local"
+                else shared
+            )
 
         for role, out in (("val", val), ("test", test)):
             for name in roles[dataset][role]:
@@ -270,6 +404,7 @@ def split_subjects(
                         pool[name].y,
                         name,
                         feature_names,
+                        pool[name].t,
                     )
                 )
 
@@ -299,6 +434,7 @@ def split_subjects(
                         train_y,
                         client_id,
                         feature_names,
+                        _times(rows, [~held[d.subject] for d in rows]),
                     ),
                     local_val=(
                         _like(
@@ -307,6 +443,7 @@ def split_subjects(
                             tail_y,
                             client_id,
                             feature_names,
+                            _times(rows, [held[d.subject] for d in rows]),
                         )
                         if len(tail_y)
                         else None
@@ -314,4 +451,6 @@ def split_subjects(
                 )
             )
     clients.sort(key=lambda c: (c.dataset, natural_key(c.id)))
-    return DataSplit(clients=clients, val=val, test=test, roles=roles)
+    return DataSplit(
+        clients=clients, val=val, test=test, roles=roles, preprocessing=preprocessing
+    )

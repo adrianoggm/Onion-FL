@@ -1,0 +1,12 @@
+# Architecture A of issue #192: every edge reports straight to the cloud, two
+# levels and no fog. The physical profiles come from the infrastructure.
+name: cloud_swell_wesad
+levels: [global, edge]
+root:
+  id: cloud
+  aggregator: fedavg
+  server_optimizer: replace
+  quorum: 1.0
+  deadline: 300s
+edge:
+  link_up: {transport: mqtt, codec: json}

@@ -1,0 +1,22 @@
+# The SWELL half of four_fogs_swell_wesad_lossless: the same two SWELL fogs
+# (fog_a1, fog_a2) and links, without the WESAD fogs. A run here can be
+# continued on the four-fog topology, whose WESAD fogs then start fresh.
+name: two_fogs_swell_lossless
+levels: [global, fog, edge]
+root:
+  id: cloud
+  aggregator: fedavg
+  server_optimizer: replace
+  deadline: 300s
+fog:
+  defaults:
+    aggregator: fedavg
+    quorum: 1.0
+    deadline: 120s
+    link_up: {transport: mqtt, codec: json, profile: {preset: wifi, loss: 0.0}}
+  nodes:
+    - {id: fog_a1, home: swell}
+    - {id: fog_a2, home: swell}
+edge:
+  link_up: {transport: mqtt, codec: json, profile: {preset: 4g, loss: 0.0}}
+  device: {samples_per_second: 2000}

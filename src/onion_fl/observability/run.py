@@ -54,6 +54,11 @@ def compute_run_hash(path: str | Path) -> str:
     ]
     if (path / "model.npz").exists():
         parts.append(sha256((path / "model.npz").read_bytes()))
+    bundle = path / "bundle"  # a continuation's whole state (continuum)
+    if bundle.is_dir():
+        for file in sorted(f for f in bundle.rglob("*") if f.is_file()):
+            relative = file.relative_to(path).as_posix()
+            parts.append(f"{relative}:{sha256(file.read_bytes())}")
     return sha256("\n".join(parts))
 
 
@@ -163,6 +168,8 @@ class Run:
         data_ids: Mapping[str, str] | None = None,
         scenario: str = "",
         sinks: Iterable[Any] = (),
+        backend: str = "sim",
+        infrastructure_id: str | None = None,
     ) -> None:
         self.config_id = config_id(config)
         self.run_id = new_run_id(self.config_id, seed)
@@ -173,6 +180,8 @@ class Run:
             "run_id": self.run_id,
             "topology_id": topology.topology_id,
             "config_id": self.config_id,
+            "backend": backend,
+            "infrastructure_id": infrastructure_id,  # None: implicit in the topology
             "data_id": data_id(data_ids or {}),
             "code_version": code_version(),
             "seed": seed,
@@ -186,7 +195,8 @@ class Run:
         _write_json(self.path / "run.json", self.meta)
         self.sinks = [JsonlSink(self.path / "events.jsonl"), *sinks]
         self.nodes: dict[str, tuple[str | None, str | None]] = {
-            "experiment": (None, "experiment")
+            "experiment": (None, "experiment"),
+            "control": (None, "control"),  # a simulation's operator orders (#203)
         }
         self.summary = _Summary()
         self._wall = time.perf_counter()
@@ -235,6 +245,12 @@ class Run:
                 "tags": tags,
             }
         )
+
+    def sync(self) -> None:
+        """Write out what the sinks buffer, so readers of the files see it now."""
+        for sink in self.sinks:
+            if hasattr(sink, "sync"):
+                sink.sync()
 
     def finish(self, status: str = "finished") -> dict[str, Any]:
         # Communication per link and round, from the message events (spec §10.4).

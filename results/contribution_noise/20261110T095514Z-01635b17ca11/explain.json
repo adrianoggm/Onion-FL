@@ -1,0 +1,268 @@
+{
+  "run_id": "20261110T095514Z-01635b17ca11",
+  "run_hash": "5dc9b9fbffb9b589a85f8e5bef5e49e9f3d5d59487080ccf5b1372244a815873",
+  "config_id": "d2254d008132c860230fcd017471ec453a38a0f78a38b596b48b9fed7313b0c1",
+  "topology_id": "ff55fe4d2ce1a807f764bcc5205a8d2d4d43ab3d533163a1d13e173a9a6725fa",
+  "code_version": {
+    "commit": "f257ac401bed43b1624629e2572cabba40548457",
+    "dirty": false
+  },
+  "explainer": {
+    "name": "permutation"
+  },
+  "datasets": {
+    "swell": {
+      "metric": "macro_f1",
+      "baseline": 0.6670408181445648,
+      "features": [
+        {
+          "feature": "snkeystrokes",
+          "importance": 0.09332952800028245,
+          "std": 0.011816742891429196
+        },
+        {
+          "feature": "snchars",
+          "importance": 0.0551700865653066,
+          "std": 0.012655085455348823
+        },
+        {
+          "feature": "snmouseact",
+          "importance": 0.05240592246114295,
+          "std": 0.014675946067188842
+        },
+        {
+          "feature": "snleftclicked",
+          "importance": 0.0059070601551219236,
+          "std": 0.0013169123540306665
+        },
+        {
+          "feature": "snmousedistance",
+          "importance": 0.0055198587482307325,
+          "std": 0.01824213830613927
+        },
+        {
+          "feature": "snwheel",
+          "importance": 0.003024565198944029,
+          "std": 0.005393308221564771
+        },
+        {
+          "feature": "sndragged",
+          "importance": 0.002038084664316875,
+          "std": 0.0034724720185039712
+        },
+        {
+          "feature": "sndoubleclicked",
+          "importance": -0.0006832330670750065,
+          "std": 0.001366466134150013
+        },
+        {
+          "feature": "snerrorkeys",
+          "importance": -0.0017239883761231978,
+          "std": 0.009634800880643626
+        },
+        {
+          "feature": "snrightclicked",
+          "importance": -0.002049699201225019,
+          "std": 0.0016735723897305192
+        },
+        {
+          "feature": "sntabfocuschange",
+          "importance": -0.0031909000073305103,
+          "std": 0.0033360195099410477
+        },
+        {
+          "feature": "snshortcutkeys",
+          "importance": -0.005686454582707889,
+          "std": 0.0
+        },
+        {
+          "feature": "snappchange",
+          "importance": -0.005923312540664383,
+          "std": 0.005250976197452059
+        },
+        {
+          "feature": "sndirectionkeys",
+          "importance": -0.0061089454791216635,
+          "std": 0.00852598606116906
+        },
+        {
+          "feature": "snspaces",
+          "importance": -0.006161399154690095,
+          "std": 0.0025696302352043554
+        },
+        {
+          "feature": "snspecialkeys",
+          "importance": -0.018857184415825023,
+          "std": 0.016284380660810012
+        }
+      ],
+      "subjects": [
+        "10",
+        "25"
+      ],
+      "rows": 256
+    },
+    "wesad": {
+      "metric": "macro_f1",
+      "baseline": 0.8826622714072678,
+      "features": [
+        {
+          "feature": "bvp_0_median",
+          "importance": 0.12925442735179513,
+          "std": 0.02580203299678271
+        },
+        {
+          "feature": "acc_2_min",
+          "importance": 0.011979601820130848,
+          "std": 0.014916359335796417
+        },
+        {
+          "feature": "temp_0_max",
+          "importance": 0.010306456053128387,
+          "std": 0.0064206726190758
+        },
+        {
+          "feature": "acc_2_mean",
+          "importance": 0.006833152664439424,
+          "std": 0.013789812763933307
+        },
+        {
+          "feature": "acc_1_mean",
+          "importance": 0.00343215156560317,
+          "std": 0.006895156484164286
+        },
+        {
+          "feature": "bvp_0_mean",
+          "importance": 0.00343215156560317,
+          "std": 0.006895156484164285
+        },
+        {
+          "feature": "eda_0_min",
+          "importance": 0.0017201889497890032,
+          "std": 0.0034403778995780064
+        },
+        {
+          "feature": "temp_0_std",
+          "importance": 0.0017201889497890032,
+          "std": 0.0034403778995780064
+        },
+        {
+          "feature": "eda_0_mean",
+          "importance": 0.0017119626158141666,
+          "std": 0.006449556666745307
+        },
+        {
+          "feature": "temp_0_median",
+          "importance": 0.0,
+          "std": 0.0
+        },
+        {
+          "feature": "acc_0_min",
+          "importance": -0.00518524585129152,
+          "std": 0.004233735508849202
+        },
+        {
+          "feature": "acc_0_mean",
+          "importance": -0.005193472185266357,
+          "std": 0.006897208467105687
+        },
+        {
+          "feature": "acc_0_median",
+          "importance": -0.006922795133413828,
+          "std": 0.006481793990259021
+        },
+        {
+          "feature": "bvp_0_min",
+          "importance": -0.006922795133413828,
+          "std": 0.00648179399025902
+        },
+        {
+          "feature": "eda_0_max",
+          "importance": -0.006922795133413828,
+          "std": 0.00648179399025902
+        },
+        {
+          "feature": "acc_0_std",
+          "importance": -0.0069593530806753455,
+          "std": 0.012741042208903305
+        },
+        {
+          "feature": "temp_0_mean",
+          "importance": -0.008651210417177669,
+          "std": 0.005480182576779255
+        },
+        {
+          "feature": "acc_0_max",
+          "importance": -0.008660344415536137,
+          "std": 0.0077501377594090416
+        },
+        {
+          "feature": "acc_1_min",
+          "importance": -0.008660344415536137,
+          "std": 0.0077501377594090416
+        },
+        {
+          "feature": "acc_2_std",
+          "importance": -0.012117174983063816,
+          "std": 0.0042561091441388685
+        },
+        {
+          "feature": "eda_0_median",
+          "importance": -0.012126308981422284,
+          "std": 0.006934218271189244
+        },
+        {
+          "feature": "acc_1_max",
+          "importance": -0.012145506596350497,
+          "std": 0.010417424016213338
+        },
+        {
+          "feature": "acc_2_max",
+          "importance": -0.013854724265186125,
+          "std": 0.0042561091441388685
+        },
+        {
+          "feature": "acc_2_median",
+          "importance": -0.013854724265186125,
+          "std": 0.0042561091441388685
+        },
+        {
+          "feature": "eda_0_std",
+          "importance": -0.01732982282943074,
+          "std": 0.0
+        },
+        {
+          "feature": "bvp_0_max",
+          "importance": -0.01908749934469254,
+          "std": 0.0065228421139457505
+        },
+        {
+          "feature": "acc_1_median",
+          "importance": -0.019117714040930878,
+          "std": 0.011558868747246705
+        },
+        {
+          "feature": "acc_1_std",
+          "importance": -0.02085619294126446,
+          "std": 0.010476912377753372
+        },
+        {
+          "feature": "temp_0_min",
+          "importance": -0.020869142792158214,
+          "std": 0.011907785137323606
+        },
+        {
+          "feature": "bvp_0_std",
+          "importance": -0.027860547851666806,
+          "std": 0.010250367090138915
+        }
+      ],
+      "subjects": [
+        "S4",
+        "S11"
+      ],
+      "rows": 115
+    }
+  },
+  "skipped": {}
+}

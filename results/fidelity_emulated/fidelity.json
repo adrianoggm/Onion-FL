@@ -1,0 +1,958 @@
+{
+  "a": "runs_emulated",
+  "b": "runs_sim",
+  "backends": {
+    "a": [
+      "emulated"
+    ],
+    "b": [
+      "sim"
+    ]
+  },
+  "configurations": [
+    {
+      "design_id": "23a5a911b069564e0fe435719c29485bfb3ab80364f535b2cb29cfffbe42902e",
+      "scenario": "base"
+    }
+  ],
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "functional": {
+    "pairs": 3,
+    "complete": false,
+    "model": true,
+    "protocol": true,
+    "bytes": false
+  },
+  "performance": {
+    "compute_time": {
+      "pairs": 3,
+      "values": 600,
+      "a_mean": 1.239596089522044,
+      "b_mean": 0.7026324053333329,
+      "relative_error": -0.06057594853226098,
+      "relative_error_ci": [
+        -0.3913468490173984,
+        0.11058814596792292
+      ],
+      "absolute_relative_error": 0.5797002174130514,
+      "absolute_relative_error_ci": [
+        0.5390196806881966,
+        0.6265239449554518
+      ]
+    },
+    "duration": {
+      "pairs": 3,
+      "values": 3,
+      "a_mean": 91.56951856613159,
+      "b_mean": 17.550501333333315,
+      "relative_error": -0.7874615079030168,
+      "relative_error_ci": [
+        -0.8666913323199901,
+        -0.7219958699134282
+      ],
+      "absolute_relative_error": 0.7874615079030168,
+      "absolute_relative_error_ci": [
+        0.7219958699134282,
+        0.8666913323199901
+      ]
+    },
+    "link_latency": {
+      "pairs": 3,
+      "values": 162,
+      "a_mean": 0.8744065458748699,
+      "b_mean": 0.11777384848484819,
+      "relative_error": -0.7476393618697936,
+      "relative_error_ci": [
+        -0.7920878316366341,
+        -0.7224951091708794
+      ],
+      "absolute_relative_error": 0.7476393618697936,
+      "absolute_relative_error_ci": [
+        0.7224951091708794,
+        0.7920878316366341
+      ]
+    },
+    "round_time": {
+      "pairs": 3,
+      "values": 30,
+      "a_mean": 7.4740824699401855,
+      "b_mean": 1.7205508693333327,
+      "relative_error": -0.7215561170576082,
+      "relative_error_ci": [
+        -0.8042665949227491,
+        -0.6432270289669979
+      ],
+      "absolute_relative_error": 0.7215561170576082,
+      "absolute_relative_error_ci": [
+        0.6432270289669979,
+        0.8042665949227491
+      ]
+    }
+  },
+  "decision": {
+    "macro_f1": {
+      "tau_b": null,
+      "top1": true,
+      "regret": 0.0,
+      "regret_relative": 0.0,
+      "seeds": 3,
+      "configurations": 1,
+      "ci": {
+        "tau_b": null,
+        "regret": [
+          0.0,
+          0.0
+        ],
+        "regret_relative": [
+          0.0,
+          0.0
+        ]
+      },
+      "p_top1": 1.0,
+      "minimize": false,
+      "scores": {
+        "a": [
+          0.47398402364271974
+        ],
+        "b": [
+          0.47398402364271974
+        ]
+      },
+      "ceiling": {
+        "source": "seeds of A",
+        "top1": 1.0,
+        "top1_chance": 1.0,
+        "regret": 0.0,
+        "regret_relative": 0.0
+      },
+      "top1_below_ceiling": false,
+      "regret_above_ceiling": false,
+      "predictor": null
+    },
+    "time": {
+      "tau_b": null,
+      "top1": true,
+      "regret": 0.0,
+      "regret_relative": 0.0,
+      "seeds": 3,
+      "configurations": 1,
+      "ci": {
+        "tau_b": null,
+        "regret": [
+          0.0,
+          0.0
+        ],
+        "regret_relative": [
+          0.0,
+          0.0
+        ]
+      },
+      "p_top1": 1.0,
+      "minimize": true,
+      "scores": {
+        "a": [
+          91.56951856613159
+        ],
+        "b": [
+          17.550501333333315
+        ]
+      },
+      "ceiling": {
+        "source": "seeds of A",
+        "top1": 1.0,
+        "top1_chance": 1.0,
+        "regret": 0.0,
+        "regret_relative": 0.0
+      },
+      "top1_below_ceiling": false,
+      "regret_above_ceiling": false,
+      "predictor": null
+    }
+  },
+  "warnings": [
+    "3 seed(s) complete for every configuration; decision fidelity asks for at least 5 (I1 \u00a712)",
+    "one configuration only: there is no ranking to compare"
+  ],
+  "pairs": [
+    {
+      "design_id": "23a5a911b069564e0fe435719c29485bfb3ab80364f535b2cb29cfffbe42902e",
+      "seed": 0,
+      "scenario": "base",
+      "a": {
+        "run_id": "20261106T012032Z-772740b81edb",
+        "run_hash": "23651e7b02657cee1f2d39fd993573f8b104e2db9150bd20d6837969df87000d",
+        "backend": "emulated",
+        "topology_id": "464141d81d17d3a9da4622bec8ecd06fe6a655e8d44cb1bbbf98993b9dfcfe9c",
+        "infrastructure_id": "da875674ad22d77f7aabcc6d9ac2fe642e9e8be204889668bb4adc5f238df43e",
+        "config_id": "9c5825053e7b01f3745295663ca262295b29d6175e078c2fd23d9d1bb4b649ed"
+      },
+      "b": {
+        "run_id": "20261106T012611Z-b9dfb96de047",
+        "run_hash": "3b7b52f66e47af2580d84e804742fecb23324bd7a966802f816fefa30a5b1aa9",
+        "backend": "sim",
+        "topology_id": "464141d81d17d3a9da4622bec8ecd06fe6a655e8d44cb1bbbf98993b9dfcfe9c",
+        "infrastructure_id": "da875674ad22d77f7aabcc6d9ac2fe642e9e8be204889668bb4adc5f238df43e",
+        "config_id": "0875a24b6653f60c53713f952da89614a7ed462489f9f06b2106b2b7c1947479"
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": false,
+          "max_abs_diff": 1.7881393432617188e-07
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 7212737,
+          "b": 7213964,
+          "links_differing": [
+            [
+              "cloud",
+              "fog_a"
+            ],
+            [
+              "cloud",
+              "fog_b"
+            ],
+            [
+              "cloud",
+              "test-swell-1"
+            ],
+            [
+              "cloud",
+              "test-swell-12"
+            ],
+            [
+              "cloud",
+              "test-swell-18"
+            ],
+            [
+              "cloud",
+              "test-swell-19"
+            ],
+            [
+              "cloud",
+              "test-swell-2"
+            ],
+            [
+              "fog_a",
+              "cloud"
+            ],
+            [
+              "fog_a",
+              "swell-17"
+            ],
+            [
+              "fog_a",
+              "swell-20"
+            ],
+            [
+              "fog_a",
+              "swell-21"
+            ],
+            [
+              "fog_a",
+              "swell-22"
+            ],
+            [
+              "fog_a",
+              "swell-25"
+            ],
+            [
+              "fog_a",
+              "swell-4"
+            ],
+            [
+              "fog_a",
+              "swell-5"
+            ],
+            [
+              "fog_a",
+              "swell-6"
+            ],
+            [
+              "fog_a",
+              "swell-7"
+            ],
+            [
+              "fog_a",
+              "swell-9"
+            ],
+            [
+              "fog_b",
+              "cloud"
+            ],
+            [
+              "fog_b",
+              "swell-10"
+            ],
+            [
+              "fog_b",
+              "swell-11"
+            ],
+            [
+              "fog_b",
+              "swell-13"
+            ],
+            [
+              "fog_b",
+              "swell-14"
+            ],
+            [
+              "fog_b",
+              "swell-15"
+            ],
+            [
+              "fog_b",
+              "swell-16"
+            ],
+            [
+              "fog_b",
+              "swell-23"
+            ],
+            [
+              "fog_b",
+              "swell-24"
+            ],
+            [
+              "fog_b",
+              "swell-3"
+            ],
+            [
+              "fog_b",
+              "swell-8"
+            ],
+            [
+              "swell-10",
+              "fog_b"
+            ],
+            [
+              "swell-11",
+              "fog_b"
+            ],
+            [
+              "swell-13",
+              "fog_b"
+            ],
+            [
+              "swell-14",
+              "fog_b"
+            ],
+            [
+              "swell-15",
+              "fog_b"
+            ],
+            [
+              "swell-16",
+              "fog_b"
+            ],
+            [
+              "swell-17",
+              "fog_a"
+            ],
+            [
+              "swell-20",
+              "fog_a"
+            ],
+            [
+              "swell-21",
+              "fog_a"
+            ],
+            [
+              "swell-22",
+              "fog_a"
+            ],
+            [
+              "swell-23",
+              "fog_b"
+            ],
+            [
+              "swell-24",
+              "fog_b"
+            ],
+            [
+              "swell-25",
+              "fog_a"
+            ],
+            [
+              "swell-3",
+              "fog_b"
+            ],
+            [
+              "swell-4",
+              "fog_a"
+            ],
+            [
+              "swell-5",
+              "fog_a"
+            ],
+            [
+              "swell-6",
+              "fog_a"
+            ],
+            [
+              "swell-7",
+              "fog_a"
+            ],
+            [
+              "swell-8",
+              "fog_b"
+            ],
+            [
+              "swell-9",
+              "fog_a"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 13342,
+            "b": 12666
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "23a5a911b069564e0fe435719c29485bfb3ab80364f535b2cb29cfffbe42902e",
+      "seed": 1,
+      "scenario": "base",
+      "a": {
+        "run_id": "20261106T012205Z-10cf789eb2ca",
+        "run_hash": "7357ba11c136c2cc525ce1105019a58218dd8b0621fe52d4b4a98b7f33b08a3e",
+        "backend": "emulated",
+        "topology_id": "464141d81d17d3a9da4622bec8ecd06fe6a655e8d44cb1bbbf98993b9dfcfe9c",
+        "infrastructure_id": "da875674ad22d77f7aabcc6d9ac2fe642e9e8be204889668bb4adc5f238df43e",
+        "config_id": "9c5825053e7b01f3745295663ca262295b29d6175e078c2fd23d9d1bb4b649ed"
+      },
+      "b": {
+        "run_id": "20261106T012622Z-22ac413f3c85",
+        "run_hash": "5ec28abeef4d20dea200407ea9e7d3177fe06ee5dcaf5cd0116f1589d71f8d71",
+        "backend": "sim",
+        "topology_id": "464141d81d17d3a9da4622bec8ecd06fe6a655e8d44cb1bbbf98993b9dfcfe9c",
+        "infrastructure_id": "da875674ad22d77f7aabcc6d9ac2fe642e9e8be204889668bb4adc5f238df43e",
+        "config_id": "0875a24b6653f60c53713f952da89614a7ed462489f9f06b2106b2b7c1947479"
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": false,
+          "max_abs_diff": 1.1920928955078125e-07
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 7210315,
+          "b": 7210591,
+          "links_differing": [
+            [
+              "cloud",
+              "fog_a"
+            ],
+            [
+              "cloud",
+              "fog_b"
+            ],
+            [
+              "cloud",
+              "test-swell-1"
+            ],
+            [
+              "cloud",
+              "test-swell-12"
+            ],
+            [
+              "cloud",
+              "test-swell-18"
+            ],
+            [
+              "cloud",
+              "test-swell-19"
+            ],
+            [
+              "cloud",
+              "test-swell-2"
+            ],
+            [
+              "fog_a",
+              "cloud"
+            ],
+            [
+              "fog_a",
+              "swell-10"
+            ],
+            [
+              "fog_a",
+              "swell-14"
+            ],
+            [
+              "fog_a",
+              "swell-21"
+            ],
+            [
+              "fog_a",
+              "swell-22"
+            ],
+            [
+              "fog_a",
+              "swell-23"
+            ],
+            [
+              "fog_a",
+              "swell-24"
+            ],
+            [
+              "fog_a",
+              "swell-4"
+            ],
+            [
+              "fog_a",
+              "swell-5"
+            ],
+            [
+              "fog_a",
+              "swell-6"
+            ],
+            [
+              "fog_a",
+              "swell-9"
+            ],
+            [
+              "fog_b",
+              "cloud"
+            ],
+            [
+              "fog_b",
+              "swell-11"
+            ],
+            [
+              "fog_b",
+              "swell-13"
+            ],
+            [
+              "fog_b",
+              "swell-15"
+            ],
+            [
+              "fog_b",
+              "swell-16"
+            ],
+            [
+              "fog_b",
+              "swell-17"
+            ],
+            [
+              "fog_b",
+              "swell-20"
+            ],
+            [
+              "fog_b",
+              "swell-25"
+            ],
+            [
+              "fog_b",
+              "swell-3"
+            ],
+            [
+              "fog_b",
+              "swell-7"
+            ],
+            [
+              "fog_b",
+              "swell-8"
+            ],
+            [
+              "swell-10",
+              "fog_a"
+            ],
+            [
+              "swell-11",
+              "fog_b"
+            ],
+            [
+              "swell-13",
+              "fog_b"
+            ],
+            [
+              "swell-14",
+              "fog_a"
+            ],
+            [
+              "swell-15",
+              "fog_b"
+            ],
+            [
+              "swell-16",
+              "fog_b"
+            ],
+            [
+              "swell-17",
+              "fog_b"
+            ],
+            [
+              "swell-20",
+              "fog_b"
+            ],
+            [
+              "swell-21",
+              "fog_a"
+            ],
+            [
+              "swell-22",
+              "fog_a"
+            ],
+            [
+              "swell-23",
+              "fog_a"
+            ],
+            [
+              "swell-24",
+              "fog_a"
+            ],
+            [
+              "swell-25",
+              "fog_b"
+            ],
+            [
+              "swell-3",
+              "fog_b"
+            ],
+            [
+              "swell-4",
+              "fog_a"
+            ],
+            [
+              "swell-5",
+              "fog_a"
+            ],
+            [
+              "swell-6",
+              "fog_a"
+            ],
+            [
+              "swell-7",
+              "fog_b"
+            ],
+            [
+              "swell-8",
+              "fog_b"
+            ],
+            [
+              "swell-9",
+              "fog_a"
+            ],
+            [
+              "test-swell-1",
+              "cloud"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 14923,
+            "b": 12666
+          }
+        },
+        "complete": false
+      }
+    },
+    {
+      "design_id": "23a5a911b069564e0fe435719c29485bfb3ab80364f535b2cb29cfffbe42902e",
+      "seed": 2,
+      "scenario": "base",
+      "a": {
+        "run_id": "20261106T012325Z-7b80fa8ec326",
+        "run_hash": "933d95605c637672859d36b26ea94a5dc6b295e1d947d73971c7b334e7065584",
+        "backend": "emulated",
+        "topology_id": "464141d81d17d3a9da4622bec8ecd06fe6a655e8d44cb1bbbf98993b9dfcfe9c",
+        "infrastructure_id": "da875674ad22d77f7aabcc6d9ac2fe642e9e8be204889668bb4adc5f238df43e",
+        "config_id": "9c5825053e7b01f3745295663ca262295b29d6175e078c2fd23d9d1bb4b649ed"
+      },
+      "b": {
+        "run_id": "20261106T012640Z-753ac2703340",
+        "run_hash": "39db1fec2166d53db5e1b1a6abda3fde889b6aa961878b99cfbaee3d31d68e19",
+        "backend": "sim",
+        "topology_id": "464141d81d17d3a9da4622bec8ecd06fe6a655e8d44cb1bbbf98993b9dfcfe9c",
+        "infrastructure_id": "da875674ad22d77f7aabcc6d9ac2fe642e9e8be204889668bb4adc5f238df43e",
+        "config_id": "0875a24b6653f60c53713f952da89614a7ed462489f9f06b2106b2b7c1947479"
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": false,
+          "max_abs_diff": 2.086162567138672e-07
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": false,
+          "a": 7204778,
+          "b": 7205462,
+          "links_differing": [
+            [
+              "cloud",
+              "fog_a"
+            ],
+            [
+              "cloud",
+              "fog_b"
+            ],
+            [
+              "cloud",
+              "test-swell-1"
+            ],
+            [
+              "cloud",
+              "test-swell-12"
+            ],
+            [
+              "cloud",
+              "test-swell-18"
+            ],
+            [
+              "cloud",
+              "test-swell-19"
+            ],
+            [
+              "cloud",
+              "test-swell-2"
+            ],
+            [
+              "fog_a",
+              "cloud"
+            ],
+            [
+              "fog_a",
+              "swell-11"
+            ],
+            [
+              "fog_a",
+              "swell-15"
+            ],
+            [
+              "fog_a",
+              "swell-17"
+            ],
+            [
+              "fog_a",
+              "swell-20"
+            ],
+            [
+              "fog_a",
+              "swell-21"
+            ],
+            [
+              "fog_a",
+              "swell-23"
+            ],
+            [
+              "fog_a",
+              "swell-24"
+            ],
+            [
+              "fog_a",
+              "swell-3"
+            ],
+            [
+              "fog_a",
+              "swell-7"
+            ],
+            [
+              "fog_a",
+              "swell-9"
+            ],
+            [
+              "fog_b",
+              "cloud"
+            ],
+            [
+              "fog_b",
+              "swell-10"
+            ],
+            [
+              "fog_b",
+              "swell-13"
+            ],
+            [
+              "fog_b",
+              "swell-14"
+            ],
+            [
+              "fog_b",
+              "swell-16"
+            ],
+            [
+              "fog_b",
+              "swell-22"
+            ],
+            [
+              "fog_b",
+              "swell-25"
+            ],
+            [
+              "fog_b",
+              "swell-4"
+            ],
+            [
+              "fog_b",
+              "swell-5"
+            ],
+            [
+              "fog_b",
+              "swell-6"
+            ],
+            [
+              "fog_b",
+              "swell-8"
+            ],
+            [
+              "swell-10",
+              "fog_b"
+            ],
+            [
+              "swell-11",
+              "fog_a"
+            ],
+            [
+              "swell-13",
+              "fog_b"
+            ],
+            [
+              "swell-14",
+              "fog_b"
+            ],
+            [
+              "swell-15",
+              "fog_a"
+            ],
+            [
+              "swell-16",
+              "fog_b"
+            ],
+            [
+              "swell-17",
+              "fog_a"
+            ],
+            [
+              "swell-20",
+              "fog_a"
+            ],
+            [
+              "swell-21",
+              "fog_a"
+            ],
+            [
+              "swell-22",
+              "fog_b"
+            ],
+            [
+              "swell-23",
+              "fog_a"
+            ],
+            [
+              "swell-24",
+              "fog_a"
+            ],
+            [
+              "swell-25",
+              "fog_b"
+            ],
+            [
+              "swell-3",
+              "fog_a"
+            ],
+            [
+              "swell-4",
+              "fog_b"
+            ],
+            [
+              "swell-5",
+              "fog_b"
+            ],
+            [
+              "swell-6",
+              "fog_b"
+            ],
+            [
+              "swell-7",
+              "fog_a"
+            ],
+            [
+              "swell-8",
+              "fog_b"
+            ],
+            [
+              "swell-9",
+              "fog_a"
+            ],
+            [
+              "test-swell-12",
+              "cloud"
+            ],
+            [
+              "test-swell-18",
+              "cloud"
+            ],
+            [
+              "test-swell-19",
+              "cloud"
+            ],
+            [
+              "test-swell-2",
+              "cloud"
+            ]
+          ],
+          "control": {
+            "a": 16501,
+            "b": 12666
+          }
+        },
+        "complete": false
+      }
+    }
+  ]
+}

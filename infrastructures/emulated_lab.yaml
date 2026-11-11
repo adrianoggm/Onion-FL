@@ -1,0 +1,22 @@
+# A small edge-fog-cloud lab that the emulated backend (issue #195) runs on one
+# machine: a cloud VM with the MQTT broker, two fog servers on their own sites
+# and a field of six edge devices. The rates are illustrative, not calibrated
+# (I1 §13, issue #197): the simulation's compute times are a guess until then.
+name: emulated_lab
+profiles:
+  cloud_vm:    {cpus: 2, memory: 4GB, aggregate_rate: 5.0e8}
+  fog_small:   {cpus: 1, memory: 2GB, aggregate_rate: 1.0e8}
+  edge_device: {cpus: 1, memory: 2GB, train_rate: 2000}
+sites:
+  dc:    {hosts: {cloud-1: cloud_vm}}
+  fog_a: {hosts: {fog-a: fog_small}}
+  fog_b: {hosts: {fog-b: fog_small}}
+  field: {pool: {edge_device: 6}}
+network:
+  links:
+    - {between: [field, fog_a], latency: 10ms, bandwidth: 50Mbps}
+    - {between: [field, fog_b], latency: 15ms, bandwidth: 20Mbps}
+    - {between: [fog_a, dc], latency: 40ms, bandwidth: 10Mbps}
+    - {between: [fog_b, dc], latency: 60ms, bandwidth: 10Mbps}
+services:
+  mqtt_broker: cloud-1

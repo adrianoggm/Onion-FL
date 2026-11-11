@@ -44,10 +44,10 @@ class ApiError extends Error {
 }
 
 async function api(path, options = {}) {
-  const init = { ...options };
+  const init = { ...options, headers: { ...(options.headers || {}) } };
   if (options.json !== undefined) {
     init.method = options.method || "POST";
-    init.headers = { "Content-Type": "application/json" };
+    init.headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(options.json);
   }
   const response = await fetch(path, init);
@@ -56,7 +56,7 @@ async function api(path, options = {}) {
   return body;
 }
 
-const fmt = (x, digits = 3) => (x === null || x === undefined || Number.isNaN(x) ? "–" : typeof x === "number" ? x.toFixed(digits).replace(/\.?0+$/, "") : String(x));
+const fmt = (x, digits = 3) => (x === null || x === undefined || Number.isNaN(x) ? "–" : typeof x === "number" ? String(Number(x.toFixed(digits))) : String(x));
 const short = (id) => (id ? `${id.slice(0, 12)}…` : "–");
 
 function errorBox(error) {
@@ -79,7 +79,7 @@ function every(ms, fn) {
 
 // --- drawing ------------------------------------------------------------------------------
 
-function drawTopology(graph, linkLabels = {}) {
+function drawTopology(graph, linkLabels = {}, composition = null) {
   // Levels in rows, leaves spread evenly, each parent centred over its children.
   const children = {};
   for (const node of graph.nodes) (children[node.parent] ||= []).push(node);
@@ -117,7 +117,7 @@ function drawTopology(graph, linkLabels = {}) {
     const p = pos[leaf];
     svg.append(s("line", { class: "link", x1: p.x, y1: p.y, x2: p.x, y2: edgeY - 18 }));
     svg.append(s("rect", { class: "edgebox", x: p.x - 50, y: edgeY - 18, width: 100, height: 30, rx: 6 }));
-    svg.append(s("text", { x: p.x, y: edgeY + 1, "text-anchor": "middle" }, `edges (${levels[levels.length - 1]})`));
+    svg.append(s("text", { x: p.x, y: edgeY + 1, "text-anchor": "middle" }, composition ? `${composition[leaf]?.clients ?? 0} edges` : `edges (${levels[levels.length - 1]})`));
     if (linkLabels["*"]) svg.append(s("text", { class: "groups", x: p.x, y: edgeY + 28, "text-anchor": "middle" }, linkLabels["*"]));
   }
   for (const node of graph.nodes) {
@@ -206,6 +206,118 @@ function trafficTable(links) {
   return table([["Enlace", (l) => (l.child === "*" ? `edges → ${l.parent_level}` : `${l.child} → ${l.parent}`)], ["Grupos que viajan", (l) => (l.groups.join(", ") || "nada")]], links);
 }
 
+const minutes = (seconds) => `${fmt(seconds / 60, 1)} min`; // data time, from the stream's t₀
+
+function streamSummary(stream) {
+  const edges = Object.values(stream.edges);
+  const total = (key) => edges.reduce((sum, e) => sum + e[key], 0);
+  return h("p", { class: "muted" },
+    `Stream: ${edges.length} edges · ${total("rows")} filas (${total("history")} de historia, ${total("labelled")} con etiqueta) · última fila a los ${minutes(stream.horizon)}, última etiqueta a los ${minutes(stream.drain)} · `,
+    stream.rounds === null ? `rondas según el disparador «${stream.trigger}»` : `${stream.rounds} rondas`);
+}
+
+function triggersPanel(triggers, drift) {
+  return h("div", { class: "panel" },
+    h("h3", {}, "Rondas y disparadores"),
+    table([["Ronda", (t) => t.round], ["Disparador", (t) => t.trigger], ["Tiempo de datos", (t) => minutes(t.at)], ["Filas reportadas", (t) => fmt(t.volume, 0)],
+      ["Derivas oídas", (t) => Object.entries(t.drift).map(([kind, n]) => `${kind}: ${n}`).join(", ") || "–"]], triggers),
+    drift.length
+      ? [h("h3", {}, "Derivas detectadas"),
+        table([["Tiempo de datos", (d) => minutes(d.at)], ["Nodo", (d) => d.node], ["Nivel", (d) => d.level], ["Tipo", (d) => d.kind], ["Estadístico", (d) => fmt(d.window)]], drift)]
+      : h("p", { class: "muted" }, "Ningún nodo detectó deriva."));
+}
+
+// --- versions (continuum C7) ---------------------------------------------------------------
+
+const STATUS_COLORS = { active: "#16a34a", superseded: "#2563eb", candidate: "#d97706", rejected: "#dc2626", rolled_back: "#6b7280" };
+const STATUS_NAMES = { active: "champion", superseded: "sustituida", candidate: "candidata", rejected: "rechazada", rolled_back: "revertida" };
+let operatorToken = ""; // kept in memory only: a reload asks for it again
+
+function lineage(versions, champion) {
+  // One column per version; an arc from each to the champion it was trained from.
+  const width = Math.max(320, versions.length * 70 + 40), height = 120, y = 70;
+  const X = (v) => 40 + versions.findIndex((x) => x.v === v) * 70;
+  // drawn at its own size: stretched to the panel, a few versions would fill the screen
+  const svg = s("svg", { class: "chart", viewBox: `0 0 ${width} ${height}`, width, height, style: "max-width:100%;height:auto", role: "img" });
+  for (const v of versions) {
+    if (v.parent === null || v.parent === undefined) continue;
+    const a = X(v.parent), b = X(v.v), top = y - 14 - Math.min(40, (b - a) / 4);
+    svg.append(s("path", { d: `M ${a} ${y - 12} Q ${(a + b) / 2} ${top} ${b} ${y - 12}`, fill: "none", stroke: "var(--line)", "stroke-width": 2 }));
+  }
+  for (const v of versions) {
+    const x = X(v.v);
+    svg.append(s("circle", { cx: x, cy: y, r: v.v === champion ? 13 : 10, fill: STATUS_COLORS[v.status] || "#999", stroke: v.v === champion ? "var(--ink)" : "none", "stroke-width": 2 },
+      s("title", {}, `v${v.v}: ${STATUS_NAMES[v.status] || v.status}${v.round ? `, ronda ${v.round}` : ""}`)));
+    svg.append(s("text", { x, y: y + 30, "text-anchor": "middle" }, `v${v.v}`));
+  }
+  return svg;
+}
+
+function versionsPanel(view) {
+  const metric = Object.keys(view.versions.find((v) => Object.keys(v.prequential).length)?.prequential || {})[0];
+  const score = (v, key) => fmt(v.scores?.[key]);
+  return h("div", { class: "panel" },
+    h("h3", {}, "Versiones"),
+    h("p", { class: "muted" }, `Champion: v${view.champion ?? 0}. Cada arco une una versión con el champion del que se entrenó.`),
+    h("div", { class: "legend" }, Object.entries(STATUS_NAMES).map(([k, name]) => h("span", { style: `--c:${STATUS_COLORS[k]}` }, name))),
+    lineage(view.versions, view.champion),
+    table([
+      ["Versión", (v) => h("strong", {}, `v${v.v}`)],
+      ["Padre", (v) => (v.parent === null ? "–" : `v${v.parent}`)],
+      ["Ronda", (v) => v.round ?? "–"],
+      ["Estado", (v) => h("span", { class: `badge ${v.status}` }, STATUS_NAMES[v.status] || v.status)],
+      ["Decisión", (v) => v.decision || "–"],
+      ["Reciente (challenger / champion)", (v) => `${score(v, "recent_challenger")} / ${score(v, "recent_champion")}`],
+      ["Referencia (challenger / champion)", (v) => `${score(v, "reference_challenger")} / ${score(v, "reference_champion")}`],
+      ["Delta", (v) => score(v, "delta")],
+      ["Olvido", (v) => score(v, "forgetting")],
+      [`Prequential${metric ? ` (${metric})` : ""}`, (v) => fmt(metric ? v.prequential[metric] : null)],
+      ["Rondas servidas", (v) => v.served.join(", ") || "–"],
+      ["Digest", (v) => h("span", { class: "mono" }, short(v.digest))],
+    ], view.versions),
+    view.decisions.length
+      ? [h("h3", {}, "Decisiones"),
+        table([["t (virtual)", (d) => fmt(d.t, 2)], ["Ronda", (d) => d.round ?? "–"], ["Evento", (d) => d.event], ["Versión", (d) => `v${d.version}`], ["Quién", (d) => (d.by === "operator" ? "operador" : "política")], ["Motivo", (d) => d.reason || "–"]], view.decisions)]
+      : null,
+    view.edges.length
+      ? [h("h3", {}, "Volumen y deriva por edge"),
+        table([["Edge", (e) => e.node], ["Dataset", (e) => e.dataset || "–"], ["Filas llegadas", (e) => fmt(e.arrived, 0)], ["Con etiqueta", (e) => e.labelled], ["Derivas", (e) => Object.entries(e.drift).map(([k, n]) => `${k}: ${n}`).join(", ") || "–"]], view.edges)]
+      : null);
+}
+
+function controlsPanel(runId, control, view, onchange) {
+  const output = h("div", {});
+  const state = control.state;
+  if (!control.operators) return h("div", { class: "panel" }, h("h3", {}, "Controles"), h("p", { class: "muted" }, "Sin operadores: arranca el Studio con --operators (o ONIONFL_OPERATORS) para dar órdenes."));
+  if (!state?.listening) return h("div", { class: "panel" }, h("h3", {}, "Controles"), h("p", { class: "muted" }, "Esta ejecución no escucha órdenes: solo una simulación en curso lanzada con operadores las acepta."));
+  const token = h("input", { type: "password", placeholder: "token del operador", value: operatorToken, oninput: (e) => (operatorToken = e.target.value), autocomplete: "off" });
+  const at = h("input", { type: "number", min: 0, step: "any", placeholder: "ahora", size: 8 });
+  const choices = (statuses) => view.versions.filter((v) => statuses.includes(v.status)).map((v) => h("option", { value: v.v }, `v${v.v} (${STATUS_NAMES[v.status]})`));
+  const rollbackTo = h("select", {}, h("option", { value: "" }, "la anterior"), choices(["superseded"]));
+  const promoteTo = h("select", {}, choices(["rejected", "rolled_back"]));
+  async function send(body) {
+    const when = at.value === "" ? {} : { at: Number(at.value) };
+    try {
+      await api(`/api/runs/${encodeURIComponent(runId)}/control`, { json: { ...body, ...(body.order === "resume" ? {} : when) }, headers: { Authorization: `Bearer ${operatorToken}` } });
+      output.replaceChildren(h("p", { class: "ok" }, `Orden enviada: ${body.order}${when.at !== undefined && body.order !== "resume" ? ` en t = ${when.at}` : ""}.`));
+      onchange();
+    } catch (error) { output.replaceChildren(errorBox(error)); }
+  }
+  const scheduled = state.scheduled || [];
+  return h("div", { class: "panel" },
+    h("h3", {}, "Controles"),
+    h("p", {}, h("span", { class: `badge ${state.paused ? "paused" : "running"}` }, state.paused ? "pausada" : "en marcha"), ` · reloj virtual t = ${fmt(state.t, 2)} s · ${state.read} orden(es) leídas`),
+    h("div", { class: "row" }, h("label", {}, "operador", token), h("label", {}, "programar en t =", at)),
+    h("div", { class: "row" },
+      h("button", { onclick: () => send({ order: "pause" }) }, "Pausar"),
+      h("button", { class: "primary", disabled: !state.paused, onclick: () => send({ order: "resume" }) }, "Reanudar"),
+      h("label", {}, "revertir a", rollbackTo), h("button", { onclick: () => send({ order: "rollback", version: rollbackTo.value === "" ? null : Number(rollbackTo.value) }) }, "Revertir"),
+      h("label", {}, "promover", promoteTo), h("button", { disabled: !promoteTo.options.length, onclick: () => send({ order: "promote", version: Number(promoteTo.value) }) }, "Promover")),
+    scheduled.length ? table([["t", (o) => fmt(o.at, 2)], ["Operador", (o) => o.operator], ["Orden", (o) => Object.keys(o.order).filter((k) => k !== "at").join(", ")]], scheduled) : null,
+    h("p", { class: "muted" }, "Las órdenes van firmadas con el token del operador; el coordinador comprueba la firma y la versión, y lo que rechaza aparece en los eventos (message.rejected, control.refused)."),
+    output);
+}
+
 // --- topologies -------------------------------------------------------------------------------
 
 async function topologiesView(selected) {
@@ -236,7 +348,7 @@ async function showTopology(container, name) {
 }
 
 function graphPanel(graph) {
-  return h("div", {}, drawTopology(graph), h("p", { class: "muted" }, "topology_id: ", copyable(graph.topology_id)));
+  return h("div", {}, drawTopology(graph), h("p", { class: "muted" }, "Cuántos edges cuelgan de cada hoja lo decide la colocación del experimento: se ve en su plan."), h("p", { class: "muted" }, "topology_id: ", copyable(graph.topology_id)));
 }
 
 function editorState(graph) {
@@ -347,6 +459,7 @@ async function showExperiment(container, name) {
   const output = h("div", {});
   const mode = h("select", {}, h("option", { value: "sim" }, "simulación"), h("option", { value: "real" }, "real (MQTT)"));
   const workers = h("input", { type: "number", min: 1, value: 1 });
+  const paused = h("input", { type: "checkbox", title: "Arranca la simulación en pausa, para darle órdenes antes de empezar (necesita operadores)" });
   const scenarioSelect = h("select", {}, h("option", { value: "" }, "todos"), [...new Set(body.scenarios.map((x) => x.name))].map((n) => h("option", { value: n }, n)));
   container.replaceChildren(
     h("div", { class: "panel" },
@@ -354,10 +467,10 @@ async function showExperiment(container, name) {
       table([["Escenario", (r) => r.name], ["Semilla", (r) => r.seed], ["config_id", (r) => h("span", { class: "mono" }, short(r.config_id))]], body.scenarios),
       h("div", { class: "row" },
         h("button", { onclick: () => planExperiment(name, output) }, "Plan en seco"),
-        h("label", {}, "modo", mode), h("label", {}, "trabajadores", workers), h("label", {}, "escenario", scenarioSelect),
+        h("label", {}, "modo", mode), h("label", {}, "trabajadores", workers), h("label", {}, "escenario", scenarioSelect), h("label", {}, paused, "en pausa"),
         h("button", { class: "primary", onclick: async () => {
           try {
-            const { pid } = await api(`/api/experiments/${encodeURIComponent(name)}/run`, { json: { mode: mode.value, workers: Number(workers.value), scenario: scenarioSelect.value || null } });
+            const { pid } = await api(`/api/experiments/${encodeURIComponent(name)}/run`, { json: { mode: mode.value, workers: Number(workers.value), scenario: scenarioSelect.value || null, paused: paused.checked } });
             output.replaceChildren(h("p", { class: "ok" }, `Lanzado (pid ${pid}). Sigue el progreso en `, h("a", { href: "#/runs" }, "Ejecuciones"), "."));
           } catch (error) { output.replaceChildren(errorBox(error)); }
         } }, "Ejecutar")),
@@ -373,10 +486,11 @@ async function planExperiment(name, output) {
       h("div", { class: "panel" },
         h("h3", {}, `${p.scenario} · semilla ${p.seed}`),
         p.warnings?.length ? h("div", { class: "errors" }, p.warnings.map((w) => h("div", {}, "⚠ ", w))) : "",
+        p.stream ? streamSummary(p.stream) : "",
         h("p", { class: "muted" }, "Composición por hoja (barras por dataset, H = entropía de la mezcla)"),
         stackedBars(p.composition),
         h("p", { class: "muted" }, "Grupos que viajan por cada enlace"),
-        drawTopology(p.graph, groupLabels(p.traffic)),
+        drawTopology(p.graph, groupLabels(p.traffic), p.composition),
         trafficTable(p.traffic),
         h("p", { class: "muted" }, "Roles: ", Object.entries(p.roles).map(([ds, r]) => `${ds}: ${r.test.length} test · ${r.val.length} val · ${r.train.length} train`).join(" | ")))));
   } catch (error) {
@@ -407,15 +521,44 @@ async function runsView(selected) {
   }
   page("Ejecuciones", "Lo ejecutado en runs/: estado, identidad y rendimiento por nivel. Las que siguen corriendo se actualizan solas.", h("div", { class: "row" }, filter), h("div", { class: "panel" }, holder));
   const runs = await load();
-  if (runs.some((r) => r.status === "running")) every(3000, load);
+  every(3000, load); // runs launched from here appear once their run.json is written
 }
 
 async function runDetail(runId) {
   const detail = await api(`/api/runs/${encodeURIComponent(runId)}`);
-  const meta = detail.meta, summary = detail.summary || {};
+  const meta = detail.meta;
+  const head = h("div", {});
   const charts = h("div", { class: "grid2" });
+
+  function drawHead(d) {
+    const m = d.meta, summary = d.summary || {};
+    head.replaceChildren(...[
+      h("div", { class: "panel" },
+        h("div", { class: "kpis" },
+          [["Estado", h("span", { class: `badge ${m.status}` }, m.status)], ["Rondas", summary.rounds ?? "–"], ["Mensajes", summary.messages?.sent ?? "–"], ["Bytes", summary.messages?.bytes ?? "–"], ["Perdidos", summary.messages?.dropped ?? "–"], ["Quórum fallido", summary.quorum_failed ?? "–"]]
+            .map(([label, value]) => h("div", { class: "kpi" }, h("div", { class: "value" }, value), h("div", { class: "label" }, label)))),
+        h("h3", {}, "Identidad"),
+        table([["", (r) => r[0]], ["", (r) => copyable(r[1] || "–")]], [["run_id", m.run_id], ["topology_id", m.topology_id], ["config_id", m.config_id], ["data_id", m.data_id], ["code", m.code_version?.commit], ["run_hash", m.run_hash]])),
+      Object.keys(d.composition || {}).length ? h("div", { class: "panel" }, h("h3", {}, "Composición por hoja"), stackedBars(d.composition)) : null,
+      d.triggers?.length ? triggersPanel(d.triggers, d.drift) : null,
+    ].filter(Boolean)); // replaceChildren would write a null as text
+  }
   const log = h("div", { class: "log" });
   let after = 0;
+  const continuum = h("div", {});
+  let shown = null; // what the versions and controls were drawn from
+
+  async function drawContinuum(force = false) {
+    const [view, control] = await Promise.all([
+      api(`/api/runs/${encodeURIComponent(runId)}/versions`),
+      api(`/api/runs/${encodeURIComponent(runId)}/control`),
+    ]);
+    if (!view.versions.length && !view.promotion && !control.state) return continuum.replaceChildren();
+    const key = JSON.stringify([view, control.state, control.operators]);
+    if (!force && key === shown) return; // redrawn only on change: the token field keeps its focus
+    shown = key;
+    continuum.replaceChildren(versionsPanel(view), controlsPanel(runId, control, view, () => drawContinuum(true)));
+  }
 
   async function seriesPanel(title, params, yLabel) {
     const query = new URLSearchParams(params).toString();
@@ -450,24 +593,27 @@ async function runDetail(runId) {
   }
 
   page(`Ejecución ${runId}`, meta.scenario ? `${meta.config?.name || ""} · ${meta.scenario} · semilla ${meta.seed}` : "",
-    h("div", { class: "panel" },
-      h("div", { class: "kpis" },
-        [["Estado", h("span", { class: `badge ${meta.status}` }, meta.status)], ["Rondas", summary.rounds ?? "–"], ["Mensajes", summary.messages?.sent ?? "–"], ["Bytes", summary.messages?.bytes ?? "–"], ["Perdidos", summary.messages?.dropped ?? "–"], ["Quórum fallido", summary.quorum_failed ?? "–"]]
-          .map(([label, value]) => h("div", { class: "kpi" }, h("div", { class: "value" }, value), h("div", { class: "label" }, label)))),
-      h("h3", {}, "Identidad"),
-      table([["", (r) => r[0]], ["", (r) => copyable(r[1] || "–")]], [["run_id", meta.run_id], ["topology_id", meta.topology_id], ["config_id", meta.config_id], ["data_id", meta.data_id], ["code", meta.code_version?.commit], ["run_hash", meta.run_hash]])),
-    Object.keys(detail.composition || {}).length ? h("div", { class: "panel" }, h("h3", {}, "Composición por hoja"), stackedBars(detail.composition)) : null,
+    head,
+    continuum,
     charts,
     h("div", { class: "panel" }, h("h3", {}, "Eventos"), log));
+  drawHead(detail);
+  await drawContinuum();
   await drawCharts();
   await poll();
   if (meta.status === "running") {
     every(2000, async () => {
       const page_ = await poll();
-      if (page_.events.length) await drawCharts();
+      await drawContinuum(); // a paused run sends no events, but its controls change
+      if (!page_.events.length) return;
+      // the figures and the triggers change with these; the detail is read again
+      if (page_.events.some((e) => REDRAW.has(e.name))) drawHead(await api(`/api/runs/${encodeURIComponent(runId)}`));
+      await drawCharts();
     });
   }
 }
+
+const REDRAW = new Set(["trigger.fired", "drift.detected", "round.started", "round.closed", "round.quorum_failed", "run.finished"]);
 
 // --- compare --------------------------------------------------------------------------------------
 

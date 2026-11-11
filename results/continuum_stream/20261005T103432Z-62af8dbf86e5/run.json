@@ -1,0 +1,119 @@
+{
+  "run_id": "20261005T103432Z-62af8dbf86e5",
+  "topology_id": "ff55fe4d2ce1a807f764bcc5205a8d2d4d43ab3d533163a1d13e173a9a6725fa",
+  "config_id": "82b775953ad9bd6093420ea89e6de76b781264d4034aa2bbd189bab42c6b553f",
+  "data_id": "f79c1afad836591c82f72c11c6409118eeeb9e60c814b60214f166762d92b2c0",
+  "code_version": {
+    "commit": "64e3587090996349ddd745ff1a5b51af42ae5c11",
+    "dirty": false
+  },
+  "seed": 1,
+  "scenario": "labels.fraction=1.0",
+  "started_at": "2026-10-05T10:34:33.132399+00:00",
+  "status": "finished",
+  "config": {
+    "name": "stream_swell_wesad",
+    "description": "SWELL y WESAD en flujo, con etiquetas completas o parciales y diferidas.",
+    "topology": "four_fogs_swell_wesad_lossless",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        },
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.0,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.1
+      },
+      "init": "random"
+    },
+    "rounds": 60,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1",
+        "confusion_matrix"
+      ],
+      "edge": {
+        "every": null,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": 1,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 5
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    },
+    "stream": {
+      "order": "timestamp",
+      "batch_size": 1,
+      "speed": 60.0,
+      "start": "aligned",
+      "horizon": "session",
+      "bootstrap": 1200.0,
+      "round_every": 600.0,
+      "window": null
+    },
+    "labels": {
+      "fraction": 1.0,
+      "delay": 600.0
+    }
+  },
+  "finished_at": "2026-10-05T10:35:00.595792+00:00",
+  "run_hash": "911c47fedbd3f0551c63d4c2417b4b6cbd0d4b086dbf49c9af9f44dccfe5a19b"
+}

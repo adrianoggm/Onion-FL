@@ -6,6 +6,7 @@ parsing; nothing is trained or evaluated with it.
 
 from __future__ import annotations
 
+import json
 import pickle
 import textwrap
 from pathlib import Path
@@ -177,6 +178,95 @@ def test_npz_reader_expands_matrices_into_columns(tmp_path: Path) -> None:
 
     assert list(df.columns) == ["acc_0", "acc_1", "label"]
     assert df["acc_1"].tolist() == [1, 3, 5]
+
+
+def _leaf(path: Path, user_data: dict) -> Path:
+    """A LEAF JSON file (users, num_samples, user_data) as LEAF writes it."""
+    path.write_text(
+        json.dumps(
+            {
+                "users": list(user_data),
+                "num_samples": [len(d["y"]) for d in user_data.values()],
+                "user_data": user_data,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_leaf_reader_gives_one_row_per_sample(tmp_path: Path) -> None:
+    path = _leaf(
+        tmp_path / "all_data_0.json",
+        {
+            "f0000_14": {"x": [[1.0, 0.5, 0.0], [1.0, 1.0, 0.25]], "y": [3, 41]},
+            "f0001_41": {"x": [[0.0, 0.0, 1.0]], "y": [0]},
+        },
+    )
+
+    df = readers.create("leaf_json").read(path)
+
+    assert list(df.columns) == ["x_0", "x_1", "x_2", "user", "y"]
+    assert df["user"].tolist() == ["f0000_14", "f0000_14", "f0001_41"]
+    assert df["y"].tolist() == [3, 41, 0]
+    assert df["x_2"].tolist() == [0.0, 0.25, 1.0]
+
+
+def test_leaf_reader_keeps_only_the_declared_writers(tmp_path: Path) -> None:
+    users = {
+        "a": {"x": [[1.0, 0.0]], "y": [1]},
+        "b": {"x": [[0.0, 1.0]], "y": [2]},
+    }
+    path = _leaf(tmp_path / "all_data_0.json", users)
+
+    kept = readers.create("leaf_json", {"writers": ["b"]}).read(path)
+    none = readers.create("leaf_json", {"writers": ["z"]}).read(path)
+
+    assert kept["user"].tolist() == ["b"]
+    # A file without the chosen writers keeps the columns of the others.
+    assert list(none.columns) == ["x_0", "x_1", "user", "y"] and none.empty
+
+
+def test_leaf_reader_rejects_inconsistent_users(tmp_path: Path) -> None:
+    path = _leaf(
+        tmp_path / "all_data_0.json",
+        {"a": {"x": [[1.0, 0.0]], "y": [1]}, "b": {"x": [[1.0, 0.0]], "y": [1, 2]}},
+    )
+
+    with pytest.raises(DataError, match="'b'"):
+        readers.create("leaf_json").read(path)
+    with pytest.raises(ValueError, match="repeated"):
+        readers.create("leaf_json", {"writers": ["a", "a"]})
+
+
+def test_leaf_files_ingest_with_writers_as_subjects(tmp_path: Path) -> None:
+    _leaf(
+        tmp_path / "all_data_0.json",
+        {"w1": {"x": [[1.0, 0.0], [0.5, 0.5]], "y": [0, 1]}, "w2": {"x": [], "y": []}},
+    )
+    _leaf(tmp_path / "all_data_1.json", {"w3": {"x": [[0.0, 1.0]], "y": [2]}})
+    spec = DatasetSpec.model_validate(
+        {
+            "name": "leaf",
+            "root": str(tmp_path),
+            "source": {
+                "reader": "leaf_json",
+                "path": "*.json",
+                "writers": ["w1", "w3"],
+            },
+            "steps": [
+                {"subject": {"column": "user"}},
+                {"label": {"task": "character", "column": "y", "n_classes": 3}},
+                {"features": {"regex": "^x_"}},
+            ],
+        }
+    )
+
+    subjects = ingest(spec)
+
+    assert [s.subject for s in subjects] == ["w1", "w3"]
+    assert subjects[0].feature_names == ["x_0", "x_1"]  # never user or y
+    assert subjects[0].y.tolist() == [0, 1] and subjects[1].n_classes == 3
 
 
 def test_pickle_reader_follows_a_key_path(tmp_path: Path) -> None:
@@ -366,6 +456,21 @@ def test_join_on_keys(tmp_path: Path) -> None:
     ).apply(pd.read_csv(tmp_path / "a.csv"), ctx=_ctx(tmp_path))
 
     assert out["hr"].tolist() == [60, 70]
+
+
+def test_join_pads_keys_that_lost_their_trailing_zeros(tmp_path: Path) -> None:
+    # A sheet stored 20120918T131600000 as 20120918T1316 on one side only.
+    write(tmp_path / "a.csv", "pp,timestamp,keys\n1,20120918T131600000,10\n")
+    write(tmp_path / "b.csv", "pp,timestamp,hr\n1,20120918T1316,60\n")
+    params = {"source": {"reader": "csv", "path": "b.csv"}, "by": ["pp", "timestamp"]}
+    left = pd.read_csv(tmp_path / "a.csv")
+
+    out = steps.create("join", params | {"pad": {"timestamp": 18}}).apply(
+        left, ctx=_ctx(tmp_path)
+    )
+
+    assert out["hr"].tolist() == [60]
+    assert out["timestamp"].tolist() == ["20120918T131600000"]
 
 
 def test_join_by_time_floors_both_sides(tmp_path: Path) -> None:
@@ -709,6 +814,109 @@ def test_wesad_reader_rejects_unknown_signals() -> None:
         readers.create("wesad_pickle", {"location": "chest", "signals": ["BVP"]})
 
 
+# --- time (continuum C3) ------------------------------------------------------------
+
+
+STAMPS = """
+pp,cond,stamp,keys
+1,N,20120918T131600000,10
+1,T,20120918T131700000,20
+1,T,20120918T131900000,30
+2,N,20120919T090000000,40
+2,T,20120919T090100000,50
+"""
+
+
+def test_a_time_column_becomes_seconds_and_never_a_feature(tmp_path: Path) -> None:
+    write(tmp_path / "table.csv", STAMPS)
+    time = {"time": {"column": "stamp", "format": "%Y%m%dT%H%M%S%f"}}
+
+    first, second = ingest(
+        spec(
+            tmp_path,
+            {"reader": "csv", "path": "table.csv"},
+            [BASIC[0], time, BASIC[1], {"features": {}}],
+        )
+    )
+
+    assert first.feature_names == ["keys"]  # the stamp is meta: never a feature
+    assert first.t.tolist() == [0.0, 60.0, 180.0]  # from each subject's first row
+    assert second.t.tolist() == [0.0, 60.0]
+
+
+def test_time_can_come_from_the_row_position_at_a_rate(tmp_path: Path) -> None:
+    write(tmp_path / "S2" / "s.csv", "x,condition\n1,1\n2,1\n3,2\n4,2\n5,2\n")
+    steps = [
+        {"time": {"rate": 2}},
+        {"label": {"task": "t", "column": "condition", "map": {1: 0, 2: 1}}},
+        {"features": {}},
+    ]
+
+    (s,) = ingest(spec(tmp_path, {"reader": "csv", "path": "{subject}/s.csv"}, steps))
+
+    assert s.t.tolist() == [0.0, 0.5, 1.0, 1.5, 2.0]
+    assert s.feature_names == ["x"]
+
+
+def test_a_window_is_timed_at_its_last_row(tmp_path: Path) -> None:
+    write(tmp_path / "S2" / "s.csv", "x,condition\n1,1\n2,1\n3,2\n4,2\n5,2\n6,2\n")
+    steps = [
+        {"time": {"rate": 1}},
+        {"label": {"task": "t", "column": "condition", "map": {1: 0, 2: 1}}},
+        {"window": {"size": 2, "stats": ["mean"]}},
+        {"features": {}},
+    ]
+
+    (s,) = ingest(spec(tmp_path, {"reader": "csv", "path": "{subject}/s.csv"}, steps))
+
+    assert s.feature_names == ["x_mean"]  # time is not a channel
+    assert s.t.tolist() == [0.0, 2.0, 4.0]  # ends at rows 1, 3, 5, from the first
+
+
+def test_a_time_step_needs_one_source(tmp_path: Path) -> None:
+    write(tmp_path / "table.csv", STAMPS)
+
+    with pytest.raises(Exception, match="column or rate"):
+        ingest(
+            spec(
+                tmp_path,
+                {"reader": "csv", "path": "table.csv"},
+                [BASIC[0], {"time": {}}, BASIC[1], {"features": {}}],
+            )
+        )
+
+
+def test_rows_without_a_time_are_an_error(tmp_path: Path) -> None:
+    write(tmp_path / "table.csv", STAMPS.replace("20120918T131700000", "nope"))
+    time = {"time": {"column": "stamp", "format": "%Y%m%dT%H%M%S%f"}}
+
+    with pytest.raises(DataError, match="time"):
+        ingest(
+            spec(
+                tmp_path,
+                {"reader": "csv", "path": "table.csv"},
+                [BASIC[0], time, BASIC[1], {"features": {}}],
+            )
+        )
+
+
+def test_a_time_can_be_padded_where_a_sheet_dropped_trailing_zeros(
+    tmp_path: Path,
+) -> None:
+    write(tmp_path / "table.csv", STAMPS.replace("20120918T131700000", "20120918T1317"))
+    time = {"time": {"column": "stamp", "format": "%Y%m%dT%H%M%S%f", "pad_to": 18}}
+
+    first, _ = ingest(
+        spec(
+            tmp_path,
+            {"reader": "csv", "path": "table.csv"},
+            [BASIC[0], time, BASIC[1], {"features": {}}],
+        )
+    )
+
+    assert first.t.tolist() == [0.0, 60.0, 180.0]
+
+
 # --- step order cannot turn a meta column into a feature (QA2, #174) ---------------
 
 
@@ -716,14 +924,15 @@ def test_wesad_reader_rejects_unknown_signals() -> None:
     "late",
     [
         {"label": {"task": "t", "column": "score", "map": {0: 0, 1: 1}}},
+        {"time": {"column": "sec"}},
         {"subject": {"column": "pp"}},
     ],
-    ids=["label", "subject"],
+    ids=["label", "time", "subject"],
 )
 def test_a_step_after_features_keeps_its_column_out_of_them(
     tmp_path: Path, late: dict
 ) -> None:
-    write(tmp_path / "t.csv", "pp,score,x\n1,1,5\n1,0,6\n2,1,7\n2,0,8\n")
+    write(tmp_path / "t.csv", "pp,score,sec,x\n1,1,0,5\n1,0,60,6\n2,1,0,7\n2,0,60,8\n")
     label = {"label": {"task": "t", "column": "score", "map": {0: 0, 1: 1}}}
     first = [s for s in ({"subject": {"column": "pp"}}, label) if s != late]
     steps = [*first, {"features": {}}, late]

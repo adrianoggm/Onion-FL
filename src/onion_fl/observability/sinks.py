@@ -9,13 +9,21 @@ Prometheus series, all labelled ``run_id, topology_id, level, node, dataset``:
 
 =================================  ==============================================
 ``onionfl_metric``                 last value of a metric (+ ``name, model, source``)
-``onionfl_diagnostic``             last value of a diagnostic (+ ``name, group``)
+``onionfl_diagnostic``             last value of a diagnostic (+ ``name, group,
+                                   metric, datasets, dst, child``)
 ``onionfl_round``                  current round of a node
 ``onionfl_messages_total``         messages sent (+ ``kind``)
 ``onionfl_message_bytes_total``    encoded bytes sent (+ ``kind``)
 ``onionfl_messages_dropped_total``  messages lost or dropped offline (+ ``kind``)
 ``onionfl_quorum_failed_total``    rounds closed without quorum
 ``onionfl_run_finished``           1 once the run has finished (``run_id, topology_id``)
+``onionfl_champion_version``       the version a coordinator serves (continuum C7)
+``onionfl_versions_total``         version events (+ ``decision``: candidate,
+                                   promoted, rejected or rollback; ``reason``)
+``onionfl_version_score``          a decision's scores per version (+ ``version,
+                                   name``: recent_challenger, delta, forgetting…)
+``onionfl_data_arrived_total``     rows arrived at an edge's stream
+``onionfl_drift_detected_total``   drifts detected at a node (+ ``kind``)
 =================================  ==============================================
 
 OpenTelemetry: one span per send and one per receive. The receive span starts
@@ -41,8 +49,30 @@ METRICS = (
     "onionfl_messages_dropped_total",
     "onionfl_quorum_failed_total",
     "onionfl_run_finished",
+    "onionfl_champion_version",
+    "onionfl_versions_total",
+    "onionfl_version_score",
+    "onionfl_data_arrived_total",
+    "onionfl_drift_detected_total",
 )
-EXTRA_LABELS = ("name", "model", "source", "group", "kind")
+# What tells apart the series of one diagnostic: its group, the metric
+# (fairness), the dataset pair (dataset_conflict), the link (communication) and
+# the child (contribution).
+DIAGNOSTIC_TAGS = ("group", "metric", "datasets", "dst", "child")
+VERSION_EVENTS = ("candidate", "promoted", "rejected", "rollback")
+# A version event's tags that are versions or rounds, not scores.
+_NOT_SCORES = ("round", "superseded", "champion", "previous", "parent")
+EXTRA_LABELS = (
+    "name",
+    "model",
+    "source",
+    "kind",
+    *DIAGNOSTIC_TAGS,
+    "version",
+    "decision",
+    "reason",
+)
+_SERVED: dict[tuple[str, int], PrometheusSink] = {}  # one server per port
 
 
 def _text(value: Any) -> str:
@@ -70,7 +100,9 @@ class PrometheusSink:
             ("name", "model", "source"),
         )
         self.diagnostic = gauge(
-            "onionfl_diagnostic", "Last value of a diagnostic", ("name", "group")
+            "onionfl_diagnostic",
+            "Last value of a diagnostic",
+            ("name", *DIAGNOSTIC_TAGS),
         )
         self.round = gauge("onionfl_round", "Current round of a node")
         self.messages = counter("onionfl_messages", "Messages sent", ("kind",))
@@ -87,6 +119,33 @@ class PrometheusSink:
             ["run_id", "topology_id"],
             registry=self.registry,
         )
+        self.champion = gauge(
+            "onionfl_champion_version", "Version a coordinator serves (champion)"
+        )
+        self.versions = counter(
+            "onionfl_versions", "Version events", ("decision", "reason")
+        )
+        self.version_score = gauge(
+            "onionfl_version_score",
+            "Score of a version in the decision on it",
+            ("version", "name"),
+        )
+        self.arrived = counter("onionfl_data_arrived", "Rows arrived at an edge")
+        self.drift = counter("onionfl_drift_detected", "Drifts detected", ("kind",))
+
+    def _version(self, event: Mapping[str, Any], base: Mapping[str, str]) -> None:
+        tags, value = event.get("tags") or {}, event.get("value")
+        decision = event["name"].split(".", 1)[1]
+        reason = _text(tags.get("reason"))
+        self.versions.labels(**base, decision=decision, reason=reason).inc()
+        if not _number(value):
+            return
+        if decision in ("promoted", "rollback"):
+            self.champion.labels(**base).set(value)
+        version = str(int(value))
+        for key, score in tags.items():
+            if key not in _NOT_SCORES and _number(score):
+                self.version_score.labels(**base, version=version, name=key).set(score)
 
     def write(self, event: Mapping[str, Any]) -> None:
         tags = event.get("tags") or {}
@@ -102,14 +161,23 @@ class PrometheusSink:
             }
             self.metric.labels(**base, **extra).set(value)
         elif event["kind"] == "diagnostic" and _number(value):
+            extra = {k: _text(tags.get(k)) for k in DIAGNOSTIC_TAGS}
             self.diagnostic.labels(
-                **base, name=name[len("diagnostic.") :], group=_text(tags.get("group"))
+                **base, name=name[len("diagnostic.") :], **extra
             ).set(value)
         if (
             name in ("round.started", "round.participants")
             and event.get("round") is not None
         ):
             self.round.labels(**base).set(event["round"])
+            if name == "round.started" and _number(tags.get("version")):
+                self.champion.labels(**base).set(tags["version"])
+        elif name.startswith("version.") and name[8:] in VERSION_EVENTS:
+            self._version(event, base)
+        elif name == "data.arrived" and _number(value):
+            self.arrived.labels(**base).inc(value)
+        elif name == "drift.detected":
+            self.drift.labels(**base, kind=_text(tags.get("kind"))).inc()
         elif name == "message.sent":
             self.messages.labels(**base, kind=_text(tags.get("kind"))).inc()
             self.bytes.labels(**base, kind=_text(tags.get("kind"))).inc(value or 0)
@@ -126,8 +194,18 @@ class PrometheusSink:
         """Expose ``/metrics`` for Prometheus to scrape; returns the server and its thread."""
         return start_http_server(port, addr=addr, registry=self.registry)
 
+    @classmethod
+    def serving(cls, port: int = 9464, addr: str = "0.0.0.0") -> PrometheusSink:
+        """The sink this process serves on ``port``, bound once: every run of a
+        sweep reports to it, its series told apart by ``run_id``."""
+        if (addr, port) not in _SERVED:
+            sink = cls()
+            sink.serve(port, addr)
+            _SERVED[(addr, port)] = sink
+        return _SERVED[(addr, port)]
+
     def close(self) -> None:
-        pass
+        pass  # the server stays up for the process's next runs and a last scrape
 
 
 def otlp_provider(

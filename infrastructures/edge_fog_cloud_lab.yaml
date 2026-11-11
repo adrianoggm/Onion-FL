@@ -1,0 +1,23 @@
+# Example infrastructure of spec I1 §5: a cloud VM, two fog servers and a field
+# of 40 edge devices. The numbers are illustrative; real ones come from a
+# calibration (I1 §13, issue #197).
+name: edge_fog_cloud_lab
+profiles:
+  cloud_vm:      {cpus: 8, memory: 16GB, train_rate: 20000, aggregate_rate: 5.0e8}
+  fog_small:     {cpus: 4, memory: 4GB,  train_rate: 4000,  aggregate_rate: 1.0e8}
+  raspberry_pi:  {cpus: 4, memory: 4GB,  train_rate: 900}
+  desktop:       {cpus: 8, memory: 16GB, train_rate: 6000}
+  low_power_iot: {cpus: 1, memory: 512MB, train_rate: 150}
+sites:
+  dc:    {hosts: {cloud-1: cloud_vm}}
+  fog_1: {hosts: {fog-1: fog_small}}
+  fog_2: {hosts: {fog-2: fog_small}}
+  field: {pool: {raspberry_pi: 20, desktop: 10, low_power_iot: 10}}
+network:
+  links:
+    - {between: [field, fog_1], latency: 10ms, bandwidth: 100Mbps, loss: 0.0}
+    - {between: [field, fog_2], latency: 15ms, bandwidth: 50Mbps}
+    - {between: [fog_1, dc], latency: 70ms, bandwidth: 10Mbps}
+    - {between: [fog_2, dc], latency: 70ms, bandwidth: 10Mbps}
+services:
+  mqtt_broker: cloud-1

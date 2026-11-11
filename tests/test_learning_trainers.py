@@ -211,7 +211,7 @@ def test_trainers_registry_lists_the_built_ins() -> None:
         "standard",
         "stub",
     ]
-    assert inits.names() == ["checkpoint", "random"]
+    assert inits.names() == ["checkpoint", "random", "run"]
 
 
 # --- initialisation ---------------------------------------------------------------------
@@ -813,3 +813,189 @@ def test_stateful_trainers_snapshot_their_memory(name: str, attribute: str) -> N
     trainer.restore(saved)
 
     assert getattr(trainer, attribute) != "poisoned"
+
+
+def _memory_equal(a, b) -> bool:
+    if isinstance(a, torch.nn.Module):
+        sa, sb = a.state_dict(), b.state_dict()
+        return sa.keys() == sb.keys() and all(torch.equal(sa[k], sb[k]) for k in sa)
+    if isinstance(a, dict):
+        return a.keys() == b.keys() and all(
+            np.array_equal(np.asarray(a[k]), np.asarray(b[k])) for k in a
+        )
+    return a == b
+
+
+@pytest.mark.parametrize("name", ["ditto", "apfl", "scaffold", "feddyn", "moon"])
+def test_trainer_memory_survives_export_and_import(name: str) -> None:
+    import copy
+
+    model = build()
+    trainer = trainers.create(name)
+    weights = {n: p.detach().clone() + 1 for n, p in model.named_parameters()}
+    memory = {
+        "_personal": copy.deepcopy(model),
+        "_v": copy.deepcopy(model),
+        "_previous": copy.deepcopy(model).eval(),
+        "_w": weights,
+        "_grad": weights,
+        "_c_i": {n: w.numpy() for n, w in weights.items()},
+        "alpha": 0.7,
+    }
+    for attribute in trainer._memory:
+        setattr(trainer, attribute, memory[attribute])
+
+    arrays, meta = trainer.export_memory()
+    fresh = trainers.create(name)
+    fresh.import_memory(arrays, meta, build())
+
+    for attribute in trainer._memory:
+        assert _memory_equal(getattr(trainer, attribute), getattr(fresh, attribute))
+    assert all(isinstance(v, np.ndarray) for v in arrays.values())
+
+
+def test_an_empty_memory_round_trips_as_empty() -> None:
+    trainer = trainers.create("moon")  # _previous is None before any round
+
+    arrays, meta = trainer.export_memory()
+    fresh = trainers.create("moon")
+    fresh.import_memory(arrays, meta, build())
+
+    assert fresh._previous is None and arrays == {}
+
+
+@real
+def test_a_group_lr_scales_the_step_of_its_groups_only(swell) -> None:
+    received = state_arrays(build())
+    params = {"local_epochs": 1, "batch_size": 100000, "lr": 0.1, "optimizer": "sgd"}
+    plain, scaled = build(), build()
+
+    trainers.create("standard", params).train(plain, swell, received, ctx())
+    trainers.create("standard", params | {"group_lr": {"trunk*": 0.5}}).train(
+        scaled, swell, received, ctx()
+    )
+
+    after_plain, after_scaled = state_arrays(plain), state_arrays(scaled)
+    for key, start in received.items():
+        factor = 0.5 if key.startswith("trunk") else 1.0
+        np.testing.assert_allclose(
+            after_scaled[key] - start,
+            factor * (after_plain[key] - start),
+            rtol=1e-4,
+            atol=1e-7,
+            err_msg=key,
+        )
+
+
+def test_a_group_lr_factor_must_be_positive() -> None:
+    with pytest.raises(PluginError):
+        trainers.create("standard", {"group_lr": {"trunk*": 0.0}})
+
+
+@real
+def test_apfl_honours_the_group_lr(swell) -> None:
+    received = state_arrays(build())
+    params = {"local_epochs": 1, "batch_size": 100000, "lr": 0.1, "optimizer": "sgd"}
+    params |= {"adapt_alpha": False}
+    plain, scaled = build(), build()
+
+    trainers.create("apfl", params).train(plain, swell, received, ctx())
+    trainers.create("apfl", params | {"group_lr": {"trunk*": 0.5}}).train(
+        scaled, swell, received, ctx()
+    )
+
+    after_plain, after_scaled = state_arrays(plain), state_arrays(scaled)
+    key = next(k for k in received if k.startswith("trunk"))
+    np.testing.assert_allclose(
+        after_scaled[key] - received[key],
+        0.5 * (after_plain[key] - received[key]),
+        rtol=1e-4,
+        atol=1e-7,
+    )
+
+
+def test_memory_that_holds_model_weights_is_marked_as_such() -> None:
+    names = ("ditto", "apfl", "moon", "scaffold", "feddyn")
+    marked = {
+        name: {
+            entry
+            for entry, info in trainers.create(name).export_memory()[1].items()
+            if info.get("weights")
+        }
+        for name in names
+    }
+
+    assert marked == {
+        "ditto": {"_personal"},
+        "apfl": {"_v", "_w"},
+        "moon": {"_previous"},
+        "scaffold": set(),
+        "feddyn": set(),
+    }
+
+
+def test_importing_a_memory_without_some_entry_keeps_the_trainers_own() -> None:
+    trainer = trainers.create("apfl")
+    own = trainer._w
+
+    trainer.import_memory({}, {"alpha": {"kind": "scalar", "value": 0.3}}, build())
+
+    assert trainer.alpha == 0.3 and trainer._w is own
+
+
+# --- unlabelled rows (continuum C5) ------------------------------------------------
+
+
+def objective(name: str, model, X, **params):
+    from onion_fl.continual.unlabelled import objectives
+
+    fitted = objectives.create(name, params)
+    fitted.fit(model, X)
+    return fitted
+
+
+@real
+def test_no_objective_and_an_empty_pool_train_as_before(swell) -> None:
+    trainer = trainers.create("standard", {"local_epochs": 2})
+    plain, none, empty = build(), build(), build()
+    pool = objective("pseudo_label", empty, swell.X[:0], threshold=0.0)
+
+    trainer.train(plain, swell, ctx=ctx(3))
+    trainer.train(none, swell, ctx=ctx(3), unlabelled=None)
+    trainer.train(empty, swell, ctx=ctx(3), unlabelled=pool)
+
+    for key, value in state_arrays(plain).items():
+        np.testing.assert_array_equal(value, state_arrays(none)[key])
+        np.testing.assert_array_equal(value, state_arrays(empty)[key])
+
+
+@real
+@pytest.mark.parametrize(
+    "name", ["standard", "fedprox", "scaffold", "fednova", "feddyn", "moon"]
+)
+def test_an_accepted_pool_changes_the_training(swell, name: str) -> None:
+    trainer = trainers.create(name)
+    received = state_arrays(build())
+    plain, pooled = build(), build()
+    pool = objective("pseudo_label", pooled, swell.X[:64], threshold=0.0, weight=1.0)
+    assert pool.mask.all()
+
+    a = trainer.train(plain, swell, received, ctx(3))
+    b = trainers.create(name).train(pooled, swell, received, ctx(3), unlabelled=pool)
+
+    assert a.examples == b.examples and a.batches == b.batches
+    changed = [
+        k
+        for k, v in state_arrays(plain).items()
+        if not np.array_equal(v, state_arrays(pooled)[k])
+    ]
+    assert changed
+
+
+def test_trainers_with_their_own_loops_refuse_unlabelled_rows() -> None:
+    takes = {
+        n: trainers.create(n).takes_unlabelled for n in ("ditto", "apfl", "fedrep")
+    }
+    assert takes == dict.fromkeys(takes, False)
+    assert trainers.create("fedbabu").takes_unlabelled
+    assert not getattr(trainers.create("stub"), "takes_unlabelled", False)

@@ -1,0 +1,116 @@
+{
+  "run_id": "20261106T075908Z-b7129979dd48",
+  "topology_id": "8b641b981104750b4af0430477f3be0ca12c690edafbbe78648f5e8689487cb6",
+  "config_id": "32e9f8e2b5a7c3c4beb1e70864caee873ef9f5e85568c8ab5729ec6181fde17f",
+  "backend": "local",
+  "infrastructure_id": null,
+  "data_id": "9fd573754157d68b111f037ecd891bdb62abcbff1d5e5e818da789dde470257c",
+  "code_version": {
+    "commit": "76d1bd8294a7c9dc6dff2c857c9a2c2512650efd",
+    "dirty": false
+  },
+  "seed": 2,
+  "scenario": "topology=cloud_swell_wesad",
+  "host": "2INNDESLP100930",
+  "pid": 12068,
+  "started_at": "2026-11-06T07:59:08.252649+00:00",
+  "status": "finished",
+  "config": {
+    "name": "infrastructure_architectures_logical",
+    "description": "Las federaciones l\u00f3gicas de las arquitecturas A y B, sin infraestructura, para la fidelidad de decisi\u00f3n entre sim y local.",
+    "topology": "cloud_swell_wesad",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        },
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.2,
+        "local_val_split": "class_tail",
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.1
+      },
+      "init": "random"
+    },
+    "rounds": 20,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": 5,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": 5,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "runs/topologies_localhost_18840",
+      "datasets": "datasets",
+      "runs": "runs/architectures_local",
+      "cache": "data/cache"
+    },
+    "backend": "local"
+  },
+  "processes": {
+    "groups": 1,
+    "exit_codes": [
+      0
+    ]
+  },
+  "finished_at": "2026-11-06T08:00:11.205022+00:00",
+  "run_hash": "25c15e7f8cdacdac11287402f153227063c39b47e0c98cc2288d79d5166eee70"
+}

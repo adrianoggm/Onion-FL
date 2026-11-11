@@ -1,0 +1,30 @@
+# Exactness of a continuation on real data (issue #157): each run continues the
+# "from scratch, 20 rounds" run of continuum_warm_start with its own seed for 20
+# more rounds. Lossless links and synchronous rounds, so its final model must
+# equal, bit for bit, the "from scratch, 40 rounds" run of the same seed.
+#
+#   onion_fl run experiments/continuum_warm_start.yaml --workers 3   # first
+#   onion_fl run experiments/continuum_exactness.yaml --workers 3
+name: continuum_exactness
+description: Comprobar con datos reales que continuar una ejecución equivale a no haberla parado.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, local_val: 0.2, local_val_split: class_tail, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: &sgd {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+  init:
+    name: run
+    run: "experiment:continuum_warm_start/learning.init,rounds,learning.trainer=random,20,standard(batch_size=32,local_epochs=10,lr=0.1,optimizer=sgd)"
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge: {every: 5, models: [received, local]}
+  aggregators: {every: 5}
+  global: {every: 1}
+seeds: [0, 1, 2]

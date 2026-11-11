@@ -1,0 +1,194 @@
+{
+  "run_id": "20261109T095400Z-e9cef396885a",
+  "topology_id": "2a33649e5785c6bf467c30d51ca2ed6015706a3df6b17a6b1268584c7532352f",
+  "config_id": "a2028cc68546c67dfb3f885dd08f8ddb0a921ccbc1bb9f20a59c8510e4222c85",
+  "backend": "sim",
+  "infrastructure_id": "6a0ab6bd2dbca08fea892fed55d87a624dd8e2184386428b0686222b23b4f13b",
+  "data_id": "9fd573754157d68b111f037ecd891bdb62abcbff1d5e5e818da789dde470257c",
+  "code_version": {
+    "commit": "bbe0c9a706883bd488a8c6bc2ece24b03efb861d",
+    "dirty": false
+  },
+  "seed": 1,
+  "scenario": "base",
+  "host": "2INNDESLP100930",
+  "pid": 51316,
+  "started_at": "2026-11-09T09:54:01.373873+00:00",
+  "status": "finished",
+  "config": {
+    "name": "continuum_distributed",
+    "description": "Continuum distribuido - warm start con champion/challenger en m\u00e1quinas (contenedores) frente a su simulaci\u00f3n, con ca\u00eddas y edges que llegan tarde.",
+    "topology": "four_fogs_swell_wesad_distributed",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        },
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.0,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.1
+      },
+      "init": "random"
+    },
+    "rounds": 60,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1",
+        "confusion_matrix"
+      ],
+      "edge": {
+        "every": null,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": 1,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 900.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "C:\\Users\\adriano.garcia\\AppData\\Local\\Temp\\claude\\6a9a9ba3ced05671\\dd357567-c84c-47f0-918b-cc12852ac13c\\scratchpad\\a164b\\runs\\sim-faults",
+      "cache": "data/cache"
+    },
+    "stream": {
+      "order": "timestamp",
+      "batch_size": 1,
+      "speed": 60.0,
+      "start": "aligned",
+      "horizon": "session",
+      "bootstrap": 1200.0,
+      "window": null
+    },
+    "labels": {
+      "fraction": 0.1,
+      "delay": 600.0
+    },
+    "continual": {
+      "memory": "none",
+      "replay_ratio": 0.25
+    },
+    "continuum": {
+      "trigger": {
+        "name": "schedule",
+        "every": "10m"
+      },
+      "status_every": 600.0
+    },
+    "unlabelled": "none",
+    "promotion": {
+      "name": "champion_challenger",
+      "metric": "macro_f1",
+      "min_samples": 20
+    },
+    "infrastructure": {
+      "name": "continuum_containers",
+      "assignment": {
+        "root": "cloud-1",
+        "aggregators": {
+          "fog_a1": "fog-1",
+          "fog_a2": "fog-1",
+          "fog_b1": "fog-1",
+          "fog_b2": "fog-1"
+        },
+        "edges": {
+          "name": "explicit",
+          "hosts": {
+            "swell-2*": "field-3",
+            "swell-*": "field-1",
+            "wesad-*": "field-2"
+          }
+        },
+        "services": {}
+      }
+    },
+    "backend": {
+      "name": "sim",
+      "start_in": 60.0,
+      "checkpoints": true,
+      "restarts": [
+        {
+          "host": "field-1",
+          "at": 60,
+          "down": 15
+        }
+      ],
+      "joins": {
+        "field-3": 90
+      }
+    }
+  },
+  "sim": {
+    "faults": [
+      {
+        "host": "field-1",
+        "action": "kill",
+        "at": 60.0
+      },
+      {
+        "host": "field-1",
+        "action": "resume",
+        "at": 75.0
+      },
+      {
+        "host": "field-3",
+        "action": "join",
+        "at": 90.0
+      }
+    ]
+  },
+  "finished_at": "2026-11-09T09:54:30.167475+00:00",
+  "run_hash": "0462a9231a530d3b182c3d7a2d9d4c0021378e60c8d429335830aa0fe2b9bdb3"
+}

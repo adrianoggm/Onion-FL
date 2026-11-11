@@ -158,11 +158,12 @@ def cross_validate(
     out: dict[str, dict[str, Any]] = {}
     for dataset in sorted({s.dataset for s in subjects}):
         mine = [s for s in subjects if s.dataset == dataset]
+        given = roles.overrides.get(dataset) or RoleOverride()
+        kept = [s.subject for s in mine if s.subject not in set(given.exclude)]
         folds = []
-        for fold in subject_folds([s.subject for s in mine], k, seed):
-            config = roles.model_copy(
-                update={"overrides": {dataset: RoleOverride(test=fold, val=[])}}
-            )
+        for fold in subject_folds(kept, k, seed):
+            override = given.model_copy(update={"test": fold, "val": []})
+            config = roles.model_copy(update={"overrides": {dataset: override}})
             result = evaluate(
                 split_subjects(mine, config), [model], seed, {model: params or {}}
             )
@@ -175,3 +176,58 @@ def cross_validate(
             "std": {m: float(np.std([f[m] for f in folds])) for m in metrics},
         }
     return out
+
+
+METRICS = ("accuracy", "balanced_accuracy", "f1_macro")
+
+
+def mean_ci(values: Sequence[float]) -> dict[str, float]:
+    """Mean and the half-width of its 95% Student-t interval (NaN below two)."""
+    from scipy import stats
+
+    array = np.asarray(values, dtype=float)
+    n = len(array)
+    half = float("nan")
+    if n > 1:
+        half = float(stats.t.ppf(0.975, n - 1) * array.std(ddof=1) / np.sqrt(n))
+    return {"mean": float(array.mean()), "ci95": half, "n": n}
+
+
+def over_role_seeds(
+    subjects: Sequence[SubjectData],
+    models: Sequence[str],
+    seeds: Sequence[int],
+    roles: RolesConfig | None = None,
+) -> dict[str, Any]:
+    """``evaluate`` once per seed, each drawing its own test subjects.
+
+    The seed sets both the roles and the model, so each repetition holds out a
+    different set of whole subjects; the summary is the mean over seeds with a
+    95% Student-t interval.
+    """
+    roles = roles or RolesConfig()
+    runs: dict[str, Any] = {}
+    for seed in seeds:
+        split = split_subjects(subjects, roles.model_copy(update={"seed": seed}))
+        runs[str(seed)] = {
+            "test_subjects": {
+                dataset: sorted(
+                    (s.subject for s in split.test if s.dataset == dataset),
+                    key=natural_key,
+                )
+                for dataset in sorted({s.dataset for s in split.test})
+            },
+            "scores": evaluate(split, models, seed),
+        }
+    summary: dict[str, Any] = {}
+    for dataset in sorted({s.dataset for s in subjects}):
+        summary[dataset] = {
+            model: {
+                metric: mean_ci(
+                    [r["scores"][dataset][model]["test"][metric] for r in runs.values()]
+                )
+                for metric in METRICS
+            }
+            for model in models
+        }
+    return {"seeds": runs, "summary": summary}

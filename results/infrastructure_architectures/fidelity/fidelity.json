@@ -1,0 +1,713 @@
+{
+  "a": "runs/architectures_sim",
+  "b": "runs/architectures_local",
+  "backends": {
+    "a": [
+      "sim"
+    ],
+    "b": [
+      "local"
+    ]
+  },
+  "configurations": [
+    {
+      "design_id": "253dc7ab51cff7de3b2bc7304595b3baacc7ed06f46ac9dff52d49a0576377c4",
+      "scenario": "topology=cloud_swell_wesad"
+    },
+    {
+      "design_id": "6f1e770e181e662429e97f0cb1d9c65611abe527d2ef201a829696bd1fe1779e",
+      "scenario": "topology=four_fogs_swell_wesad_physical"
+    }
+  ],
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "functional": {
+    "pairs": 10,
+    "complete": true,
+    "model": true,
+    "protocol": true,
+    "bytes": true
+  },
+  "performance": {
+    "duration": {
+      "pairs": 10,
+      "values": 10,
+      "a_mean": 0.16686102167073408,
+      "b_mean": 56.34576082229614,
+      "relative_error": 384.1143336382819,
+      "relative_error_ci": [
+        288.4274092253453,
+        480.3934980278251
+      ],
+      "absolute_relative_error": 384.1143336382819,
+      "absolute_relative_error_ci": [
+        288.4274092253453,
+        480.3934980278251
+      ]
+    },
+    "link_latency": {
+      "pairs": 10,
+      "values": 800,
+      "a_mean": 0.002161445487948246,
+      "b_mean": 0.7624171384567353,
+      "relative_error": 391.7310329684762,
+      "relative_error_ci": [
+        255.52092067184148,
+        527.3843038763578
+      ],
+      "absolute_relative_error": 391.7310329684762,
+      "absolute_relative_error_ci": [
+        255.52092067184148,
+        527.3843038763578
+      ]
+    },
+    "round_time": {
+      "pairs": 10,
+      "values": 200,
+      "a_mean": 0.007948282266294746,
+      "b_mean": 2.4107478415966033,
+      "relative_error": 352.21528433967643,
+      "relative_error_ci": [
+        254.1680586354733,
+        449.6651007585049
+      ],
+      "absolute_relative_error": 352.21528433967643,
+      "absolute_relative_error_ci": [
+        254.1680586354733,
+        449.6651007585049
+      ]
+    },
+    "time_to_target": {
+      "pairs": 10,
+      "values": 10,
+      "a_mean": 0.10950247208674542,
+      "b_mean": 41.69703202247619,
+      "relative_error": 432.0542523780476,
+      "relative_error_ci": [
+        323.6381681875655,
+        540.7920336797715
+      ],
+      "absolute_relative_error": 432.0542523780476,
+      "absolute_relative_error_ci": [
+        323.6381681875655,
+        540.7920336797715
+      ]
+    }
+  },
+  "decision": {
+    "macro_f1": {
+      "tau_b": 1.0,
+      "top1": true,
+      "regret": 0.0,
+      "regret_relative": 0.0,
+      "seeds": 5,
+      "configurations": 2,
+      "ci": {
+        "tau_b": [
+          1.0,
+          1.0
+        ],
+        "regret": [
+          0.0,
+          0.0
+        ],
+        "regret_relative": [
+          0.0,
+          0.0
+        ]
+      },
+      "p_top1": 1.0,
+      "minimize": false,
+      "scores": {
+        "a": [
+          0.5940345741442788,
+          0.5950860835427185
+        ],
+        "b": [
+          0.5940345741442788,
+          0.5950860835427185
+        ]
+      },
+      "ceiling": {
+        "source": "seeds of A",
+        "top1": 0.4,
+        "top1_chance": 0.5,
+        "regret": 0.0018059849161700503,
+        "regret_relative": 0.003087030443254483
+      },
+      "top1_below_ceiling": false,
+      "regret_above_ceiling": false,
+      "predictor": null
+    },
+    "time": {
+      "tau_b": -1.0,
+      "top1": false,
+      "regret": 0.10256411828345344,
+      "regret_relative": 0.8873943496223414,
+      "seeds": 5,
+      "configurations": 2,
+      "ci": {
+        "tau_b": [
+          -1.0,
+          -1.0
+        ],
+        "regret": [
+          0.10117491297384916,
+          0.10429387376208055
+        ],
+        "regret_relative": [
+          0.8696790513190559,
+          0.9094106372522377
+        ]
+      },
+      "p_top1": 0.0,
+      "minimize": true,
+      "scores": {
+        "a": [
+          0.11557896252900735,
+          0.21814308081246078
+        ],
+        "b": [
+          62.37270483970642,
+          50.31881680488586
+        ]
+      },
+      "ceiling": {
+        "source": "seeds of A",
+        "top1": 1.0,
+        "top1_chance": 0.5,
+        "regret": 0.0,
+        "regret_relative": 0.0
+      },
+      "top1_below_ceiling": true,
+      "regret_above_ceiling": true,
+      "predictor": null
+    },
+    "bytes": {
+      "tau_b": 1.0,
+      "top1": true,
+      "regret": 0.0,
+      "regret_relative": 0.0,
+      "seeds": 5,
+      "configurations": 2,
+      "ci": {
+        "tau_b": [
+          1.0,
+          1.0
+        ],
+        "regret": [
+          0.0,
+          0.0
+        ],
+        "regret_relative": [
+          0.0,
+          0.0
+        ]
+      },
+      "p_top1": 1.0,
+      "minimize": true,
+      "scores": {
+        "a": [
+          229525772.4,
+          261193305.4
+        ],
+        "b": [
+          229525772.4,
+          261193305.4
+        ]
+      },
+      "ceiling": {
+        "source": "seeds of A",
+        "top1": 1.0,
+        "top1_chance": 0.5,
+        "regret": 0.0,
+        "regret_relative": 0.0
+      },
+      "top1_below_ceiling": false,
+      "regret_above_ceiling": false,
+      "predictor": null
+    },
+    "time_to_target": {
+      "tau_b": -1.0,
+      "top1": false,
+      "regret": 0.06659717138755425,
+      "regret_relative": 0.8739340542833455,
+      "seeds": 5,
+      "configurations": 2,
+      "ci": {
+        "tau_b": [
+          -1.0,
+          1.0
+        ],
+        "regret": [
+          0.0,
+          0.06907695655449865
+        ],
+        "regret_relative": [
+          0.0,
+          0.8925697757679111
+        ]
+      },
+      "p_top1": 0.0255,
+      "minimize": true,
+      "scores": {
+        "a": [
+          0.0762038863929683,
+          0.14280105778052254
+        ],
+        "b": [
+          45.91907234191895,
+          37.474991703033446
+        ]
+      },
+      "ceiling": {
+        "source": "seeds of A",
+        "top1": 1.0,
+        "top1_chance": 0.5,
+        "regret": 0.0,
+        "regret_relative": 0.0
+      },
+      "top1_below_ceiling": true,
+      "regret_above_ceiling": true,
+      "predictor": null
+    }
+  },
+  "warnings": [],
+  "pairs": [
+    {
+      "design_id": "253dc7ab51cff7de3b2bc7304595b3baacc7ed06f46ac9dff52d49a0576377c4",
+      "seed": 0,
+      "scenario": "topology=cloud_swell_wesad",
+      "a": {
+        "run_id": "20261106T074625Z-68e5bf45f03d",
+        "run_hash": "c600e81910643ba85b500334b87e9542183b614976ca8da1ad60325ed1c8e499",
+        "backend": "sim",
+        "topology_id": "8b641b981104750b4af0430477f3be0ca12c690edafbbe78648f5e8689487cb6",
+        "infrastructure_id": null,
+        "config_id": "7a5037da10b43bcf5478ff82054c77f3e4d40e38a957e57ae3985456eb5a1d31"
+      },
+      "b": {
+        "run_id": "20261106T075656Z-a37ab302e359",
+        "run_hash": "d7e2222363dd519fb655d6ad01e6ef224acacb837a35597b018973beeab4eed9",
+        "backend": "local",
+        "topology_id": "8b641b981104750b4af0430477f3be0ca12c690edafbbe78648f5e8689487cb6",
+        "infrastructure_id": null,
+        "config_id": "32e9f8e2b5a7c3c4beb1e70864caee873ef9f5e85568c8ab5729ec6181fde17f"
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": true,
+          "max_abs_diff": 0.0
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": true,
+          "a": 229440398,
+          "b": 229440398,
+          "links_differing": [],
+          "control": {
+            "a": 16927,
+            "b": 16927
+          }
+        },
+        "complete": true
+      }
+    },
+    {
+      "design_id": "253dc7ab51cff7de3b2bc7304595b3baacc7ed06f46ac9dff52d49a0576377c4",
+      "seed": 1,
+      "scenario": "topology=cloud_swell_wesad",
+      "a": {
+        "run_id": "20261106T074625Z-2d143db4f915",
+        "run_hash": "011608c98a88a386bc32489b61166f4ec6790206f126783b69f27479b3ed3c4b",
+        "backend": "sim",
+        "topology_id": "8b641b981104750b4af0430477f3be0ca12c690edafbbe78648f5e8689487cb6",
+        "infrastructure_id": null,
+        "config_id": "7a5037da10b43bcf5478ff82054c77f3e4d40e38a957e57ae3985456eb5a1d31"
+      },
+      "b": {
+        "run_id": "20261106T075804Z-2da4eb5fcb78",
+        "run_hash": "ea28526b6b6d158ee78de25ab666fd34657853f03ae5bd70735df2e746d37010",
+        "backend": "local",
+        "topology_id": "8b641b981104750b4af0430477f3be0ca12c690edafbbe78648f5e8689487cb6",
+        "infrastructure_id": null,
+        "config_id": "32e9f8e2b5a7c3c4beb1e70864caee873ef9f5e85568c8ab5729ec6181fde17f"
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": true,
+          "max_abs_diff": 0.0
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": true,
+          "a": 229479783,
+          "b": 229479783,
+          "links_differing": [],
+          "control": {
+            "a": 16927,
+            "b": 16927
+          }
+        },
+        "complete": true
+      }
+    },
+    {
+      "design_id": "253dc7ab51cff7de3b2bc7304595b3baacc7ed06f46ac9dff52d49a0576377c4",
+      "seed": 2,
+      "scenario": "topology=cloud_swell_wesad",
+      "a": {
+        "run_id": "20261106T074625Z-a81a5d9c1792",
+        "run_hash": "07b7936e59ef5e87003bf28801e1bb6a4f4ece3d3ba37d7b3f7486dfe2474cbb",
+        "backend": "sim",
+        "topology_id": "8b641b981104750b4af0430477f3be0ca12c690edafbbe78648f5e8689487cb6",
+        "infrastructure_id": null,
+        "config_id": "7a5037da10b43bcf5478ff82054c77f3e4d40e38a957e57ae3985456eb5a1d31"
+      },
+      "b": {
+        "run_id": "20261106T075908Z-b7129979dd48",
+        "run_hash": "25c15e7f8cdacdac11287402f153227063c39b47e0c98cc2288d79d5166eee70",
+        "backend": "local",
+        "topology_id": "8b641b981104750b4af0430477f3be0ca12c690edafbbe78648f5e8689487cb6",
+        "infrastructure_id": null,
+        "config_id": "32e9f8e2b5a7c3c4beb1e70864caee873ef9f5e85568c8ab5729ec6181fde17f"
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": true,
+          "max_abs_diff": 0.0
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": true,
+          "a": 229540280,
+          "b": 229540280,
+          "links_differing": [],
+          "control": {
+            "a": 16927,
+            "b": 16927
+          }
+        },
+        "complete": true
+      }
+    },
+    {
+      "design_id": "253dc7ab51cff7de3b2bc7304595b3baacc7ed06f46ac9dff52d49a0576377c4",
+      "seed": 3,
+      "scenario": "topology=cloud_swell_wesad",
+      "a": {
+        "run_id": "20261106T074809Z-c7a0aef789cb",
+        "run_hash": "d7647c7d1de1f43f6aa0366b27869dbd71fac4da105602c20f6fb49320753505",
+        "backend": "sim",
+        "topology_id": "8b641b981104750b4af0430477f3be0ca12c690edafbbe78648f5e8689487cb6",
+        "infrastructure_id": null,
+        "config_id": "7a5037da10b43bcf5478ff82054c77f3e4d40e38a957e57ae3985456eb5a1d31"
+      },
+      "b": {
+        "run_id": "20261106T080011Z-bf72fb67d220",
+        "run_hash": "8e7231184e305976eb7b83ae08e56e1b83f702ff63a7ed77ce8c0960d6f4b5a1",
+        "backend": "local",
+        "topology_id": "8b641b981104750b4af0430477f3be0ca12c690edafbbe78648f5e8689487cb6",
+        "infrastructure_id": null,
+        "config_id": "32e9f8e2b5a7c3c4beb1e70864caee873ef9f5e85568c8ab5729ec6181fde17f"
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": true,
+          "max_abs_diff": 0.0
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": true,
+          "a": 229455712,
+          "b": 229455712,
+          "links_differing": [],
+          "control": {
+            "a": 16927,
+            "b": 16927
+          }
+        },
+        "complete": true
+      }
+    },
+    {
+      "design_id": "253dc7ab51cff7de3b2bc7304595b3baacc7ed06f46ac9dff52d49a0576377c4",
+      "seed": 4,
+      "scenario": "topology=cloud_swell_wesad",
+      "a": {
+        "run_id": "20261106T074810Z-a69f0b0e44b6",
+        "run_hash": "e5aedef8281e44db93e5f73818cfc8dd8cfaf8da041af5e002e69cd16b45d03b",
+        "backend": "sim",
+        "topology_id": "8b641b981104750b4af0430477f3be0ca12c690edafbbe78648f5e8689487cb6",
+        "infrastructure_id": null,
+        "config_id": "7a5037da10b43bcf5478ff82054c77f3e4d40e38a957e57ae3985456eb5a1d31"
+      },
+      "b": {
+        "run_id": "20261106T080117Z-cca48a559f74",
+        "run_hash": "f58fe62a04005ff5e030339a2933a58bb0695f69222b80f3ce9ed5c64edcc4ec",
+        "backend": "local",
+        "topology_id": "8b641b981104750b4af0430477f3be0ca12c690edafbbe78648f5e8689487cb6",
+        "infrastructure_id": null,
+        "config_id": "32e9f8e2b5a7c3c4beb1e70864caee873ef9f5e85568c8ab5729ec6181fde17f"
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": true,
+          "max_abs_diff": 0.0
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": true,
+          "a": 229628054,
+          "b": 229628054,
+          "links_differing": [],
+          "control": {
+            "a": 16927,
+            "b": 16927
+          }
+        },
+        "complete": true
+      }
+    },
+    {
+      "design_id": "6f1e770e181e662429e97f0cb1d9c65611abe527d2ef201a829696bd1fe1779e",
+      "seed": 0,
+      "scenario": "topology=four_fogs_swell_wesad_physical",
+      "a": {
+        "run_id": "20261106T074811Z-020dd21db1d3",
+        "run_hash": "46f853a29f35baa3434cc31e75b2759fd3b753c8ecdcebbcae5a097853c00711",
+        "backend": "sim",
+        "topology_id": "c5478110dfc15ea18dfa9b6abe2adaa0385c71e50537fd19f67d67ab7fa3f247",
+        "infrastructure_id": null,
+        "config_id": "c87f325463aeda94760a12d609c84cba33c3c68f73ff1187cef89be28d27a790"
+      },
+      "b": {
+        "run_id": "20261106T080219Z-e3729dc5f19c",
+        "run_hash": "551a4c902ff2fac2073214b40856517edd25d087c88e508aa300a2dd3854dbed",
+        "backend": "local",
+        "topology_id": "c5478110dfc15ea18dfa9b6abe2adaa0385c71e50537fd19f67d67ab7fa3f247",
+        "infrastructure_id": null,
+        "config_id": "f8946bbe508c4c60403366d28fd4b9bf11576e5ef6c4754e7a6bd30f90a7ec19"
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": true,
+          "max_abs_diff": 0.0
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": true,
+          "a": 261076908,
+          "b": 261076908,
+          "links_differing": [],
+          "control": {
+            "a": 20574,
+            "b": 20574
+          }
+        },
+        "complete": true
+      }
+    },
+    {
+      "design_id": "6f1e770e181e662429e97f0cb1d9c65611abe527d2ef201a829696bd1fe1779e",
+      "seed": 1,
+      "scenario": "topology=four_fogs_swell_wesad_physical",
+      "a": {
+        "run_id": "20261106T074936Z-2b96192441f5",
+        "run_hash": "d5b6a173ec1bf7898b22e55681c31fd10a819cd957ac0b85b8f48214605147af",
+        "backend": "sim",
+        "topology_id": "c5478110dfc15ea18dfa9b6abe2adaa0385c71e50537fd19f67d67ab7fa3f247",
+        "infrastructure_id": null,
+        "config_id": "c87f325463aeda94760a12d609c84cba33c3c68f73ff1187cef89be28d27a790"
+      },
+      "b": {
+        "run_id": "20261106T080307Z-c8e751eea33e",
+        "run_hash": "4eccf08e305a0f4a19530ba255e0ec6eb6864d8e87e705cb07ac15bdf7086661",
+        "backend": "local",
+        "topology_id": "c5478110dfc15ea18dfa9b6abe2adaa0385c71e50537fd19f67d67ab7fa3f247",
+        "infrastructure_id": null,
+        "config_id": "f8946bbe508c4c60403366d28fd4b9bf11576e5ef6c4754e7a6bd30f90a7ec19"
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": true,
+          "max_abs_diff": 0.0
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": true,
+          "a": 261152060,
+          "b": 261152060,
+          "links_differing": [],
+          "control": {
+            "a": 20574,
+            "b": 20574
+          }
+        },
+        "complete": true
+      }
+    },
+    {
+      "design_id": "6f1e770e181e662429e97f0cb1d9c65611abe527d2ef201a829696bd1fe1779e",
+      "seed": 2,
+      "scenario": "topology=four_fogs_swell_wesad_physical",
+      "a": {
+        "run_id": "20261106T074936Z-1ccb0e943523",
+        "run_hash": "5c1f5a2590f300e2203ed82e2f29463255264f7e26acb7f1d130c36fbe932d39",
+        "backend": "sim",
+        "topology_id": "c5478110dfc15ea18dfa9b6abe2adaa0385c71e50537fd19f67d67ab7fa3f247",
+        "infrastructure_id": null,
+        "config_id": "c87f325463aeda94760a12d609c84cba33c3c68f73ff1187cef89be28d27a790"
+      },
+      "b": {
+        "run_id": "20261106T080353Z-7ae5d00b9483",
+        "run_hash": "8e5e5895a6b97d65f7b60eb6f40c1e8ebcd1255098f19066d9e3783e50e00a8c",
+        "backend": "local",
+        "topology_id": "c5478110dfc15ea18dfa9b6abe2adaa0385c71e50537fd19f67d67ab7fa3f247",
+        "infrastructure_id": null,
+        "config_id": "f8946bbe508c4c60403366d28fd4b9bf11576e5ef6c4754e7a6bd30f90a7ec19"
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": true,
+          "max_abs_diff": 0.0
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": true,
+          "a": 261196781,
+          "b": 261196781,
+          "links_differing": [],
+          "control": {
+            "a": 20574,
+            "b": 20574
+          }
+        },
+        "complete": true
+      }
+    },
+    {
+      "design_id": "6f1e770e181e662429e97f0cb1d9c65611abe527d2ef201a829696bd1fe1779e",
+      "seed": 3,
+      "scenario": "topology=four_fogs_swell_wesad_physical",
+      "a": {
+        "run_id": "20261106T074940Z-d7fa6c6a26ff",
+        "run_hash": "3d5ecb416769250e0bd81c99553e7263dce377050b7148f5b406014cd9f2f5ac",
+        "backend": "sim",
+        "topology_id": "c5478110dfc15ea18dfa9b6abe2adaa0385c71e50537fd19f67d67ab7fa3f247",
+        "infrastructure_id": null,
+        "config_id": "c87f325463aeda94760a12d609c84cba33c3c68f73ff1187cef89be28d27a790"
+      },
+      "b": {
+        "run_id": "20261106T080445Z-5d148bfcab5d",
+        "run_hash": "5eb4c65adc9cc39b4e17ac85eaae77dcf885259aab19f76fa3e97af1889eca3f",
+        "backend": "local",
+        "topology_id": "c5478110dfc15ea18dfa9b6abe2adaa0385c71e50537fd19f67d67ab7fa3f247",
+        "infrastructure_id": null,
+        "config_id": "f8946bbe508c4c60403366d28fd4b9bf11576e5ef6c4754e7a6bd30f90a7ec19"
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": true,
+          "max_abs_diff": 0.0
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": true,
+          "a": 261118758,
+          "b": 261118758,
+          "links_differing": [],
+          "control": {
+            "a": 20574,
+            "b": 20574
+          }
+        },
+        "complete": true
+      }
+    },
+    {
+      "design_id": "6f1e770e181e662429e97f0cb1d9c65611abe527d2ef201a829696bd1fe1779e",
+      "seed": 4,
+      "scenario": "topology=four_fogs_swell_wesad_physical",
+      "a": {
+        "run_id": "20261106T075126Z-53c286fe6be1",
+        "run_hash": "842effb5ff787fbb2cd728ba46d22f87d1580bc1f3ee2f54fad9f6fea4309eac",
+        "backend": "sim",
+        "topology_id": "c5478110dfc15ea18dfa9b6abe2adaa0385c71e50537fd19f67d67ab7fa3f247",
+        "infrastructure_id": null,
+        "config_id": "c87f325463aeda94760a12d609c84cba33c3c68f73ff1187cef89be28d27a790"
+      },
+      "b": {
+        "run_id": "20261106T080543Z-920b5103c0d7",
+        "run_hash": "50f5e971ed32b83518d96ad3e14585a552b0406ce157db4024eb2e35b7eadae4",
+        "backend": "local",
+        "topology_id": "c5478110dfc15ea18dfa9b6abe2adaa0385c71e50537fd19f67d67ab7fa3f247",
+        "infrastructure_id": null,
+        "config_id": "f8946bbe508c4c60403366d28fd4b9bf11576e5ef6c4754e7a6bd30f90a7ec19"
+      },
+      "functional": {
+        "model": {
+          "match": true,
+          "bitwise": true,
+          "max_abs_diff": 0.0
+        },
+        "protocol": {
+          "match": true,
+          "nodes_differing": []
+        },
+        "bytes": {
+          "match": true,
+          "a": 261319150,
+          "b": 261319150,
+          "links_differing": [],
+          "control": {
+            "a": 20574,
+            "b": 20574
+          }
+        },
+        "complete": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+# Fidelity of the simulation against the emulated backend (issue #195, I1 §12):
+# SWELL physiology over two fogs on infrastructures/emulated_lab.yaml, four
+# edges per device, three seeds. The same experiment runs twice, once per
+# backend, into two runs folders that `onion_fl fidelity` pairs:
+#
+#   onion_fl run experiments/fidelity_emulated.yaml --backend emulated   # Docker
+#   onion_fl run experiments/fidelity_emulated.yaml --backend sim
+#   onion_fl fidelity <emulated runs> <sim runs> --metric macro_f1 --metric time
+#
+# `paths.runs` must differ between the two (results/fidelity_emulated/INDEX.md).
+# The profiles are not calibrated (#197): the performance errors measure how
+# far an uncalibrated simulation is from the emulation, not the simulator.
+name: fidelity_emulated
+description: SWELL physiology on a small emulated edge-fog-cloud lab, sim against emulated.
+topology:
+  name: swell_two_fogs_on_hosts
+  levels: [global, fog, edge]
+  root: {id: cloud, aggregator: fedavg, server_optimizer: replace}
+  fog:
+    defaults: {aggregator: fedavg, quorum: 1.0}
+    nodes:
+      - {id: fog_a, home: swell}
+      - {id: fog_b, home: swell}
+data:
+  datasets:
+    swell: {descriptor: datasets/swell_physiology.yaml}
+  roles: {test: 0.2, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 1.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 32, trunk_hidden: [16]}
+  sharing: fedavg
+  trainer: {name: standard, local_epochs: 5, batch_size: 32, lr: 0.01}
+rounds: 10
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  global: {every: 1}
+infrastructure:
+  name: emulated_lab
+  assignment:
+    root: cloud-1
+    aggregators: {fog_a: fog-a, fog_b: fog-b}
+    edges: {name: colocated, per_host: 4}
+runtime: {timeout: 900}
+seeds: [0, 1, 2]

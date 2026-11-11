@@ -1,0 +1,50 @@
+# The distributed continuum (issue #164, continuum C9): C8's warm baseline
+# behind champion_challenger (continuum_benchmark_promotion.yaml: a schedule
+# trigger every 10 data minutes, C6, and promotion, C7) on five containers
+# acting as machines, against its simulation. Only the topology differs from
+# C8 (four_fogs_swell_wesad_distributed: shorter deadlines and a
+# register_timeout) plus the infrastructure and its assignment.
+#
+# scripts/continuum_distributed.py starts the containers, writes their
+# inventory and runs each seed three times: sim, distributed, and
+# distributed with real failures (field-1 killed at 60 s and back 15 s later
+# from its edges' saved state; field-3's edges join at 90 s).
+name: continuum_distributed
+description: Continuum distribuido - warm start con champion/challenger en máquinas (contenedores) frente a su simulación, con caídas y edges que llegan tarde.
+topology: four_fogs_swell_wesad_distributed
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+rounds: 60                 # an upper bound: the run ends at the last label
+stream:
+  bootstrap: 20m
+  batch_size: 1
+  speed: 60
+labels: {fraction: 0.1, delay: 10m}
+continual: {memory: none}
+unlabelled: none
+promotion: {name: champion_challenger, metric: macro_f1, min_samples: 20}
+continuum:
+  trigger: {name: schedule, every: 10m}
+  status_every: 10m
+evaluation:
+  metrics: [loss, accuracy, macro_f1, confusion_matrix]
+  aggregators: {every: 1}
+  global: {every: 1}
+runtime: {timeout: 900, heartbeat: 10}
+infrastructure:
+  name: continuum_containers
+  assignment:
+    root: cloud-1
+    aggregators: {fog_a1: fog-1, fog_a2: fog-1, fog_b1: fog-1, fog_b2: fog-1}
+    edges:
+      name: explicit
+      hosts: {"swell-2*": field-3, "swell-*": field-1, "wesad-*": field-2}
+seeds: [0, 1, 2]

@@ -105,3 +105,51 @@ def test_subject_cross_validation_on_swell() -> None:
         {s for f in folds for s in f["test_subjects"]}
     )
     assert 0.0 <= out["swell"]["mean"]["balanced_accuracy"] <= 1.0
+
+
+@pytest.mark.skipif(not Path("data/SWELL").exists(), reason="data/SWELL not available")
+def test_cross_validation_keeps_the_excluded_subjects_out() -> None:
+    from onion_fl.baselines import cross_validate
+    from onion_fl.data.ingest import ingest, load_spec
+    from onion_fl.data.roles import RoleOverride, RolesConfig
+
+    subjects = ingest(load_spec("datasets/swell.yaml"))
+    out = [s.subject for s in subjects[:2]]
+    roles = RolesConfig(overrides={"swell": RoleOverride(exclude=out)})
+
+    folds = cross_validate(subjects, model="lr", k=3, roles=roles)["swell"]["folds"]
+
+    tested = {s for f in folds for s in f["test_subjects"]}
+    assert tested == {s.subject for s in subjects} - set(out)
+
+
+def test_mean_ci_uses_student_t_over_the_repetitions() -> None:
+    from onion_fl.baselines import mean_ci
+
+    out = mean_ci([0.5, 0.6, 0.7])
+
+    # t(0.975, 2) = 4.303; std 0.1; sqrt(3)
+    assert out["n"] == 3 and out["mean"] == pytest.approx(0.6)
+    assert out["ci95"] == pytest.approx(4.302653 * 0.1 / np.sqrt(3), rel=1e-5)
+    assert np.isnan(mean_ci([0.5])["ci95"])
+
+
+@pytest.mark.skipif(
+    not Path("data/samples/NurseStress").exists(),
+    reason="data/samples/NurseStress not available",
+)
+def test_over_role_seeds_holds_out_other_subjects_per_seed() -> None:
+    from onion_fl.baselines import over_role_seeds
+    from onion_fl.data.ingest import ingest, load_spec
+    from onion_fl.data.roles import RolesConfig
+
+    subjects = ingest(
+        load_spec("datasets/nurse_stress.yaml"), root="data/samples/NurseStress"
+    )
+
+    out = over_role_seeds(subjects, ["lr"], [0, 1, 2], RolesConfig(test=0.25))
+
+    held = [r["test_subjects"]["nurse_stress"] for r in out["seeds"].values()]
+    assert all(len(h) == 1 for h in held) and len({h[0] for h in held}) > 1
+    summary = out["summary"]["nurse_stress"]["lr"]["f1_macro"]
+    assert summary["n"] == 3 and 0 <= summary["mean"] <= 1

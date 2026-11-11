@@ -68,3 +68,23 @@ def test_inconsistent_data_is_rejected(overrides: dict, message: str) -> None:
 def test_labels_must_be_integers() -> None:
     with pytest.raises(DataError, match="integer"):
         subject(y=np.array([0.0, 1.5, 1.0, 2.0]))
+
+
+# --- per-row time (continuum C3) -------------------------------------------------
+
+
+def test_a_subject_may_carry_one_time_per_row() -> None:
+    data = subject(t=[0, 60, 120, 180])
+
+    assert data.t.dtype == np.float64 and data.t.tolist() == [0, 60, 120, 180]
+    assert subject().t is None
+
+
+@pytest.mark.parametrize(
+    "t, message",
+    [([0, 1, 2], "4 rows"), ([0, 1, np.nan, 3], "finite"), ([[0, 1, 2, 3]], "4 rows")],
+    ids=["length", "nan", "shape"],
+)
+def test_a_bad_time_is_rejected(t, message: str) -> None:
+    with pytest.raises(DataError, match=message):
+        subject(t=t)

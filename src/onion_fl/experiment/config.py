@@ -20,12 +20,17 @@ from __future__ import annotations
     runtime: {mode: sim, codec: json}
     seeds: [0, 1, 2]
     sweep: {data.placement.alpha: [0, 0.5, 1]}
+    search:                             # random search, in each swept scenario
+      budget: 16
+      seed: 0
+      space: {learning.trainer.lr: {low: 1.0e-4, high: 1.0e-1, log: true}}
     sinks: [prometheus]
 
 Every error names its path (``learning.trainer: ...``). Plugin references are
 ``"name"`` or ``{name: ..., **params}`` and each plugin validates its params.
 """
 
+import warnings
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
@@ -35,18 +40,37 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    NonNegativeInt,
     PositiveInt,
     ValidationError,
+    ValidationInfo,
     field_validator,
+    model_serializer,
     model_validator,
 )
 
 from onion_fl.baselines import baseline_models
+from onion_fl.continual.drift import detectors
+from onion_fl.continual.memory import memories
+from onion_fl.continual.promotion import promotions
+from onion_fl.continual.triggers import Schedule, drift_detectors, leaves, triggers
+from onion_fl.continual.unlabelled import objectives
 from onion_fl.core.codec import codecs
 from onion_fl.core.registry import PluginError, Registry
 from onion_fl.data.ingest import readers, steps
 from onion_fl.data.placement import placements
 from onion_fl.data.roles import RolesConfig
+from onion_fl.data.stream import (
+    LabelsConfig,
+    Positive,
+    Samples,
+    Staggered,
+    StreamConfig,
+)
+from onion_fl.experiment.backends import backend_name
+from onion_fl.infrastructure.assignment import assignments
+from onion_fl.infrastructure.backends import backends
+from onion_fl.infrastructure.failover import failovers
 from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.attacks import attacks
 from onion_fl.learning.metrics import metrics
@@ -55,6 +79,7 @@ from onion_fl.learning.privacy import privacies
 from onion_fl.learning.sharing import sharing
 from onion_fl.learning.trainers import inits, trainers
 from onion_fl.observability.diagnostics import diagnostics
+from onion_fl.observability.explain import explainers
 from onion_fl.roles.policies import (
     create,
     participations,
@@ -67,6 +92,8 @@ from onion_fl.transports import transports
 
 PluginRef = str | dict[str, Any]
 SINKS = ("prometheus", "otel")
+REPLAY = ("memory", "replay_ratio", "update")  # the parts of a continual section
+PACE = ("trigger", "edge_trigger", "status_every")  # its triggers, once continuum
 
 REGISTRIES: dict[str, Registry] = {
     "codec": codecs,
@@ -82,6 +109,7 @@ REGISTRIES: dict[str, Registry] = {
     "init": inits,
     "metric": metrics,
     "diagnostic": diagnostics,
+    "explainer": explainers,
     "participation": participations,
     "staleness": stalenesses,
     "stale_weighting": stale_weightings,
@@ -91,6 +119,14 @@ REGISTRIES: dict[str, Registry] = {
     "baseline": baseline_models,
     "attack": attacks,
     "privacy": privacies,
+    "memory": memories,
+    "unlabelled": objectives,
+    "trigger": triggers,
+    "detector": detectors,
+    "promotion": promotions,
+    "assignment": assignments,
+    "backend": backends,
+    "failover": failovers,
 }
 
 
@@ -108,6 +144,151 @@ def _plugin(registry: Registry, value: PluginRef) -> PluginRef:
 
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+class ContinualConfig(Strict):
+    memory: PluginRef = Field(
+        "none", description="Memoria de replay de cada edge que entrena"
+    )
+    replay_ratio: float = Field(
+        0.25,
+        ge=0,
+        lt=1,
+        description="Fracción de cada entrenamiento que sale de la memoria",
+    )
+    update: Literal["warm", "frozen", "scratch"] = Field(
+        "warm",
+        description="Cómo se actualiza cada edge: warm sigue desde el modelo "
+        "recibido, frozen solo entrena v0 con el histórico y scratch reentrena "
+        "desde los pesos iniciales con todas sus filas etiquetadas",
+        exclude_if=lambda v: v == "warm",  # unset, it keeps existing config_ids
+    )
+    trigger: PluginRef | None = Field(
+        None,
+        description="Disparador federativo: cuándo abre ronda el coordinador; sin "
+        "él, las rondas van a ritmo fijo (stream.round_every)",
+        exclude_if=lambda v: v is None,
+    )
+    edge_trigger: PluginRef | None = Field(
+        None,
+        description="Disparador local: cuándo un edge tiene una actualización; sin "
+        "él, en cada ronda en que tenga filas nuevas",
+        exclude_if=lambda v: v is None,
+    )
+    status_every: Positive = Field(
+        300.0, description="Tiempo de datos entre los mensajes de estado"
+    )
+
+    _memory = field_validator("memory")(lambda v: _plugin(memories, v))
+    _trigger = field_validator("trigger", "edge_trigger")(
+        lambda v: v if v is None else _plugin(triggers, v)
+    )
+
+    @property
+    def replays(self) -> bool:
+        """Whether the section gives the replay part (memory, replay_ratio,
+        update): it was the whole ``continual`` section before M1, so it signs
+        the config only when given, or when there is no trigger."""
+        return self.trigger is None or bool(self.model_fields_set & set(REPLAY))
+
+    @model_serializer(mode="wrap")
+    def _parts(self, handler: Any) -> dict[str, Any]:
+        out = handler(self)
+        for key in (() if self.replays else REPLAY) + (
+            PACE if self.trigger is None else ()
+        ):
+            out.pop(key, None)
+        return out
+
+    @model_validator(mode="after")
+    def _warm_only(self) -> ContinualConfig:
+        name = self.memory if isinstance(self.memory, str) else self.memory["name"]
+        if self.update != "warm" and name != "none":
+            raise ValueError(
+                f"continual.update: {self.update} trains no rows twice from "
+                "memory; a replay memory needs warm"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _fits(self) -> ContinualConfig:
+        if self.trigger is None:
+            given = sorted(self.model_fields_set & {"edge_trigger", "status_every"})
+            if given:
+                raise ValueError(
+                    f"continual.{given[0]}: it goes with a federated trigger; set "
+                    "continual.trigger too"
+                )
+            return self
+        federated = create(triggers, self.trigger)
+        local = (
+            None if self.edge_trigger is None else create(triggers, self.edge_trigger)
+        )
+        try:
+            drift_detectors(federated, local)
+        except ValueError as exc:
+            raise ValueError(f"continual: {exc}") from None
+        # The coordinator checks its trigger at each status tick, so a schedule
+        # between two ticks would wait for the next one.
+        for schedule in (t for t in leaves(federated) if isinstance(t, Schedule)):
+            ticks = schedule.every / self.status_every
+            if ticks < 1 - 1e-9 or abs(ticks - round(ticks)) > 1e-9:
+                raise ValueError(
+                    f"continual.trigger: a schedule every {schedule.every:g} s is "
+                    f"checked every status_every ({self.status_every:g} s), so it "
+                    "would fire later; make every a multiple of status_every"
+                )
+        return self
+
+
+def from_continuum(raw: Mapping[str, Any]) -> tuple[dict[str, Any], bool]:
+    """A raw config in the form after M1 (#193), and whether it was in the old one.
+
+    Before M1 the triggers were a ``continuum`` section of their own
+    (``continuum: {trigger, edge_trigger, status_every}``); they now live in
+    ``continual`` next to the replay memory. An old ``continual`` section, even
+    an empty one, keeps its replay part explicit, so the config_id stays.
+    """
+    if "continuum" not in raw:
+        return dict(raw), False
+    out = dict(raw)
+    old = out.pop("continuum")
+    if old is None:
+        return out, True
+    if not isinstance(old, Mapping):
+        raise ValueError("continuum: it must be a mapping (now continual)")
+    continual = out.get("continual")
+    if continual is None:
+        out["continual"] = dict(old)
+        return out, True
+    if not isinstance(continual, Mapping):
+        return out, True  # continual's own validation names the error
+    if clash := sorted(set(continual) & set(PACE)):
+        raise ValueError(
+            f"continuum: continual.{clash[0]} is given too; the triggers go in "
+            "continual only"
+        )
+    out["continual"] = {"memory": "none"} | dict(continual) | dict(old)
+    return out, True
+
+
+def to_continuum(dumped: dict[str, Any]) -> dict[str, Any]:
+    """The layout a config is signed with: the triggers under ``continuum``.
+
+    It is the layout before M1 (#193), so every config_id stays the same in
+    either form; ``run.json`` records it, and ``from_continuum`` reads it back.
+    """
+    continual = dumped.get("continual")
+    if not continual or "trigger" not in continual:
+        return dumped
+    out = dict(dumped)
+    out["continuum"] = {k: continual[k] for k in PACE if k in continual}
+    replay = {k: v for k, v in continual.items() if k not in PACE}
+    if replay:
+        out["continual"] = replay
+    else:
+        del out["continual"]
+    return out
 
 
 class DatasetUse(Strict):
@@ -232,11 +413,103 @@ class RuntimeConfig(Strict):
         return value
 
 
+class AssignmentConfig(Strict):
+    root: str = Field(description="Host del coordinador")
+    aggregators: dict[str, str] = Field(
+        default_factory=dict, description="Agregador -> host"
+    )
+    edges: PluginRef = Field(description="Estrategia que reparte los edges en hosts")
+    services: dict[str, str] = Field(
+        default_factory=dict,
+        description="Servicio -> host; sustituye lo que declare la infraestructura",
+    )
+
+    _edges = field_validator("edges")(lambda v: _plugin(assignments, v))
+
+
+class InfrastructureConfig(Strict):
+    name: str | dict[str, Any] = Field(
+        description="infrastructures/<nombre>.yaml, una ruta, o en línea"
+    )
+    assignment: AssignmentConfig
+    failover: PluginRef | None = Field(
+        None,
+        description="Adónde va un edge cuyo agregador cae (none, por defecto, "
+        "nearest_alive, explicit)",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+
+    _failover = field_validator("failover")(
+        lambda v: v if v is None else _plugin(failovers, v)
+    )
+
+
+class Range(Strict):
+    low: float
+    high: float
+    log: bool = Field(False, description="Uniforme en escala logarítmica")
+
+    @model_validator(mode="after")
+    def _ordered(self) -> Range:
+        if self.high <= self.low:
+            raise ValueError(f"high ({self.high:g}) must be above low ({self.low:g})")
+        if self.log and self.low <= 0:
+            raise ValueError("log: a log-uniform range needs low > 0")
+        return self
+
+
+class SearchConfig(Strict):
+    budget: PositiveInt = Field(
+        description="Configuraciones aleatorias que se prueban en cada escenario"
+    )
+    seed: int = Field(
+        0, description="Semilla propia de la búsqueda; entra en el config_id"
+    )
+    space: dict[str, list[Any] | Range] = Field(
+        min_length=1,
+        description="Ruta de la config -> lista de valores o rango {low, high, log}",
+    )
+    trial: NonNegativeInt | None = Field(
+        None,
+        description="Configuración sorteada de un escenario; la fija el barrido",
+        exclude_if=lambda v: v is None,
+    )
+
+    @field_validator("space")
+    @classmethod
+    def _searchable(cls, value: dict[str, Any]) -> dict[str, Any]:
+        for path, domain in value.items():
+            if path.split(".")[0] in ("seeds", "sweep", "search"):
+                raise ValueError(f"{path}: it cannot be searched")
+            if isinstance(domain, list) and not domain:
+                raise ValueError(f"{path}: give at least one value")
+        return value
+
+    @model_validator(mode="after")
+    def _trial_in_budget(self) -> SearchConfig:
+        if self.trial is not None and self.trial >= self.budget:
+            raise ValueError(f"trial {self.trial} is outside a budget of {self.budget}")
+        return self
+
+
 class PathsConfig(Strict):
     topologies: str = "topologies"
+    infrastructures: str = Field(
+        "infrastructures",
+        exclude_if=lambda v: v == "infrastructures",  # keeps existing config_ids
+    )
+    device_traces: str = Field(
+        "data",
+        exclude_if=lambda v: v == "data",  # keeps existing config_ids
+        description="Carpeta de las trazas de dispositivos importadas (FedScale/)",
+    )
     datasets: str = "datasets"
     runs: str = "runs"
     cache: str = "data/cache"
+    calibrations: str = Field(
+        "calibrations",
+        exclude_if=lambda v: v == "calibrations",  # keeps existing config_ids
+    )
 
 
 class ExperimentConfig(Strict):
@@ -250,6 +523,11 @@ class ExperimentConfig(Strict):
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     seeds: list[int] = Field(default_factory=lambda: [0], min_length=1)
     sweep: dict[str, list[Any]] = Field(default_factory=dict)
+    search: SearchConfig | None = Field(
+        None,
+        description="Búsqueda aleatoria de hiperparámetros con presupuesto fijo",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
     sinks: list[PluginRef] = Field(default_factory=list)
     paths: PathsConfig = Field(default_factory=PathsConfig)
     attack: PluginRef | None = Field(
@@ -264,12 +542,126 @@ class ExperimentConfig(Strict):
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
     )
 
+    stream: StreamConfig | None = Field(
+        None,
+        description="Cada edge recibe sus filas en flujo, en su orden temporal",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+    labels: LabelsConfig | None = Field(
+        None,
+        description="Fracción etiquetada de un stream y retraso de sus etiquetas",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+    continual: ContinualConfig | None = Field(
+        None,
+        description="Aprendizaje continuo de un stream: memoria de replay, forma de "
+        "actualizar los edges y disparadores en vez de rondas a ritmo fijo",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+    unlabelled: PluginRef | None = Field(
+        None,
+        description="Cómo aprende cada edge de un stream de sus filas aún sin etiqueta",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+    promotion: PluginRef | None = Field(
+        None,
+        description="Champion y challenger: el modelo de cada ronda solo llega a "
+        "los edges si la validación lo promueve",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+    operators: list[str] = Field(
+        default_factory=list,
+        description="Ids que pueden dar órdenes de promover o revertir versiones; "
+        "sin ellos no se acepta ninguna",
+        exclude_if=lambda v: not v,  # unset, it keeps existing config_ids
+    )
+
+    infrastructure: InfrastructureConfig | None = Field(
+        None,
+        description="Infraestructura física y asignación de lo lógico a ella",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+    backend: PluginRef | None = Field(
+        None,
+        description="Backend que ejecuta cada escenario; sin él, lo dice runtime.mode",
+        exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+
     _privacy = field_validator("privacy")(
         lambda v: v if v is None else _plugin(privacies, v)
     )
     _attack = field_validator("attack")(
         lambda v: v if v is None else _plugin(attacks, v)
     )
+    _unlabelled = field_validator("unlabelled")(
+        lambda v: v if v is None else _plugin(objectives, v)
+    )
+
+    _promotion = field_validator("promotion")(
+        lambda v: v if v is None else _plugin(promotions, v)
+    )
+
+    _backend = field_validator("backend")(
+        lambda v: v if v is None else _plugin(backends, v)
+    )
+
+    @property
+    def backend_ref(self) -> PluginRef:
+        """The backend that runs the scenarios: ``backend``, or ``runtime.mode``."""
+        if self.backend is not None:
+            return self.backend
+        return "local" if self.runtime.mode == "real" else "sim"
+
+    @property
+    def simulated(self) -> bool:
+        return backend_name(self.backend_ref) == "sim"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _continuum(cls, raw: Any, info: ValidationInfo) -> Any:
+        """The old ``continuum`` section (before M1, #193), read for one version."""
+        if not isinstance(raw, Mapping):
+            return raw
+        out, old = from_continuum(raw)
+        if old and not (info.context or {}).get("signed"):
+            warnings.warn(
+                "continuum: the triggers are now continual.trigger, "
+                "continual.edge_trigger and continual.status_every; the continuum "
+                "section goes in a later version",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return out
+
+    @field_validator("sweep")
+    @classmethod
+    def _sweepable(cls, value: dict[str, list[Any]]) -> dict[str, list[Any]]:
+        for key in value:
+            for path in key.split(","):
+                if path.strip().split(".")[0] in ("seeds", "sweep"):
+                    raise ValueError(
+                        f"{key}: {path.strip()} cannot be swept, every scenario runs "
+                        "all the seeds; list them in seeds"
+                    )
+        return value
+
+    @model_validator(mode="after")
+    def _search_apart_from_sweep(self) -> ExperimentConfig:
+        if self.search is None:
+            return self
+        swept = [p.strip() for key in self.sweep for p in key.split(",")]
+        for path in self.search.space:
+            for other in swept:
+                if (
+                    path == other
+                    or f"{path}.".startswith(f"{other}.")
+                    or (f"{other}.".startswith(f"{path}."))
+                ):
+                    raise ValueError(
+                        f"search.space.{path}: it overlaps the swept {other}; "
+                        "a path is either swept or searched"
+                    )
+        return self
 
     @field_validator("sinks")
     @classmethod
@@ -292,6 +684,119 @@ class ExperimentConfig(Strict):
             raise ValueError(f"learning.sharing: {exc}") from None
         return self
 
+    @model_validator(mode="after")
+    def _backend_fits(self) -> ExperimentConfig:
+        if (
+            self.backend is not None
+            and self.runtime.mode == "real"
+            and backend_name(self.backend) != "local"
+        ):
+            raise ValueError(
+                f"backend: runtime.mode: real is an alias of backend: local, not of "
+                f"{backend_name(self.backend)}; leave runtime.mode out"
+            )
+        refused = create(backends, self.backend_ref).supports(self.infrastructure)
+        if refused:
+            raise ValueError("; ".join(refused))
+        return self
+
+    @model_validator(mode="after")
+    def _promotion_fits(self) -> ExperimentConfig:
+        """A challenger is validated on the validation streams, by an evaluation
+        metric (continuum C7)."""
+        if self.promotion is None:
+            return self
+        if self.stream is None:
+            raise ValueError(
+                "promotion: a challenger is validated on the validation streams; "
+                "set stream too"
+            )
+        metric = getattr(create(promotions, self.promotion), "metric", None)
+        if metric in metrics.names() and metric not in self.evaluation.metrics:
+            raise ValueError(
+                f"promotion: it compares {metric!r}, which evaluation.metrics "
+                "does not compute; add it there"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _stream_fits(self) -> ExperimentConfig:
+        """What a stream cannot do yet (continuum C3) is refused before any run."""
+        if self.labels is not None and self.stream is None:
+            raise ValueError("labels: they belong to a stream; set stream too")
+        triggered = self.continual is not None and self.continual.trigger is not None
+        if triggered and self.stream is None:
+            raise ValueError("continual: triggers pace a stream; set stream too")
+        if self.continual is not None and self.stream is None:
+            raise ValueError(
+                "continual: a replay memory keeps rows of a stream; set stream too"
+            )
+        if self.unlabelled is not None and self.stream is None:
+            raise ValueError(
+                "unlabelled: it learns from the rows of a stream still waiting for "
+                "their label; set stream too"
+            )
+        update = "warm" if self.continual is None else self.continual.update
+        objective = self.unlabelled
+        if isinstance(objective, dict):
+            objective = objective["name"]
+        if update != "warm" and objective not in (None, "none"):
+            raise ValueError(
+                f"unlabelled: continual.update {update} has no training on the "
+                "pool to add it to; use warm"
+            )
+        if self.stream is None:
+            return self
+        paced = self.stream.round_every is not None
+        if paced == triggered:
+            raise ValueError(
+                "stream.round_every: continual.trigger paces the rounds instead"
+                if paced
+                else "stream.round_every: set it, or let continual.trigger pace "
+                "the rounds"
+            )
+        roles, init, ref = self.data.roles, self.learning.init, self.data.placement
+        one_each = isinstance(self.stream.start, Staggered) or isinstance(
+            self.stream.bootstrap, Samples
+        )
+        params = (
+            {}
+            if isinstance(ref, str)
+            else {k: v for k, v in ref.items() if k != "name"}
+        )
+        name = ref if isinstance(ref, str) else ref["name"]
+        merging = getattr(placements.create(name, params), "merge", False)
+        refusals = [
+            (
+                (init if isinstance(init, str) else init["name"]) == "run",
+                "learning.init: run cannot continue a stream yet; the bundle holds "
+                "no stream state",
+            ),
+            (
+                roles.local_val > 0,
+                "data.roles.local_val: a tail of rows conflicts with time order; "
+                "a stream scores test-then-train instead",
+            ),
+            (
+                "local" in roles.scalers(),
+                "data.roles.scaler: local would refit on rows after the bootstrap",
+            ),
+            (
+                one_each and roles.subjects_per_client > 1,
+                "data.roles.subjects_per_client: a staggered start or a bootstrap "
+                "in samples needs one subject per edge",
+            ),
+            (
+                one_each and merging,
+                f"data.placement: {name} merges edges, so a staggered start or a "
+                "bootstrap in samples cannot be kept per subject",
+            ),
+        ]
+        for refused, message in refusals:
+            if refused:
+                raise ValueError(f"stream: {message}")
+        return self
+
     def dump(self) -> dict[str, Any]:
         return self.model_dump(mode="json", by_alias=True)
 
@@ -305,17 +810,26 @@ def _format(exc: ValidationError) -> str:
     return "\n".join(lines)
 
 
-def parse_experiment(raw: Mapping[str, Any]) -> ExperimentConfig:
+def parse_experiment(
+    raw: Mapping[str, Any], *, signed: bool = False
+) -> ExperimentConfig:
+    """``signed``: ``raw`` is a run's recorded config (``run.json``), whose layout
+    keeps the triggers under ``continuum`` on purpose (``to_continuum``)."""
     try:
-        return ExperimentConfig.model_validate(dict(raw))
+        return ExperimentConfig.model_validate(dict(raw), context={"signed": signed})
     except ValidationError as exc:
         raise ConfigError(_format(exc)) from None
 
 
 def load_experiment(path: str | Path) -> ExperimentConfig:
-    return parse_experiment(
-        yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-    )
+    path = Path(path)
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"{path.name} is not valid YAML: {exc}") from None
+    if not isinstance(raw, Mapping):
+        raise ConfigError(f"{path.name}: an experiment must be a mapping")
+    return parse_experiment(raw)
 
 
 def experiment_schema() -> dict[str, Any]:

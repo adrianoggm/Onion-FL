@@ -1,0 +1,27 @@
+# four_fogs_swell_wesad_lossless for a run on real processes (issue #164): the
+# same tree, its links from the infrastructure, with deadlines that fit a round every 10 data minutes
+# at speed 60 (10 s of wall clock), so a fog whose edges are down closes the
+# round without them instead of waiting two minutes, and a register_timeout so
+# a fog starts without the edges that join later. Without failures neither
+# fires, in the simulation or on the machines.
+name: four_fogs_swell_wesad_distributed
+levels: [global, fog, edge]
+root:
+  id: cloud
+  aggregator: fedavg
+  server_optimizer: replace
+  deadline: 9s
+fog:
+  defaults:
+    aggregator: fedavg
+    quorum: 1.0
+    deadline: 6s
+    register_timeout: 20s
+    link_up: {transport: mqtt, codec: json}
+  nodes:
+    - {id: fog_a1, home: swell}
+    - {id: fog_a2, home: swell}
+    - {id: fog_b1, home: wesad}
+    - {id: fog_b2, home: wesad}
+edge:
+  link_up: {transport: mqtt, codec: json}

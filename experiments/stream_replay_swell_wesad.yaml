@@ -1,0 +1,41 @@
+# Replay against the recent rows only, on the SWELL + WESAD streams (issue #159,
+# continuum C4). The stream, labels and training are stream_swell_wesad's with
+# every row labelled, 10 minutes late.
+# - Recent only (memory: none): each round trains on the rows it has not used
+#   yet. This is C3's behaviour.
+# - Replay (reservoir, 512 rows): each round also trains on a sample of rows
+#   the edge already trained on, as many as its new ones (replay_ratio 0.5).
+#   A row enters the memory only after its first successful training.
+#
+# Neither the capacity nor the ratio is tuned; this sets the comparison up for
+# the benchmark (C8).
+#
+#   onion_fl run experiments/stream_replay_swell_wesad.yaml --workers 3
+name: stream_replay_swell_wesad
+description: Solo lo reciente frente a lo reciente con replay, en los streams de SWELL y WESAD.
+topology: four_fogs_swell_wesad_lossless
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+rounds: 60                 # an upper bound: the run ends when the streams do
+stream:
+  bootstrap: 20m
+  round_every: 10m
+  batch_size: 1
+  speed: 60
+labels: {fraction: 1.0, delay: 10m}
+continual: {memory: none, replay_ratio: 0.5}
+evaluation:
+  metrics: [loss, accuracy, macro_f1, confusion_matrix]
+  aggregators: {every: 1}
+  global: {every: 5}
+seeds: [0, 1, 2]
+sweep:
+  continual.memory: [none, {name: reservoir, capacity: 512}]

@@ -17,8 +17,10 @@ Each aggregation node reads its round settings from the topology::
 
 The edge template takes ``eval: {every: 1, models: [received, local]}``.
 Edges hang from the leaf aggregators and use the topology's edge link; the
-root takes evaluators only: the ``test`` subjects, or the validation ones with
-``evaluation.global.subjects: val`` (hyperparameter selection).
+root takes evaluators: the ``test`` subjects, or the validation ones with
+``evaluation.global.subjects: val`` (hyperparameter selection). It takes
+training edges too only when it is the leaf, in a two-level topology (the
+edges report straight to the cloud).
 """
 
 from collections.abc import Mapping, Sequence
@@ -30,6 +32,7 @@ import numpy as np
 from onion_fl.core.topology import Topology
 from onion_fl.learning.aggregators import aggregators, server_optimizers
 from onion_fl.learning.metrics import evaluate as score
+from onion_fl.learning.model import group_of
 from onion_fl.learning.sharing import SharingPolicy
 from onion_fl.learning.sharing import sharing as sharing_presets
 from onion_fl.learning.trainers import trainers as trainer_plugins
@@ -59,6 +62,13 @@ class EdgeSpec:
     tags: dict[str, Any] = field(default_factory=dict)
     attack: Any = None
     privacy: Any = None
+    stream: Any = None  # an EdgeStream: rows arrive over time (continuum C3)
+    replay: Any = None  # a replay memory of the stream's rows (continuum C4)
+    replay_ratio: float = 0.25  # the share of each training that comes from it
+    unlabelled: Any = None  # an objective on rows not labelled yet (continuum C5)
+    update: str = "warm"  # warm, frozen or scratch: the baselines of continuum C8
+    host: str | None = None  # where an infrastructure runs it; runtimes ignore it
+    validates: bool = False  # an evaluator that decides promotions (continuum C7)
 
 
 @dataclass
@@ -85,6 +95,26 @@ def _diagnostics(value: Any) -> list[Any] | None:
     if not value:
         return []
     return [create(diagnostic_plugins, item) for item in value]
+
+
+def _check_versioned(
+    state: Mapping[str, np.ndarray], policy: SharingPolicy, topology: Topology
+) -> None:
+    """Champion and challenger version the root's model: a group kept by an
+    aggregator below would reach the edges before any decision."""
+    zoned = sorted(
+        {
+            group_of(k)
+            for k in state
+            if policy.scope_of(group_of(k)).startswith("level:")
+            and policy.scope_of(group_of(k)) != f"level:{topology.root.level}"
+        }
+    )
+    if zoned:
+        raise ValueError(
+            f"promotion: the groups {zoned} are kept below the root, so a "
+            "challenger's would reach the edges unvalidated; share them globally"
+        )
 
 
 def _round_settings(settings: Mapping[str, Any]) -> dict[str, Any]:
@@ -117,11 +147,31 @@ def build_federation(
     metrics: Sequence[str] = ("loss", "accuracy"),
     evaluate: Evaluate | None = None,
     server_optimizer: Any = None,
+    round_every: float | None = None,
+    continuum: Any = None,
+    promotion: Any = None,
+    operators: Sequence[str] = (),
+    operator_keys: Mapping[str, str] | None = None,
+    audience: str = "",
+    link_profiles: Mapping[str, Any] | None = None,
+    link_channels: Mapping[str, Any] | None = None,
 ) -> Federation:
     """Coordinator, aggregators and edges of ``topology`` on ``runtime`` (a new SimRuntime).
 
     ``evaluate(model, data) -> (scores, samples)`` defaults to the ``metrics`` plugins.
+    ``link_profiles`` (child -> profile) replaces the topology's link profiles,
+    as an infrastructure compiles them; ``link_channels`` (child -> a factory of
+    channels, see ``SimRuntime.add_link``) replaces them with paths over a
+    physical network. ``promotion`` (a ``promotions`` plugin) keeps the
+    round's model as a challenger until the root's validators decide on it:
+    the root's specs with ``validates``, and only they. ``operators`` are the
+    ids whose control messages may roll back or promote a version; none by
+    default, so no order is taken unless they are named. With
+    ``operator_keys`` (id -> token) they are its ids instead, and each order
+    must be signed for ``audience``, the run's id (``continual.control``).
     """
+    profiles = link_profiles or {}
+    channels = link_channels or {}
     policy = _sharing(sharing)
     policy.validate_for(topology)
     runtime = runtime or SimRuntime(seed=seed)
@@ -131,10 +181,12 @@ def build_federation(
     if stray:
         raise ValueError(f"edges under {stray}, which are not leaf aggregators")
     trainers_at_root = [e.id for e in edges.get(root.id, []) if e.train]
-    if trainers_at_root:
+    if trainers_at_root and root.id not in leaves:
         raise ValueError(
             f"the root {root.id!r} takes evaluators only, not {trainers_at_root}"
         )
+    if promotion is not None:
+        _check_versioned(initial_state, policy, topology)
     if evaluate is None:
         names = list(metrics)
 
@@ -154,6 +206,13 @@ def build_federation(
         children[root.id],
         state=initial_state,
         rounds=rounds,
+        round_every=round_every,
+        continuum=continuum,
+        promotion=promotion,
+        validators=[e.id for e in edges.get(root.id, []) if e.validates],
+        operators=operators,
+        operator_keys=operator_keys,
+        audience=audience,
         server_optimizer=server_optimizer
         or create(server_optimizers, root.settings.get("server_optimizer"), "replace"),
         level=root.level,
@@ -170,6 +229,7 @@ def build_federation(
             children[node.id],
             parent=node.parent,
             hello_retry=parse_duration(node.settings.get("hello_retry", 5.0)),
+            continuum=continuum,
             level=node.level,
             **common,
             **_round_settings(node.settings),
@@ -191,6 +251,14 @@ def build_federation(
                 eval_models=edge_eval.get("models", ("received", "local")),
                 attack=spec.attack,
                 privacy=spec.privacy,
+                stream=spec.stream,
+                replay=spec.replay,
+                replay_ratio=spec.replay_ratio,
+                unlabelled=spec.unlabelled,
+                continuum=continuum,
+                validates=spec.validates,
+                update=spec.update,
+                metrics=list(metrics),
                 finetuner=(
                     create(trainer_plugins, finetune)
                     if finetune is not None and spec.train
@@ -210,7 +278,8 @@ def build_federation(
             runtime.add_link(
                 node.id,
                 node.parent,
-                profile=link.profile,
+                profile=profiles.get(node.id, link.profile),
+                **({"channel": channels[node.id]} if node.id in channels else {}),
                 codec=link.codec,
                 transport=link.transport,
             )
@@ -220,7 +289,8 @@ def build_federation(
             runtime.add_link(
                 spec.id,
                 leaf,
-                profile=edge_link.profile,
+                profile=profiles.get(spec.id, edge_link.profile),
+                **({"channel": channels[spec.id]} if spec.id in channels else {}),
                 codec=edge_link.codec,
                 transport=edge_link.transport,
             )

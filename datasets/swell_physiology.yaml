@@ -16,6 +16,10 @@ source:
   normalize_columns: true
 steps:
   - subject: {column: pp, regex: '(\d+)'}
+  - time:                   # each minute row's stamp; meta, never a feature
+      column: timestamp
+      format: "%Y%m%dT%H%M%S%f"
+      pad_to: 18                # a few stamps lost their trailing zeros in the sheet
   - label:
       default: binary
       strategies:

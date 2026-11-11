@@ -53,6 +53,26 @@ def node_rng(seed: int, node_id: str) -> np.random.Generator:
     return np.random.default_rng(np.random.SeedSequence([seed, *words]))
 
 
+def rng_state(rng: np.random.Generator) -> dict[str, Any]:
+    """A node's stream as JSON-ready data: its bit generator, and how many
+    children ``child_rng`` has spawned from it, so a restore continues both."""
+    return {
+        "bit_generator": rng.bit_generator.state,
+        "children": int(rng.bit_generator.seed_seq.n_children_spawned),
+    }
+
+
+def restore_rng(rng: np.random.Generator, state: dict[str, Any]) -> None:
+    """Bring ``rng``, built from the same seed and id, to a saved ``rng_state``."""
+    rng.bit_generator.state = state["bit_generator"]
+    seq = rng.bit_generator.seed_seq
+    missing = int(state["children"]) - seq.n_children_spawned
+    if missing < 0:
+        raise ValueError("the stream has spawned more children than the saved state")
+    if missing:
+        seq.spawn(missing)
+
+
 def child_rng(rng: np.random.Generator) -> np.random.Generator:
     """A new independent stream spawned from ``rng``'s seed, without drawing from it.
 

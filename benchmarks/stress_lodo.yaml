@@ -1,0 +1,45 @@
+# onion-bench-stress (issue #244), E4 track: leave-one-dataset-out.
+#
+# FedAvg with the shared adapter (the only one a study that never trains can
+# use) on three studies; the fourth is held out (roles.overrides.<ds>.held_out)
+# and keeps only its test subjects, the same ones as in benchmarks/stress.yaml.
+# Its in-domain counterpart is the "studies, shared" scenario of stress.yaml:
+# same model, lr, seeds and test subjects, with the fourth study training.
+# The held-out study has no fog (topologies/stress_e4_without_<ds>).
+#
+#   onion_fl run benchmarks/stress_lodo.yaml --workers 6
+name: stress_e4_lodo
+description: onion-bench-stress, pista E4. Leave-one-dataset-out con el adaptador compartido.
+topology: stress_e4_studies
+data:
+  datasets:
+    wesad_e4: {}
+    physionet_e4: {}
+    nurse_stress: {}
+    stress_predict: {}
+  roles:
+    test: 0.25
+    val: 0.1
+    local_val: 0.2
+    local_val_split: class_tail
+    scaler: local
+    drop_constant: false
+    seed: 0
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2, adapters: shared}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 5, batch_size: 32, lr: 0.03}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  aggregators: {every: 20}
+  global: {every: 1}
+seeds: [0, 1, 2, 3, 4]
+sweep:
+  topology,data.roles.overrides:
+    - [stress_e4_without_nurse_stress, {nurse_stress: {held_out: true}}]   # lab -> hospital
+    - [stress_e4_without_wesad_e4, {wesad_e4: {held_out: true}}]
+    - [stress_e4_without_physionet_e4, {physionet_e4: {held_out: true}}]
+    - [stress_e4_without_stress_predict, {stress_predict: {held_out: true}}]

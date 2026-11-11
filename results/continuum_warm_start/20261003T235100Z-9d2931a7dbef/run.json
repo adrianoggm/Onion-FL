@@ -1,0 +1,105 @@
+{
+  "run_id": "20261003T235100Z-9d2931a7dbef",
+  "topology_id": "ff55fe4d2ce1a807f764bcc5205a8d2d4d43ab3d533163a1d13e173a9a6725fa",
+  "config_id": "0f6daf3c41e7af432e375e57cdf90e27667212d8f8bd2f628331d6da9e47819e",
+  "data_id": "06ac5ff0d43080f42ccd968956b1f1e666a651cf8caecfa4ecd4e2b695e1f64e",
+  "code_version": {
+    "commit": "63b0e47adcbe19a834196a1c24d4b8fb45e72765",
+    "dirty": false
+  },
+  "seed": 1,
+  "scenario": "learning.init,rounds,learning.trainer=random,40,standard(batch_size=32,local_epochs=10,lr=0.1,optimizer=sgd)",
+  "started_at": "2026-10-03T23:51:00.486302+00:00",
+  "status": "finished",
+  "config": {
+    "name": "continuum_warm_start",
+    "description": "Continuar el modelo de SWELL a\u00f1adiendo WESAD, frente a entrenar desde cero.",
+    "topology": "four_fogs_swell_wesad_lossless",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        },
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.2,
+        "local_val_split": "class_tail",
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.1
+      },
+      "init": "random"
+    },
+    "rounds": 40,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": 5,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": 5,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    }
+  },
+  "finished_at": "2026-10-03T23:55:27.181659+00:00",
+  "run_hash": "793bea93422e8337f95337d0761727dd3a5a8bcf948b7da5c9b7800e28368601"
+}

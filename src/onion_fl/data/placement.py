@@ -303,6 +303,9 @@ def _join(parts: list[SubjectData], subject: str) -> SubjectData:
         task=first.task,
         n_classes=first.n_classes,
         feature_names=first.feature_names,
+        t=None
+        if any(p.t is None for p in parts)
+        else np.concatenate([p.t for p in parts]),
     )
 
 

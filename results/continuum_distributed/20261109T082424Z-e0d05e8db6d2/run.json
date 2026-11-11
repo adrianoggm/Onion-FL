@@ -1,0 +1,338 @@
+{
+  "run_id": "20261109T082424Z-e0d05e8db6d2",
+  "topology_id": "2a33649e5785c6bf467c30d51ca2ed6015706a3df6b17a6b1268584c7532352f",
+  "config_id": "fb04a4d3a3a526efccdfeeb97aa76a37341e62f5f1143ea0fecacbc6d2250051",
+  "backend": "distributed",
+  "infrastructure_id": "6a0ab6bd2dbca08fea892fed55d87a624dd8e2184386428b0686222b23b4f13b",
+  "data_id": "9fd573754157d68b111f037ecd891bdb62abcbff1d5e5e818da789dde470257c",
+  "code_version": {
+    "commit": "ab5e66ff46005114283a6fb1d79585d10853f848",
+    "dirty": false
+  },
+  "seed": 1,
+  "scenario": "base",
+  "host": "2INNDESLP100930",
+  "pid": 27616,
+  "started_at": "2026-11-09T08:24:24.411339+00:00",
+  "status": "finished",
+  "config": {
+    "name": "continuum_distributed",
+    "description": "Continuum distribuido - warm start con champion/challenger en m\u00e1quinas (contenedores) frente a su simulaci\u00f3n, con ca\u00eddas y edges que llegan tarde.",
+    "topology": "four_fogs_swell_wesad_distributed",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        },
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.0,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.1
+      },
+      "init": "random"
+    },
+    "rounds": 60,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1",
+        "confusion_matrix"
+      ],
+      "edge": {
+        "every": null,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": 1,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 900.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "C:\\Users\\ADRIAN~1.GAR\\AppData\\Local\\Temp\\claude\\6a9a9ba3ced05671\\dd357567-c84c-47f0-918b-cc12852ac13c\\scratchpad\\a164\\runs\\faults",
+      "cache": "data/cache"
+    },
+    "stream": {
+      "order": "timestamp",
+      "batch_size": 1,
+      "speed": 60.0,
+      "start": "aligned",
+      "horizon": "session",
+      "bootstrap": 1200.0,
+      "window": null
+    },
+    "labels": {
+      "fraction": 0.1,
+      "delay": 600.0
+    },
+    "continual": {
+      "memory": "none",
+      "replay_ratio": 0.25
+    },
+    "continuum": {
+      "trigger": {
+        "name": "schedule",
+        "every": "10m"
+      },
+      "status_every": 600.0
+    },
+    "unlabelled": "none",
+    "promotion": {
+      "name": "champion_challenger",
+      "metric": "macro_f1",
+      "min_samples": 20
+    },
+    "infrastructure": {
+      "name": "continuum_containers",
+      "assignment": {
+        "root": "cloud-1",
+        "aggregators": {
+          "fog_a1": "fog-1",
+          "fog_a2": "fog-1",
+          "fog_b1": "fog-1",
+          "fog_b2": "fog-1"
+        },
+        "edges": {
+          "name": "explicit",
+          "hosts": {
+            "swell-2*": "field-3",
+            "swell-*": "field-1",
+            "wesad-*": "field-2"
+          }
+        },
+        "services": {}
+      }
+    },
+    "backend": {
+      "name": "distributed",
+      "inventory": "C:\\Users\\ADRIAN~1.GAR\\AppData\\Local\\Temp\\claude\\6a9a9ba3ced05671\\dd357567-c84c-47f0-918b-cc12852ac13c\\scratchpad\\a164\\machines\\inventory.yaml",
+      "start_in": 60.0,
+      "checkpoints": true,
+      "restarts": [
+        {
+          "host": "field-1",
+          "at": 60,
+          "down": 15
+        }
+      ],
+      "joins": {
+        "field-3": 90
+      }
+    }
+  },
+  "distributed": {
+    "machines": {
+      "cloud-1": {
+        "address": "127.0.0.1",
+        "advertise": "onionfl-a164-cloud-1",
+        "root": "/root/onionfl",
+        "python": "3.11.18",
+        "machine": "x86_64",
+        "system": "Linux",
+        "onion_fl": "0.1.0",
+        "pins": {
+          "torch": "2.14.1",
+          "numpy": "2.4.6",
+          "scipy": "1.17.1",
+          "pandas": "2.3.3",
+          "scikit-learn": "1.9.1"
+        },
+        "offset": 0.0065402984619140625,
+        "rtt": 0.0016407966613769531,
+        "nodes": 13
+      },
+      "field-1": {
+        "address": "127.0.0.1",
+        "advertise": "onionfl-a164-field-1",
+        "root": "/root/onionfl",
+        "python": "3.11.18",
+        "machine": "x86_64",
+        "system": "Linux",
+        "onion_fl": "0.1.0",
+        "pins": {
+          "torch": "2.14.1",
+          "numpy": "2.4.6",
+          "scipy": "1.17.1",
+          "pandas": "2.3.3",
+          "scikit-learn": "1.9.1"
+        },
+        "offset": 0.007147073745727539,
+        "rtt": 0.0017333030700683594,
+        "nodes": 13
+      },
+      "field-2": {
+        "address": "127.0.0.1",
+        "advertise": "onionfl-a164-field-2",
+        "root": "/root/onionfl",
+        "python": "3.11.18",
+        "machine": "x86_64",
+        "system": "Linux",
+        "onion_fl": "0.1.0",
+        "pins": {
+          "torch": "2.14.1",
+          "numpy": "2.4.6",
+          "scipy": "1.17.1",
+          "pandas": "2.3.3",
+          "scikit-learn": "1.9.1"
+        },
+        "offset": 0.0062596797943115234,
+        "rtt": 0.0038297176361083984,
+        "nodes": 10
+      },
+      "field-3": {
+        "address": "127.0.0.1",
+        "advertise": "onionfl-a164-field-3",
+        "root": "/root/onionfl",
+        "python": "3.11.18",
+        "machine": "x86_64",
+        "system": "Linux",
+        "onion_fl": "0.1.0",
+        "pins": {
+          "torch": "2.14.1",
+          "numpy": "2.4.6",
+          "scipy": "1.17.1",
+          "pandas": "2.3.3",
+          "scikit-learn": "1.9.1"
+        },
+        "offset": 0.006312370300292969,
+        "rtt": 0.002189159393310547,
+        "nodes": 5
+      },
+      "fog-1": {
+        "address": "127.0.0.1",
+        "advertise": "onionfl-a164-fog-1",
+        "root": "/root/onionfl",
+        "python": "3.11.18",
+        "machine": "x86_64",
+        "system": "Linux",
+        "onion_fl": "0.1.0",
+        "pins": {
+          "torch": "2.14.1",
+          "numpy": "2.4.6",
+          "scipy": "1.17.1",
+          "pandas": "2.3.3",
+          "scikit-learn": "1.9.1"
+        },
+        "offset": 0.0063571929931640625,
+        "rtt": 0.003423452377319336,
+        "nodes": 8
+      }
+    },
+    "clock": {
+      "reference": "launcher",
+      "server": "pool.ntp.org",
+      "max_offset": 1.0
+    },
+    "broker": "onionfl-a164-cloud-1:1883",
+    "transports": [
+      "mqtt"
+    ],
+    "warnings": [],
+    "sent_data": {
+      "cloud-1": [],
+      "field-1": [],
+      "field-2": [],
+      "field-3": [],
+      "fog-1": []
+    },
+    "faults": [
+      {
+        "host": "field-1",
+        "action": "kill",
+        "at": 60.004,
+        "code": 255
+      },
+      {
+        "host": "field-1",
+        "action": "resume",
+        "at": 75.001
+      },
+      {
+        "host": "field-3",
+        "action": "join",
+        "at": 90.001
+      }
+    ],
+    "pulled": {
+      "cloud-1": [
+        "events.cloud-1.jsonl",
+        "model.npz"
+      ],
+      "field-1": [
+        "events.field-1.jsonl"
+      ],
+      "field-2": [
+        "events.field-2.jsonl"
+      ],
+      "field-3": [
+        "events.field-3.jsonl"
+      ],
+      "fog-1": [
+        "events.fog-1.jsonl"
+      ]
+    }
+  },
+  "processes": {
+    "groups": 5,
+    "exit_codes": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "finished_at": "2026-11-09T08:28:28.692405+00:00",
+  "run_hash": "a305d9936b95d4016415b9654c817cd94aa9ad0ea74f23a1abe095b4cd48680f"
+}

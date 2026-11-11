@@ -8,6 +8,7 @@ arithmetic. No data is involved (docs/RULES.md).
 from __future__ import annotations
 
 import dataclasses
+import math
 import re
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from onion_fl.learning.model import (
     DataShape,
     ModularMLP,
     ModularMLPConfig,
+    load_arrays,
     state_arrays,
 )
 from onion_fl.learning.trainers import trainers
@@ -143,6 +145,19 @@ def test_hierarchical_weights_equal_a_flat_fedavg() -> None:
     federation = run(tree(), edges)
 
     assert_global(federation, "trunk.0.weight", (1 * 1 + 3 * 3 + 0 * 4) / 8)
+
+
+def test_in_two_levels_the_edges_train_under_the_root_itself() -> None:
+    flat = parse_topology(
+        {"name": "f", "levels": ["global", "edge"], "root": {"id": "cloud"}}
+    )
+    edges = [edge("e1", shift=1, examples=1), edge("e2", shift=3, examples=3)]
+
+    federation = run(flat, {"cloud": edges})
+
+    assert_global(federation, "trunk.0.weight", (1 * 1 + 3 * 3) / 4)
+    with pytest.raises(ValueError, match="takes evaluators only"):
+        run(tree(), {"cloud": [edge("e1")], "fog_0": [edge("e2")]})
 
 
 def test_rounds_accumulate() -> None:
@@ -279,6 +294,68 @@ def slow(node_id: str, seconds: float = 100.0, **kw) -> EdgeSpec:
     )
 
 
+def _on_time(compute, n: int = 500, deadline: float = 12.0) -> float:
+    """The share of ``n`` edges, each training 10 examples with ``compute``, whose
+    update makes a round with ``deadline``; links take no time."""
+    edges = {"fog_0": [edge(f"e{i}", compute=compute) for i in range(n)]}
+    free = {"latency_s": 0.0, "distribution": "fixed"}
+    federation = run(
+        tree(1, fog={"quorum": 1, "deadline": deadline}),
+        edges,
+        link_profiles={f"e{i}": free for i in range(n)},
+    )
+    (closed,) = names(federation, "round.closed", "fog_0")
+    return closed["tags"]["responded"] / n
+
+
+def test_the_share_on_time_matches_the_lognormal_distribution() -> None:
+    sigma = 0.5  # 10 examples at 1/s: 10 s on average, against a 12 s deadline
+    compute = compute_models.create(
+        "lognormal_rate", {"samples_per_second": 1, "sigma": sigma}
+    )
+    # P(10 · exp(sigma Z - sigma²/2) <= 12) = Phi((ln 1.2 + sigma²/2) / sigma)
+    z = (math.log(1.2) + sigma**2 / 2) / sigma
+    expected = 0.5 * (1 + math.erf(z / math.sqrt(2)))
+
+    assert _on_time(compute) == pytest.approx(expected, abs=0.05)  # ~2.5 std
+
+
+def test_the_share_on_time_matches_the_trace() -> None:
+    trace = compute_models.create("trace", {"durations": [3, 7, 11, 13, 20]})
+
+    assert _on_time(trace) == pytest.approx(3 / 5, abs=0.05)
+
+
+def test_an_edge_offline_at_the_start_joins_when_it_is_back() -> None:
+    away = availability_models.create("schedule", {"offline": [[0.0, 30.0]]})
+    edges = {"fog_0": [edge("e1"), edge("e2", availability=away)]}
+
+    federation = run(tree(1), edges, rounds=2)
+
+    assert names(federation, "run.finished")
+    assert {e["tags"]["child"] for e in names(federation, "node.registered")} >= {
+        "e1",
+        "e2",
+    }
+
+
+def test_an_aggregator_tells_its_parent_about_children_that_register_late() -> None:
+    federation = build_federation(
+        tree(1, fog={"register_timeout": 1}),
+        {"fog_0": [edge("e1")]},
+        initial_state=INITIAL,
+        rounds=1,
+    )
+    fog, ctx = federation.aggregators["fog_0"], FakeContext("fog_0")
+    fog.on_timer("register", ctx)  # nobody has said hello yet
+    hello = {"role": "edge", "edges": 1, "holders": {"trunk": 1}}
+    for _ in range(2):  # a retry changes nothing
+        fog.on_message(Message(kind="hello", src="e1", dst="fog_0", meta=hello), ctx)
+
+    sent = [m.meta for m in ctx.sent if m.kind == "hello"]
+    assert [(m["edges"], m["holders"]) for m in sent] == [(0, {}), (1, {"trunk": 1})]
+
+
 def test_late_updates_are_dropped_by_default() -> None:
     edges = {"fog_0": [edge("fast", shift=1), slow("slow", shift=7)]}
 
@@ -343,6 +420,125 @@ def test_participation_plugins() -> None:
     assert len(picked) == 1 and picked[0] in children
     with pytest.raises(PluginError, match="p"):
         participations.create("fraction", {"p": 0})
+
+
+def timed(seconds: dict[str, float]) -> dict[str, list[EdgeSpec]]:
+    """Edges under ``fog_0`` that train their 10 examples in the given seconds."""
+    return {"fog_0": [slow(name, s) for name, s in seconds.items()]}
+
+
+def free_links(nodes) -> dict[str, dict]:
+    return {n: {"latency_s": 0.0, "distribution": "fixed"} for n in nodes}
+
+
+def picks(federation) -> list[list[str]]:
+    chosen = names(federation, "round.participants", "fog_0")
+    return [e["tags"]["children"] for e in chosen]
+
+
+SPEEDS = {"a": 8.0, "b": 4.0, "c": 1.0, "d": 2.0}  # seconds per training
+
+
+def test_fastest_k_tries_every_child_then_keeps_the_fastest() -> None:
+    fog = {"participation": {"name": "fastest_k", "k": 2}}
+
+    federation = run(
+        tree(1, fog=fog), timed(SPEEDS), rounds=4, link_profiles=free_links(SPEEDS)
+    )
+
+    assert picks(federation) == [["a", "b"], ["c", "d"], ["c", "d"], ["c", "d"]]
+
+
+def test_deadline_feasible_drops_the_children_that_miss_the_deadline() -> None:
+    fog = {
+        "participation": {"name": "deadline_feasible", "threshold": 0.5},
+        "deadline": 5,
+        "quorum": 1,
+    }
+
+    federation = run(
+        tree(1, fog=fog), timed(SPEEDS), rounds=3, link_profiles=free_links(SPEEDS)
+    )
+
+    every = ["a", "b", "c", "d"]
+    assert picks(federation) == [every, ["b", "c", "d"], ["b", "c", "d"]]
+
+
+def test_deadline_feasible_can_estimate_a_deadline_the_node_does_not_have() -> None:
+    participation = {"name": "deadline_feasible", "deadline": "3s"}
+
+    federation = run(
+        tree(1, fog={"participation": participation}),
+        timed(SPEEDS),
+        rounds=2,
+        link_profiles=free_links(SPEEDS),
+    )
+
+    assert picks(federation)[1] == ["c", "d"]
+
+
+def rate(samples_per_second: float) -> tuple[str, dict]:
+    return "samples_per_second", {"samples_per_second": samples_per_second}
+
+
+def test_utility_prefers_samples_and_penalises_slow_children() -> None:
+    edges = {
+        "fog_0": [  # examples, then the seconds training them takes
+            edge(n, examples=x, compute=compute_models.create(*rate(x / s)))
+            for n, x, s in (("a", 10, 1.0), ("b", 40, 2.0), ("c", 80, 8.0))
+        ]
+    }
+    participation = {"name": "utility", "k": 1, "preferred": 2, "alpha": 2}
+
+    federation = run(
+        tree(1, fog={"participation": participation}),
+        edges,
+        rounds=5,
+        link_profiles=free_links("abc"),
+    )
+
+    # Each tried once, then b: 40 beats c: 80 · (2/8)² = 5 and a: 10.
+    assert picks(federation) == [["a"], ["b"], ["c"], ["b"], ["b"]]
+
+
+def test_system_participation_sees_only_past_rounds() -> None:
+    plugin = participations.create("fastest_k", {"k": 1})
+    rng = np.random.default_rng(0)
+    plugin.observe("a", 1, 9.0, True, {})
+    plugin.observe("b", 1, 3.0, True, {})
+    plugin.observe("b", 2, 5.0, False, {})  # missed: at least the round's 5 s
+
+    assert plugin.estimated("b") == 4.0
+    assert plugin.select(["a", "b", "c"], 3, rng) == ["c"]  # never tried
+    assert plugin.select(["a", "b"], 3, rng) == ["b"]
+
+    feasible = participations.create("deadline_feasible", {"threshold": 0.6})
+    for ok in (True, True, False):
+        feasible.observe("x", 1, 1.0, ok, {})
+    feasible.observe("y", 1, 1.0, False, {})
+    assert feasible.probability("x") == pytest.approx(2 / 3)
+    assert feasible.select(["x", "y"], 2, rng) == ["x"]
+    assert feasible.select(["y"], 2, rng) == ["y"]  # nobody likely: the likeliest
+
+
+def test_system_participation_is_deterministic_by_seed() -> None:
+    def once(seed: int):
+        rate = {"samples_per_second": 2, "sigma": 0.6}
+        compute = compute_models.create("lognormal_rate", rate)
+        edges = {"fog_0": [edge(f"e{i}", compute=compute) for i in range(6)]}
+        fog = {"participation": {"name": "fastest_k", "k": 3}}
+        return run(
+            tree(1, fog=fog),
+            edges,
+            rounds=6,
+            seed=seed,
+            link_profiles=free_links(f"e{i}" for i in range(6)),
+        )
+
+    a, b, c = once(1), once(1), once(2)
+
+    assert a.runtime.events == b.runtime.events
+    assert picks(a) != picks(c)
 
 
 # --- sharing across the hierarchy ---------------------------------------------------------------
@@ -734,6 +930,68 @@ def test_a_childs_staleness_adds_to_its_age() -> None:
     assert ctx.sent[-1].payload.metrics["staleness"] == 1.0  # (2 + 0) / 2
 
 
+def test_the_mean_staleness_is_weighted_by_what_each_update_carries() -> None:
+    fog, ctx = fog_by_hand(**STALE)
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 3), ctx)
+    fog.on_message(update_msg("e2", 1, 1.0, 1, staleness=2.0), ctx)
+
+    assert ctx.sent[-1].payload.metrics["staleness"] == 0.5  # (0 * 3 + 2 * 1) / 4
+
+
+def test_a_late_update_ages_by_the_global_rounds_its_node_skipped() -> None:
+    polynomial = {"name": "next_round", "weighting": {"name": "polynomial", "a": 1}}
+    fog, ctx = fog_by_hand(**STALE | {"staleness": polynomial})
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+    fog.on_message(update_msg("e2", 1, 1.0, 3), ctx)  # late, while the fog is closed
+
+    fog.on_message(model_msg(3), ctx)  # the parent left this fog out of round 2
+    fog.on_message(update_msg("e1", 3, 1.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+
+    sent = ctx.sent[-1]
+    assert sent.payload.weights[KEY] == 2.0  # 1 + 3 * (1 + 2)^-1, two rounds late
+    assert sent.payload.metrics["staleness"] == 1.0  # (0 * 1 + 2 * 1) / 2
+
+
+def test_late_updates_outlive_a_round_that_fails_its_quorum() -> None:
+    fog, ctx = fog_by_hand(**STALE)
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+    fog.on_message(model_msg(2), ctx)
+    fog.on_message(update_msg("e2", 1, 5.0, 2), ctx)  # late for round 2
+    fog.on_timer("deadline", ctx)  # nobody fresh: round 2 fails its quorum
+    assert ctx.sent[-1].round == 2 and not ctx.sent[-1].payload.state
+
+    fog.on_message(model_msg(3), ctx)
+    fog.on_message(update_msg("e1", 3, 3.0, 1), ctx)
+    fog.on_timer("deadline", ctx)
+
+    sent = ctx.sent[-1]
+    np.testing.assert_allclose(sent.payload.state[KEY], 4.0)  # (3 * 1 + 5 * 1) / 2
+    assert sent.payload.metrics["staleness"] == 1.0  # (0 + 2) / 2: one more round
+
+
+def test_participation_counts_the_updates_late_between_two_rounds() -> None:
+    fog, ctx = fog_by_hand(**STALE | {"quorum": 1, "close_at_quorum": True})
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)  # closes round 1
+    fog.on_message(update_msg("e2", 1, 5.0, 2), ctx)  # late, before round 2 opens
+
+    fog.on_message(model_msg(2), ctx)
+    fog.on_message(update_msg("e1", 2, 1.0, 1), ctx)
+
+    late = {
+        tags["round"]: tags["late"]
+        for name, tags in ctx.events
+        if name == "diagnostic.participation"
+    }
+    assert late == {1: 0, 2: 1}
+
+
 def test_the_server_optimizer_sees_the_staleness_below() -> None:
     recorder = StatsRecorder()
     edges = {"fog_0": [edge("fast", shift=1), slow("slow", seconds=15, shift=7)]}
@@ -781,6 +1039,52 @@ def test_a_buffering_round_counts_late_updates_and_skips_busy_children() -> None
 
     assert ctx.sent[-1].kind == "update" and ctx.sent[-1].round == 2
     np.testing.assert_allclose(ctx.sent[-1].payload.state[KEY], 5.0)
+
+
+def test_a_child_whose_answer_was_lost_is_drawn_again_once_it_would_be_dropped() -> (
+    None
+):
+    staleness = {"name": "next_round", "max_staleness": 1}
+    fog, ctx = fog_by_hand(
+        **STALE | {"quorum": 1, "close_at_quorum": True, "staleness": staleness}
+    )
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)  # e2's answer is lost
+    for r in (2, 3):
+        fog.on_message(model_msg(r), ctx)
+        fog.on_message(update_msg("e1", r, 1.0, 1), ctx)
+
+    sent_to = [m.dst for m in ctx.sent if m.kind == "global_model" and m.round == 3]
+    assert sent_to == ["e1", "e2"]  # a round-1 update would be two rounds late now
+
+
+def test_a_buffering_round_with_every_child_busy_waits_for_a_late_update() -> None:
+    fog, ctx = fog_by_hand(**STALE | {"quorum": 1, "close_at_quorum": True})
+    fog.on_message(model_msg(1), ctx)
+    fog.on_message(update_msg("e1", 1, 1.0, 1), ctx)  # closes round 1; e2 still busy
+    fog.on_message(model_msg(2), ctx)  # only e1 gets it
+    fog.on_message(model_msg(3), ctx)  # the parent moved on: both are busy
+
+    assert fog.open and not [m for m in ctx.sent if m.kind == "update" and m.round == 3]
+    fog.on_message(update_msg("e2", 1, 5.0, 2), ctx)  # late, and it is K = 1
+
+    assert ctx.sent[-1].kind == "update" and ctx.sent[-1].round == 3
+    np.testing.assert_allclose(ctx.sent[-1].payload.state[KEY], 5.0)
+
+
+def test_a_fraction_is_drawn_among_the_children_that_are_not_busy() -> None:
+    fraction = {"name": "fraction", "p": 0.5}
+    fog, ctx = fog_by_hand(
+        **STALE | {"quorum": 1, "close_at_quorum": True, "participation": fraction}
+    )
+    fog.on_message(model_msg(1), ctx)
+    (busy,) = fog.participants  # it never answers
+    (free,) = {"e1", "e2"} - {busy}
+
+    for r in range(2, 10):
+        fog.on_message(model_msg(r), ctx)
+        assert fog.participants == [free]
+        fog.on_message(update_msg(free, r, 1.0, 1), ctx)
 
 
 def test_an_open_round_overtaken_by_its_parent_keeps_its_updates() -> None:
@@ -1040,6 +1344,35 @@ def test_local_dp_clips_only_what_crosses_to_the_parent() -> None:
     assert_global(federation, "trunk.0.weight", 1.0)
 
 
+class FrozenHead:
+    """The stub trainer with the head frozen, as FedBABU freezes it."""
+
+    params = dataclasses.make_dataclass("P", [("frozen", list)])(["head.*"])
+
+    def __init__(self) -> None:
+        self.stub = trainers.create("stub", {"shift": 1.0})
+
+    def train(self, model, data=None, received=None, ctx=None):
+        head = {k: v for k, v in state_arrays(model).items() if k.startswith("head.")}
+        result = self.stub.train(model, data, received, ctx)
+        load_arrays(model, head)  # frozen: it never moves
+        return result
+
+
+def test_local_dp_leaves_the_frozen_groups_as_they_arrived() -> None:
+    from onion_fl.learning.privacy import privacies
+
+    dp = privacies.create("local_dp", {"clip": 1.0, "sigma": 1.0})
+    spec = EdgeSpec("e1", model(A), trainer=FrozenHead(), privacy=dp)
+
+    federation = run(tree(1), {"fog_0": [spec]}, rounds=3)
+
+    for key in (k for k in INITIAL if k.startswith("head.")):
+        np.testing.assert_array_equal(federation.coordinator.state[key], INITIAL[key])
+    trunk = federation.coordinator.state["trunk.0.weight"]
+    assert not np.allclose(trunk, shifted("trunk.0.weight", 3.0))  # noised
+
+
 def test_the_statistics_count_the_holders_of_each_group() -> None:
     recorder = StatsRecorder()
     edges = {
@@ -1098,6 +1431,107 @@ def test_a_trainer_that_cannot_be_copied_still_rolls_back_its_model() -> None:
     assert_global(federation, "trunk.0.weight", 2.0)
     (failed,) = names(federation, "edge.train_failed", "e2")
     assert "non-finite" in failed["tags"]["error"]
+
+
+# --- snapshot and continuation ------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "sharing", ["fedavg", "fedper", {"name": "zone", "level": "fog"}], ids=str
+)
+def test_a_federation_continues_from_its_snapshot_as_if_it_never_stopped(
+    sharing,
+) -> None:
+    from onion_fl.learning.aggregators import server_optimizers
+    from onion_fl.roles import restore_federation, snapshot_federation
+
+    def build(rounds: int):
+        def noisy(node_id: str, shift: float) -> EdgeSpec:
+            stub = trainers.create("stub", {"shift": shift, "noise": 0.1})
+            return EdgeSpec(node_id, model(A), trainer=stub)
+
+        edges = {
+            "fog_0": [noisy("e1", 1.0), noisy("e2", 2.0)],
+            "fog_1": [noisy("e3", 3.0)],
+        }
+        momentum = server_optimizers.create("fedavgm", {"momentum": 0.5})
+        return build_federation(
+            tree(2),
+            edges,
+            initial_state=INITIAL,
+            rounds=rounds,
+            sharing=sharing,
+            server_optimizer=momentum,
+        )
+
+    straight = build(4)
+    straight.run()
+    first = build(2)
+    first.run()
+
+    second = build(4)
+    restore_federation(second, snapshot_federation(first))
+    second.run()
+
+    for key, value in straight.coordinator.state.items():
+        np.testing.assert_array_equal(second.coordinator.state[key], value, err_msg=key)
+    for edge_id, node in straight.edges.items():
+        theirs = state_arrays(second.edges[edge_id].model)
+        for key, value in state_arrays(node.model).items():
+            np.testing.assert_array_equal(theirs[key], value, err_msg=edge_id + key)
+    rounds = [e["value"] for e in names(second, "round.started", "cloud")]
+    assert rounds == [3, 4]  # the round numbering continues
+
+
+def test_the_central_dp_accountant_continues_across_a_snapshot() -> None:
+    from onion_fl.roles import restore_federation, snapshot_federation
+
+    private = {"aggregator": {"name": "dp_fedavg", "clip": 10.0, "sigma": 1.0}}
+
+    def build(rounds: int):
+        stub = trainers.create("stub", {"shift": 1.0})
+        edges = {"fog_0": [EdgeSpec("e1", model(A), trainer=stub)]}
+        return build_federation(
+            tree(1, fog=private), edges, initial_state=INITIAL, rounds=rounds
+        )
+
+    def epsilons(federation) -> list[float]:
+        events = names(federation, "diagnostic.privacy_epsilon", "fog_0")
+        return [e["value"] for e in events if e["tags"]["round"] > 2]
+
+    straight = build(4)
+    straight.run()
+    first = build(2)
+    first.run()
+    second = build(4)
+    restore_federation(second, snapshot_federation(first))
+    second.run()
+
+    assert epsilons(second) == epsilons(straight) and len(epsilons(straight)) == 2
+
+
+def test_an_edges_dp_budget_continues_across_a_snapshot_with_another_sigma() -> None:
+    from onion_fl.learning.privacy import ORDERS, privacies
+    from onion_fl.roles import restore_federation, snapshot_federation
+
+    def build(rounds: int, sigma: float):
+        dp = privacies.create("local_dp", {"clip": 10.0, "sigma": sigma})
+        spec = EdgeSpec("e1", model(A), trainer=trainers.create("stub"), privacy=dp)
+        return build_federation(
+            tree(1), {"fog_0": [spec]}, initial_state=INITIAL, rounds=rounds
+        )
+
+    first = build(2, 0.5)
+    first.run()
+    second = build(4, 1.0)
+    restore_federation(second, snapshot_federation(first))
+    second.run()
+
+    # replace-one: σ counts as σ/2; two releases at 0.5, then two at 1.0
+    rdp = 2 * ORDERS / (2 * 0.25**2) + 2 * ORDERS / (2 * 0.5**2)
+    expected = float((rdp + np.log(1e5) / (ORDERS - 1)).min())
+    last = names(second, "diagnostic.privacy_epsilon", "e1")[-1]["value"]
+    assert last == pytest.approx(expected)
 
 
 # --- the first model each child gets is the whole one (QA2, #174) ------------------

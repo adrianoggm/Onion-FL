@@ -37,6 +37,9 @@ class SubjectData:
     task: str
     n_classes: int
     feature_names: list[str]
+    # Seconds of each row since the subject's first observation: metadata for
+    # streams (continuum C3), never a feature. None when the dataset has no time.
+    t: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         X, y = np.asarray(self.X, dtype=np.float32), np.asarray(self.y)
@@ -67,6 +70,13 @@ class SubjectData:
                 f"labels must be in [0, n_classes={self.n_classes}), "
                 f"got {y.min()}..{y.max()}"
             )
+        if self.t is not None:
+            t = np.asarray(self.t, dtype=np.float64)
+            if t.shape != (len(y),):
+                raise DataError(f"t must have one value per row ({len(y)} rows)")
+            if not np.isfinite(t).all():
+                raise DataError("t must be finite")
+            object.__setattr__(self, "t", t)
         object.__setattr__(self, "X", X)
         object.__setattr__(self, "y", y)
         object.__setattr__(self, "feature_names", list(self.feature_names))

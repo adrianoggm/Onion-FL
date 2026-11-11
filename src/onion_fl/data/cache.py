@@ -35,7 +35,10 @@ def cache_key(spec: DatasetSpec, options: Mapping[str, Any] | None = None) -> st
 
 
 def _digest(data: SubjectData) -> str:
-    return hashlib.sha256(data.X.tobytes() + data.y.tobytes()).hexdigest()
+    timed = (
+        b"" if data.t is None else data.t.tobytes()
+    )  # untimed digests stay as they were
+    return hashlib.sha256(data.X.tobytes() + data.y.tobytes() + timed).hexdigest()
 
 
 def prepare(
@@ -70,7 +73,8 @@ def prepare(
         "subjects": {},
     }
     for data in subjects:
-        np.savez(tmp / f"subject_{data.subject}.npz", X=data.X, y=data.y)
+        timed = {} if data.t is None else {"t": data.t}
+        np.savez(tmp / f"subject_{data.subject}.npz", X=data.X, y=data.y, **timed)
         meta["subjects"][data.subject] = {
             "n_samples": data.n_samples,
             "class_counts": data.class_counts,
@@ -104,6 +108,7 @@ def load_prepared(path: str | Path) -> list[SubjectData]:
                 task=meta["task"],
                 n_classes=meta["n_classes"],
                 feature_names=meta["feature_names"],
+                t=archive["t"] if "t" in archive.files else None,
             )
         if _digest(data) != info["sha256"]:
             raise DataError(f"{path}: subject {subject} does not match its digest")

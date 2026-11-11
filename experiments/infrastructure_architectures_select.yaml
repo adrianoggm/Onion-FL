@@ -1,0 +1,37 @@
+# Learning-rate selection for infrastructure_architectures.yaml (issue #192),
+# on architecture B (edge-fog-cloud, homogeneous edges), seed 0, scored by the
+# final global model's macro-F1 on the validation subjects
+# (`evaluation.global.subjects: val`); the test subjects are never evaluated
+# here. The chosen rate is then fixed for the four architectures, so that what
+# changes between them is the infrastructure only.
+#
+#   onion_fl run experiments/infrastructure_architectures_select.yaml --workers 3
+name: infrastructure_architectures_select
+description: Selección del lr de los edges sobre los sujetos de validación, en la arquitectura Edge–Fog–Cloud.
+topology: four_fogs_swell_wesad_physical
+infrastructure:
+  name: architectures_lab
+  assignment:
+    root: cloud-1
+    aggregators: {fog_a1: fog-1, fog_a2: fog-1, fog_b1: fog-2, fog_b2: fog-2}
+    edges: {name: profile_mix, mix: {raspberry_pi: 1.0}}
+data:
+  datasets:
+    swell: {}
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, local_val: 0.2, local_val_split: class_tail, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 0.0}
+learning:
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge: {every: 20}
+  aggregators: {every: 20}
+  global: {every: 20, subjects: val}   # the final global model, on validation
+seeds: [0]
+sweep:
+  learning.trainer.lr: [0.03, 0.1, 0.3]

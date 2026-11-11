@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from onion_fl.experiment.cli import main
+from onion_fl.experiment.cli import main, parser
 
 TOPOLOGY = {
     "name": "two_fogs",
@@ -242,10 +242,23 @@ def test_config_errors_name_their_path(capsys, workspace: Path) -> None:
     assert code == 2 and "rounds" in err
 
 
+def test_a_file_that_is_not_yaml_is_reported(capsys, tmp_path: Path) -> None:
+    (tmp_path / "bad.yaml").write_text("name: [unclosed\n", encoding="utf-8")
+
+    code, _, err = run(capsys, "plan", str(tmp_path / "bad.yaml"))
+
+    assert code == 2 and "bad.yaml" in err and "line 1" in err
+
+
 def test_baseline_reports_a_missing_experiment(capsys, tmp_path: Path) -> None:
     code, _, err = run(capsys, "baseline", str(tmp_path / "missing.yaml"))
 
     assert code == 2 and "missing.yaml" in err
+
+
+def test_baseline_takes_the_seed_of_its_models_and_folds() -> None:
+    assert parser().parse_args(["baseline", "e.yaml"]).seed == 0
+    assert parser().parse_args(["baseline", "e.yaml", "--seed", "3"]).seed == 3
 
 
 # --- the shipped examples -------------------------------------------------------------------
@@ -306,3 +319,36 @@ def test_topology_show_draws_mermaid(capsys, workspace: Path) -> None:
     assert '    cloud["cloud<br/>global · coordinator"]' in lines
     assert "    fog_a -->|mqtt/json/wifi| cloud" in lines
     assert any(line.strip().startswith("edges_fog_a") for line in lines)
+
+
+def test_ceiling_forwards_its_options(capsys, monkeypatch, workspace: Path) -> None:
+    from onion_fl.experiment import ceiling
+
+    seen = {}
+    monkeypatch.setattr(
+        ceiling, "run_ceiling", lambda config, **kw: seen.update(kw) or {"top1": 1.0}
+    )
+
+    code, out, _ = run(
+        capsys,
+        "ceiling",
+        str(workspace / "exp.yaml"),
+        "--replicas",
+        "5",
+        "--metric",
+        "loss",
+        "--resample",
+        "--no-minimize",
+    )
+
+    assert code == 0 and json.loads(out) == {"top1": 1.0}
+    assert seen["n"] == 5 and seen["metric"] == "loss" and seen["resample"]
+    assert seen["minimize"] is False and not seen["paired"]
+
+
+def test_ceiling_needs_two_replicas(capsys, workspace: Path) -> None:
+    code, _, err = run(
+        capsys, "ceiling", str(workspace / "exp.yaml"), "--replicas", "1"
+    )
+
+    assert code == 2 and "at least 2 replicas" in err

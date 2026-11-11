@@ -1,0 +1,212 @@
+{
+  "run_id": "20261106T012325Z-7b80fa8ec326",
+  "topology_id": "464141d81d17d3a9da4622bec8ecd06fe6a655e8d44cb1bbbf98993b9dfcfe9c",
+  "config_id": "9c5825053e7b01f3745295663ca262295b29d6175e078c2fd23d9d1bb4b649ed",
+  "backend": "emulated",
+  "infrastructure_id": "da875674ad22d77f7aabcc6d9ac2fe642e9e8be204889668bb4adc5f238df43e",
+  "data_id": "7949a27b972ad85bf284ca213fcbfe77c610276f373755f866de29850c0bfc53",
+  "code_version": {
+    "commit": "67fddedcddb993f3075ad00b1900e27930eaf61a",
+    "dirty": false
+  },
+  "seed": 2,
+  "scenario": "base",
+  "started_at": "2026-11-06T01:23:25.270741+00:00",
+  "status": "finished",
+  "config": {
+    "name": "fidelity_emulated",
+    "description": "SWELL physiology on a small emulated edge-fog-cloud lab, sim against emulated.",
+    "topology": {
+      "fog": {
+        "defaults": {
+          "aggregator": "fedavg",
+          "quorum": 1.0
+        },
+        "nodes": [
+          {
+            "home": "swell",
+            "id": "fog_a"
+          },
+          {
+            "home": "swell",
+            "id": "fog_b"
+          }
+        ]
+      },
+      "levels": [
+        "global",
+        "fog",
+        "edge"
+      ],
+      "name": "swell_two_fogs_on_hosts",
+      "root": {
+        "aggregator": "fedavg",
+        "id": "cloud",
+        "server_optimizer": "replace"
+      }
+    },
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": "datasets/swell_physiology.yaml",
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.0,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.0,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "alpha": 1.0,
+        "name": "mixing"
+      }
+    },
+    "learning": {
+      "model": {
+        "adapter_width": 32,
+        "name": "modular_mlp",
+        "trunk_hidden": [
+          16
+        ]
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "batch_size": 32,
+        "local_epochs": 5,
+        "lr": 0.01,
+        "name": "standard"
+      },
+      "init": "random"
+    },
+    "rounds": 10,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": null,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": null,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 900.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {},
+    "infrastructure": {
+      "name": "emulated_lab",
+      "assignment": {
+        "root": "cloud-1",
+        "aggregators": {
+          "fog_a": "fog-a",
+          "fog_b": "fog-b"
+        },
+        "edges": {
+          "name": "colocated",
+          "per_host": 4
+        },
+        "services": {}
+      }
+    },
+    "backend": {
+      "image": "onionfl-a195-emulated:latest",
+      "name": "emulated",
+      "project": "onionfl-a195"
+    }
+  },
+  "emulation": {
+    "project": "onionfl-a195-7b80fa8ec326",
+    "image": "onionfl-a195-emulated:latest",
+    "broker_image": "eclipse-mosquitto:2",
+    "containers": 13,
+    "hosts": 8,
+    "routers": 4,
+    "broker": "cloud-1",
+    "networks": 8,
+    "shaping": {
+      "router-dc": [
+        "tc qdisc add dev $(dev 10.195.6.3) root netem limit 1034 delay 40000us rate 10000000bit",
+        "tc qdisc add dev $(dev 10.195.7.3) root netem limit 1050 delay 60000us rate 10000000bit"
+      ],
+      "router-field": [
+        "tc qdisc add dev $(dev 10.195.4.2) root netem limit 1042 delay 10000us rate 50000000bit",
+        "tc qdisc add dev $(dev 10.195.5.2) root netem limit 1025 delay 15000us rate 20000000bit"
+      ],
+      "router-fog-a": [
+        "tc qdisc add dev $(dev 10.195.4.3) root netem limit 1042 delay 10000us rate 50000000bit",
+        "tc qdisc add dev $(dev 10.195.6.2) root netem limit 1034 delay 40000us rate 10000000bit"
+      ],
+      "router-fog-b": [
+        "tc qdisc add dev $(dev 10.195.5.3) root netem limit 1025 delay 15000us rate 20000000bit",
+        "tc qdisc add dev $(dev 10.195.7.2) root netem limit 1050 delay 60000us rate 10000000bit"
+      ],
+      "host-cloud-1": [],
+      "host-field-edge-device-1": [
+        "tc qdisc add dev $(dev 10.195.1.3) root handle 1: prio bands 2 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+        "tc qdisc add dev $(dev 10.195.1.3) parent 1:2 handle 20: netem limit 1133 delay 1000us 200us distribution normal rate 1000000000bit",
+        "tc filter add dev $(dev 10.195.1.3) parent 1: protocol ip prio 1 u32 match ip dst 10.195.1.0/24 flowid 1:2"
+      ],
+      "host-field-edge-device-2": [
+        "tc qdisc add dev $(dev 10.195.1.4) root handle 1: prio bands 2 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+        "tc qdisc add dev $(dev 10.195.1.4) parent 1:2 handle 20: netem limit 1133 delay 1000us 200us distribution normal rate 1000000000bit",
+        "tc filter add dev $(dev 10.195.1.4) parent 1: protocol ip prio 1 u32 match ip dst 10.195.1.0/24 flowid 1:2"
+      ],
+      "host-field-edge-device-3": [
+        "tc qdisc add dev $(dev 10.195.1.5) root handle 1: prio bands 2 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+        "tc qdisc add dev $(dev 10.195.1.5) parent 1:2 handle 20: netem limit 1133 delay 1000us 200us distribution normal rate 1000000000bit",
+        "tc filter add dev $(dev 10.195.1.5) parent 1: protocol ip prio 1 u32 match ip dst 10.195.1.0/24 flowid 1:2"
+      ],
+      "host-field-edge-device-5": [
+        "tc qdisc add dev $(dev 10.195.1.6) root handle 1: prio bands 2 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+        "tc qdisc add dev $(dev 10.195.1.6) parent 1:2 handle 20: netem limit 1133 delay 1000us 200us distribution normal rate 1000000000bit",
+        "tc filter add dev $(dev 10.195.1.6) parent 1: protocol ip prio 1 u32 match ip dst 10.195.1.0/24 flowid 1:2"
+      ],
+      "host-field-edge-device-6": [
+        "tc qdisc add dev $(dev 10.195.1.7) root handle 1: prio bands 2 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+        "tc qdisc add dev $(dev 10.195.1.7) parent 1:2 handle 20: netem limit 1133 delay 1000us 200us distribution normal rate 1000000000bit",
+        "tc filter add dev $(dev 10.195.1.7) parent 1: protocol ip prio 1 u32 match ip dst 10.195.1.0/24 flowid 1:2"
+      ],
+      "host-fog-a": [],
+      "host-fog-b": []
+    },
+    "setup_s": 13.547
+  },
+  "processes": {
+    "groups": 8,
+    "exit_codes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "finished_at": "2026-11-06T01:26:05.674230+00:00",
+  "run_hash": "933d95605c637672859d36b26ea94a5dc6b295e1d947d73971c7b334e7065584"
+}

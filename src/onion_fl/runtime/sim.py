@@ -3,17 +3,32 @@ from __future__ import annotations
 """Virtual-clock, single-process runtime (spec §9.1).
 
 Events are ordered by (virtual time, sequence), so a run is deterministic for
-a given seed unless a node uses the ``measured`` compute model.
+a given seed unless a node uses the ``measured`` compute model. A compute
+model whose ``duration`` takes ``rng`` draws its times from the node's compute
+stream (``node_rng(seed, "<node>/compute")``), apart from the node's own.
 
 A node handles one event at a time. Work declared with ``ctx.compute`` keeps
 it busy: what it sent in that handler leaves when the work ends
 (``compute_done``), and what arrives meanwhile waits.
+
+Nodes placed on a host with ``cpus`` share it: at most ``cpus`` of their jobs
+run at once, and the others wait in FIFO order (``host.queued``). Nodes on no
+host, or on one without ``cpus``, never wait for a CPU. A host taken offline
+(``host_offline``) takes its nodes with it, as their own availability does.
+
+A node's process can die and come back (``restart``) or start late (``join``),
+as with the ``distributed`` backend's real failures (continuum C9). While it
+is down, what reaches it is dropped; its death takes its timers and the work
+it had not finished, and when it is back the ``on_revive`` hooks may replace
+it (an edge rebuilt from its specs and its saved state) before it starts.
 """
 
 import heapq
+import inspect
 import itertools
+import math
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from onion_fl.core.codec import Codec, get_codec
@@ -88,8 +103,13 @@ class SimRuntime:
         self.events: list[dict[str, Any]] = []
         self._nodes: dict[str, Node] = {}
         self._compute: dict[str, Any] = {}
+        self._compute_rng: dict[str, Any] = {}  # for models that draw their times
         self._availability: dict[str, Any] = {}
         self._busy_until: dict[str, float] = {}
+        self._hosts: set[str] = set()
+        self._host_of: dict[str, str] = {}
+        self._slots: dict[str, list[float]] = {}  # host -> when each CPU is free
+        self._offline: dict[str, list[tuple[float, float]]] = {}  # host -> windows
         self._links: dict[tuple[str, str], _Link] = {}
         self._timers: dict[tuple[str, str], int] = {}
         self._queue: list[tuple[float, int, str, tuple]] = []
@@ -98,6 +118,16 @@ class SimRuntime:
         self._rngs: dict[str, Any] = {}
         self._msg_ids = itertools.count(1)
         self._started = False
+        # Called with a node's id after each of its handlers, when what it sent
+        # leaves (its work done): where a run saves the node's state, as with
+        # RealRuntime.after_handle (C9).
+        self.after_handle: list[Callable[[str], None]] = []
+        # Called with a node's id, and whether it restarts (not starts late),
+        # when its process is back and before it starts.
+        self.on_revive: list[Callable[[str, bool], None]] = []
+        self._down: dict[str, float] = {}  # node -> when its process is back
+        self._late: set[str] = set()  # nodes whose process starts late
+        self._life: dict[str, int] = {}  # node -> processes that died
 
     # --- setup -------------------------------------------------------------
 
@@ -107,9 +137,54 @@ class SimRuntime:
         if node.id in self._nodes:
             raise SimulationError(f"node {node.id!r} is already in the simulation")
         self._nodes[node.id] = node
-        self._compute[node.id] = compute
+        self.set_compute(node.id, compute)
         self._availability[node.id] = availability
         self._busy_until[node.id] = 0.0
+
+    def add_host(self, host: str, cpus: int | None = None) -> None:
+        """A machine; with ``cpus``, the jobs of its nodes contend for them."""
+        if host in self._hosts:
+            raise SimulationError(f"host {host!r} is already in the simulation")
+        self._hosts.add(host)
+        if cpus is not None:
+            self._slots[host] = [0.0] * cpus
+
+    def place(self, node_id: str, host: str) -> None:
+        """Run ``node_id`` on ``host`` (one added with ``add_host``)."""
+        if node_id not in self._nodes:
+            raise SimulationError(f"unknown node {node_id!r}; add nodes first")
+        if host not in self._hosts:
+            raise SimulationError(f"unknown host {host!r}; add it with add_host")
+        self._host_of[node_id] = host
+
+    def host_offline(self, host: str, start: float, end: float = math.inf) -> None:
+        """``host`` and every node on it are down in [start, end)."""
+        if host not in self._hosts:
+            raise SimulationError(f"unknown host {host!r}; add it with add_host")
+        self._offline.setdefault(host, []).append((start, end))
+
+    def host_up(self, host: str) -> bool:
+        """Whether ``host`` is up now."""
+        return not any(s <= self.now < e for s, e in self._offline.get(host, ()))
+
+    def call_at(self, t: float, call: Any, node_id: str | None = None) -> None:
+        """Run ``call()`` at virtual time ``t``; with ``node_id``, run
+        ``call(node, ctx)`` as a handler of that node, which waits for it when it
+        is busy or offline (and is dropped if it never comes back)."""
+        self._push(t, "call", (node_id, call))
+
+    def set_compute(self, node_id: str, compute: Any) -> None:
+        """Replace the compute model of a node already added."""
+        if node_id not in self._nodes:
+            raise SimulationError(f"unknown node {node_id!r}; add nodes first")
+        self._compute[node_id] = compute
+        takes_rng = (
+            compute is not None
+            and "rng" in inspect.signature(compute.duration).parameters
+        )
+        self._compute_rng[node_id] = (
+            node_rng(self.seed, f"{node_id}/compute") if takes_rng else None
+        )
 
     def add_link(
         self,
@@ -118,10 +193,13 @@ class SimRuntime:
         profile: str | Mapping[str, Any] | LinkProfile = "lan",
         codec: str = "json",
         transport: Any = None,
+        channel: Any = None,
     ) -> None:
         """Link ``child`` and ``parent`` in both directions (up = child -> parent).
 
         ``transport`` is for the real runtime: here the link layer is the transport.
+        ``channel(direction, rng)``, when given, builds each direction instead of
+        a ``LinkChannel`` over ``profile`` (a path over a physical network).
         """
         for node_id in (child, parent):
             if node_id not in self._nodes:
@@ -134,16 +212,72 @@ class SimRuntime:
         wire = get_codec(codec)
         for src, dst, direction in ((child, parent, "up"), (parent, child, "down")):
             rng = node_rng(self.seed, f"link/{src}->{dst}")
-            self._links[(src, dst)] = _Link(LinkChannel(resolved, direction, rng), wire)
+            built = (
+                LinkChannel(resolved, direction, rng)
+                if channel is None
+                else channel(direction, rng)
+            )
+            self._links[(src, dst)] = _Link(built, wire)
+
+    def compute_of(self, node_id: str) -> Any:
+        """The compute model of a node (None: its work takes no time)."""
+        return self._compute[node_id]
+
+    def channel_of(self, src: str, dst: str) -> Any:
+        """The channel of the direction ``src -> dst`` of a link."""
+        return self._links[(src, dst)].channel
+
+    def codec_of(self, src: str, dst: str) -> Codec:
+        """The codec of the direction ``src -> dst`` of a link."""
+        return self._links[(src, dst)].codec
+
+    def note(
+        self, t: float, node: str, name: str, value: Any = None, **tags: Any
+    ) -> None:
+        """Record an event at virtual time ``t`` (e.g. a link going down)."""
+        self._push(t, "note", (node, name, value, tags))
+
+    def restart(self, node_id: str, at: float, down: float) -> None:
+        """Kill ``node_id``'s process at ``at`` and start it again ``down`` later."""
+        self._check_fault(node_id, at)
+        if down < 0:
+            raise SimulationError(f"restart {node_id}: negative down {down}")
+        self._push(at, "kill", (node_id, at + down))
+        self._push(at + down, "revive", (node_id, True))
+
+    def join(self, node_id: str, at: float) -> None:
+        """Start ``node_id``'s process at ``at``, not at 0."""
+        self._check_fault(node_id, at)
+        self._late.add(node_id)
+        self._down[node_id] = at
+        self._push(at, "revive", (node_id, False))
+
+    def start_at(self, t: float) -> None:
+        """Start every node at ``t`` (negative: before the clock's zero, as the
+        processes of a real run whose clock starts after they are up)."""
+        if self._started:
+            raise SimulationError("start_at: the run has started")
+        self.now = t
+
+    def replace_node(self, node_id: str, node: Node) -> None:
+        """Host ``node`` as ``node_id`` from now on (its process rebuilt it)."""
+        if node.id != node_id or node_id not in self._nodes:
+            raise SimulationError(f"cannot replace {node_id!r} with {node.id!r}")
+        self._nodes[node_id] = node
+
+    def _check_fault(self, node_id: str, at: float) -> None:
+        if node_id not in self._nodes:
+            raise SimulationError(f"unknown node {node_id!r}; add nodes first")
+        if self._started or at < self.now:
+            raise SimulationError(
+                f"{node_id}: schedule a failure after the start, before the run"
+            )
 
     # --- running -----------------------------------------------------------
 
     def run(self, until: float | None = None) -> None:
         """Process events up to ``until`` (or until none are left). Can be called again."""
-        if not self._started:
-            self._started = True
-            for node_id in self._nodes:
-                self._push(0.0, "start", (node_id,))
+        self._start()
         while self._queue:
             if until is not None and self._queue[0][0] > until:
                 break
@@ -158,15 +292,58 @@ class SimRuntime:
         if until is not None:
             self.now = max(self.now, until)
 
+    def next_time(self) -> float | None:
+        """When the next event happens; None when none is left (the run is over)."""
+        self._start()
+        return self._queue[0][0] if self._queue else None
+
+    def inject(self, msg: Message) -> None:
+        """Deliver ``msg`` now, from a sender outside the tree and without a link
+        (an operator's order, continuum #203). The receiver decides whether to
+        trust the sender."""
+        self._push(self.now, "external", (msg, f"{msg.src}>{msg.dst}#external"))
+
+    def record(self, node: str, name: str, value: Any = None, **tags: Any) -> None:
+        """Record an event now, at ``node`` (e.g. the run being paused)."""
+        self._record(node, name, value, tags)
+
+    def _start(self) -> None:
+        if not self._started:
+            self._started = True
+            for node_id in self._nodes:
+                if node_id not in self._late:  # a late one starts on its join
+                    self._push(0.0, "start", (node_id,))
+
+    def _on_external(self, msg: Message, msg_id: str) -> None:
+        if msg.dst not in self._nodes:
+            self._record(msg.src, "link.dropped", None, {"dst": msg.dst})
+            return
+        if self._defer_if_busy(msg.dst, "external", (msg, msg_id)):
+            return
+        self._record(
+            msg.dst,
+            "message.delivered",
+            None,
+            {"src": msg.src, "kind": msg.kind, "round": msg.round, "msg_id": msg_id},
+        )
+        self._handle(msg.dst, "on_message", lambda node, ctx: node.on_message(msg, ctx))
+
     def _on_start(self, node_id: str) -> None:
         if self._is_up(node_id, None):
             self._handle(node_id, "on_start", lambda node, ctx: node.on_start(ctx))
+        elif (back := self._back_at(node_id)) is not None:
+            self._push(back, "start", (node_id,))  # it starts when it is back
 
-    def _on_deliver(self, src: str, dst: str, data: bytes, msg_id: str) -> None:
-        if self._defer_if_busy(dst, "deliver", (src, dst, data, msg_id)):
+    def _on_deliver(
+        self, src: str, dst: str, data: bytes, msg_id: str, life: int | None = None
+    ) -> None:
+        # A message that waited for a busy node is in its process: it dies with it.
+        waiting = (src, dst, data, msg_id, self._life.get(dst, 0))
+        if self._defer_if_busy(dst, "deliver", waiting):
             return
         msg = self._links[(src, dst)].codec.decode(data)
-        if not self._is_up(dst, msg.round):
+        died = life is not None and life != self._life.get(dst, 0)
+        if died or not self._is_up(dst, msg.round):
             self._record(
                 dst,
                 "message.dropped_offline",
@@ -187,20 +364,56 @@ class SimRuntime:
             return  # re-armed or cancelled
         if self._defer_if_busy(node_id, "timer", (node_id, name, token)):
             return
-        del self._timers[(node_id, name)]
         if not self._is_up(node_id, None):
+            back = self._back_at(node_id)
+            if back is not None:  # a local timer waits for the node, as when busy
+                self._push(back, "timer", (node_id, name, token))
+                return
+            del self._timers[(node_id, name)]
             self._record(node_id, "timer.dropped_offline", None, {"timer": name})
             return
+        del self._timers[(node_id, name)]
         self._handle(node_id, "on_timer", lambda node, ctx: node.on_timer(name, ctx))
 
-    def _on_compute_done(self, node_id: str, outbox: list[Message]) -> None:
+    def _on_call(self, node_id: str | None, call: Any) -> None:
+        if node_id is None:
+            call()
+            return
+        if self._defer_if_busy(node_id, "call", (node_id, call)):
+            return
         if not self._is_up(node_id, None):
+            if (back := self._back_at(node_id)) is not None:
+                self._push(back, "call", (node_id, call))
+            return
+        self._handle(node_id, "call", call)
+
+    def _on_note(self, node: str, name: str, value: Any, tags: dict) -> None:
+        self._record(node, name, value, tags)
+
+    def _on_compute_done(
+        self, node_id: str, outbox: list[Message], life: int = 0
+    ) -> None:
+        if not self._is_up(node_id, None) or life != self._life.get(node_id, 0):
             self._record(
                 node_id, "message.dropped_offline", None, {"pending": len(outbox)}
             )
             return
-        for msg in outbox:
-            self._transmit(msg)
+        self._done(node_id, outbox)
+
+    def _on_kill(self, node_id: str, back: float) -> None:
+        """The process dies: its timers and unfinished work go with it."""
+        self._down[node_id] = back
+        self._life[node_id] = self._life.get(node_id, 0) + 1
+        self._busy_until[node_id] = self.now
+        for key in [k for k in self._timers if k[0] == node_id]:
+            del self._timers[key]
+        self._record(node_id, "node.killed", None, {"back": back})
+
+    def _on_revive(self, node_id: str, restarted: bool) -> None:
+        del self._down[node_id]
+        for hook in self.on_revive:
+            hook(node_id, restarted)
+        self._on_start(node_id)
 
     # --- internals ---------------------------------------------------------
 
@@ -227,11 +440,40 @@ class SimRuntime:
             return True
         return False
 
-    def _is_up(self, node_id: str, round: int | None) -> bool:
+    def _is_up(self, node_id: str, round: int | None, t: float | None = None) -> bool:
+        t = self.now if t is None else t
+        if node_id in self._down or self._host_down_until(node_id, t) is not None:
+            return False
         model = self._availability[node_id]
         return model is None or model.is_up(
-            self.now, round=round, node_id=node_id, seed=self.seed
+            t, round=round, node_id=node_id, seed=self.seed
         )
+
+    def _host_down_until(self, node_id: str, t: float) -> float | None:
+        """When the host of a node down at ``t`` is back; None if it is up."""
+        windows = self._offline.get(self._host_of.get(node_id), ())
+        return max((e for s, e in windows if s <= t < e), default=None)
+
+    def _back_at(self, node_id: str) -> float | None:
+        """When an offline node is up again; None if it never is (a crash)."""
+        if node_id in self._down:
+            back = self._down[node_id]
+            return None if math.isinf(back) else back
+        up_again = getattr(self._availability[node_id], "up_again", None)
+        if self._host_of.get(node_id) not in self._offline:
+            return None if up_again is None else up_again(self.now)
+        t = self.now
+        while not self._is_up(node_id, None, t):  # both its host and itself
+            host_back = self._host_down_until(node_id, t)
+            if host_back is None:
+                if up_again is None:
+                    return None
+                t = up_again(t)
+            elif host_back == math.inf:
+                return None
+            else:
+                t = host_back
+        return t
 
     def _handle(self, node_id: str, handler: str, call: Any) -> None:
         ctx = _SimContext(self, node_id)
@@ -247,14 +489,42 @@ class SimRuntime:
             )
             return
         wall_s = time.perf_counter() - started
-        model = self._compute[node_id]
-        busy = 0.0 if model is None else model.duration(samples=ctx.work, wall_s=wall_s)
+        model, rng = self._compute[node_id], self._compute_rng[node_id]
+        drawn = {} if rng is None else {"rng": rng}
+        busy = (
+            0.0
+            if model is None
+            else model.duration(samples=ctx.work, wall_s=wall_s, **drawn)
+        )
         if busy > 0:
-            self._busy_until[node_id] = self.now + busy
-            self._push(self.now + busy, "compute_done", (node_id, ctx.outbox))
+            end = self._run_on_host(node_id, busy)
+            self._busy_until[node_id] = end
+            life = self._life.get(node_id, 0)
+            self._push(end, "compute_done", (node_id, ctx.outbox, life))
         else:
-            for msg in ctx.outbox:
-                self._transmit(msg)
+            self._done(node_id, ctx.outbox)
+
+    def _done(self, node_id: str, outbox: list[Message]) -> None:
+        """A handler's work is done: the hooks, then what it sent leaves."""
+        for hook in self.after_handle:
+            hook(node_id)
+        for msg in outbox:
+            self._transmit(msg)
+
+    def _run_on_host(self, node_id: str, busy: float) -> float:
+        """When a job of ``busy`` seconds ends: it starts now, or when a CPU of
+        the node's host frees. Jobs ask in time order, so taking the CPU that
+        frees first is FIFO."""
+        host = self._host_of.get(node_id)
+        slots = self._slots.get(host)
+        if slots is None:
+            return self.now + busy
+        i = min(range(len(slots)), key=slots.__getitem__)
+        start = max(self.now, slots[i])
+        if start > self.now:
+            self._record(node_id, "host.queued", start - self.now, {"host": host})
+        slots[i] = start + busy
+        return slots[i]
 
     def _transmit(self, msg: Message) -> None:
         link = self._links[(msg.src, msg.dst)]
