@@ -6,6 +6,7 @@ needs the real datasets under ``data/`` and is skipped when they are absent.
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
 import numpy as np
@@ -21,7 +22,19 @@ def descriptor(name: str):
 
 
 @pytest.mark.parametrize(
-    "name", ["swell", "sweet", "wesad", "wesad_e4", "physionet_e4", "femnist"]
+    "name",
+    [
+        "swell",
+        "sweet",
+        "wesad",
+        "wesad_e4",
+        "physionet_e4",
+        "nurse_stress",
+        "stress_predict",
+        "femnist",
+        "heart_disease",
+        "cifar10",
+    ],
 )
 def test_descriptors_are_valid(name: str) -> None:
     spec = descriptor(name)
@@ -44,6 +57,11 @@ def test_descriptors_are_valid(name: str) -> None:
         ),
         ("physionet_e4", {"signals": "EDA,HR", "window_seconds": 30}),
         ("physionet_e4", {"label": "three_class"}),
+        ("nurse_stress", {"label": "high", "signals": "EDA,TEMP,HR"}),
+        ("stress_predict", {"signals": "BVP,EDA", "window_seconds": 30}),
+        ("cifar10", {"partition": "iid"}),
+        ("cifar10", {"partition": "label_skew", "k": 3, "clients": 20}),
+        ("cifar10", {"alpha": 0.1, "partition_seed": 4}),
     ],
 )
 def test_descriptor_options_are_valid(name: str, options: dict) -> None:
@@ -282,6 +300,116 @@ def test_physionet_sample_reads_its_participants() -> None:
     assert set(three["f07"].y.tolist()) == {2}  # its exercise sessions are valid
 
 
+NURSE = Path("data/NurseStress")
+
+
+def _survey_events():
+    """The survey events in Unix UTC, computed here apart from the descriptor."""
+    import pandas as pd
+
+    survey = pd.read_excel(NURSE / "SurveyResults.xlsx", na_values=["na"])
+    day = survey["date"].dt.strftime("%Y-%m-%d") + " "
+
+    def utc(column: str) -> pd.Series:
+        local = pd.to_datetime(day + survey[column].astype(str))
+        stamps = local.dt.tz_localize("America/Chicago").dt.tz_convert("UTC")
+        return (stamps - pd.Timestamp(0, tz="UTC")).dt.total_seconds()
+
+    start, end = utc("Start time"), utc("End time")
+    end = end.where(end > start, end + 86400)
+    return survey.assign(subject=survey["ID"].astype(str), start=start, end=end)
+
+
+@pytest.mark.skipif(
+    not (NURSE / "Stress_dataset").exists(), reason="data/NurseStress not available"
+)
+def test_nurse_stress_matches_the_published_files() -> None:
+    sessions = sorted((NURSE / "Stress_dataset").glob("*/*/EDA.csv"))
+    nurses = sorted({s.parent.parent.name for s in sessions})
+    survey = _survey_events()
+
+    assert len(nurses) == 15 and len(sessions) == 609
+    assert all(s.parent.name.startswith(s.parent.parent.name + "_") for s in sessions)
+    assert len(survey) == 358 and sorted(survey["subject"].unique()) == nurses
+    levels = survey["Stress level"].value_counts(dropna=False).to_dict()
+    assert {k: v for k, v in levels.items() if k == k} == {2: 179, 1: 20, 0: 46}
+    assert survey["Stress level"].isna().sum() == 113
+
+
+def _covered(events, times: np.ndarray) -> np.ndarray:
+    return np.array([((events.start <= x) & (events.end > x)).any() for x in times])
+
+
+@pytest.mark.skipif(
+    not (NURSE / "Stress_dataset").exists(), reason="data/NurseStress not available"
+)
+def test_nurse_stress_labels_follow_the_survey() -> None:
+    """Nurse 6D: each sample's label is the one the survey gives its time."""
+    from onion_fl.data.ingest import IngestContext, readers, steps
+
+    spec = descriptor("nurse_stress")
+    events = _survey_events().query("subject == '6D'")
+    stress = events[events["Stress level"] >= 1]
+    reader = readers.create("empatica_e4_csv", {})
+    ctx = IngestContext(root=NURSE, options={})
+    labelled = [steps.create(*next(iter(s.items()))) for s in spec.steps[:3]]
+    surveyed = 0
+    for session in sorted((NURSE / "Stress_dataset" / "6D").iterdir()):
+        df = reader.read(session).assign(subject="6D")
+        for step in labelled:
+            df = step.apply(df, ctx)
+        t = df["time"].to_numpy()[::97]  # about one sample a second
+        anywhere, in_stress = _covered(events, t), _covered(stress, t)
+        expected = np.where(in_stress, 1.0, np.where(anywhere, np.nan, 0.0))
+        if not anywhere.any():
+            expected[:] = np.nan  # a session without an event is dropped
+        surveyed += bool(anywhere.any())
+        np.testing.assert_array_equal(df["label"].to_numpy()[::97], expected)
+    assert surveyed == 1  # 6D has one session with events (2026-11-10)
+
+    one = {"path": "Stress_dataset/{subject}/6D_*/EDA.csv"}
+    spec.source = spec.source.model_copy(update=one)
+    (data,) = ingest(spec)
+    assert data.feature_names[:2] == ["acc_x_mean", "acc_x_std"]
+    assert np.bincount(data.y.astype(int)).tolist() == [63, 92]
+
+
+NURSE_SAMPLE = Path("data/samples/NurseStress")
+
+
+@pytest.mark.skipif(
+    not NURSE_SAMPLE.exists(), reason="data/samples/NurseStress not available"
+)
+def test_nurse_stress_sample_reads_with_both_classes() -> None:
+    """The real extract of scripts/nurse_stress_sample.py: four nurses."""
+    subjects = {
+        s.subject: s for s in ingest(descriptor("nurse_stress"), root=NURSE_SAMPLE)
+    }
+
+    counts = {k: np.bincount(s.y.astype(int)).tolist() for k, s in subjects.items()}
+    assert counts == {"7E": [55, 52], "BG": [55, 36], "E4": [46, 48], "F5": [75, 24]}
+    for data in subjects.values():
+        assert data.task == "stress_binary" and data.n_classes == 2
+        assert len(data.feature_names) == 30  # 6 E4 channels x 5 statistics
+
+
+@pytest.mark.skipif(
+    not (NURSE_SAMPLE.exists() and (NURSE / "Stress_dataset").exists()),
+    reason="data/NurseStress or its sample not available",
+)
+def test_nurse_stress_sample_matches_the_full_dataset() -> None:
+    spec = descriptor("nurse_stress")
+    sample = {s.subject: s for s in ingest(spec, root=NURSE_SAMPLE)}
+    for session in ["E4_1593538007", "BG_1607735684"]:
+        nurse = session.split("_")[0]
+        spec.source = spec.source.model_copy(
+            update={"path": f"Stress_dataset/{{subject}}/{session}/EDA.csv"}
+        )
+        (full,) = ingest(spec)
+        np.testing.assert_array_equal(sample[nurse].y, full.y)
+        np.testing.assert_array_equal(sample[nurse].X, full.X)
+
+
 def test_femnist_declares_a_fixed_subsample_of_hundreds_of_writers() -> None:
     writers = descriptor("femnist").source.reader_params()["writers"]
 
@@ -308,6 +436,99 @@ def test_femnist_reads_one_subject_per_declared_writer() -> None:
     assert np.bincount(labels.astype(int)).max() / len(labels) < 0.06
 
 
+# Fed-Heart-Disease (FLamby): train/test per center, from its README.
+FLAMBY_COUNTS = {
+    "cleveland": (199, 104),
+    "hungarian": (172, 89),
+    "switzerland": (30, 16),
+    "va": (85, 45),
+}
+FLAMBY_FEATURES = [
+    "age", "sex", "trestbps", "chol", "fbs", "thalach", "exang", "oldpeak",
+    "cp_2", "cp_3", "cp_4", "restecg_1", "restecg_2",
+]  # fmt: skip
+
+
+@pytest.mark.skipif(
+    not Path("data/HeartDisease/flamby").exists(),
+    reason="data/HeartDisease/flamby not available",
+)
+def test_heart_disease_has_flambys_split_per_center() -> None:
+    subjects = {s.subject: s for s in ingest(descriptor("heart_disease"))}
+
+    expected = {
+        name: n
+        for center, (train, test) in FLAMBY_COUNTS.items()
+        for name, n in ((center, train), (f"{center}_test", test))
+    }
+    assert {name: s.n_samples for name, s in subjects.items()} == expected
+    assert sum(expected.values()) == 740
+    for data in subjects.values():
+        assert data.feature_names == FLAMBY_FEATURES  # never the center
+        assert data.task == "heart_disease" and data.n_classes == 2
+    # FLamby's labels: Switzerland trains on disease only.
+    assert list(subjects["switzerland"].class_counts) == [0, 30]
+    assert list(subjects["cleveland"].class_counts) == [108, 91]
+
+
+@pytest.mark.skipif(
+    not Path("data/HeartDisease/raw").exists(),
+    reason="data/HeartDisease/raw not available",
+)
+def test_heart_disease_script_reproduces_flambys_counts() -> None:
+    spec = importlib.util.spec_from_file_location(
+        "heart_disease_flamby", "scripts/heart_disease_flamby.py"
+    )
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+
+    for center, (train, test) in FLAMBY_COUNTS.items():
+        df = script.read_center(Path(f"data/HeartDisease/raw/processed.{center}.data"))
+        held = script.split(df)
+        assert (int((~held).sum()), int(held.sum())) == (train, test), center
+        table = script.one_hot(df)
+        assert list(table.columns) == [*FLAMBY_FEATURES, "num"]
+
+
+CIFAR10 = Path("data/CIFAR10/cifar-10-batches-py")
+
+
+@pytest.mark.skipif(not CIFAR10.exists(), reason="data/CIFAR10 not available")
+@pytest.mark.parametrize("partition", ["iid", "dirichlet_label", "label_skew"])
+def test_cifar10_reads_the_training_batches_into_clients_and_the_official_test(
+    partition: str,
+) -> None:
+    subjects = {
+        s.subject: s for s in ingest(descriptor("cifar10"), {"partition": partition})
+    }
+
+    assert sorted(subjects) == [f"client_{i}" for i in range(10)] + ["test"]
+    test = subjects.pop("test")
+    assert test.n_samples == 10000
+    assert np.bincount(test.y.astype(int)).tolist() == [1000] * 10
+    labels = np.concatenate([s.y for s in subjects.values()])
+    if partition != "label_skew":  # k=2 of 10 classes may leave one out
+        assert len(labels) == 50000
+        assert np.bincount(labels.astype(int)).tolist() == [5000] * 10
+    for data in [test, *subjects.values()]:
+        assert data.n_classes == 10 and data.task == "object"
+        assert data.feature_names == [f"x_{i}" for i in range(3072)]  # no batch
+        assert data.X.min() >= 0 and data.X.max() <= 1, data.subject
+    sizes = [s.n_samples for s in subjects.values()]
+    if partition == "iid":
+        assert sizes == [5000] * 10
+
+
+@pytest.mark.skipif(not CIFAR10.exists(), reason="data/CIFAR10 not available")
+def test_cifar10_training_and_test_images_do_not_overlap() -> None:
+    subjects = ingest(descriptor("cifar10"), {"partition": "iid"})
+    test = {s.subject: s for s in subjects}["test"]
+    train = np.concatenate([s.X for s in subjects if s.subject != "test"])
+
+    seen = {row.tobytes() for row in train}
+    assert sum(row.tobytes() in seen for row in test.X) == 0
+
+
 # --- per-row time on the real recordings (continuum C3) ----------------------------
 
 
@@ -324,3 +545,69 @@ def test_wesad_windows_are_timed_in_order() -> None:
         steps = np.diff(data.t)
         assert data.t[0] == 0 and np.all(steps > 0), data.subject
         assert np.isclose(steps.min(), 30.0), data.subject  # 60 s windows, half overlap
+
+
+# --- Stress-Predict (issue #242) ----------------------------------------------------
+
+STRESS_PREDICT = Path("data/StressPredict")
+E4_HARMONIZED = [  # the names wesad_e4.yaml gives too
+    f"{channel}_{stat}"
+    for channel in ["acc_x", "acc_y", "acc_z", "bvp", "eda", "temp"]
+    for stat in ["mean", "std", "min", "max", "median"]
+]
+
+
+@pytest.mark.skipif(
+    not STRESS_PREDICT.exists(), reason="data/StressPredict not available"
+)
+def test_stress_predict_labels_match_the_authors_csv() -> None:
+    """Time_logs.xlsx against the authors' labels, second by second.
+
+    The authors took the boundaries from the button presses, to the second, so
+    the minute resolution of the time log leaves 3.7% of the seconds different
+    (2026-11-10: 107,315 seconds with a class, 3,952 of them different).
+    """
+    pytest.importorskip("openpyxl")
+    import pandas as pd
+
+    from onion_fl.data.ingest import readers
+
+    spec = descriptor("stress_predict")
+    (label,) = [s["label"] for s in spec.steps if "label" in s]
+    logs = readers.create("stress_predict_time_logs", {}).read(
+        STRESS_PREDICT / "Processed_data/Time_logs.xlsx"
+    )
+    csv = pd.read_csv(
+        STRESS_PREDICT / "Processed_data/Improved_All_Combined_hr_rsp_binary.csv"
+    )
+    subjects = csv["Participant"].map(lambda p: f"S{p:02d}").to_numpy()
+    seconds = csv["Time(sec)"].to_numpy(np.float64)
+    ours = np.full(len(csv), np.nan)
+    for phase in logs.itertuples():
+        inside = (subjects == phase.subject) & (seconds >= phase.start)
+        inside &= seconds < phase.end
+        ours[inside] = label["map"].get(phase.phase, np.nan)
+
+    # The CSV has every subject but S01, which the descriptor leaves out.
+    assert sorted(set(subjects)) == sorted(set(logs["subject"]) - {"S01"})
+    held = ~np.isnan(ours)
+    assert held.mean() > 0.95  # the rest falls between two phases
+    assert (ours[held] == csv["Label"].to_numpy()[held]).mean() > 0.96
+
+
+SAMPLE = Path("data/samples/stress_predict")  # scripts/stress_predict_sample.py
+
+
+@pytest.mark.skipif(not SAMPLE.exists(), reason="data/samples/stress_predict missing")
+def test_stress_predict_reads_the_harmonized_e4_features() -> None:
+    pytest.importorskip("openpyxl")
+
+    subjects = ingest(descriptor("stress_predict"), root=SAMPLE)
+
+    assert [s.subject for s in subjects] == ["S02", "S03", "S04"]
+    counts = [np.bincount(s.y.astype(int)).tolist() for s in subjects]
+    assert counts == [[76, 35], [69, 31], [80, 34]]  # as on the whole dataset
+    for data in subjects:
+        assert data.n_classes == 2 and data.feature_names == E4_HARMONIZED
+        assert data.t[0] == 0 and np.isclose(np.diff(data.t).min(), 30.0)
+        assert not np.isnan(data.X).any()

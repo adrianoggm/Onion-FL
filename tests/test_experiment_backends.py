@@ -60,7 +60,7 @@ def test_the_local_backend_says_what_it_does_not_support() -> None:
     assert SimBackend().supports({"name": "lab"}) == []
     assert LocalBackend().supports(None) == []
     (reason,) = LocalBackend().supports({"name": "lab"})
-    assert "simulated only for now" in reason
+    assert "emulated or distributed backend" in reason
 
 
 def test_a_scenario_runs_through_its_backend_and_records_it(
@@ -98,7 +98,7 @@ def test_execute_prepares_runs_and_collects_in_order(tmp_path: Path) -> None:
 
 
 def test_execute_refuses_what_a_backend_does_not_support() -> None:
-    with pytest.raises(ValueError, match="simulated only"):
+    with pytest.raises(ValueError, match="emulated or distributed"):
         execute(LocalBackend(), "s", {"name": "lab"})
 
 
@@ -109,3 +109,16 @@ def test_the_local_backend_cannot_take_a_custom_scorer(
 
     with pytest.raises(ValueError, match="node processes"):
         run_scenario(scenario, evaluate=lambda model, data: ({}, 0))
+
+
+def test_no_operators_keeps_the_config_id_and_naming_them_changes_it(
+    workspace: Path,  # noqa: F811
+) -> None:
+    """Operators are opt-in (#227); unset, existing config_ids stay as they were."""
+    default = parse_experiment(experiment(workspace))
+    empty = parse_experiment(experiment(workspace, operators=[]))
+    named = parse_experiment(experiment(workspace, operators=["ops"]))
+
+    assert "operators" not in identity(default) and default.operators == []
+    assert scenarios(empty)[0].config_id == scenarios(default)[0].config_id
+    assert scenarios(named)[0].config_id != scenarios(default)[0].config_id

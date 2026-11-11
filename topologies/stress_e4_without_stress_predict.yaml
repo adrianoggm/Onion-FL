@@ -1,0 +1,19 @@
+# stress_e4_studies without the fog of stress_predict (issue #244): the topology of the
+# leave-one-dataset-out scenario that keeps stress_predict for testing only.
+name: stress_e4_without_stress_predict
+levels: [global, fog, edge]
+root:
+  id: cloud
+  aggregator: fedavg
+  server_optimizer: replace
+fog:
+  defaults:
+    aggregator: fedavg
+    quorum: 1.0
+    link_up: {transport: mqtt, codec: npz, profile: lan}
+  nodes:
+    - {id: lab_wesad, home: wesad_e4}
+    - {id: lab_physionet, home: physionet_e4}
+    - {id: hospital_nurse, home: nurse_stress}
+edge:
+  link_up: {transport: mqtt, codec: npz, profile: lan}

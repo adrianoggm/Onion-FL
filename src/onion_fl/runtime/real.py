@@ -14,6 +14,18 @@ in ``meta``: it records the same id and the end-to-end latency, which needs
 NTP-synchronised clocks across machines. The message itself is encoded as the
 simulation encodes it, so ``message.sent`` counts the same bytes in both
 (I1 §10); the frame's are in the ``frame`` tag.
+
+A transport that authenticates its peers (gRPC over mutual TLS) calls back
+with ``principal``, the identity it verified; the runtime puts it in the
+message's ``meta["principal"]``, ``None`` when the transport says nothing, and
+always over what the sender wrote there. The coordinator takes an operator's
+order only from the principal its ``src`` names (#227).
+
+Tracing (``ONIONFL_TRACE=1`` in a node process's environment, off by default)
+adds, after each message sent and handled, a ``trace.sent`` or
+``trace.delivered`` event with the wall-clock instants of its path through the
+process, to break a link's latency down (#198). Off, nothing is recorded or
+timed, and a run is the same.
 """
 
 import dataclasses
@@ -34,6 +46,7 @@ from onion_fl.roles.policies import create
 from onion_fl.transports import transports
 
 SEPARATOR = b"\x00"  # codec name, frame header (JSON), encoded message
+TRACE = "ONIONFL_TRACE"  # set to 1 in the environment to trace every message
 
 
 class RealRuntimeError(RuntimeError):
@@ -89,10 +102,21 @@ class RealRuntime:
         listeners: list[Any] | None = None,
         heartbeat_s: float | None = 10.0,
         epoch: float | None = None,
+        broker: str | None = None,
+        nodelay: bool | None = None,
+        grpc: Mapping[str, Any] | None = None,
     ) -> None:
         self.run_id, self.seed = run_id, seed
+        self.broker = broker  # host:port of every MQTT link, whatever they say
+        self.nodelay = nodelay  # and their TCP_NODELAY, when given
+        # Across machines, every gRPC link listens on ``grpc["listen"]`` and finds
+        # each node at ``grpc["peers"][node]`` (host:port), whatever they say.
+        self.grpc = None if grpc is None else dict(grpc)
         self.hosted = None if hosted is None else set(hosted)
         self.listeners = list(listeners or [])
+        # Called with a hosted node's id after each of its handlers, before what
+        # it sent leaves: where a real run saves the node's state (C9).
+        self.after_handle: list[Callable[[str], None]] = []
         self.heartbeat_s = heartbeat_s
         self.epoch = time.time() if epoch is None else epoch
         self.events: list[dict[str, Any]] = []
@@ -114,6 +138,7 @@ class RealRuntime:
         self._msg_ids = itertools.count(1)
         self._running = False
         self._thread: threading.Thread | None = None
+        self._trace = os.environ.get(TRACE, "") not in ("", "0")
 
     # --- setup -------------------------------------------------------------
 
@@ -134,7 +159,41 @@ class RealRuntime:
         if self.is_hosted(node.id):
             self._nodes[node.id] = node
 
+    def add_host(self, host: str, cpus: int | None = None) -> None:
+        """Real hosts are the machines the processes run on: nothing to model."""
+
+    def place(self, node_id: str, host: str) -> None:
+        """Real hosts are the machines the processes run on: nothing to model."""
+
+    def set_compute(self, node_id: str, compute: Any) -> None:
+        """Real work takes real time: nothing to model."""
+
+    def note(
+        self, t: float, node: str, name: str, value: Any = None, **tags: Any
+    ) -> None:
+        """Scheduled network changes are the emulator's, never the runtime's."""
+
     def _transport(self, spec: str | Mapping[str, Any]) -> Any:
+        name = spec if isinstance(spec, str) else spec.get("name", "mqtt")
+        if name == "mqtt" and (self.broker, self.nodelay) != (None, None):
+            spec = {**({} if isinstance(spec, str) else spec), "name": "mqtt"}
+            if self.broker is not None:
+                spec["broker"] = self.broker
+            if self.nodelay is not None:
+                spec["nodelay"] = self.nodelay
+        if self.grpc is not None:
+            name = spec if isinstance(spec, str) else spec.get("name")
+            if name == "grpc":
+                host, _, port = self.grpc["listen"].rpartition(":")
+                spec = {**({} if isinstance(spec, str) else spec), "name": "grpc"}
+                spec |= {
+                    "host": host,
+                    "port": int(port),
+                    "peers": {
+                        self.inbox(node): endpoint
+                        for node, endpoint in self.grpc["peers"].items()
+                    },
+                }
         key = json.dumps(spec, sort_keys=True)
         if key not in self._transports:
             self._transports[key] = create(transports, spec)
@@ -147,8 +206,10 @@ class RealRuntime:
         profile: Any = "lan",
         codec: str = "json",
         transport: str | Mapping[str, Any] = "mqtt",
+        channel: Any = None,
     ) -> None:
-        """Link two nodes both ways. ``profile`` is the simulator's; real links are real."""
+        """Link two nodes both ways. ``profile`` and ``channel`` are the
+        simulator's; real links are real."""
         wire, carrier = get_codec(codec), self._transport(transport)
         self._codecs[wire.name] = wire
         for src, dst in ((child, parent), (parent, child)):
@@ -159,10 +220,18 @@ class RealRuntime:
                 and (id(carrier), node_id) not in self._subscribed
             ):
                 self._subscribed.add((id(carrier), node_id))
-                carrier.on_receive(
-                    self.inbox(node_id),
-                    lambda data, n=node_id: self._post(0.0, "deliver", (n, data)),
-                )
+                carrier.on_receive(self.inbox(node_id), self._receiver(node_id))
+
+    def _receiver(self, node_id: str) -> Callable[..., None]:
+        """What a transport calls with a message for ``node_id`` and, if it
+        authenticated the sender, its ``principal``: queue it."""
+        if self._trace:  # and the instant the transport handed it over
+            return lambda data, principal=None: self._post(
+                0.0, "deliver", (node_id, data, principal, time.time())
+            )
+        return lambda data, principal=None: self._post(
+            0.0, "deliver", (node_id, data, principal)
+        )
 
     # --- running -----------------------------------------------------------
 
@@ -249,7 +318,14 @@ class RealRuntime:
     def _on_start(self, node_id: str) -> None:
         self._handle(node_id, "on_start", lambda node, ctx: node.on_start(ctx))
 
-    def _on_deliver(self, node_id: str, data: bytes) -> None:
+    def _on_deliver(
+        self,
+        node_id: str,
+        data: bytes,
+        principal: str | None = None,
+        received: float | None = None,
+    ) -> None:
+        popped = time.time() if received is not None else None
         name, _, rest = data.partition(SEPARATOR)
         header, _, body = rest.partition(SEPARATOR)
         try:
@@ -261,7 +337,8 @@ class RealRuntime:
                 raise MessageError("the frame header is not an object")
             msg = codec.decode(body)
             known = {k: frame[k] for k in ("msg_id", "sent_at") if k in frame}
-            msg = dataclasses.replace(msg, meta={**msg.meta, **known})
+            meta = {**msg.meta, **known, "principal": principal}
+            msg = dataclasses.replace(msg, meta=meta)
         except Exception as exc:  # anything can arrive; the node goes on
             self._record(
                 node_id, "message.rejected", None, {"reason": f"undecodable: {exc}"}
@@ -288,8 +365,21 @@ class RealRuntime:
         }
         if isinstance(sent_at, int | float):
             tags["latency"] = max(0.0, time.time() - sent_at)
+        if received is None:
+            self._record(node_id, "message.delivered", None, tags)
+            self._handle(
+                node_id, "on_message", lambda node, ctx: node.on_message(msg, ctx)
+            )
+            return
+        decoded = time.time()
         self._record(node_id, "message.delivered", None, tags)
+        recorded = time.time()
         self._handle(node_id, "on_message", lambda node, ctx: node.on_message(msg, ctx))
+        # received, taken off the queue, decoded, recorded, handled (wall clock)
+        stamps = [received, popped, decoded, recorded, time.time()]
+        self._record(
+            node_id, "trace.delivered", None, {"msg_id": msg_id, "wall": stamps}
+        )
 
     def _on_timer(self, node_id: str, name: str, token: int) -> None:
         if self._timers.get((node_id, name)) != token:
@@ -326,13 +416,24 @@ class RealRuntime:
                 {"handler": handler, "error": f"{type(exc).__name__}: {exc}"},
             )
             return
+        for hook in self.after_handle:  # saved first: what it sent is then kept
+            try:
+                hook(node_id)
+            except Exception as exc:  # noqa: BLE001 - a full disk keeps the run going
+                self._record(
+                    node_id,
+                    "node.error",
+                    None,
+                    {"handler": "after", "error": f"{type(exc).__name__}: {exc}"},
+                )
         for msg in ctx.outbox:
             self._transmit(msg)
 
     def _transmit(self, msg: Message) -> None:
         codec, carrier = self._links[(msg.src, msg.dst)]
         msg_id = f"{msg.src}>{msg.dst}#{next(self._msg_ids)}@{self.run_id}"
-        header = json.dumps({"msg_id": msg_id, "sent_at": time.time()}).encode()
+        sent_at = time.time()
+        header = json.dumps({"msg_id": msg_id, "sent_at": sent_at}).encode()
         try:
             body = codec.encode(msg)
         except MessageError as exc:
@@ -353,8 +454,16 @@ class RealRuntime:
         data = codec.name.encode() + SEPARATOR + header + SEPARATOR + body
         # The message's bytes, as the simulation counts them; the frame apart.
         tags["frame"] = len(data) - len(body)
+        encoded = time.time() if self._trace else None
         self._record(msg.src, "message.sent", len(body), tags)
+        if not self._trace:
+            carrier.send(self.inbox(msg.dst), data)
+            return
+        recorded = time.time()
         carrier.send(self.inbox(msg.dst), data)
+        # stamped, encoded, recorded, handed to the transport (wall clock)
+        stamps = [sent_at, encoded, recorded, time.time()]
+        self._record(msg.src, "trace.sent", None, {"msg_id": msg_id, "wall": stamps})
 
     def _record(
         self, node_id: str, name: str, value: Any, tags: Mapping[str, Any]

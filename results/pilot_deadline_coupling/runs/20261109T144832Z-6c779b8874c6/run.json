@@ -1,0 +1,187 @@
+{
+ "run_id": "20261109T144832Z-6c779b8874c6",
+ "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+ "config_id": "21b2dcbe4bcf1181a69bb2fa1ac017f9cdbef2ce5e8e914ca5ec6aca39bc13c9",
+ "backend": "sim",
+ "infrastructure_id": "10a39546e2e3476b646a1559ebf347a995314f30e42c8f4bc07ef0064c28f039",
+ "data_id": "7d8238e25baf310766da9c287196bd4e42a45a3a709873d21edc89830d10ad20",
+ "code_version": {
+  "commit": "a0af5e30aff9f9d51509262a27339667e6083df5",
+  "dirty": false
+ },
+ "seed": 4,
+ "scenario": "infrastructure.assignment.edges.statistic,infrastructure.assignment.edges.rho=label_divergence,0.6,learning.server_optimizer=replace,topology,infrastructure.assignment.aggregators=pilot_dc_flat(edge={'link_up': {'transport': 'mqtt', 'codec': 'npz'}},fog={'defaults': {'aggregator': 'fedavg', 'deadline': '1s', 'quorum': 0.25, 'close_at_quorum': True, 'staleness': {'name': 'next_round', 'weighting': {'name': 'polynomial', 'a': 0.5}}, 'link_up': {'transport': 'mqtt', 'codec': 'npz'}}, 'nodes': [{'id': 'hub'}]},levels=['global', 'fog', 'edge'],root={'id': 'cloud', 'aggregator': 'fedavg', 'server_optimizer': 'replace'}),{'hub': 'cloud-1'}",
+ "started_at": "2026-11-09T14:48:33.141927+00:00",
+ "status": "finished",
+ "config": {
+  "name": "pilot_deadline_coupling",
+  "description": "Piloto de la l\u00ednea A; \u00bfelige mal el predictor factorizado cuando un deadline acopla participaci\u00f3n y peso de los datos?",
+  "topology": {
+   "name": "pilot_dc_flat",
+   "levels": [
+    "global",
+    "fog",
+    "edge"
+   ],
+   "root": {
+    "id": "cloud",
+    "aggregator": "fedavg",
+    "server_optimizer": "replace"
+   },
+   "fog": {
+    "defaults": {
+     "aggregator": "fedavg",
+     "deadline": "1s",
+     "quorum": 0.25,
+     "close_at_quorum": true,
+     "staleness": {
+      "name": "next_round",
+      "weighting": {
+       "name": "polynomial",
+       "a": 0.5
+      }
+     },
+     "link_up": {
+      "transport": "mqtt",
+      "codec": "npz"
+     }
+    },
+    "nodes": [
+     {
+      "id": "hub"
+     }
+    ]
+   },
+   "edge": {
+    "link_up": {
+     "transport": "mqtt",
+     "codec": "npz"
+    }
+   }
+  },
+  "data": {
+   "datasets": {
+    "femnist": {
+     "descriptor": null,
+     "options": {}
+    }
+   },
+   "roles": {
+    "test": 0.2,
+    "val": 0.0,
+    "overrides": {},
+    "seed": 0,
+    "local_val": 0.0,
+    "subjects_per_client": 1,
+    "scaler": "global",
+    "impute": "mean",
+    "drop_constant": true
+   },
+   "placement": {
+    "name": "mixing",
+    "alpha": 1.0
+   }
+  },
+  "learning": {
+   "model": {
+    "name": "modular_mlp",
+    "adapter_width": 128,
+    "trunk_hidden": [
+     128
+    ],
+    "dropout": 0.2
+   },
+   "sharing": "fedavg",
+   "trainer": {
+    "name": "standard",
+    "local_epochs": 1,
+    "batch_size": 32,
+    "lr": 0.001
+   },
+   "init": "random",
+   "server_optimizer": "replace"
+  },
+  "rounds": 20,
+  "evaluation": {
+   "metrics": [
+    "loss",
+    "accuracy"
+   ],
+   "edge": {
+    "every": null,
+    "models": [
+     "received",
+     "local"
+    ]
+   },
+   "aggregators": {
+    "every": null,
+    "aggregate_children": true,
+    "holdout": true
+   },
+   "global": {
+    "every": 1
+   }
+  },
+  "runtime": {
+   "mode": "sim",
+   "timeout": 3600.0,
+   "heartbeat": 10.0,
+   "codec": null
+  },
+  "sinks": [],
+  "paths": {
+   "topologies": "topologies",
+   "datasets": "datasets",
+   "runs": "runs",
+   "cache": "data/cache"
+  },
+  "infrastructure": {
+   "name": "pilot_deadline_coupling",
+   "assignment": {
+    "root": "cloud-1",
+    "aggregators": {
+     "hub": "cloud-1"
+    },
+    "edges": {
+     "name": "coupled",
+     "mix": {
+      "fast": 0.34,
+      "medium": 0.33,
+      "slow": 0.33
+     },
+     "statistic": "label_divergence",
+     "rho": 0.6
+    },
+    "services": {}
+   }
+  }
+ },
+ "diagnostic": {
+  "statistic": "label_divergence",
+  "covariance": 6.977441743611376e-05,
+  "D": 0.09140974421111142,
+  "statistics": {
+   "label_divergence": {
+    "covariance": 6.977441743611376e-05,
+    "D": 0.09140974421111142
+   },
+   "gradient_norm": {
+    "covariance": 0.00010555384279244974,
+    "D": 0.07275790258302885
+   }
+  },
+  "participation": 0.5682775749122672,
+  "floss": {
+   "participation": 0.546152553508114,
+   "rounds_factor": 1.830990249110212
+  },
+  "deadlines": [
+   "hub"
+  ],
+  "unknown": [],
+  "seconds": 2.7519181999996363
+ },
+ "finished_at": "2026-11-09T14:49:20.178879+00:00",
+ "run_hash": "aa5df135728c28a39ac2e23db54df1e165233a743fe521b7d616c32c4104c9bf"
+}

@@ -31,12 +31,14 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    PrivateAttr,
     ValidationError,
     field_validator,
     model_validator,
 )
 
 HOST_ID = r"^[A-Za-z0-9_.-]+$"
+CALIBRATION_ID = r"^[0-9a-f]{64}$"
 
 _UNITS = {
     "duration": ({"ms": 1e-3, "s": 1.0, "m": 60.0, "h": 3600.0}, "10ms, 2s"),
@@ -76,6 +78,13 @@ class Profile(Strict):
     train_rate: float | None = Field(
         None, gt=0, description="Muestras entrenadas por segundo"
     )
+    train_sigma: float | None = Field(
+        None,
+        ge=0,
+        description="Dispersión de la tasa de entrenamiento: desviación típica "
+        "de su logaritmo (lognormal, de media la de train_rate)",
+        exclude_if=lambda v: v is None,  # the ids from before it stay
+    )
     aggregate_rate: float | None = Field(
         None, gt=0, description="Bytes de actualización combinados por segundo"
     )
@@ -100,11 +109,27 @@ class Profile(Strict):
         "ninguna de las dos está calibrada",
         exclude_if=lambda v: v == "declared",
     )
+    calibration: str | None = Field(
+        None,
+        pattern=CALIBRATION_ID,
+        description="Calibración de la que salen sus tasas (calibrations/<id>/)",
+        exclude_if=lambda v: v is None,  # keeps existing infrastructure_ids
+    )
 
     _memory = field_validator("memory", mode="before")(lambda v: quantity(v, "memory"))
     _bandwidth = field_validator("bandwidth", mode="before")(
         lambda v: quantity(v, "bandwidth")
     )
+
+    @model_validator(mode="after")
+    def _one_source(self) -> Profile:
+        given = [k for k in ("train_rate", "aggregate_rate") if getattr(self, k)]
+        if self.calibration and given:
+            raise ValueError(
+                f"{given} and a calibration: its rates come from the calibration, "
+                "so remove them"
+            )
+        return self
 
 
 class LinkFields(Strict):
@@ -192,9 +217,19 @@ class Site(Strict):
 
 
 class Link(LinkFields):
-    """A physical link between two sites."""
+    """A physical link between two sites.
+
+    Its fields are what the emulator shapes; with a ``calibration``, the
+    simulation uses the latency, bandwidth and loss measured over it instead.
+    """
 
     between: tuple[str, str]
+    calibration: str | None = Field(
+        None,
+        pattern=CALIBRATION_ID,
+        description="Calibración con lo medido sobre el enlace, para la simulación",
+        exclude_if=lambda v: v is None,  # keeps existing infrastructure_ids
+    )
 
 
 class Change(Strict):
@@ -266,6 +301,7 @@ class Infrastructure(Strict):
     services: dict[str, str] = Field(
         default_factory=dict, description="servicio -> host (p. ej. mqtt_broker)"
     )
+    _calibrations: dict[str, Any] = PrivateAttr(default_factory=dict)  # id -> loaded
     device_traces: dict[str, dict[str, Any]] | None = Field(
         None,
         description="Por sitio, la traza, sus hashes y los clientes muestreados",
@@ -357,11 +393,15 @@ class Infrastructure(Strict):
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def parse_infrastructure(raw: Mapping[str, Any]) -> Infrastructure:
+def parse_infrastructure(
+    raw: Mapping[str, Any], calibrations: str | Path | None = None
+) -> Infrastructure:
+    """A validated infrastructure, with the calibrations it cites loaded from
+    the folder ``calibrations`` when given."""
     if not isinstance(raw, Mapping):
         raise InfrastructureError("an infrastructure must be a mapping")
     try:
-        return Infrastructure.model_validate(dict(raw))
+        infra = Infrastructure.model_validate(dict(raw))
     except ValidationError as exc:
         details = "; ".join(
             f"{'.'.join(str(p) for p in err['loc']) or 'infrastructure'}: "
@@ -369,10 +409,17 @@ def parse_infrastructure(raw: Mapping[str, Any]) -> Infrastructure:
             for err in exc.errors()
         )
         raise InfrastructureError(details) from exc
+    if calibrations is None:
+        return infra
+    from onion_fl.infrastructure.calibration import bind
+
+    return bind(infra, calibrations)
 
 
 def load_infrastructure(
-    path: str | Path, device_traces: str | Path = "data"
+    path: str | Path,
+    calibrations: str | Path | None = None,
+    device_traces: str | Path = "data",
 ) -> Infrastructure:
     """The infrastructure in ``path``; its trace pools are sampled from the
     traces under ``device_traces`` (``<device_traces>/FedScale/``)."""
@@ -386,7 +433,8 @@ def load_infrastructure(
     except yaml.YAMLError as exc:
         raise InfrastructureError(f"{path.name} is not valid YAML: {exc}") from None
     return parse_infrastructure(
-        expand_traces(anchor_traces(raw, path.parent), device_traces)
+        expand_traces(anchor_traces(raw, path.parent), device_traces),
+        calibrations,
     )
 
 

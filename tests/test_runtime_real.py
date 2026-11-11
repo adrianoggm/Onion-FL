@@ -70,6 +70,7 @@ def test_memory_buses_are_separate() -> None:
 
 class FakeClient:
     instances: list[FakeClient] = []
+    acknowledges = True  # whether the broker answers subscriptions
 
     def __init__(self, *args, **kwargs) -> None:
         self.kwargs = kwargs
@@ -77,6 +78,7 @@ class FakeClient:
         self.published: list[tuple[str, bytes, int]] = []
         self.reconnect = None
         self.connected_to = None
+        self.pending: list[int] = []
         FakeClient.instances.append(self)
 
     def reconnect_delay_set(self, min_delay, max_delay):
@@ -87,6 +89,13 @@ class FakeClient:
 
     def loop_start(self):
         self.on_connect(self, None, None, 0, None)
+        if self.acknowledges:
+            self.acknowledge()
+
+    def acknowledge(self) -> None:
+        """The broker answers every pending subscription."""
+        while self.pending:
+            self.on_subscribe(self, None, self.pending.pop(0), [0], None)
 
     def loop_stop(self):
         pass
@@ -96,6 +105,8 @@ class FakeClient:
 
     def subscribe(self, topic, qos):
         self.subscribed.append((topic, qos))
+        self.pending.append(len(self.subscribed))
+        return 0, len(self.subscribed)
 
     def publish(self, topic, payload, qos):
         self.published.append((topic, payload, qos))
@@ -110,6 +121,7 @@ def fake_paho(monkeypatch):
     import paho.mqtt.client as mqtt
 
     FakeClient.instances = []
+    monkeypatch.setattr(FakeClient, "acknowledges", True)
     monkeypatch.setattr(mqtt, "Client", FakeClient)
     return FakeClient
 
@@ -119,14 +131,16 @@ def test_mqtt_publishes_and_subscribes_with_the_link_qos(fake_paho) -> None:
     transport = transports.create("mqtt", {"broker": "broker.local:1884", "qos": 2})
     transport.on_receive("onionfl/r/fog/inbox", got.append)
     transport.start()
-    (client,) = fake_paho.instances
+    listener, publisher = fake_paho.instances  # one connection each way (#192)
 
     transport.send("onionfl/r/cloud/inbox", b"payload")
-    client.deliver("onionfl/r/fog/inbox", b"reply")
+    listener.deliver("onionfl/r/fog/inbox", b"reply")
 
-    assert client.connected_to[:2] == ("broker.local", 1884)
-    assert client.subscribed == [("onionfl/r/fog/inbox", 2)]
-    assert client.published == [("onionfl/r/cloud/inbox", b"payload", 2)]
+    for client in (listener, publisher):
+        assert client.connected_to[:2] == ("broker.local", 1884)
+    assert listener.subscribed == [("onionfl/r/fog/inbox", 2)]
+    assert listener.published == [] and publisher.subscribed == []
+    assert publisher.published == [("onionfl/r/cloud/inbox", b"payload", 2)]
     assert got == [b"reply"]
     assert transport.stats["bytes_sent"] == 7 and transport.stats["received"] == 1
 
@@ -135,12 +149,52 @@ def test_mqtt_resubscribes_after_a_reconnect(fake_paho) -> None:
     transport = transports.create("mqtt", {"reconnect_min": 2, "reconnect_max": 60})
     transport.on_receive("a/inbox", lambda data: None)
     transport.start()
-    (client,) = fake_paho.instances
+    client = fake_paho.instances[0]
 
     client.on_connect(client, None, None, 0, None)  # the broker came back
 
     assert client.reconnect == (2, 60)
     assert client.subscribed == [("a/inbox", 1), ("a/inbox", 1)]
+
+
+def test_mqtt_starts_only_once_every_inbox_is_subscribed(fake_paho) -> None:
+    """Otherwise a node could send to one it hosts before that one listens."""
+    fake_paho.acknowledges = False
+    transport = transports.create("mqtt", {"connect_timeout": 0.05})
+    transport.on_receive("a/inbox", lambda data: None)
+    with pytest.raises(ConnectionError):
+        transport.start()
+
+    fake_paho.instances[0].acknowledge()
+    assert transport._listening.is_set()
+
+
+def test_mqtt_turns_nagle_off_on_both_connections(fake_paho) -> None:
+    """Every socket paho opens, reconnections included, gets TCP_NODELAY (#198)."""
+    transports.create("mqtt", {}).start()
+
+    assert len(fake_paho.instances) == 2
+    for client in fake_paho.instances:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            client.on_socket_open(client, None, sock)
+            assert sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY)
+
+
+def test_mqtt_keeps_nagle_when_the_link_asks(fake_paho) -> None:
+    transports.create("mqtt", {"nodelay": False}).start()
+
+    assert all(not hasattr(c, "on_socket_open") for c in fake_paho.instances)
+
+
+def test_the_launcher_can_set_nagle_on_every_mqtt_link() -> None:
+    """As it sets the broker: the emulated backend decides both for its lab."""
+    rt = RealRuntime("run-nd", broker="10.0.0.3:1883", nodelay=False)
+    plain = RealRuntime("run-nd")
+
+    forced = rt._transport({"name": "mqtt", "qos": 1})
+    assert forced.params.nodelay is False and forced.params.broker == "10.0.0.3:1883"
+    assert plain._transport("mqtt").params.nodelay is True
+    assert rt._transport("memory") is not forced
 
 
 @pytest.mark.parametrize("params", [{"qos": 3}, {"broker": "no-port:x"}])
@@ -188,6 +242,51 @@ def test_messages_carry_their_id_and_measure_latency() -> None:
     }
     assert all(e["tags"]["latency"] >= 0 for e in delivered)
     assert any(e["name"] == "tick.fired" for e in rt.events)
+
+
+def _ping_echo(name: str) -> RealRuntime:
+    rt = RealRuntime(name, seed=0, heartbeat_s=None)
+    rt.add_node(Ping("ping"))
+    rt.add_node(Echo("echo"))
+    rt.add_link("ping", "echo", transport={"name": "memory", "bus": name})
+    rt.run(timeout=5)
+    return rt
+
+
+def test_tracing_is_off_unless_the_environment_asks(monkeypatch) -> None:
+    monkeypatch.delenv("ONIONFL_TRACE", raising=False)
+    off = _ping_echo("trace-off")
+    monkeypatch.setenv("ONIONFL_TRACE", "0")
+    zero = _ping_echo("trace-zero")
+
+    for rt in (off, zero):
+        assert not [e for e in rt.events if e["name"].startswith("trace.")]
+
+
+def test_tracing_times_each_message_through_the_process(monkeypatch) -> None:
+    """``ONIONFL_TRACE=1`` adds one stamped event per message sent and handled (#198)."""
+    monkeypatch.delenv("ONIONFL_TRACE", raising=False)
+    plain = _ping_echo("trace-plain")
+    monkeypatch.setenv("ONIONFL_TRACE", "1")
+    traced = _ping_echo("trace-on")
+
+    def stamps(name: str) -> dict[str, list[float]]:
+        return {
+            e["tags"]["msg_id"]: e["tags"]["wall"]
+            for e in traced.events
+            if e["name"] == name
+        }
+
+    sent = {e["tags"]["msg_id"] for e in traced.events if e["name"] == "message.sent"}
+    on_send, on_delivery = stamps("trace.sent"), stamps("trace.delivered")
+    assert set(on_send) == set(on_delivery) == sent and len(sent) == 2
+    for wall in on_send.values():  # stamped, encoded, recorded, handed over
+        assert len(wall) == 4 and wall == sorted(wall)
+    for wall in on_delivery.values():  # received, popped, decoded, recorded, handled
+        assert len(wall) == 5 and wall == sorted(wall)
+    # Everything else is what the run records without tracing.
+    names = [e["name"] for e in traced.events if not e["name"].startswith("trace.")]
+    assert names == [e["name"] for e in plain.events]
 
 
 def test_nodes_not_hosted_here_only_receive_messages() -> None:

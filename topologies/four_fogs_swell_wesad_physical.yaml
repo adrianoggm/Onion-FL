@@ -1,0 +1,22 @@
+# four_fogs_swell_wesad_lossless without the link and device profiles, for runs
+# on an infrastructure (issue #192), which gives them: one source of truth.
+name: four_fogs_swell_wesad_physical
+levels: [global, fog, edge]
+root:
+  id: cloud
+  aggregator: fedavg
+  server_optimizer: replace
+  deadline: 300s
+fog:
+  defaults:
+    aggregator: fedavg
+    quorum: 1.0
+    deadline: 120s
+    link_up: {transport: mqtt, codec: json}
+  nodes:
+    - {id: fog_a1, home: swell}
+    - {id: fog_a2, home: swell}
+    - {id: fog_b1, home: wesad}
+    - {id: fog_b2, home: wesad}
+edge:
+  link_up: {transport: mqtt, codec: json}

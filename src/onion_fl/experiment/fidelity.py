@@ -8,7 +8,8 @@ the cheaper backend under test. A run of ``A`` and one of ``B`` are a pair
 when they ran the same configuration with the same seed: the same
 ``design_id``, the ``config_id`` of the config without what only says where
 and how it ran (``backend``, ``runtime.mode``, ``timeout``, ``heartbeat``,
-``paths`` and the ``transport`` of the links of an inline topology). So
+``paths`` and the ``transport`` of the links of an inline topology, but
+with the failures of the backend: ``restarts`` and ``joins``). So
 ``A`` and ``B`` can also be one backend over two transports, MQTT and gRPC.
 
 Three levels:
@@ -72,6 +73,7 @@ PROTOCOL = (
 )
 SYSTEM = ("time", "bytes", "time_to_target")  # from the run itself, lower is better
 RUNTIME_ONLY = ("mode", "timeout", "heartbeat")
+FAULTS = ("restarts", "joins")  # what fails is part of the design
 BOOTSTRAP = 2000
 MIN_SEEDS = 5  # for decision fidelity (I1 §12, §17)
 RTOL, ATOL = 1e-6, 1e-7  # as test_runtime_equivalence
@@ -88,8 +90,19 @@ def _without_transport(value: Any) -> Any:
 
 
 def design_id(config: Mapping[str, Any]) -> str:
-    """The ``config_id`` of a run's config without where and how it ran."""
+    """The ``config_id`` of a run's config without where and how it ran.
+
+    A backend's failures (``restarts``, ``joins``: the same keys in ``sim``
+    and ``distributed``) are part of the design, so a run with failures
+    pairs with the same failures on the other backend, never with a run
+    without them.
+    """
     design = {k: v for k, v in config.items() if k not in ("backend", "paths")}
+    backend = config.get("backend")
+    if isinstance(backend, Mapping):
+        faults = {k: backend[k] for k in FAULTS if backend.get(k)}
+        if faults:
+            design["faults"] = faults
     runtime = {
         k: v for k, v in (design.get("runtime") or {}).items() if k not in RUNTIME_ONLY
     }
@@ -602,6 +615,7 @@ def fidelity(
     seed: int = 0,
     control: str | Path | None = None,
     predictor: bool = True,
+    calibration: str | None = None,
 ) -> dict[str, Any]:
     """Functional, performance and decision fidelity of the runs of ``b`` against ``a``.
 
@@ -611,6 +625,9 @@ def fidelity(
     each decision on ``time`` or ``time_to_target`` also shows how both
     variants of the predictor decide against ``a``. Its rounds to target come
     from the runs of ``control`` (default: those of ``a``).
+
+    ``calibration``, when given, is the id that every paired run of ``b`` must
+    cite, and no other (a validation cites a closed calibration, I1 §13).
     """
     if str(a) in PREDICTORS and str(b) in PREDICTORS:
         raise ValueError("fidelity: compare the predictor with runs, not with itself")
@@ -644,6 +661,39 @@ def fidelity(
             f"no run of {a} and {b} shares a configuration and seed; are they "
             "the same experiment?"
         )
+    estimated = [
+        cell.path.name
+        for cell in [cells_a[k] for k in keys] + [cells_b[k] for k in keys]
+        if cell.meta.get("estimated")
+    ]
+    if estimated:  # docs/RULES.md §3
+        raise ValueError(
+            f"runs {estimated} use training rates estimated by FLOPs (run.json "
+            "'estimated'); a fidelity result cannot rest on them: calibrate "
+            "those (profile, model) pairs"
+        )
+    outside = [
+        cell.path.name
+        for cell in [cells_a[k] for k in keys] + [cells_b[k] for k in keys]
+        if cell.meta.get("outside_calibration")
+    ]
+    if outside:  # the same rule for a path model past the sizes it was fitted on
+        raise ValueError(
+            f"runs {outside} send messages larger than their calibrated paths "
+            "hold (run.json 'outside_calibration'); calibrate those sizes"
+        )
+    if calibration is not None:
+        uncited = [
+            cells_b[k].path.name
+            for k in keys
+            if set(cells_b[k].meta.get("calibrations") or []) != {calibration}
+        ]
+        if uncited:
+            raise ValueError(
+                f"runs {uncited} of B do not cite calibration {calibration} alone "
+                "(run.json 'calibrations'); run them on the infrastructure that "
+                "cites it"
+            )
     for cell in [cells_a[k] for k in keys] + [cells_b[k] for k in keys]:
         if not verify_run(cell.path):
             warnings.append(f"{cell.path.name}: its files do not match its run_hash")
@@ -710,6 +760,7 @@ def fidelity(
     return {
         "a": str(a),
         "b": str(b),
+        **({"calibration": calibration} if calibration is not None else {}),
         "backends": {
             "a": sorted({cells_a[k].backend for k in keys}),
             "b": sorted({cells_b[k].backend for k in keys}),
@@ -824,7 +875,7 @@ def _identity(cell: Cell) -> dict[str, Any]:
         "topology_id": meta.get("topology_id"),
         "infrastructure_id": meta.get("infrastructure_id"),
         "config_id": meta.get("config_id"),
-    }
+    } | ({"calibrations": meta["calibrations"]} if meta.get("calibrations") else {})
 
 
 # --- CSV and HTML --------------------------------------------------------------------

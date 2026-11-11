@@ -308,8 +308,10 @@ def test_a_topology_availability_clashes_with_a_traced_one(
     reason="needs FedScale's traces imported in data/FedScale (README §2)",
 )
 def test_the_real_traces_give_the_same_profiles_for_the_same_seed() -> None:
-    one = load_infrastructure("infrastructures/fedscale_field.yaml", REAL)
-    again = load_infrastructure("infrastructures/fedscale_field.yaml", REAL)
+    one = load_infrastructure("infrastructures/fedscale_field.yaml", device_traces=REAL)
+    again = load_infrastructure(
+        "infrastructures/fedscale_field.yaml", device_traces=REAL
+    )
     record = one.device_traces["field"]
     assert one.infrastructure_id == again.infrastructure_id
     assert one.profiles == again.profiles

@@ -1,0 +1,192 @@
+{
+ "run_id": "20261109T125919Z-d74f9e2d2232",
+ "topology_id": "b4142e77a9082bd89b5640ea9a6cdf776726235cc917dbf8d6340a06674df2f9",
+ "config_id": "d497336e0649c51024b1ad70f5c1da4ece78e3d3877f4fb208d6f0c788f2c832",
+ "backend": "sim",
+ "infrastructure_id": "10a39546e2e3476b646a1559ebf347a995314f30e42c8f4bc07ef0064c28f039",
+ "data_id": "7d8238e25baf310766da9c287196bd4e42a45a3a709873d21edc89830d10ad20",
+ "code_version": {
+  "commit": "a0af5e30aff9f9d51509262a27339667e6083df5",
+  "dirty": false
+ },
+ "seed": 0,
+ "scenario": "infrastructure.assignment.edges.statistic,infrastructure.assignment.edges.rho=samples,-0.6,learning.server_optimizer=fedadam,topology,infrastructure.assignment.aggregators=pilot_dc_two_fogs(edge={'link_up': {'transport': 'mqtt', 'codec': 'npz'}},fog={'defaults': {'aggregator': 'fedavg', 'deadline': '1s', 'quorum': 0.25, 'close_at_quorum': True, 'staleness': {'name': 'next_round', 'weighting': {'name': 'polynomial', 'a': 0.5}}, 'link_up': {'transport': 'mqtt', 'codec': 'npz'}}, 'nodes': [{'id': 'fog_0'}, {'id': 'fog_1'}]},levels=['global', 'fog', 'edge'],root={'id': 'cloud', 'aggregator': 'fedavg', 'server_optimizer': 'replace'}),{'fog_0': 'fog-1', 'fog_1': 'fog-2'}",
+ "started_at": "2026-11-09T12:59:19.963233+00:00",
+ "status": "finished",
+ "config": {
+  "name": "pilot_deadline_coupling",
+  "description": "Piloto de la l\u00ednea A; \u00bfelige mal el predictor factorizado cuando un deadline acopla participaci\u00f3n y peso de los datos?",
+  "topology": {
+   "name": "pilot_dc_two_fogs",
+   "levels": [
+    "global",
+    "fog",
+    "edge"
+   ],
+   "root": {
+    "id": "cloud",
+    "aggregator": "fedavg",
+    "server_optimizer": "replace"
+   },
+   "fog": {
+    "defaults": {
+     "aggregator": "fedavg",
+     "deadline": "1s",
+     "quorum": 0.25,
+     "close_at_quorum": true,
+     "staleness": {
+      "name": "next_round",
+      "weighting": {
+       "name": "polynomial",
+       "a": 0.5
+      }
+     },
+     "link_up": {
+      "transport": "mqtt",
+      "codec": "npz"
+     }
+    },
+    "nodes": [
+     {
+      "id": "fog_0"
+     },
+     {
+      "id": "fog_1"
+     }
+    ]
+   },
+   "edge": {
+    "link_up": {
+     "transport": "mqtt",
+     "codec": "npz"
+    }
+   }
+  },
+  "data": {
+   "datasets": {
+    "femnist": {
+     "descriptor": null,
+     "options": {}
+    }
+   },
+   "roles": {
+    "test": 0.2,
+    "val": 0.0,
+    "overrides": {},
+    "seed": 0,
+    "local_val": 0.0,
+    "subjects_per_client": 1,
+    "scaler": "global",
+    "impute": "mean",
+    "drop_constant": true
+   },
+   "placement": {
+    "name": "mixing",
+    "alpha": 1.0
+   }
+  },
+  "learning": {
+   "model": {
+    "name": "modular_mlp",
+    "adapter_width": 128,
+    "trunk_hidden": [
+     128
+    ],
+    "dropout": 0.2
+   },
+   "sharing": "fedavg",
+   "trainer": {
+    "name": "standard",
+    "local_epochs": 1,
+    "batch_size": 32,
+    "lr": 0.001
+   },
+   "init": "random",
+   "server_optimizer": "fedadam"
+  },
+  "rounds": 20,
+  "evaluation": {
+   "metrics": [
+    "loss",
+    "accuracy"
+   ],
+   "edge": {
+    "every": null,
+    "models": [
+     "received",
+     "local"
+    ]
+   },
+   "aggregators": {
+    "every": null,
+    "aggregate_children": true,
+    "holdout": true
+   },
+   "global": {
+    "every": 1
+   }
+  },
+  "runtime": {
+   "mode": "sim",
+   "timeout": 3600.0,
+   "heartbeat": 10.0,
+   "codec": null
+  },
+  "sinks": [],
+  "paths": {
+   "topologies": "topologies",
+   "datasets": "datasets",
+   "runs": "runs",
+   "cache": "data/cache"
+  },
+  "infrastructure": {
+   "name": "pilot_deadline_coupling",
+   "assignment": {
+    "root": "cloud-1",
+    "aggregators": {
+     "fog_0": "fog-1",
+     "fog_1": "fog-2"
+    },
+    "edges": {
+     "name": "coupled",
+     "mix": {
+      "fast": 0.34,
+      "medium": 0.33,
+      "slow": 0.33
+     },
+     "statistic": "samples",
+     "rho": -0.6
+    },
+    "services": {}
+   }
+  }
+ },
+ "diagnostic": {
+  "statistic": "label_divergence",
+  "covariance": -0.0001740278933086653,
+  "D": -0.21324434194299335,
+  "statistics": {
+   "label_divergence": {
+    "covariance": -0.0001740278933086653,
+    "D": -0.21324434194299335
+   },
+   "gradient_norm": {
+    "covariance": -0.00020175535609613096,
+    "D": -0.1260436814730109
+   }
+  },
+  "participation": 0.6075725427353564,
+  "floss": {
+   "participation": 0.503650793372751,
+   "rounds_factor": 1.9855026799489264
+  },
+  "deadlines": [
+   "fog_0",
+   "fog_1"
+  ],
+  "unknown": [],
+  "seconds": 2.1698182999989513
+ },
+ "finished_at": "2026-11-09T13:01:40.426203+00:00",
+ "run_hash": "f34256f6edafe75b458ed2c99afee496f90e1466d2f08c187cd3d361392b768c"
+}

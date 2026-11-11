@@ -506,6 +506,10 @@ class PathsConfig(Strict):
     datasets: str = "datasets"
     runs: str = "runs"
     cache: str = "data/cache"
+    calibrations: str = Field(
+        "calibrations",
+        exclude_if=lambda v: v == "calibrations",  # keeps existing config_ids
+    )
 
 
 class ExperimentConfig(Strict):
@@ -564,6 +568,12 @@ class ExperimentConfig(Strict):
         description="Champion y challenger: el modelo de cada ronda solo llega a "
         "los edges si la validación lo promueve",
         exclude_if=lambda v: v is None,  # unset, it keeps existing config_ids
+    )
+    operators: list[str] = Field(
+        default_factory=list,
+        description="Ids que pueden dar órdenes de promover o revertir versiones; "
+        "sin ellos no se acepta ninguna",
+        exclude_if=lambda v: not v,  # unset, it keeps existing config_ids
     )
 
     infrastructure: InfrastructureConfig | None = Field(
@@ -757,7 +767,6 @@ class ExperimentConfig(Strict):
         name = ref if isinstance(ref, str) else ref["name"]
         merging = getattr(placements.create(name, params), "merge", False)
         refusals = [
-            (not self.simulated, "real runs do not stream yet (C9)"),
             (
                 (init if isinstance(init, str) else init["name"]) == "run",
                 "learning.init: run cannot continue a stream yet; the bundle holds "

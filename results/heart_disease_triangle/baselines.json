@@ -1,0 +1,14 @@
+{
+  "heart_disease": {
+    "lr": {
+      "train_samples": 486,
+      "test": {
+        "accuracy": 0.7952755905511811,
+        "balanced_accuracy": 0.7950723018680568,
+        "f1_macro": 0.7950723018680568,
+        "n_samples": 254
+      },
+      "val": null
+    }
+  }
+}

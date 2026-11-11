@@ -645,3 +645,61 @@ def test_placing_on_an_unknown_host_is_refused() -> None:
     rt.add_host("h")
     with pytest.raises(SimulationError, match="already in the simulation"):
         rt.add_host("h")
+
+
+# --- a process that dies and comes back, or starts late (continuum C9) -----------------
+
+
+def test_a_killed_process_loses_its_timers_and_unfinished_work() -> None:
+    compute = compute_models.create("samples_per_second", {"samples_per_second": 500})
+    pinger = Pinger("edge_1", "fog_0", rounds=(0, 1))
+    rt, _, echo = pair(echo=Echo("fog_0", work=1000), pinger=pinger, compute=compute)
+    saved, revived = [], []
+    rt.after_handle.append(lambda node: saved.append((node, rt.now)))
+    rt.on_revive.append(lambda node, restarted: revived.append((node, rt.now)))
+    rt.restart("fog_0", at=1.0, down=0.5)  # in the middle of its first job
+    rt.run()
+
+    # Its first job dies with it, and so does the update waiting for it.
+    assert pinger.replies == [] and [t for t, _ in echo.seen] == [0.1]
+    assert revived == [("fog_0", 1.5)]
+    # Saved after each start only: the job it was killed in never finished.
+    assert [s for s in saved if s[0] == "fog_0"] == [("fog_0", 0.0), ("fog_0", 1.5)]
+    dropped = [e for e in rt.events if e["name"] == "message.dropped_offline"]
+    assert [e["tags"] for e in dropped] == [
+        {"pending": 1},
+        {"src": "edge_1", "kind": "update", "round": 1, "msg_id": "edge_1>fog_0#2"},
+    ]
+
+
+def test_a_restart_starts_the_node_again_without_its_old_timers() -> None:
+    rt = SimRuntime()
+    node = Timed("fog_0", lambda ctx: ctx.set_timer(2.0, "deadline"))
+    rt.add_node(node)
+    rt.restart("fog_0", at=1.0, down=0.5)
+    rt.run()
+
+    assert node.fired == [("deadline", 3.5)]  # armed again by on_start, at 1.5
+    assert [e["name"] for e in rt.events] == ["node.killed"]
+
+
+def test_a_late_node_starts_at_its_second_and_drops_what_came_before() -> None:
+    pinger = Pinger("edge_1", "fog_0", rounds=(0,))
+    late = Pinger("fog_0", "edge_1", rounds=(5,))
+    rt, _, _ = pair(echo=late, pinger=pinger)
+    rt.join("fog_0", at=3.0)
+    rt.run()
+
+    assert late.replies == []  # edge_1's message came at 0.1, before fog_0 ran
+    assert [t for t, _ in pinger.replies] == [pytest.approx(3.1)]
+
+
+def test_failures_are_scheduled_on_known_nodes_before_the_run() -> None:
+    rt, _, _ = pair()
+    with pytest.raises(SimulationError, match="unknown node"):
+        rt.restart("nobody", at=1.0, down=1.0)
+    with pytest.raises(SimulationError, match="negative down"):
+        rt.restart("fog_0", at=1.0, down=-1.0)
+    rt.run()
+    with pytest.raises(SimulationError, match="before the run"):
+        rt.join("fog_0", at=1.0)

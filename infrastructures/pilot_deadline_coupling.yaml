@@ -1,0 +1,32 @@
+# Infrastructure of the deadline-coupling pilot (issue #213, capabilities spec §5).
+# Illustrative numbers, fixed before any run and not calibrated: the pilot asks a
+# question of the simulator, not of a physical system.
+#
+# - 160 field devices, one per training writer of FEMNIST, in three speed classes
+#   whose train rate is lognormal (sigma 0.4), so meeting a 1 s deadline is a
+#   probability, not a fixed yes or no (spec N4). With ~224 images per writer and
+#   one local epoch: a fast device takes ~0.2 s, a medium one ~0.75 s and a slow
+#   one ~2.2 s on average.
+# - The fogs combine 1e8 bytes/s and the cloud 2e8, so a flat federation pays
+#   for combining 160 updates at one node.
+# - Dedicated bandwidth: no contention, which the factorised predictor cannot
+#   see, so the pilot isolates the deadline and the coupling.
+# - A flat federation reaches the cloud over the direct field-dc link (25 ms, the
+#   path of least latency); a fog federation goes through the fog site.
+name: pilot_deadline_coupling
+profiles:
+  cloud_vm: {aggregate_rate: 2.0e8}
+  fog_server: {aggregate_rate: 1.0e8}
+  fast: {train_rate: 1000, train_sigma: 0.4}
+  medium: {train_rate: 300, train_sigma: 0.4}
+  slow: {train_rate: 100, train_sigma: 0.4}
+sites:
+  dc: {hosts: {cloud-1: cloud_vm}}
+  fog: {hosts: {fog-1: fog_server, fog-2: fog_server, fog-3: fog_server, fog-4: fog_server}}
+  field: {pool: {fast: 54, medium: 53, slow: 53}}
+network:
+  bandwidth: dedicated
+  links:
+    - {between: [field, fog], latency: 10ms, bandwidth: 100Mbps}
+    - {between: [fog, dc], latency: 20ms, bandwidth: 1Gbps}
+    - {between: [field, dc], latency: 25ms, bandwidth: 50Mbps}

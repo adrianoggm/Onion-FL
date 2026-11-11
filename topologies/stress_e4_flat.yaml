@@ -1,0 +1,17 @@
+# The flat counterpart of stress_e4_studies (issue #244): every edge of the four
+# E4 studies under a single aggregator, so no level groups them by study.
+name: stress_e4_flat
+levels: [global, fog, edge]
+root:
+  id: cloud
+  aggregator: fedavg
+  server_optimizer: replace
+fog:
+  defaults:
+    aggregator: fedavg
+    quorum: 1.0
+    link_up: {transport: mqtt, codec: npz, profile: lan}
+  nodes:
+    - {id: all_studies}
+edge:
+  link_up: {transport: mqtt, codec: npz, profile: lan}

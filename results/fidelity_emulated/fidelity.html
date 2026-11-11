@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Onion-FL fidelity</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 2rem; color: #111; }
+table { border-collapse: collapse; margin: .5rem 0 1.5rem; font-size: .9rem; }
+th, td { border: 1px solid #ddd; padding: .25rem .5rem; text-align: left; }
+section { margin-bottom: 2rem; }
+</style></head><body>
+<h1>Onion-FL fidelity</h1>
+<p>B (sim, runs_sim)
+against A (emulated,
+runs_emulated): 3 pairs, seeds [0, 1, 2].</p>
+<h2>Warnings</h2><ul><li>3 seed(s) complete for every configuration; decision fidelity asks for at least 5 (I1 §12)</li><li>one configuration only: there is no ranking to compare</li></ul>
+<section><h2>Functional</h2>
+<p>Complete: no (model yes, protocol
+yes, bytes no).</p>
+<table><thead><tr><th>scenario</th><th>seed</th><th>model</th><th>max |Δ|</th><th>protocol</th><th>bytes</th><th>control A</th><th>control B</th></tr></thead><tbody><tr><td>base</td><td>0</td><td>yes</td><td>1.788e-07</td><td>yes</td><td>no</td><td>13342</td><td>12666</td></tr><tr><td>base</td><td>1</td><td>yes</td><td>1.192e-07</td><td>yes</td><td>no</td><td>14923</td><td>12666</td></tr><tr><td>base</td><td>2</td><td>yes</td><td>2.086e-07</td><td>yes</td><td>no</td><td>16501</td><td>12666</td></tr></tbody></table></section>
+<section><h2>Performance</h2>
+<p>Relative error (B − A) / A, mean per pair, then over pairs; 95 % bootstrap
+interval of the absolute one.</p>
+<table><thead><tr><th>quantity</th><th>pairs</th><th>A mean</th><th>B mean</th><th>error</th><th>|error|</th><th>ci low</th><th>ci high</th></tr></thead><tbody><tr><td>compute_time</td><td>3</td><td>1.24</td><td>0.7026</td><td>-0.06058</td><td>0.5797</td><td>0.539</td><td>0.6265</td></tr><tr><td>duration</td><td>3</td><td>91.57</td><td>17.55</td><td>-0.7875</td><td>0.7875</td><td>0.722</td><td>0.8667</td></tr><tr><td>link_latency</td><td>3</td><td>0.8744</td><td>0.1178</td><td>-0.7476</td><td>0.7476</td><td>0.7225</td><td>0.7921</td></tr><tr><td>round_time</td><td>3</td><td>7.474</td><td>1.721</td><td>-0.7216</td><td>0.7216</td><td>0.6432</td><td>0.8043</td></tr></tbody></table></section>
+<section><h2>Decision</h2>
+<p>Rankings of the mean over seeds; intervals from a bootstrap paired by seed.
+Each top-1 and regret is shown next to the noise ceiling; the factorised
+predictor (A7) is not computed yet.</p>
+<table><thead><tr><th>metric</th><th>K</th><th>seeds</th><th>τ-b</th><th>top-1</th><th>P(top-1)</th><th>ceiling top-1</th><th>regret</th><th>ci low</th><th>ci high</th><th>ceiling regret</th><th>ceiling from</th><th>predictor (A7)</th></tr></thead><tbody><tr><td>macro_f1</td><td>1</td><td>3</td><td>–</td><td>yes</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>seeds of A</td><td>–</td></tr><tr><td>time</td><td>1</td><td>3</td><td>–</td><td>yes</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>seeds of A</td><td>–</td></tr></tbody></table></section>
+<h2>Runs</h2>
+<table><thead><tr><th>side</th><th>run_id</th><th>backend</th><th>config_id</th><th>topology_id</th><th>infrastructure_id</th><th>run_hash</th></tr></thead><tbody><tr><td>A</td><td>20261106T012032Z-772740b81edb</td><td>emulated</td><td>9c5825053e7b01f3745295663ca262295b29d6175e078c2fd23d9d1bb4b649ed</td><td>464141d81d17d3a9da4622bec8ecd06fe6a655e8d44cb1bbbf98993b9dfcfe9c</td><td>da875674ad22d77f7aabcc6d9ac2fe642e9e8be204889668bb4adc5f238df43e</td><td>23651e7b02657cee1f2d39fd993573f8b104e2db9150bd20d6837969df87000d</td></tr><tr><td>B</td><td>20261106T012611Z-b9dfb96de047</td><td>sim</td><td>0875a24b6653f60c53713f952da89614a7ed462489f9f06b2106b2b7c1947479</td><td>464141d81d17d3a9da4622bec8ecd06fe6a655e8d44cb1bbbf98993b9dfcfe9c</td><td>da875674ad22d77f7aabcc6d9ac2fe642e9e8be204889668bb4adc5f238df43e</td><td>3b7b52f66e47af2580d84e804742fecb23324bd7a966802f816fefa30a5b1aa9</td></tr><tr><td>A</td><td>20261106T012205Z-10cf789eb2ca</td><td>emulated</td><td>9c5825053e7b01f3745295663ca262295b29d6175e078c2fd23d9d1bb4b649ed</td><td>464141d81d17d3a9da4622bec8ecd06fe6a655e8d44cb1bbbf98993b9dfcfe9c</td><td>da875674ad22d77f7aabcc6d9ac2fe642e9e8be204889668bb4adc5f238df43e</td><td>7357ba11c136c2cc525ce1105019a58218dd8b0621fe52d4b4a98b7f33b08a3e</td></tr><tr><td>B</td><td>20261106T012622Z-22ac413f3c85</td><td>sim</td><td>0875a24b6653f60c53713f952da89614a7ed462489f9f06b2106b2b7c1947479</td><td>464141d81d17d3a9da4622bec8ecd06fe6a655e8d44cb1bbbf98993b9dfcfe9c</td><td>da875674ad22d77f7aabcc6d9ac2fe642e9e8be204889668bb4adc5f238df43e</td><td>5ec28abeef4d20dea200407ea9e7d3177fe06ee5dcaf5cd0116f1589d71f8d71</td></tr><tr><td>A</td><td>20261106T012325Z-7b80fa8ec326</td><td>emulated</td><td>9c5825053e7b01f3745295663ca262295b29d6175e078c2fd23d9d1bb4b649ed</td><td>464141d81d17d3a9da4622bec8ecd06fe6a655e8d44cb1bbbf98993b9dfcfe9c</td><td>da875674ad22d77f7aabcc6d9ac2fe642e9e8be204889668bb4adc5f238df43e</td><td>933d95605c637672859d36b26ea94a5dc6b295e1d947d73971c7b334e7065584</td></tr><tr><td>B</td><td>20261106T012640Z-753ac2703340</td><td>sim</td><td>0875a24b6653f60c53713f952da89614a7ed462489f9f06b2106b2b7c1947479</td><td>464141d81d17d3a9da4622bec8ecd06fe6a655e8d44cb1bbbf98993b9dfcfe9c</td><td>da875674ad22d77f7aabcc6d9ac2fe642e9e8be204889668bb4adc5f238df43e</td><td>39db1fec2166d53db5e1b1a6abda3fde889b6aa961878b99cfbaee3d31d68e19</td></tr></tbody></table>
+</body></html>

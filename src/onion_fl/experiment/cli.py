@@ -7,16 +7,23 @@ from __future__ import annotations
     onion_fl data prepare|inspect <dataset> [--option key=value]...
     onion_fl topology show <file> [--graph | --mermaid]
     onion_fl plan <experiment.yaml>
-    onion_fl run <experiment.yaml> [--scenario NAME] [--backend sim|local]
+    onion_fl run <experiment.yaml> [--scenario NAME] [--backend NAME]
                  [--mode sim|real] [--workers N]
     onion_fl node --id <node> --run <run_id> --config <experiment.yaml>
     onion_fl ceiling <experiment.yaml> [--replicas R] [--metric NAME] [--series KEY]
                      [--resample] [--paired] [--workers N]
     onion_fl fidelity <runs A | predictor> <runs B | predictor[:floss]>
                       [--metric NAME]... [--target METRIC=VALUE] [--control RUNS]
-                      [--no-predictor] [--ceiling FILE] [--csv FILE] [--html FILE]
+                      [--no-predictor] [--ceiling FILE] [--calibration ID]
+                      [--csv FILE] [--html FILE]
+    onion_fl calibrate measure <spec.yaml> --out <session> [--image IMAGE]
+                       [--project NAME] [--subnet CIDR]
+    onion_fl calibrate fit <session>... [--out calibrations] [--infrastructure-out FILE]
+    onion_fl calibrate check <session> --infrastructure FILE [--calibrations DIR]
+                       [--out FILE]
     onion_fl report <experiment.yaml | runs_dir>... [--out FILE] [--metric NAME]... [--by TAG]...
-    onion_fl baseline <experiment.yaml> [--models lr rf xgboost] [--cv K]
+    onion_fl baseline <experiment.yaml> [--models lr rf xgboost] [--cv K | --seeds 0 1 2]
+                      [--seed S]
     onion_fl schema [--out FILE]
     onion_fl traces import fedscale [<folder>]
     onion_fl serve [--root .] [--host 127.0.0.1] [--port 8765]
@@ -174,7 +181,12 @@ def cmd_node(args: argparse.Namespace) -> int:
     if not Path(args.config).exists():
         raise FileNotFoundError(f"config not found: {args.config}")
     return run_node(
-        args.id, args.run, args.config, scenario=args.scenario, seed=args.seed
+        args.id,
+        args.run,
+        args.config,
+        scenario=args.scenario,
+        seed=args.seed,
+        resume=args.resume,
     )
 
 
@@ -222,6 +234,7 @@ def cmd_fidelity(args: argparse.Namespace) -> int:
         minimize=args.minimize or [],
         resamples=args.bootstrap,
         seed=args.seed,
+        calibration=args.calibration,
         control=args.control,
         predictor=not args.no_predictor,
     )
@@ -229,6 +242,43 @@ def cmd_fidelity(args: argparse.Namespace) -> int:
         write_csv(result, args.csv)
     if args.html:
         write_html(result, args.html)
+    _print_json(result)
+    return 0
+
+
+def cmd_calibrate(args: argparse.Namespace) -> int:
+    from onion_fl.experiment import calibrate
+
+    if args.step == "measure":
+        given = {"image": args.image, "project": args.project, "subnet": args.subnet}
+        params = {k: v for k, v in given.items() if v is not None}
+        print(calibrate.measure(args.spec, args.out, params))
+        return 0
+    if args.step == "fit":
+        from onion_fl.infrastructure.calibration import load_calibration
+
+        folder = calibrate.fit(args.sessions, args.out)
+        if args.infrastructure_out:
+            meta, _ = calibrate.read_session(args.sessions[0])
+            spec = calibrate.CalibrationSpec.model_validate(meta["spec"])
+            source = Path(spec.infrastructure)
+            if source.suffix not in (".yaml", ".yml"):
+                source = Path(spec.paths.infrastructures) / f"{source}.yaml"
+            raw = calibrate.calibrated_infrastructure(
+                source, load_calibration(args.out, folder.name)
+            )
+            head = (
+                f"# {source.name} with the profiles and links that calibration\n"
+                f"# {folder.name} measured citing it (onion_fl calibrate fit).\n"
+            )
+            Path(args.infrastructure_out).write_text(
+                head + yaml.safe_dump(raw, sort_keys=False), encoding="utf-8"
+            )
+        print(folder)
+        return 0
+    result = calibrate.check(args.session, args.infrastructure, args.calibrations)
+    if args.out:
+        Path(args.out).write_text(json.dumps(result, indent=2), encoding="utf-8")
     _print_json(result)
     return 0
 
@@ -266,22 +316,34 @@ def cmd_explain(args: argparse.Namespace) -> int:
 
 
 def cmd_baseline(args: argparse.Namespace) -> int:
-    from onion_fl.baselines import cross_validate, evaluate
+    from onion_fl.baselines import cross_validate, evaluate, over_role_seeds
     from onion_fl.data.roles import split_subjects
     from onion_fl.experiment.runner import load_data
 
+    if args.cv and args.seeds:
+        raise ValueError("use --cv or --seeds, not both")
     config = _experiment(args.experiment)
     subjects, _ = load_data(config)
-    if args.cv:
+    if args.seeds:
+        _print_json(
+            over_role_seeds(subjects, args.models, args.seeds, config.data.roles)
+        )
+    elif args.cv:
         _print_json(
             {
-                m: cross_validate(subjects, m, k=args.cv, roles=config.data.roles)
+                m: cross_validate(
+                    subjects, m, k=args.cv, seed=args.seed, roles=config.data.roles
+                )
                 for m in args.models
             }
         )
     else:
         _print_json(
-            evaluate(split_subjects(subjects, config.data.roles), models=args.models)
+            evaluate(
+                split_subjects(subjects, config.data.roles),
+                models=args.models,
+                seed=args.seed,
+            )
         )
     return 0
 
@@ -361,7 +423,10 @@ def parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="run an experiment")
     run.add_argument("experiment")
     run.add_argument("--scenario", help="only the scenario with this name")
-    run.add_argument("--backend", help="sim, local...; overrides the experiment's")
+    run.add_argument(
+        "--backend",
+        help="sim, local, emulated, distributed; overrides the experiment's",
+    )
     run.add_argument("--mode", choices=["sim", "real"], help="real: alias of local")
     run.add_argument("--workers", type=int, default=1)
     run.add_argument(
@@ -382,6 +447,11 @@ def parser() -> argparse.ArgumentParser:
     )
     node.add_argument("--scenario", help="with an experiment YAML: which scenario")
     node.add_argument("--seed", type=int, help="with an experiment YAML: which seed")
+    node.add_argument(
+        "--resume",
+        action="store_true",
+        help="restart a node of a real run from the state its edges saved",
+    )
     node.set_defaults(func=cmd_node)
 
     ceiling = sub.add_parser(
@@ -449,9 +519,37 @@ def parser() -> argparse.ArgumentParser:
     )
     fidelity.add_argument("--bootstrap", type=int, default=2000)
     fidelity.add_argument("--seed", type=int, default=0, help="of the bootstrap")
+    fidelity.add_argument(
+        "--calibration", help="the calibration_id every run of B must cite, alone"
+    )
     fidelity.add_argument("--csv", help="also write the result as CSV rows")
     fidelity.add_argument("--html", help="also write an HTML report")
     fidelity.set_defaults(func=cmd_fidelity)
+
+    cal = sub.add_parser(
+        "calibrate", help="microbenchmarks that calibrate profiles and links"
+    )
+    steps = cal.add_subparsers(dest="step", required=True)
+    measure = steps.add_parser("measure", help="run the microbenchmarks of a spec")
+    measure.add_argument("spec")
+    measure.add_argument("--out", required=True, help="a new session folder")
+    measure.add_argument("--image")
+    measure.add_argument("--project", help="prefix of the containers and networks")
+    measure.add_argument("--subnet")
+    fit = steps.add_parser("fit", help="sign the calibration of sessions of a spec")
+    fit.add_argument("sessions", nargs="+", help="sessions of one spec (3 or more)")
+    fit.add_argument("--out", default="calibrations")
+    fit.add_argument(
+        "--infrastructure-out", help="write the infrastructure citing the calibration"
+    )
+    check = steps.add_parser(
+        "check", help="predict another session with a calibrated infrastructure"
+    )
+    check.add_argument("session")
+    check.add_argument("--infrastructure", required=True)
+    check.add_argument("--calibrations", default="calibrations")
+    check.add_argument("--out", help="also write the result to this file")
+    cal.set_defaults(func=cmd_calibrate)
 
     report = sub.add_parser("report", help="HTML report comparing runs")
     report.add_argument(
@@ -478,6 +576,15 @@ def parser() -> argparse.ArgumentParser:
     baseline.add_argument("--models", nargs="+", default=["lr", "rf", "xgboost"])
     baseline.add_argument(
         "--cv", type=int, help="subject-level k-fold instead of the test role"
+    )
+    baseline.add_argument(
+        "--seeds",
+        type=int,
+        nargs="+",
+        help="repeat with each seed drawing the test subjects; mean and 95%% CI",
+    )
+    baseline.add_argument(
+        "--seed", type=int, default=0, help="seed of the models and of the folds"
     )
     baseline.set_defaults(func=cmd_baseline)
 

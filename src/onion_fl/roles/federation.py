@@ -17,8 +17,10 @@ Each aggregation node reads its round settings from the topology::
 
 The edge template takes ``eval: {every: 1, models: [received, local]}``.
 Edges hang from the leaf aggregators and use the topology's edge link; the
-root takes evaluators only: the ``test`` subjects, or the validation ones with
-``evaluation.global.subjects: val`` (hyperparameter selection).
+root takes evaluators: the ``test`` subjects, or the validation ones with
+``evaluation.global.subjects: val`` (hyperparameter selection). It takes
+training edges too only when it is the leaf, in a two-level topology (the
+edges report straight to the cloud).
 """
 
 from collections.abc import Mapping, Sequence
@@ -148,7 +150,7 @@ def build_federation(
     round_every: float | None = None,
     continuum: Any = None,
     promotion: Any = None,
-    operators: Sequence[str] = ("operator",),
+    operators: Sequence[str] = (),
     operator_keys: Mapping[str, str] | None = None,
     audience: str = "",
     link_profiles: Mapping[str, Any] | None = None,
@@ -163,7 +165,8 @@ def build_federation(
     physical network. ``promotion`` (a ``promotions`` plugin) keeps the
     round's model as a challenger until the root's validators decide on it:
     the root's specs with ``validates``, and only they. ``operators`` are the
-    ids whose control messages may roll back or promote a version; with
+    ids whose control messages may roll back or promote a version; none by
+    default, so no order is taken unless they are named. With
     ``operator_keys`` (id -> token) they are its ids instead, and each order
     must be signed for ``audience``, the run's id (``continual.control``).
     """
@@ -178,7 +181,7 @@ def build_federation(
     if stray:
         raise ValueError(f"edges under {stray}, which are not leaf aggregators")
     trainers_at_root = [e.id for e in edges.get(root.id, []) if e.train]
-    if trainers_at_root:
+    if trainers_at_root and root.id not in leaves:
         raise ValueError(
             f"the root {root.id!r} takes evaluators only, not {trainers_at_root}"
         )

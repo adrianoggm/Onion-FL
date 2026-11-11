@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from onion_fl.core.registry import Registry
 from onion_fl.core.topology import Topology
+from onion_fl.infrastructure.calibration import speed, train_rate
 from onion_fl.infrastructure.model import Infrastructure, InfrastructureError
 from onion_fl.infrastructure.paths import Hop, combine, route, segment
 
@@ -347,8 +348,8 @@ class Coupled(ProfileMix):
         devices = list(super().assign(edges, infra).values())
         order = self.edges(edges)  # breaks ties of the statistic
         order.sort(key=lambda e: statistics[e])
-        speed = {h: infra.profile_of(h).train_rate or math.inf for h in devices}
-        devices.sort(key=lambda h: speed[h])  # stable: ties in the seeded order
+        speeds = {h: speed(infra, h) for h in devices}
+        devices.sort(key=lambda h: speeds[h])  # stable: ties in the seeded order
         rng = random.Random(f"{self.seed}/coupling")
         r = latent_correlation(self.rho, len(order))
         pairs = []
@@ -382,8 +383,21 @@ class Resolved:
     def infrastructure_id(self) -> str:
         return self.infrastructure.infrastructure_id
 
-    def train_rate(self, node: str) -> float | None:
-        return self.infrastructure.profile_of(self.hosts[node]).train_rate
+    def train_rate(
+        self, node: str, workload: tuple[str, float] | None = None
+    ) -> float | None:
+        """Samples per second of ``node``'s host; ``workload`` (``workload_key``)
+        picks the calibrated rate when the host's profile cites a calibration."""
+        return self.rate(node, workload)[0]
+
+    def rate(
+        self, node: str, workload: tuple[str, float] | None = None
+    ) -> tuple[float | None, dict[str, Any] | None]:
+        """:meth:`train_rate` and, when estimated by FLOPs, a note saying so."""
+        return train_rate(self.infrastructure, self.hosts[node], workload)
+
+    def train_sigma(self, node: str) -> float | None:
+        return self.infrastructure.profile_of(self.hosts[node]).train_sigma
 
     def link(
         self, child: str, parent: str, transport: Any
@@ -484,7 +498,7 @@ def resolve(
         order = sorted(assigned)
         achieved = spearman(
             [statistics[e] for e in order],
-            [infra.profile_of(assigned[e]).train_rate or math.inf for e in order],
+            [speed(infra, assigned[e]) for e in order],
         )
         coupling = {"statistic": edges.statistic, "rho": edges.rho}
         coupling["spearman"] = None if achieved is None else round(achieved, 4)

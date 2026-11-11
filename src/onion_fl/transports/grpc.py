@@ -14,7 +14,9 @@ inbox in the ``onionfl-address`` metadata. No ``.proto`` is needed.
 Discovery is a folder (``directory``, under the system temp by default):
 each transport writes there, per inbox it serves, a file with its
 ``host:port``, and the sender reads it. That covers every process of one
-machine (the ``local`` backend); hosts on other machines are I14's.
+machine (the ``local`` backend). Across machines (the ``distributed``
+backend, I14) the launcher gives ``peers`` instead, an explicit map from each
+inbox to the ``host:port`` that serves it, and the folder is not used.
 
 The guarantees of MQTT with QoS 1:
 
@@ -30,6 +32,15 @@ The guarantees of MQTT with QoS 1:
 On ``stop``, what is still queued gets one more try each within
 ``flush_timeout``: the ``stop`` that travels down the tree leaves as the
 sender finishes.
+
+``tls`` (#227) turns every link into mutual TLS: the server presents
+``tls.cert`` and accepts only clients whose certificate ``tls.ca`` signed, and
+each client checks the server's certificate against the same CA and the
+peer's address. Both certificates are required: an unauthenticated client,
+plain or TLS without a certificate, never completes the handshake, so
+nothing it sends reaches an inbox. The link holds paths only (see
+``onion_fl.transports.tls``). Each frame is handed over with ``principal``,
+the common name of the client certificate that sent it.
 """
 
 import os
@@ -43,10 +54,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from onion_fl.core.registry import PluginError
 from onion_fl.transports import transports
+from onion_fl.transports.tls import TlsParams, read
 
 Callback = Callable[[bytes], None]
 ADDRESS = "onionfl-address"
@@ -62,11 +74,27 @@ class GrpcParams(BaseModel):
     directory: str | None = Field(
         None, description="Carpeta de descubrimiento; por defecto, en el temporal"
     )
+    peers: dict[str, str] | None = Field(
+        None,
+        description=(
+            "Buzón -> host:puerto que lo sirve, entre máquinas; sustituye a la carpeta"
+        ),
+    )
     call_timeout: float = Field(10.0, gt=0, description="Plazo de cada envío (s)")
     reconnect_min: float = Field(0.05, gt=0, description="Primer reintento (s)")
     reconnect_max: float = Field(5.0, gt=0, description="Reintento máximo (s)")
     flush_timeout: float = Field(5.0, ge=0, description="Vaciado al parar (s)")
     workers: int = Field(4, ge=1, description="Hilos del servidor")
+    tls: TlsParams | None = Field(
+        None,
+        description="TLS mutuo: rutas de la CA, del certificado y de la clave",
+    )
+
+    @model_validator(mode="after")
+    def _mutual(self) -> GrpcParams:
+        if self.tls is not None and self.tls.cert is None:
+            raise ValueError("grpc tls is mutual: give tls.cert and tls.key")
+        return self
 
 
 def _require_grpc() -> Any:
@@ -79,12 +107,18 @@ def _require_grpc() -> Any:
     return grpc
 
 
+def _common_name(context: Any) -> str | None:
+    """The CN of the client certificate gRPC verified, if it has one."""
+    names = context.auth_context().get("x509_common_name") or []
+    return names[0].decode("utf-8") if names else None
+
+
 @transports.register(
     "grpc",
     title="gRPC",
     description=(
         "Enlaces directos entre procesos, sin broker; un servidor gRPC por "
-        "proceso, descubierto por una carpeta local."
+        "proceso, descubierto por una carpeta local o por un mapa de direcciones."
     ),
     params=GrpcParams,
 )
@@ -110,6 +144,14 @@ class GrpcTransport:
         self._stopping = threading.Event()
         self._flush_until = 0.0
         self._server: Any = None
+        self._credentials: Any = None  # the channels', once TLS files are read
+
+    def _tls(self) -> tuple[bytes, bytes, bytes] | None:
+        """The CA, certificate and key, read when the transport starts."""
+        tls = self.params.tls
+        if tls is None:
+            return None
+        return read(tls.ca, "ca"), read(tls.cert, "cert"), read(tls.key, "key")
 
     # --- the bytes on the wire -----------------------------------------------
 
@@ -127,6 +169,8 @@ class GrpcTransport:
         return self.directory / quote(address, safe="")
 
     def _announce(self, address: str) -> None:
+        if self.params.peers is not None:  # the launcher's map says where it is
+            return
         self.directory.mkdir(parents=True, exist_ok=True)
         path = self._file(address)
         partial = path.with_name(f"{path.name}.{os.getpid()}.tmp")
@@ -153,8 +197,13 @@ class GrpcTransport:
                 self.stats["bytes_received"] += len(data)
         if not callbacks:  # the sender read a stale file: let it look again
             context.abort(self._grpc.StatusCode.NOT_FOUND, f"no inbox {address!r} here")
+        if self.params.tls is None:
+            for callback in callbacks:
+                callback(data)
+            return b""
+        principal = _common_name(context)
         for callback in callbacks:
-            callback(data)
+            callback(data, principal=principal)
         return b""
 
     def start(self) -> None:
@@ -170,7 +219,18 @@ class GrpcTransport:
             options=UNLIMITED,
         )
         bound = f"{self.params.host}:{self.params.port}"
-        port = self._server.add_insecure_port(bound)
+        files = self._tls()
+        if files is None:
+            port = self._server.add_insecure_port(bound)
+        else:
+            ca, cert, key = files
+            server = grpc.ssl_server_credentials(
+                [(key, cert)], root_certificates=ca, require_client_auth=True
+            )
+            port = self._server.add_secure_port(bound, server)
+            self._credentials = grpc.ssl_channel_credentials(
+                root_certificates=ca, private_key=key, certificate_chain=cert
+            )
         if port == 0:
             raise ConnectionError(f"gRPC could not listen on {bound}")
         self.endpoint = f"{self.params.host}:{port}"
@@ -197,6 +257,8 @@ class GrpcTransport:
         outbox.put(self._wrap(address, data))
 
     def _resolve(self, address: str) -> str | None:
+        if self.params.peers is not None:
+            return self.params.peers.get(address)
         try:
             return self._file(address).read_text(encoding="utf-8").strip() or None
         except OSError:
@@ -205,9 +267,13 @@ class GrpcTransport:
     def _channel(self, endpoint: str) -> Any:
         with self._lock:
             if endpoint not in self._channels:
-                self._channels[endpoint] = self._grpc.insecure_channel(
-                    endpoint, options=UNLIMITED
-                )
+                if self._credentials is None:
+                    channel = self._grpc.insecure_channel(endpoint, options=UNLIMITED)
+                else:
+                    channel = self._grpc.secure_channel(
+                        endpoint, self._credentials, options=UNLIMITED
+                    )
+                self._channels[endpoint] = channel
             return self._channels[endpoint]
 
     def _try(self, address: str, data: bytes) -> bool:
@@ -254,7 +320,7 @@ class GrpcTransport:
             channels = list(self._channels.values())
             self._channels.clear()
         for address in addresses:
-            if self._resolve(address) == self.endpoint:
+            if self.params.peers is None and self._resolve(address) == self.endpoint:
                 self._file(address).unlink(missing_ok=True)
         for channel in channels:
             channel.close()

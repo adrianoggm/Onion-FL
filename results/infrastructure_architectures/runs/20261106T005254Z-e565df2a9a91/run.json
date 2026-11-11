@@ -1,0 +1,124 @@
+{
+  "run_id": "20261106T005254Z-e565df2a9a91",
+  "topology_id": "748154abc258ce8c2460a1fadef805d163efeab51c34564af06e28b175506833",
+  "config_id": "aec9770cbfdc4f76220a1214907f31e9b71a0326e3a6f87627fbcf820f151b84",
+  "backend": "sim",
+  "infrastructure_id": "90b27e16e12f55272c878d2a409f184f74b7164c83db4067cb720fb1dedc5558",
+  "data_id": "9fd573754157d68b111f037ecd891bdb62abcbff1d5e5e818da789dde470257c",
+  "code_version": {
+    "commit": "2833a9ce72dca93f5544973be8e8c0e7ff91c0c6",
+    "dirty": false
+  },
+  "seed": 0,
+  "scenario": "topology,infrastructure.name,infrastructure.assignment,infrastructure.failover=cloud_swell_wesad,architectures_lab,{'root': 'cloud-1', 'edges': {'name': 'profile_mix', 'mix': {'raspberry_pi': 1.0}}},none",
+  "host": "2INNDESLP100930",
+  "pid": 122980,
+  "started_at": "2026-11-06T00:52:54.680091+00:00",
+  "status": "finished",
+  "config": {
+    "name": "infrastructure_architectures",
+    "description": "La misma federaci\u00f3n sobre cuatro arquitecturas del continuum (cloud centralizado, Edge\u2013Fog\u2013Cloud, heterog\u00e9nea y din\u00e1mica).",
+    "topology": "cloud_swell_wesad",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        },
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.2,
+        "local_val_split": "class_tail",
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.1
+      },
+      "init": "random"
+    },
+    "rounds": 20,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": 5,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": 5,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    },
+    "infrastructure": {
+      "name": "architectures_lab",
+      "assignment": {
+        "root": "cloud-1",
+        "aggregators": {},
+        "edges": {
+          "name": "profile_mix",
+          "mix": {
+            "raspberry_pi": 1.0
+          }
+        },
+        "services": {}
+      },
+      "failover": "none"
+    }
+  },
+  "finished_at": "2026-11-06T00:55:42.187584+00:00",
+  "run_hash": "4049cccc557470bdd46c95929b09d7fec4b55414e2ce11fe9d25f3c509e95177"
+}

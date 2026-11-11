@@ -1,0 +1,212 @@
+{
+  "seeds": {
+    "0": {
+      "test_subjects": {
+        "nurse_stress": [
+          "6D",
+          "8B",
+          "83",
+          "DF"
+        ]
+      },
+      "scores": {
+        "nurse_stress": {
+          "lr": {
+            "train_samples": 47433,
+            "test": {
+              "accuracy": 0.8459344660194175,
+              "balanced_accuracy": 0.5110139025367961,
+              "f1_macro": 0.48455590781438207,
+              "n_samples": 16480
+            },
+            "val": null
+          },
+          "rf": {
+            "train_samples": 47433,
+            "test": {
+              "accuracy": 0.795873786407767,
+              "balanced_accuracy": 0.5675776807347521,
+              "f1_macro": 0.5725442997435454,
+              "n_samples": 16480
+            },
+            "val": null
+          }
+        }
+      }
+    },
+    "1": {
+      "test_subjects": {
+        "nurse_stress": [
+          "7E",
+          "94",
+          "CE",
+          "DF"
+        ]
+      },
+      "scores": {
+        "nurse_stress": {
+          "lr": {
+            "train_samples": 44716,
+            "test": {
+              "accuracy": 0.8814398083033808,
+              "balanced_accuracy": 0.5062718670782823,
+              "f1_macro": 0.4914470436205571,
+              "n_samples": 19197
+            },
+            "val": null
+          },
+          "rf": {
+            "train_samples": 44716,
+            "test": {
+              "accuracy": 0.8661249153513569,
+              "balanced_accuracy": 0.49955814070225635,
+              "f1_macro": 0.48772284382175946,
+              "n_samples": 19197
+            },
+            "val": null
+          }
+        }
+      }
+    },
+    "2": {
+      "test_subjects": {
+        "nurse_stress": [
+          "6B",
+          "8B",
+          "CE",
+          "DF"
+        ]
+      },
+      "scores": {
+        "nurse_stress": {
+          "lr": {
+            "train_samples": 48457,
+            "test": {
+              "accuracy": 0.8282867494824017,
+              "balanced_accuracy": 0.5309436724128782,
+              "f1_macro": 0.51473824873279,
+              "n_samples": 15456
+            },
+            "val": null
+          },
+          "rf": {
+            "train_samples": 48457,
+            "test": {
+              "accuracy": 0.8192287784679089,
+              "balanced_accuracy": 0.5094019949117672,
+              "f1_macro": 0.47584417680299307,
+              "n_samples": 15456
+            },
+            "val": null
+          }
+        }
+      }
+    },
+    "3": {
+      "test_subjects": {
+        "nurse_stress": [
+          "7A",
+          "7E",
+          "8B",
+          "15"
+        ]
+      },
+      "scores": {
+        "nurse_stress": {
+          "lr": {
+            "train_samples": 48491,
+            "test": {
+              "accuracy": 0.8649980547270134,
+              "balanced_accuracy": 0.5129587628109031,
+              "f1_macro": 0.4917548639322238,
+              "n_samples": 15422
+            },
+            "val": null
+          },
+          "rf": {
+            "train_samples": 48491,
+            "test": {
+              "accuracy": 0.860005187394631,
+              "balanced_accuracy": 0.5165065518293027,
+              "f1_macro": 0.5021699486258423,
+              "n_samples": 15422
+            },
+            "val": null
+          }
+        }
+      }
+    },
+    "4": {
+      "test_subjects": {
+        "nurse_stress": [
+          "5C",
+          "6B",
+          "8B",
+          "E4"
+        ]
+      },
+      "scores": {
+        "nurse_stress": {
+          "lr": {
+            "train_samples": 49003,
+            "test": {
+              "accuracy": 0.8344735077129444,
+              "balanced_accuracy": 0.6311336849814939,
+              "f1_macro": 0.657479310558466,
+              "n_samples": 14910
+            },
+            "val": null
+          },
+          "rf": {
+            "train_samples": 49003,
+            "test": {
+              "accuracy": 0.8276324614352784,
+              "balanced_accuracy": 0.6072142206690008,
+              "f1_macro": 0.6288255273171401,
+              "n_samples": 14910
+            },
+            "val": null
+          }
+        }
+      }
+    }
+  },
+  "summary": {
+    "nurse_stress": {
+      "lr": {
+        "accuracy": {
+          "mean": 0.8510265172490316,
+          "ci95": 0.02732507452006148,
+          "n": 5
+        },
+        "balanced_accuracy": {
+          "mean": 0.5384643779640708,
+          "ci95": 0.06536327398092416,
+          "n": 5
+        },
+        "f1_macro": {
+          "mean": 0.5279950749316837,
+          "ci95": 0.09098521904631428,
+          "n": 5
+        }
+      },
+      "rf": {
+        "accuracy": {
+          "mean": 0.8337730258113885,
+          "ci95": 0.03630866863286327,
+          "n": 5
+        },
+        "balanced_accuracy": {
+          "mean": 0.5400517177694159,
+          "ci95": 0.05690693407900408,
+          "n": 5
+        },
+        "f1_macro": {
+          "mean": 0.5334213592622561,
+          "ci95": 0.08097681160764915,
+          "n": 5
+        }
+      }
+    }
+  }
+}

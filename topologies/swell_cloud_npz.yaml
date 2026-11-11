@@ -1,0 +1,13 @@
+# Validation of issue #198: every SWELL edge straight under the cloud (two
+# levels), with the npz codec, whose messages stay inside the sizes the
+# calibrated paths were fitted on. Full quorum and no deadline, so that the
+# protocol does not depend on time.
+name: swell_cloud_npz
+levels: [global, edge]
+root:
+  id: cloud
+  aggregator: fedavg
+  server_optimizer: replace
+  quorum: 1.0
+edge:
+  link_up: {transport: mqtt, codec: npz}

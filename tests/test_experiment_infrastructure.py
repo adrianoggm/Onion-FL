@@ -439,6 +439,34 @@ def with_infrastructure(workspace: Path, **changes) -> dict:  # noqa: F811
     )
 
 
+def test_a_profile_with_a_dispersion_computes_at_a_lognormal_rate(
+    workspace: Path,  # noqa: F811
+) -> None:
+    from onion_fl.experiment.predictor import plan_of
+    from onion_fl.runtime.devices import LognormalRate
+
+    def computes(profiles: dict) -> dict:
+        raw = with_infrastructure(workspace)
+        raw["infrastructure"]["name"] = lab(profiles=profiles)
+        config = parse_experiment(raw).dump()
+        return plan_of(config, 0).compute
+
+    fixed = {"vm": {"train_rate": 100}, "pi": {"train_rate": 10}}
+    plain = computes(fixed)
+    edges = [n for n, m in plain.items() if getattr(m, "samples_per_second", 0) == 10]
+    assert edges and not any(isinstance(m, LognormalRate) for m in plain.values())
+    sigma = fixed | {"pi": {"train_rate": 10, "train_sigma": 0.5}}
+    lognormal = computes(sigma)
+    for edge in edges:
+        model = lognormal[edge]
+        assert isinstance(model, LognormalRate)
+        assert (model.samples_per_second, model.sigma) == (10, 0.5)
+    # without it, an infrastructure keeps the id it had before the field existed
+    before = "0e638cde197329d8f7a62be114370a84a2244509a1e4143c7fc7c00bd5041519"
+    assert parse_infrastructure(lab()).infrastructure_id == before
+    assert parse_infrastructure(lab(profiles=sigma)).infrastructure_id != before
+
+
 def test_without_an_infrastructure_the_config_and_its_id_do_not_change(
     workspace: Path,  # noqa: F811
 ) -> None:
@@ -508,7 +536,7 @@ def test_profiles_in_the_topology_are_refused_with_an_infrastructure(
 def test_an_infrastructure_is_refused_in_a_real_run(
     workspace: Path,  # noqa: F811
 ) -> None:
-    with pytest.raises(ConfigError, match="simulated only for now"):
+    with pytest.raises(ConfigError, match="emulated or distributed backend"):
         parse_experiment(with_infrastructure(workspace, runtime={"mode": "real"}))
 
 
@@ -612,3 +640,52 @@ def test_a_host_without_memory_for_its_nodes_is_refused(
         ConfigError, match="host field-pi-1 needs .* MiB for the models"
     ):
         plan(parse_experiment(raw))
+
+
+def test_a_two_level_federation_places_every_client_under_the_cloud(
+    workspace: Path,  # noqa: F811
+) -> None:
+    """Architecture A of issue #192: no fog, the edges report to the root. The
+    placement gives it the same clients as the fogs of the three-level run, and
+    each edge's link to the cloud is its whole physical path."""
+    two = {"name": "cloud_only", "levels": ["global", "edge"], "root": {"id": "cloud"}}
+    raw = with_infrastructure(workspace, topology=two)
+    raw["infrastructure"]["assignment"].pop("aggregators")
+    (flat,) = plan(parse_experiment(raw))
+    (tree,) = plan(parse_experiment(with_infrastructure(workspace)))
+
+    edges = sorted(flat["infrastructure"]["hosts"].keys() - {"cloud"})
+    assert flat["composition"].keys() == {"cloud"}
+    assert edges == sorted(
+        tree["infrastructure"]["hosts"].keys() - {"cloud", "fog_a", "fog_b"}
+    )
+    assert flat["composition"]["cloud"]["datasets"] == {
+        "demo": sum(c["datasets"]["demo"] for c in tree["composition"].values())
+    }
+    assert {tuple(flat["infrastructure"]["links"][e]["path"]) for e in edges} == {
+        ("field", "fog", "dc")
+    }
+
+    (scenario,) = scenarios(parse_experiment(raw))
+    path = run_scenario(scenario, evaluate=stub_score)
+    events = [
+        json.loads(line)
+        for line in (path / "events.jsonl").read_text("utf-8").splitlines()
+    ]
+    updates = {
+        (e["tags"]["src"], e["tags"]["round"])
+        for e in events
+        if e["name"] == "message.delivered"
+        and e["node"] == "cloud"
+        and e["tags"].get("kind") == "update"
+    }
+    assert updates == {(e, r) for e in edges for r in (1, 2)}
+    assert json.loads((path / "run.json").read_text("utf-8"))["status"] == "finished"
+
+    # FedAvg weighted by samples at every level: the fogs change nothing
+    (three,) = scenarios(parse_experiment(with_infrastructure(workspace)))
+    other = run_scenario(three, evaluate=stub_score)
+    with np.load(path / "model.npz") as a, np.load(other / "model.npz") as b:
+        assert a.files == b.files
+        for key in a.files:
+            np.testing.assert_allclose(a[key], b[key], rtol=1e-6, atol=1e-7)
