@@ -38,7 +38,6 @@ separated, empty by default), e.g. ``ONIONFL_TRUSTED_MODULES=mylab.models``.
 import importlib
 import inspect
 import math
-import os
 import re
 from collections.abc import Sequence
 from typing import Any
@@ -47,11 +46,11 @@ import torch
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, model_validator
 from torch import nn
 
+from onion_fl.core.registry import TRUSTED_ENV, is_trusted
 from onion_fl.learning.model import DataShape, _seed_for, group_of, models
 
 COLUMN = re.compile(r"^x_(\d+)$")
 REFERENCE = re.compile(r"^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*:[A-Za-z_]\w*$")
-TRUSTED_ENV = "ONIONFL_TRUSTED_MODULES"
 
 # Preset name -> (class reference, default input shape). They are plain
 # ``pkg.mod:Class`` references: a preset goes through the same path as any
@@ -68,11 +67,6 @@ class TorchModuleError(ValueError):
     """A module class, its parameters or its keys do not fit the contract."""
 
 
-def trusted_prefixes() -> list[str]:
-    """The module prefixes the operator trusts, from ``ONIONFL_TRUSTED_MODULES``."""
-    return [p.strip() for p in os.environ.get(TRUSTED_ENV, "").split(",") if p.strip()]
-
-
 def check_reference(ref: str) -> None:
     """A preset, or a well-formed ``pkg.mod:Class`` under a trusted prefix; no import."""
     if ref in PRESETS:
@@ -82,10 +76,7 @@ def check_reference(ref: str) -> None:
             f"unknown module {ref!r}: use a preset ({', '.join(sorted(PRESETS))}) "
             "or 'package.module:Class'"
         )
-    module_name = ref.partition(":")[0]
-    if not any(
-        module_name == p or module_name.startswith(p + ".") for p in trusted_prefixes()
-    ):
+    if not is_trusted(ref.partition(":")[0], builtin=False):
         raise TorchModuleError(
             f"external module {ref!r} is not trusted: the operator must list its "
             f"package in {TRUSTED_ENV} (comma separated) before it can be imported"
