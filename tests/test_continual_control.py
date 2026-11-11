@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from onion_fl.continual import control
 from onion_fl.continual.control import (
     ENV,
     INBOX,
@@ -400,6 +401,22 @@ def test_an_order_during_a_validation_applies_after_the_decision() -> None:
     names = [(e["name"], e["value"]) for e in fed.runtime.events]
     assert names.index(("version.promoted", 3)) < names.index(("version.rollback", 2))
     assert not rejected(fed)
+
+
+def test_a_state_file_that_cannot_be_replaced_is_an_event_not_a_crash(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def locked(*_):
+        raise PermissionError("held open by a reader")
+
+    monkeypatch.setattr(control.os, "replace", locked)
+    monkeypatch.setattr(control.time, "sleep", lambda _: None)
+    fed = live(tmp_path)
+
+    unwritten = events(fed, "control.unwritten")
+    assert fed.coordinator.finished and read_state(tmp_path) is None
+    assert [e["tags"]["listening"] for e in unwritten] == [True, False]
+    assert unwritten[0]["tags"]["reason"] == "held open by a reader"
 
 
 def test_an_external_message_to_an_unknown_node_is_dropped() -> None:

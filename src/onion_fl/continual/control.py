@@ -373,8 +373,15 @@ class LiveControl:
             try:
                 os.replace(temporary, path)
                 return
-            except PermissionError:
+            except PermissionError as error:
+                failure = error
                 time.sleep(0.01 * (attempt + 1))
+        # control.json is what the Studio shows, not the run: a stale one must not
+        # stop the simulation (nor mask its error from the ``finally`` of ``run``),
+        # so it is an event instead of an exception.
+        runtime.record(
+            NODE, "control.unwritten", None, listening=listening, reason=str(failure)
+        )
 
 
 def _finite(value: Any) -> bool:
