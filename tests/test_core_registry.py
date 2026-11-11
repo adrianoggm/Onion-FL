@@ -124,11 +124,14 @@ def test_a_trusted_path_is_imported(
         trainers.get(boom)
 
 
-def test_the_frameworks_own_modules_need_no_trust(
-    trainers: Registry, monkeypatch: pytest.MonkeyPatch
+def test_a_framework_path_resolves_only_a_registered_plugin(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv(TRUSTED_ENV, raising=False)
-    assert trainers.get("onion_fl.core.codec:JsonCodec").factory is JsonCodec
+    assert codecs.get("onion_fl.core.codec:JsonCodec") is codecs.get("json")
+    for other in ["onion_fl.core.codec:get_codec", "onion_fl.core.registry:Registry"]:
+        with pytest.raises(PluginError, match="not a registered codec"):
+            codecs.get(other)
 
 
 def test_dotted_path_resolves_an_external_plugin_spec(trainers: Registry) -> None:

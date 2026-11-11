@@ -76,7 +76,7 @@ def check_reference(ref: str) -> None:
             f"unknown module {ref!r}: use a preset ({', '.join(sorted(PRESETS))}) "
             "or 'package.module:Class'"
         )
-    if not is_trusted(ref.partition(":")[0]):
+    if not is_trusted(ref.partition(":")[0], builtin=False):
         raise TorchModuleError(
             f"external module {ref!r} is not trusted: the operator must list its "
             f"package in {TRUSTED_ENV} (comma separated) before it can be imported"
