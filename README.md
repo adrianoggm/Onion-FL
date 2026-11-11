@@ -47,7 +47,7 @@ A framework to experiment with hierarchical federated learning (edge → fog →
 
 ### What the results can and can't support today
 
-- **Nineteen experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the comparison of two model families, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, the selection of the unlabelled objectives (a null result: nothing could be chosen), the continual benchmark (five baselines chosen on validation, then run on test, with sweeps and a promotion run), a FedAvg reference on 200 FEMNIST writers and LEAF's CNN on the same writers, FLamby's triangle on Fed-Heart-Disease, FedAvg with an MLP on CIFAR-10 (Dir(0.5) and IID; the NIID-Bench CNN reproduction is still to run), and the same federation over four simulated architectures of the continuum. Most have three seeds (Fed-Heart-Disease and the architectures have five, and the architectures' times come from an uncalibrated infrastructure), so many intervals overlap. A pre-registered pilot on FEMNIST (`sim`, 390 runs) tests whether the factorised predictor picks the wrong federation when a deadline couples participation and data weight.
+- **Twenty experiments of the new framework have run on real data**, all committed in [§7](#7-results). They are the SWELL reference run, a SWELL + WESAD mixing sweep, the comparisons of personalisation, drift, robustness, privacy and server-side techniques, the comparison of two model families, the continuation of a trained model, two stream replays of SWELL + WESAD (without and with a replay memory), the triggers on those streams, the selection of the unlabelled objectives (a null result: nothing could be chosen), the continual benchmark (five baselines chosen on validation, then run on test, with sweeps and a promotion run), a FedAvg reference on 200 FEMNIST writers and LEAF's CNN on the same writers, FLamby's triangle on Fed-Heart-Disease, FedAvg on CIFAR-10 (Dir(0.5) and IID) with an MLP and with NIID-Bench's CNN (the CNN misses NIID-Bench by 15–18 points, most likely for lack of data augmentation), and the same federation over four simulated architectures of the continuum. Most have three seeds (Fed-Heart-Disease and the architectures have five, and the architectures' times come from an uncalibrated infrastructure), so many intervals overlap. A pre-registered pilot on FEMNIST (`sim`, 390 runs) tests whether the factorised predictor picks the wrong federation when a deadline couples participation and data weight.
   - The reference run and the mixing sweep have no strong result. On SWELL, no model beats always predicting "stress" on the held-out subjects. On WESAD, the federated model reaches 0.77 accuracy where centralised logistic regression reaches 0.91.
   - In the technique comparisons, the clearest effects are on WESAD: FedDyn and SCAFFOLD beat FedAvg under drift, the adaptive server optimizers beat it too, and a strong sign-flip attack collapses FedAvg while norm clipping holds.
   - On the streams, no continual baseline learns to tell the classes apart on held-out subjects: every model that keeps updating ends predicting one class. The baselines differ only in how fast they follow the class that is arriving, and replay and the unlabelled rows add nothing measurable at a tenth of the labels.
@@ -669,7 +669,19 @@ Source: [results/cifar10_mlp/](results/cifar10_mlp/INDEX.md), `config_id` `d0b01
 | NIID-Bench FedAvg, simple CNN (published, not run here) | 0.682 ± 0.007 | 0.704 ± 0.002 |
 | Constant predictor | 0.100 | 0.100 |
 
-**This is not the NIID-Bench reproduction.** The 17 to 20 point gap is the model: an MLP on raw pixels shares nothing across image positions. NIID-Bench publishes no MLP result on CIFAR-10. The CNN run, which is the ±3 point check, waits for torch_module presets (#245). The MLP overfits after about round 10: its test loss rises while its accuracy levels off.
+**This is not the NIID-Bench reproduction.** The 17 to 20 point gap is the model: an MLP on raw pixels shares nothing across image positions. NIID-Bench publishes no MLP result on CIFAR-10. The CNN run below is the ±3 point check. The MLP overfits after about round 10: its test loss rises while its accuracy levels off.
+
+### New framework: CIFAR-10 FedAvg with NIID-Bench's CNN
+
+Source: [results/cifar10_cnn/](results/cifar10_cnn/INDEX.md), `config_id` `c6d9b6a9…` (Dir(0.5)) and `b3cf5129…` (IID), `topology_id` `60f08e8d…`, commit `8b8ec67`. It is `experiments/cifar10_cnn.yaml`: the MLP run above with only the model changed, to the `torch_module` preset `niid_bench_cnn`, and NIID-Bench's momentum 0.9 added.
+
+| Model | Dir(0.5) accuracy | IID accuracy |
+|---|---|---|
+| Federated NIID-Bench CNN, round 50 (mean ± 95% CI over 3 seeds) | 0.500 ± 0.007 | 0.553 ± 0.009 |
+| Federated MLP, round 50 | 0.477 ± 0.003 | 0.534 ± 0.011 |
+| NIID-Bench FedAvg, simple CNN (published, not run here) | 0.682 ± 0.007 | 0.704 ± 0.002 |
+
+**The reproduction fails the ±3 point check:** it is 18.2 points short on Dir(0.5) and 15.1 on IID. The CNN overfits early (IID peaks at 0.573 at round 14; the test loss reaches 3.2–3.8 at round 50). NIID-Bench's code trains CIFAR-10 with a reflect pad, random crop and horizontal flip, and with weight decay 1e-5; this run has neither, because the framework has no training-time augmentation. That is the likely cause, not yet tested.
 
 ### New framework: the deadline-coupling pilot
 
