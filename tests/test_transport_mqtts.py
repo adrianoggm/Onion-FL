@@ -34,6 +34,7 @@ from tests.certs import (  # noqa: E402
     mosquitto_tls,
     wait_for_mosquitto,
 )
+from tests.timing import slack  # noqa: E402
 
 NAME = os.environ.get("ONIONFL_MQTTS_PREFIX", "onionfl-mqtts-test")
 PORT = os.environ.get("ONIONFL_MQTTS_PORT")
@@ -188,7 +189,7 @@ def test_mqtts_rejects_clients_without_credentials(
     # No password, or a wrong one: the broker says no, and start fails at once.
     started = time.monotonic()
     assert "refused" in refused(broker=by_password, tls=tls(pki))
-    assert time.monotonic() - started < __import__("tests.timing").timing.slack(3)
+    assert time.monotonic() - started < slack(3)
     wrong = {"username": USER, "password_env": "ONIONFL_TEST_WRONG"}
     assert "refused" in refused(broker=by_password, tls=tls(pki), **wrong)
     # Plain MQTT on a TLS port never connects, though TLS on it does.
