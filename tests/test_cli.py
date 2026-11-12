@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import textwrap
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -282,11 +283,33 @@ def test_the_example_topology_and_experiment_are_valid() -> None:
 
 
 @pytest.mark.parametrize("path", sorted(Path("experiments").glob("*.yaml")), ids=str)
+@pytest.mark.filterwarnings("ignore:continuum:DeprecationWarning")  # not migrated yet
 def test_every_shipped_experiment_and_its_topology_are_valid(path: Path) -> None:
     from onion_fl.experiment.config import load_experiment
     from onion_fl.experiment.runner import resolve_topology
 
-    resolve_topology(load_experiment(path))
+    config = load_experiment(path)
+    topology = resolve_topology(config)
+
+    # The shape the yaml declares, read without the topology parser.
+    raw = config.topology
+    if not isinstance(raw, dict):
+        file = Path(raw)
+        if file.suffix not in (".yaml", ".yml"):
+            file = Path(config.paths.topologies) / f"{raw}.yaml"
+        raw = yaml.safe_load(file.read_text(encoding="utf-8"))
+    levels = raw["levels"]
+    if "nodes" in raw:
+        declared = Counter(node["level"] for node in raw["nodes"])
+    else:
+        declared = Counter({levels[0]: 1})
+        declared.update({lvl: len(raw[lvl]["nodes"]) for lvl in levels[1:-1]})
+
+    assert len(levels) >= 2 and topology.levels == levels
+    assert Counter(node.level for node in topology.nodes) == declared
+    assert all(declared[level] >= 1 for level in levels[:-1])
+    roots = [node for node in topology.nodes if node.parent is None]
+    assert roots == [topology.root] and topology.root.level == levels[0]
 
 
 @pytest.mark.skipif(

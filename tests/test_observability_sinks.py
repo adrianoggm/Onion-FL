@@ -191,6 +191,7 @@ def test_drops_and_failed_quorums_are_counted(tmp_path: Path) -> None:
         == 2
     )
     assert value("onionfl_quorum_failed_total", labels(run, "fog", "fog_0")) == 1
+    run.finish()
 
 
 def test_the_metrics_endpoint_can_be_served() -> None:
@@ -200,11 +201,11 @@ def test_the_metrics_endpoint_can_be_served() -> None:
     server, thread = sink.serve(port=0, addr="127.0.0.1")
     try:
         port = server.server_address[1]
-        body = (
-            urllib.request.urlopen(f"http://127.0.0.1:{port}/metrics").read().decode()
-        )
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/metrics") as response:
+            body = response.read().decode()
     finally:
         server.shutdown()
+        server.server_close()
 
     assert "onionfl_round" in body
 

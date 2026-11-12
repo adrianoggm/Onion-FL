@@ -198,6 +198,7 @@ def test_the_probe_answers_facts_time_and_reach_over_its_pipes(tmp_path: Path) -
     finally:
         process.stdin.close()
         process.wait(timeout=10)
+        process.stdout.close()
         listening.close()
 
     assert said["source"] == probe.source_digest(SRC / "onion_fl")

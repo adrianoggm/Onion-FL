@@ -29,6 +29,16 @@ from onion_fl.datasets.swell import (
 from onion_fl.datasets.wesad import WESADDatasetError, partition_wesad_by_subjects
 
 
+def assert_disjoint_subjects(mock_load, n_partitions: int) -> None:
+    """Each partition loads its own subjects, and together they cover all 25."""
+    subjects = [call.kwargs["subjects"] for call in mock_load.call_args_list]
+    assert len(subjects) == n_partitions
+    assert all(subjects)
+    flat = [s for part in subjects for s in part]
+    assert len(flat) == len(set(flat))
+    assert set(flat) == set(range(1, 26))
+
+
 class TestWESADDataset:
     """Test suite for WESAD dataset loading functionality."""
 
@@ -222,6 +232,7 @@ class TestSWELLDataset:
 
     def test_partition_swell_by_subjects(self):
         """Test SWELL dataset partitioning by subjects."""
+        rng = np.random.default_rng(0)
         with patch("onion_fl.datasets.swell.load_swell_dataset") as mock_load:
             # Mock different partitions with different subjects
             def mock_load_side_effect(*args, **kwargs):
@@ -229,8 +240,8 @@ class TestSWELLDataset:
                 n_samples = len(subjects) * 10  # 10 samples per subject
                 n_features = 50
 
-                X = np.random.randn(n_samples, n_features)
-                y = np.random.randint(0, 2, n_samples)
+                X = rng.standard_normal((n_samples, n_features))
+                y = rng.integers(0, 2, n_samples)
 
                 # Split into train/test
                 split_idx = int(0.8 * n_samples)
@@ -242,6 +253,7 @@ class TestSWELLDataset:
             partitions = partition_swell_by_subjects(n_partitions=3, random_state=42)
 
             assert len(partitions) == 3
+            assert_disjoint_subjects(mock_load, n_partitions=3)
 
             for _i, (X_train, X_test, y_train, y_test) in enumerate(partitions):
                 assert X_train.shape[0] > 0
@@ -338,22 +350,24 @@ class TestSWELLDataset:
     @pytest.mark.parametrize("n_partitions", [2, 5, 10])
     def test_swell_partition_sizes(self, n_partitions):
         """Test SWELL partitioning with different partition counts."""
+        rng = np.random.default_rng(0)
         with patch("onion_fl.datasets.swell.load_swell_dataset") as mock_load:
 
             def mock_load_side_effect(*args, **kwargs):
                 subjects = kwargs.get("subjects", list(range(1, 26)))
                 n_samples = len(subjects) * 5
                 return (
-                    np.random.randn(n_samples, 20),
-                    np.random.randn(n_samples // 4, 20),
-                    np.random.randint(0, 2, n_samples),
-                    np.random.randint(0, 2, n_samples // 4),
+                    rng.standard_normal((n_samples, 20)),
+                    rng.standard_normal((n_samples // 4, 20)),
+                    rng.integers(0, 2, n_samples),
+                    rng.integers(0, 2, n_samples // 4),
                 )
 
             mock_load.side_effect = mock_load_side_effect
 
             partitions = partition_swell_by_subjects(n_partitions=n_partitions)
             assert len(partitions) == n_partitions
+            assert_disjoint_subjects(mock_load, n_partitions=n_partitions)
 
             # Verify all partitions have data
             for partition in partitions:

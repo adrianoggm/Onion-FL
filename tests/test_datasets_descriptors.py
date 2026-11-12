@@ -134,6 +134,8 @@ def test_descriptor_features_are_never_meta_columns(name: str) -> None:
 
 
 @pytest.mark.skipif(not Path("data/SWELL").exists(), reason="data/SWELL not available")
+@pytest.mark.filterwarnings("ignore:Found .* missing values:UserWarning")
+@pytest.mark.filterwarnings("ignore:Removed .* features with zero variance:UserWarning")
 def test_swell_reads_like_the_previous_loader() -> None:
     from onion_fl.datasets.swell import load_swell_all_samples
 

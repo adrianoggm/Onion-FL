@@ -1544,7 +1544,7 @@ def test_a_real_run_that_fails_to_launch_is_marked_failed(
     monkeypatch.setattr(real.subprocess, "Popen", broken)
     (scenario,) = scenarios(parse_experiment(experiment(workspace)))
 
-    with pytest.raises(OSError):
+    with pytest.raises(OSError, match="cannot start a process"):
         real.run_real(scenario)
     (run,) = (workspace / "runs").iterdir()
     assert (
@@ -1616,6 +1616,7 @@ def test_a_token_dataset_without_scaling_runs(workspace: Path) -> None:
     assert verify_run(path)
 
 
+@pytest.mark.filterwarnings("ignore:continuum:DeprecationWarning")  # older runs
 def test_the_committed_runs_keep_their_config_ids() -> None:
     from onion_fl.core.ids import config_id
     from onion_fl.experiment.sweep import identity

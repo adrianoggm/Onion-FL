@@ -55,7 +55,7 @@ def test_pseudo_label_term_is_zero_without_accepted_rows() -> None:
     expected = 0.5 * torch.nn.functional.cross_entropy(
         model(torch.eye(3)[[0, 2]]), torch.tensor([0, 1])
     )
-    assert float(term) == pytest.approx(float(expected))
+    assert float(term.detach()) == pytest.approx(float(expected.detach()))
 
 
 def test_an_empty_pool_fits_to_nothing() -> None:
@@ -90,7 +90,8 @@ def test_consistency_vanishes_with_tiny_noise_and_not_with_noise() -> None:
         assert fit["labels"] is None and fit["mask"] is None
         assert fit["seen"] == fit["accepted"] == 3
         torch.manual_seed(0)
-        terms[noise] = float(objective.term(model, np.array([0, 1, 2])))
+        with torch.no_grad():
+            terms[noise] = float(objective.term(model, np.array([0, 1, 2])))
     assert terms[1e-6] == pytest.approx(0.0, abs=1e-8)
     assert terms[1.0] > 1e-3
     assert float(objective.term(model, np.array([], np.int64))) == 0.0

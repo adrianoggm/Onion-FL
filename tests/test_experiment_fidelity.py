@@ -229,11 +229,8 @@ def test_the_report_goes_to_csv_and_html(workspace: Path) -> None:  # noqa: F811
     a, b = _runs(workspace, "runs_a"), _runs(workspace, "runs_b")
     result = fidelity(a, b, metrics=["time"], resamples=50)
 
-    table = list(
-        csv.DictReader(
-            write_csv(result, workspace / "f.csv").open(encoding="utf-8", newline="")
-        )
-    )
+    with write_csv(result, workspace / "f.csv").open(encoding="utf-8", newline="") as f:
+        table = list(csv.DictReader(f))
     page = write_html(result, workspace / "f.html").read_text(encoding="utf-8")
 
     levels = {row["level"] for row in table}

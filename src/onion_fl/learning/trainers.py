@@ -485,7 +485,7 @@ class APFL(Standard):
                             alpha.clamp_(0.0, 1.0)
                     total += float(loss.item()) * len(idx)
                     batches += 1
-        self.alpha = float(alpha)
+        self.alpha = float(alpha.detach())
         self._w = {n: t.detach().clone() for n, t in w.items()}
         seen = p.local_epochs * len(xs)
         return TrainResult(

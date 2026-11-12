@@ -180,6 +180,7 @@ def test_run_json_exists_while_running(tmp_path: Path) -> None:
     run = Run(tmp_path, config={}, topology=TOPOLOGY, seed=0)
 
     status = json.loads((run.path / "run.json").read_text(encoding="utf-8"))["status"]
+    run.finish()
 
     assert status == "running"
 
