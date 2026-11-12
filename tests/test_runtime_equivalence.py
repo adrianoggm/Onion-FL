@@ -7,7 +7,13 @@ extra, and its tests skip without it. The edges use the stub trainer with
 per-node noise: it
 learns nothing, but every edge sends a different, seeded update, so any
 difference in participants, rng streams or aggregation order would show.
-The dataset is a CSV format fixture (docs/RULES.md).
+The dataset is a CSV format fixture (docs/RULES.md). One MQTT test trains with
+the standard trainer on real SWELL rows, so each process's own ingest, roles,
+placement and preprocessing are compared too (issue #298).
+
+Scope: every run here has full quorum, no deadlines and no failures. Partial
+quorum, deadlines, staleness and dropouts depend on the wall clock in a real
+run by design, so they are not compared across runtimes.
 """
 
 from __future__ import annotations
@@ -120,6 +126,23 @@ def test_the_noise_makes_the_check_meaningful(tmp_path: Path) -> None:
     final = simulated(config)
 
     assert any(not np.allclose(final[k], initial[k]) for k in final)
+    # The check tells runs apart: another seed, or one edge fewer, moves the model.
+    raw = config.dump()
+    assert differs(final, simulated(parse_experiment(raw | {"seeds": [1]})))
+    trained = split.roles["demo"]["train"][0]  # its client is one edge
+    data = raw["data"] | {
+        "roles": raw["data"]["roles"] | {"overrides": {"demo": {"exclude": [trained]}}}
+    }
+    assert differs(final, simulated(parse_experiment(raw | {"data": data})))
+
+
+def differs(a: dict[str, np.ndarray], b: dict[str, np.ndarray]) -> bool:
+    """``assert_same_model`` would fail on ``a`` and ``b``."""
+    try:
+        assert_same_model(a, b)
+    except AssertionError:
+        return True
+    return False
 
 
 def test_the_real_runtime_in_one_process_matches_the_simulation(tmp_path: Path) -> None:
@@ -264,6 +287,64 @@ def test_mqtt_with_one_process_per_group_matches_the_simulation(tmp_path: Path) 
 
     with np.load(path / "model.npz", allow_pickle=False) as saved:
         assert_same_model(expected, {k: saved[k] for k in saved.files})
+
+
+SWELL = Path("data/SWELL")
+
+
+def on_swell(config, mode: str):
+    """``config`` training the standard trainer on ten real SWELL subjects."""
+    raw = config.dump()
+    raw["data"] = raw["data"] | {
+        "datasets": {"swell": {"descriptor": "datasets/swell.yaml"}},
+        "roles": {
+            "test": 0.2,
+            "overrides": {"swell": {"exclude": [str(s) for s in range(11, 26)]}},
+        },
+    }
+    raw["learning"] = raw["learning"] | {
+        "trainer": {"name": "standard", "local_epochs": 1, "batch_size": 32}
+    }
+    raw["rounds"] = 2
+    raw["runtime"] = raw["runtime"] | {"mode": mode, "timeout": 120}
+    return parse_experiment(raw)
+
+
+@pytest.mark.skipif(not _broker_up(), reason=f"no MQTT broker at {BROKER}")
+@pytest.mark.skipif(not SWELL.exists(), reason="data/SWELL not available")
+def test_mqtt_trains_real_data_in_every_process_as_the_simulation(
+    tmp_path: Path,
+) -> None:
+    """Each node process ingests, splits, places and preprocesses on its own:
+    all of them must rebuild what the simulation builds (issue #298)."""
+    from onion_fl.core.ids import config_id, data_id
+    from onion_fl.observability.events import read_events
+
+    mqtt = {"name": "mqtt", "broker": BROKER}
+    sim = on_swell(experiment(tmp_path, mqtt), "sim")
+    (scenario,) = scenarios(sim)
+    _, split, _, digests = _scenario_data(scenario)
+    expected = simulated(sim)
+
+    (path,) = run_experiment(on_swell(experiment(tmp_path, mqtt), "real"))
+
+    meta = json.loads((path / "run.json").read_text(encoding="utf-8"))
+    assert meta["status"] == "finished", meta.get("processes")
+    assert meta["data_id"] == data_id(digests)
+    seen = {
+        e["tags"]["group"]: e["tags"]
+        for e in read_events(path / "events.jsonl")
+        if e["name"] == "data.process"
+    }
+    assert len(seen) == 3  # the root's process and one per fog
+    for tags in seen.values():
+        assert tags["data_id"] == data_id(digests)
+        assert tags["preprocessing"] == config_id(split.preprocessing)
+    # Bit for bit: same CPU torch, same seeds and the same batches in every process.
+    with np.load(path / "model.npz", allow_pickle=False) as saved:
+        assert saved.files and sorted(saved.files) == sorted(expected)
+        for key in saved.files:
+            np.testing.assert_array_equal(saved[key], expected[key], err_msg=key)
 
 
 @pytest.mark.skipif(not _broker_up(), reason=f"no MQTT broker at {BROKER}")
