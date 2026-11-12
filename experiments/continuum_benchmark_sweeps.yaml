@@ -31,8 +31,9 @@ stream:
   batch_size: 1
   speed: 60
 labels: {fraction: 0.1, delay: 10m}
-continual: {memory: {name: reservoir, capacity: 512}, replay_ratio: 0.25}
-continuum:
+continual:
+  memory: {name: reservoir, capacity: 512}
+  replay_ratio: 0.25
   trigger: {name: schedule, every: 10m}
   status_every: 10m
 evaluation:
@@ -41,18 +42,18 @@ evaluation:
   global: {every: 1}
 seeds: [0, 1, 2]
 sweep:
-  labels, continual.memory, continuum:
-    - [{fraction: 0.1, delay: 10m}, {name: reservoir, capacity: 512}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
-    - [{fraction: 0.25, delay: 10m}, {name: reservoir, capacity: 512}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
-    - [{fraction: 0.5, delay: 10m}, {name: reservoir, capacity: 512}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
-    - [{fraction: 1.0, delay: 10m}, {name: reservoir, capacity: 512}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
-    - [{fraction: 0.1, delay: 0}, {name: reservoir, capacity: 512}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
-    - [{fraction: 0.1, delay: 30m}, {name: reservoir, capacity: 512}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
-    - [{fraction: 0.1, delay: 10m}, {name: fifo, capacity: 4}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
-    - [{fraction: 0.1, delay: 10m}, {name: fifo, capacity: 16}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
-    - [{fraction: 0.1, delay: 10m}, {name: reservoir, capacity: 4}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
-    - [{fraction: 0.1, delay: 10m}, {name: reservoir, capacity: 16}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
-    - [{fraction: 0.1, delay: 10m}, {name: class_balanced, capacity: 4}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
-    - [{fraction: 0.1, delay: 10m}, {name: class_balanced, capacity: 16}, {trigger: {name: schedule, every: 10m}, status_every: 10m}]
-    - [{fraction: 0.1, delay: 10m}, {name: reservoir, capacity: 512}, {trigger: {name: volume, samples: 30}, status_every: 5m}]
-    - [{fraction: 0.1, delay: 10m}, {name: reservoir, capacity: 512}, {trigger: {name: drift, kind: prior}, status_every: 5m}]
+  labels, continual.memory, continual.trigger, continual.status_every:
+    - [{fraction: 0.1, delay: 10m}, {name: reservoir, capacity: 512}, {name: schedule, every: 10m}, 10m]
+    - [{fraction: 0.25, delay: 10m}, {name: reservoir, capacity: 512}, {name: schedule, every: 10m}, 10m]
+    - [{fraction: 0.5, delay: 10m}, {name: reservoir, capacity: 512}, {name: schedule, every: 10m}, 10m]
+    - [{fraction: 1.0, delay: 10m}, {name: reservoir, capacity: 512}, {name: schedule, every: 10m}, 10m]
+    - [{fraction: 0.1, delay: 0}, {name: reservoir, capacity: 512}, {name: schedule, every: 10m}, 10m]
+    - [{fraction: 0.1, delay: 30m}, {name: reservoir, capacity: 512}, {name: schedule, every: 10m}, 10m]
+    - [{fraction: 0.1, delay: 10m}, {name: fifo, capacity: 4}, {name: schedule, every: 10m}, 10m]
+    - [{fraction: 0.1, delay: 10m}, {name: fifo, capacity: 16}, {name: schedule, every: 10m}, 10m]
+    - [{fraction: 0.1, delay: 10m}, {name: reservoir, capacity: 4}, {name: schedule, every: 10m}, 10m]
+    - [{fraction: 0.1, delay: 10m}, {name: reservoir, capacity: 16}, {name: schedule, every: 10m}, 10m]
+    - [{fraction: 0.1, delay: 10m}, {name: class_balanced, capacity: 4}, {name: schedule, every: 10m}, 10m]
+    - [{fraction: 0.1, delay: 10m}, {name: class_balanced, capacity: 16}, {name: schedule, every: 10m}, 10m]
+    - [{fraction: 0.1, delay: 10m}, {name: reservoir, capacity: 512}, {name: volume, samples: 30}, 5m]
+    - [{fraction: 0.1, delay: 10m}, {name: reservoir, capacity: 512}, {name: drift, kind: prior}, 5m]

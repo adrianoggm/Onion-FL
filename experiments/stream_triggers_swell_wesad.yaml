@@ -36,7 +36,7 @@ stream:
   batch_size: 1
   speed: 60
 labels: {fraction: 1.0, delay: 10m}
-continuum:
+continual:
   trigger: {name: schedule, every: 10m}
   status_every: 10m
 evaluation:
@@ -45,7 +45,7 @@ evaluation:
   global: {every: 5}
 seeds: [0, 1, 2]
 sweep:
-  continuum.trigger, continuum.status_every:
+  continual.trigger, continual.status_every:
     - [{name: schedule, every: 10m}, 10m]
     - [{name: volume, samples: 300}, 5m]
     - [{name: drift, kind: prior}, 5m]

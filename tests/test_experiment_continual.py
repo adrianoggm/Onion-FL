@@ -2,7 +2,8 @@
 
 The old form is read for one version, with one deprecation warning per config,
 and every config_id stays: the committed configs and results of C2-C8 load
-unchanged and give the config_ids their runs were signed with.
+unchanged and give the config_ids their runs were signed with. The shipped
+experiments are in the new form since #309; ``old_form`` writes them back.
 """
 
 from __future__ import annotations
@@ -16,10 +17,10 @@ import pytest
 import yaml
 
 from onion_fl.experiment.config import (
+    PACE,
     ConfigError,
     experiment_schema,
     from_continuum,
-    load_experiment,
     parse_experiment,
 )
 from onion_fl.experiment.sweep import identity, scenarios
@@ -72,6 +73,31 @@ def new_form(raw: dict) -> dict:
     return out
 
 
+def old_form(raw: dict) -> dict:
+    """The same config as written before M1: the triggers under ``continuum``."""
+    out = dict(raw)
+    continual = dict(out.pop("continual", {}))
+    pace = {k: continual.pop(k) for k in PACE if k in continual}
+    if continual:
+        out["continual"] = continual
+    if pace:
+        out["continuum"] = pace
+
+    def path(p: str) -> str:
+        return "continuum." + p[10:] if p[10:] in PACE else p
+
+    if "sweep" in out:
+        out["sweep"] = {
+            ", ".join(path(p.strip()) for p in key.split(",")): values
+            for key, values in out["sweep"].items()
+        }
+    return out
+
+
+def old_triggers() -> dict:
+    return old_form(yaml.safe_load(TRIGGERS.read_text("utf-8")))
+
+
 def quiet(raw: dict):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
@@ -88,41 +114,45 @@ def test_the_committed_continual_results_are_all_checked() -> None:
 
 @pytest.mark.parametrize("name", sorted(RUNS))
 def test_a_committed_config_keeps_its_config_ids_in_either_form(name: str) -> None:
-    raw = yaml.safe_load((ROOT / "experiments" / f"{name}.yaml").read_text("utf-8"))
-    as_written = {(s.name, s.config_id) for s in scenarios(quiet(raw))}
+    shipped = yaml.safe_load((ROOT / "experiments" / f"{name}.yaml").read_text("utf-8"))
+    raw = old_form(shipped)
+    ids = {s.config_id for s in scenarios(quiet(raw))}
     rewritten = {s.config_id for s in scenarios(quiet(new_form(raw)))}
+    assert {s.config_id for s in scenarios(parse_experiment(shipped))} == ids
+    # Runs are matched by config_id, not by scenario name: moving a swept path
+    # from continuum to continual (#309) renamed the scenarios, not their ids.
     # Runs a script made from the experiment with changes (C9's backends and
     # failures) are checked on the config they recorded instead.
     for (scenario, cid), config in recorded(name).items():
-        if (scenario, cid) not in as_written:
+        if cid not in ids:
             for form in (config, new_form(config)):
                 again = {
                     s.config_id for s in scenarios(quiet(form)) if s.name == scenario
                 }
                 assert cid in again, (scenario, cid)
-            as_written.add((scenario, cid))
+            ids.add(cid)
             rewritten.add(cid)
 
-    assert RUNS[name] <= as_written  # the same scenarios, with the same ids
+    assert {cid for _, cid in RUNS[name]} <= ids
     assert {cid for _, cid in RUNS[name]} <= rewritten
 
 
 def test_the_old_form_warns_once_per_config() -> None:
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        config = load_experiment(TRIGGERS)
+        config = parse_experiment(old_triggers())
         assert [w.category for w in caught] == [DeprecationWarning]
         assert "continual.trigger" in str(caught[0].message)
 
         (one, *_) = scenarios(config)  # nothing reads the old form again
         parse_experiment(config.dump())
         parse_experiment(identity(one.config), signed=True)  # a run.json's config
-        parse_experiment(new_form(yaml.safe_load(TRIGGERS.read_text("utf-8"))))
+        parse_experiment(new_form(old_triggers()))
     assert len(caught) == 1
 
 
 def test_the_config_is_written_in_the_new_form_and_signed_in_the_old() -> None:
-    raw = yaml.safe_load(TRIGGERS.read_text("utf-8"))
+    raw = old_triggers()
     config = quiet(raw)
     dumped = config.dump()
 
@@ -137,7 +167,7 @@ def test_the_config_is_written_in_the_new_form_and_signed_in_the_old() -> None:
 
 
 def test_an_empty_old_continual_section_stays_in_the_signature() -> None:
-    raw = yaml.safe_load(TRIGGERS.read_text("utf-8"))
+    raw = old_triggers()
     old = identity(quiet(raw | {"continual": {}}))
     new = identity(quiet(new_form(raw | {"continual": {}})))
 
@@ -156,20 +186,20 @@ def test_an_empty_old_continual_section_stays_in_the_signature() -> None:
     ],
 )
 def test_the_two_forms_cannot_be_mixed(change: dict, message: str) -> None:
-    raw = yaml.safe_load(TRIGGERS.read_text("utf-8")) | change
+    raw = old_triggers() | change
     with pytest.raises(ConfigError, match=message):
         quiet(raw)
 
 
 def test_a_local_trigger_needs_a_federated_one() -> None:
-    raw = new_form(yaml.safe_load(TRIGGERS.read_text("utf-8")))
+    raw = new_form(old_triggers())
     raw["continual"] = {"edge_trigger": {"name": "volume", "samples": 8}}
     with pytest.raises(ConfigError, match="continual.edge_trigger"):
         parse_experiment(raw)
 
 
 def test_a_swept_continual_value_replaces_the_parts_it_names() -> None:
-    raw = new_form(yaml.safe_load(TRIGGERS.read_text("utf-8"))) | {"seeds": [0]}
+    raw = new_form(old_triggers()) | {"seeds": [0]}
     volume = {"trigger": {"name": "volume", "samples": 300}, "status_every": "5m"}
     raw["sweep"] = {
         "continual": [{"memory": "none"}, volume, volume | {"memory": "none"}]

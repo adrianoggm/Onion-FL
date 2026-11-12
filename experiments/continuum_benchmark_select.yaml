@@ -30,8 +30,8 @@ stream:
   batch_size: 1
   speed: 60
 labels: {fraction: 0.1, delay: 10m}
-continual: {memory: none}
-continuum:
+continual:
+  memory: none
   trigger: {name: schedule, every: 10m}
   status_every: 10m
 evaluation:
