@@ -624,11 +624,15 @@ async function compareView() {
   const metric = h("select", {}, ["accuracy", "loss", "macro_f1", "train_loss", "divergence_cos", "dataset_conflict", "participation"].map((m) => h("option", { value: m }, m)));
   const byChoices = ["topology_id", "scenario", "config_id", "dataset", "model"];
   const by = byChoices.map((key) => h("input", { type: "checkbox", value: key, checked: key === "topology_id" }));
+  const reference = h("input", { size: 18, placeholder: "valor o clave=valor,…" });
+  const margin = h("input", { type: "number", step: "any", min: 0, size: 6 });
   const output = h("div", {});
   async function run() {
     const keys = by.filter((b) => b.checked).map((b) => b.value).join(",");
     const query = new URLSearchParams({ level: level.value, metric: metric.value, by: keys });
     if (experiment.value) query.set("experiment", experiment.value);
+    if (reference.value) query.set("reference", reference.value);
+    if (reference.value && margin.value) query.set("margin", margin.value);
     try {
       const rows = await api(`/api/compare?${query}`);
       if (!rows.length) return output.replaceChildren(h("p", { class: "muted" }, "Nada que comparar con esos filtros."));
@@ -638,18 +642,22 @@ async function compareView() {
       for (const row of rows) (groups[label(row)] ||= []).push(row);
       const series = Object.entries(groups).map(([name, items]) => ({ label: name, points: items.map((r) => ({ x: r.round, y: r.mean, lo: r.ci_low ?? undefined, hi: r.ci_high ?? undefined })) }));
       const last = Object.values(groups).map((items) => items.reduce((a, b) => (b.round > a.round ? b : a)));
+      const columns = [["Grupo", label], ["Ronda", (r) => r.round], ["n", (r) => r.n], ["Media", (r) => fmt(r.mean)], ["IC 95 %", (r) => `${fmt(r.ci_low)} – ${fmt(r.ci_high)}`], ["Nodos min/max", (r) => `${fmt(r.node_min)} / ${fmt(r.node_max)}`], ["Dispersión", (r) => fmt(r.node_spread)]];
+      if ("delta" in rows[0])
+        columns.push(["Pares", (r) => r.n_pairs], ["Δ (IC 95 %)", (r) => `${fmt(r.delta)} (${fmt(r.delta_low)} – ${fmt(r.delta_high)})`], ["p Wilcoxon / permutación", (r) => `${fmt(r.p_wilcoxon)} / ${fmt(r.p_perm)}`], ["p ajustada (Holm)", (r) => fmt(r.p_adj)], ["d_z", (r) => fmt(r.d_z)], ["p TOST", (r) => fmt(r.p_tost)], ["Veredicto", (r) => r.verdict]);
       output.replaceChildren(
         h("div", { class: "panel" }, h("h3", {}, `${metric.value} en ${level.value}: media ± IC 95 % sobre las semillas`), lineChart(series, { yLabel: metric.value })),
         h("div", { class: "panel" }, h("h3", {}, "Última ronda"),
-          table([["Grupo", label], ["Ronda", (r) => r.round], ["n", (r) => r.n], ["Media", (r) => fmt(r.mean)], ["IC 95 %", (r) => `${fmt(r.ci_low)} – ${fmt(r.ci_high)}`], ["Nodos min/max", (r) => `${fmt(r.node_min)} / ${fmt(r.node_max)}`], ["Dispersión", (r) => fmt(r.node_spread)]], last)));
+          table(columns, last)));
     } catch (error) {
       output.replaceChildren(errorBox(error));
     }
   }
-  page("Comparar", "Entre topologías, escenarios o datasets, en cualquier nivel: media ± IC sobre las semillas por ronda y la dispersión entre los nodos del nivel.",
+  page("Comparar", "Entre topologías, escenarios o datasets, en cualquier nivel: media ± IC sobre las semillas por ronda y la dispersión entre los nodos del nivel; con una referencia, cada grupo se compara con ella emparejando por semilla (Δ con IC bootstrap, Wilcoxon, permutación con Holm, d_z y TOST).",
     h("div", { class: "panel" },
       h("div", { class: "row" }, h("label", {}, "experimento", experiment), h("label", {}, "nivel", level), h("label", {}, "métrica", metric)),
       h("div", { class: "row" }, "agrupar por:", byChoices.map((key, i) => h("label", {}, by[i], key))),
+      h("div", { class: "row" }, h("label", { title: "Compara cada grupo con este, emparejando las ejecuciones por semilla" }, "referencia (pareado por semilla)", reference), h("label", { title: "Diferencia que no es relevante, fijada antes de ver las ejecuciones" }, "margen de equivalencia (TOST)", margin)),
       h("button", { class: "primary", onclick: run }, "Comparar")),
     output);
   run();
