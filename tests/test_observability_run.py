@@ -21,7 +21,7 @@ from onion_fl.learning.model import (
 )
 from onion_fl.learning.trainers import trainers
 from onion_fl.observability.events import SCHEMA, event_fingerprint, kind_of
-from onion_fl.observability.run import Run, verify_run
+from onion_fl.observability.run import Run, _Summary, verify_run
 from onion_fl.roles import EdgeSpec, build_federation
 
 A = DataShape(dataset="a", task="t", n_features=2, n_classes=2)
@@ -305,3 +305,22 @@ def test_the_final_model_is_saved_and_signed(tmp_path: Path) -> None:
         run.path / "model.npz", **{k: v + 1 for k, v in fed.coordinator.state.items()}
     )
     assert not verify_run(run.path)
+
+
+def test_the_summary_counts_autonomous_rounds_only_when_there_are() -> None:
+    """Per fog (#289); a summary without them keeps its keys."""
+    summary = _Summary()
+    assert "autonomous_rounds" not in summary.as_dict(0.0)
+    for node in ("fog_1", "fog_0", "fog_1"):
+        summary.add(
+            {
+                "name": "fog.autonomous.round",
+                "value": 1.0,
+                "tags": {},
+                "t_virtual": 1.0,
+                "node": node,
+                "role": "aggregator",
+            }
+        )
+
+    assert summary.as_dict(0.0)["autonomous_rounds"] == {"fog_0": 1, "fog_1": 2}

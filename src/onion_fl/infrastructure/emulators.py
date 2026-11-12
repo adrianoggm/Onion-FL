@@ -32,6 +32,11 @@ What the shaping means:
   unbounded queues do.
 - ``loss`` is per packet: under MQTT over TCP it becomes retransmissions and
   delay, never a lost message as in the simulation.
+- **outages**: a ``network.schedule`` entry that takes a link ``down`` sets
+  netem's loss to 100 % at both ends while it lasts (``outages``), and the
+  backend applies it at its instant of the run's clock. TCP holds what is sent
+  meanwhile and delivers it once the link is back (unless MQTT's keepalive
+  drops the connection first), where the simulation loses it.
 
 The module only writes text: it never calls Docker (the backend does), so
 every command it generates can be checked without it.
@@ -64,8 +69,12 @@ READY = "/tmp/onionfl-ready"  # a container's setup is done when this exists
 def refusals(infra: Infrastructure) -> list[str]:
     """What the emulation cannot reproduce of ``infra``; empty when it can."""
     out = []
-    if infra.network.schedule:
-        out.append("network.schedule: link changes over time are not emulated yet")
+    for i, change in enumerate(infra.network.schedule):
+        if change.host is not None or change.down is None:
+            out.append(
+                f"network.schedule[{i}]: only link outages (down) are emulated; "
+                "set, trace and host changes are not yet"
+            )
     if infra.network.bandwidth == "dedicated":
         out.append(
             "network.bandwidth: dedicated cannot be emulated; a physical link is one "
@@ -285,13 +294,43 @@ def _routes(lay: Layout, site: str) -> list[str]:
     return out
 
 
+DEV = 'dev() { set -- $(ip -4 -o addr show to "$1/32"); echo "$2"; }'
+
+
+def outages(lay: Layout) -> list[tuple[float, str, dict[str, Any], dict[str, str]]]:
+    """``link.down`` and ``link.up`` of ``network.schedule`` in time order, each
+    with the shell command it takes on the router at each end of the link: its
+    netem with 100 % loss, or as the setup left it. A link no path between the
+    hosts crosses is not emulated: it takes none."""
+    used = {link.between: link for link in lay.links}
+    links = {frozenset(x.between): x.between for x in lay.infra.network.links}
+    out = []
+    for change in sorted(lay.infra.network.schedule, key=lambda c: c.at):
+        if change.host is not None or change.down is None:
+            continue
+        between = links[frozenset(change.between)]
+        link, commands = used.get(between), {}
+        for site in between if link is not None else ():
+            ip = _end(lay, between, site)
+            rate = link.bandwidth_up if between[0] == site else link.bandwidth_down
+            fields = link.model_copy(update={"loss": 1.0}) if change.down else link
+            commands[lay.services[site]] = (
+                f"{DEV}; tc qdisc change dev $(dev {ip}) root {netem(fields, rate)}"
+            )
+        name = "link.down" if change.down else "link.up"
+        out.append(
+            (change.at, name, {"link": f"link:{between[0]}|{between[1]}"}, commands)
+        )
+    return out
+
+
 def _script(title: str, commands: Sequence[str]) -> str:
     return "\n".join(
         [
             "#!/bin/sh",
             f"# {title}",
             "set -eu",
-            'dev() { set -- $(ip -4 -o addr show to "$1/32"); echo "$2"; }',
+            DEV,
             *commands,
             f"touch {READY}",
             "exec sleep infinity",

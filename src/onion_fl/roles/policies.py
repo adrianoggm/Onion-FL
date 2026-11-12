@@ -5,10 +5,10 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from onion_fl.core.registry import Registry
 
@@ -311,6 +311,56 @@ class NextRound:
         if self.max_staleness is not None and staleness > self.max_staleness:
             return None
         return self.weighting.factor(staleness)
+
+
+class AutonomyParams(BaseModel):
+    """A fog's ``autonomy`` setting (issue #289), per level or per node."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    after: float | str = Field(
+        description="Espera sin modelo del padre, tras cerrar una ronda, antes de "
+        "seguir sola con sus hijos (30s, 2m)"
+    )
+    max_rounds: int = Field(
+        10, ge=1, description="Rondas autónomas como mucho hasta que vuelva el padre"
+    )
+    reconcile: Literal["samples", "staleness"] = Field(
+        "samples",
+        description="Cómo pesa el padre el estado acumulado al volver: por sus "
+        "muestras, o además con su regla de staleness por las rondas perdidas",
+    )
+
+
+class Autonomy:
+    """When a fog stops waiting for its parent and how its work is reconciled.
+
+    If no model comes from the parent ``after`` seconds after the fog closed a
+    round, the fog keeps closing zone rounds with its children on its latest
+    model, up to ``max_rounds``. The first model from the parent ends it: the
+    fog answers that round with what its zone learnt meanwhile, weighted by
+    the samples it accumulated, times the parent's staleness factor for the
+    global rounds it missed with ``reconcile: staleness``.
+    """
+
+    def __init__(
+        self, after: float | str, max_rounds: int = 10, reconcile: str = "samples"
+    ) -> None:
+        self.after = parse_duration(after)
+        if self.after is None or self.after <= 0:
+            raise ValueError(f"autonomy.after must be positive, got {after!r}")
+        self.max_rounds, self.reconcile = max_rounds, reconcile
+
+    @classmethod
+    def parse(cls, spec: Mapping[str, Any] | None) -> Autonomy | None:
+        """The ``autonomy`` setting of a node; None when it has none."""
+        if spec is None:
+            return None
+        try:
+            params = AutonomyParams.model_validate(spec)
+        except ValidationError as exc:
+            raise ValueError(f"autonomy: {exc}") from None
+        return cls(**params.model_dump())
 
 
 def create(

@@ -14,7 +14,10 @@ nodes of each host (``groups``) and the broker's address.
 shaped its interfaces and the broker answers, and then starts one ``onion_fl
 node`` per host with ``docker exec``, as the ``local`` backend starts one
 process per group; the run is merged and signed by the same ``merge``. The
-project is always taken down, with its logs kept in ``compose.log``.
+project is always taken down, with its logs kept in ``compose.log``. The
+infrastructure's link outages (``network.schedule``, #289) are applied on the
+routers at their instants of the run's clock, each recorded as the
+simulation records it: ``link.down`` or ``link.up`` of the node ``network``.
 
 Inside the containers the roles, trainers and aggregators are those of every
 backend (``build_scenario``); only the clock, the transport's path and the
@@ -24,6 +27,7 @@ resources differ.
 import json
 import os
 import subprocess
+import threading
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -46,11 +50,13 @@ from onion_fl.infrastructure.emulators import (
     Layout,
     compose_project,
     layout,
+    outages,
     refusals,
     slug,
 )
 from onion_fl.infrastructure.model import InfrastructureError
-from onion_fl.observability.run import Run
+from onion_fl.observability.events import JsonlSink
+from onion_fl.observability.run import Run, enrich
 from onion_fl.runtime.real import TRACE
 
 ROOT = "/onionfl"  # where the containers see the source and the run's paths
@@ -305,6 +311,12 @@ def prepare_emulated(scenario: Scenario, params: EmulatedParams) -> EmulatedPlan
             **lay.summary(),
             "shaping": emulation.shaping,
         } | ({"cpusets": cpusets} if cpusets else {})
+        steps = outages(lay)
+        if steps:  # only then, so other runs record what they did
+            run.meta["emulation"]["outages"] = [
+                {"at": at, "name": name, **tags, "commands": commands}
+                for at, name, tags, commands in steps
+            ]
     except BaseException:  # never leave a run that looks still running
         run.finish(status="failed")
         raise
@@ -408,6 +420,68 @@ def wait_ready(plan: EmulatedPlan) -> None:
             time.sleep(0.2)
 
 
+def partition(plan: EmulatedPlan, epoch: float) -> Any:
+    """Apply the link outages at their instants of the run's clock, in a thread.
+
+    Each change runs its command on the router at each end of the link and
+    goes in the run as an event of the node ``network`` (with ``failed``, the
+    routers whose command failed, if any). Returns a function that stops the
+    thread and waits for it; None without outages.
+    """
+    from onion_fl.experiment.real import PART
+
+    steps = outages(plan.emulation.layout)
+    if not steps:
+        return None
+    run, stop = plan.run, threading.Event()
+    sink = JsonlSink(run.path / PART.format(group="network"), flush=True)
+
+    def apply() -> None:
+        try:
+            for at, name, tags, commands in steps:
+                if stop.wait(max(0.0, epoch + at - time.time())):
+                    return
+                failed = [
+                    service
+                    for service, command in commands.items()
+                    if _docker(
+                        "exec",
+                        f"{plan.emulation.project}-{service}",
+                        "sh",
+                        "-c",
+                        command,
+                    ).returncode
+                ]
+                raw = {
+                    "t": time.time() - epoch,
+                    "node": "network",
+                    "name": name,
+                    "value": None,
+                    "tags": tags | ({"failed": failed} if failed else {}),
+                }
+                sink.write(
+                    enrich(
+                        raw,
+                        run_id=run.run_id,
+                        topology_id=run.topology.topology_id,
+                        scenario=run.scenario,
+                        seed=run.seed,
+                        nodes={},
+                    )
+                )
+        finally:
+            sink.close()
+
+    thread = threading.Thread(target=apply, name="onionfl-partition", daemon=True)
+    thread.start()
+
+    def halt() -> None:
+        stop.set()
+        thread.join()
+
+    return halt
+
+
 def take_down(plan: EmulatedPlan) -> None:
     """Keep the containers' logs and remove the project, whatever happened."""
     logs = subprocess.run(
@@ -447,6 +521,7 @@ def launch_emulated(plan: EmulatedPlan) -> None:
         document = json.loads(path.read_text(encoding="utf-8"))
         document["epoch"] = time.time()
         path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+        halt = partition(plan, document["epoch"])
     except BaseException:  # never leave a run that looks still running
         take_down(plan)
         plan.run.finish(status="failed")
@@ -454,4 +529,6 @@ def launch_emulated(plan: EmulatedPlan) -> None:
     try:
         launch(plan)
     finally:
+        if halt is not None:
+            halt()
         take_down(plan)

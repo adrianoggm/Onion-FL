@@ -1,7 +1,8 @@
 """Tests for the emulated backend (issue #195, spec I1 §10–§11).
 
-Nothing here needs Docker: the Compose project, its setup scripts and the tc
-commands are checked as text. The run in containers, against the simulation,
+Nothing here needs Docker but one check of the link outages (#289) on real
+routers: the Compose project, its setup scripts and the tc commands are
+checked as text. The run in containers, against the simulation,
 is in ``test_runtime_equivalence``. Edges use the stub trainer on a CSV format
 fixture, so nothing is trained for real (docs/RULES.md).
 """
@@ -10,12 +11,18 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
+import time
 import tomllib
+import uuid
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 import yaml
 
+from onion_fl.experiment import emulated
 from onion_fl.experiment.backends import EmulatedBackend
 from onion_fl.experiment.config import ConfigError, experiment_schema, parse_experiment
 from onion_fl.experiment.emulated import NUMERIC, pins
@@ -23,16 +30,26 @@ from onion_fl.experiment.runner import plan
 from onion_fl.experiment.sweep import scenarios
 from onion_fl.infrastructure.backends import Backend, backends
 from onion_fl.infrastructure.emulators import (
+    MQTT_PORT,
+    READY,
     compose_project,
     layout,
     netem,
+    outages,
     queue_limit,
     refusals,
 )
 from onion_fl.infrastructure.model import LinkFields, parse_infrastructure
+from onion_fl.observability.events import read_events
 from onion_fl.runtime.real import RealRuntime
 from tests.test_experiment import experiment, workspace  # noqa: F401
 from tests.test_infrastructure import lab
+from tests.test_runtime_equivalence import (
+    EMULATED,
+    _docker,
+    _emulator_up,
+    _free_subnet,
+)
 
 HOSTS = ["cloud-1", "fog-1", "fog-2", "field-pi-1", "field-pi-2"]
 ROOT = Path(__file__).resolve().parents[1]
@@ -170,12 +187,17 @@ def test_what_netem_cannot_reproduce_is_refused() -> None:
         network={
             "links": [lognormal, {"between": ["fog", "dc"], "latency": "70ms"}],
             "bandwidth": "dedicated",
-            "schedule": [{"between": ["fog", "dc"], "at": "5s", "down": True}],
+            "schedule": [
+                {"between": ["fog", "dc"], "at": "5s", "set": {"latency": "1ms"}},
+                {"host": "fog-1", "at": "5s", "down": True},
+            ],
         }
     )
 
     reasons = " ".join(refusals(infra))
-    assert "network.schedule" in reasons and "dedicated" in reasons
+    assert "network.schedule[0]: only link outages" in reasons
+    assert "network.schedule[1]: only link outages" in reasons
+    assert "dedicated" in reasons
     assert "network.links[0]: netem has no lognormal delay" in reasons
     assert refusals(lab_infra()) == []
 
@@ -363,3 +385,134 @@ def test_a_real_runtime_can_point_every_mqtt_link_at_one_broker() -> None:
 
     (carrier,) = runtime._transports.values()
     assert (carrier.host, carrier.port) == ("10.195.0.3", 1883)
+
+
+# --- link outages (issue #289) -----------------------------------------------------
+
+
+def test_an_outage_cuts_the_link_at_both_routers_and_restores_it() -> None:
+    schedule = [
+        {"between": ["fog", "dc"], "at": "20s", "down": True},
+        {"between": ["fog", "dc"], "at": "5s", "down": True},
+        {"between": ["fog", "dc"], "at": "30s", "down": False},
+    ]
+    infra = lab_infra(network=lab()["network"] | {"schedule": schedule})
+    em = compose_project(layout(infra, HOSTS, "cloud-1"), project="p", image="img")
+
+    steps = outages(em.layout)
+    assert [(at, name) for at, name, _, _ in steps] == [
+        (5, "link.down"),
+        (20, "link.down"),
+        (30, "link.up"),
+    ]
+    _, _, tags, down = steps[0]
+    assert tags == {"link": "link:fog|dc"}
+    assert sorted(down) == ["router-dc", "router-fog"]
+    shaped = {s: next(c for c in em.shaping[s] if "10.195.4." in c) for s in down}
+    for command in down.values():
+        assert "tc qdisc change dev $(dev 10.195.4." in command
+        assert command.endswith(" loss 100%")
+    up = steps[-1][3]
+    for service, command in up.items():  # back to what the setup shaped
+        assert command.split("; tc ", 1)[1] == shaped[service].split("tc ", 1)[
+            1
+        ].replace("add ", "change ", 1)
+
+
+@pytest.mark.skipif(not _emulator_up(), reason="no Docker or no emulated host image")
+def test_an_emulated_outage_cuts_the_link_and_brings_it_back(tmp_path: Path) -> None:
+    """The commands of ``outages`` on real routers: the fog stops reaching the
+    cloud's broker while the link is down, and reaches it again after."""
+    cut = [
+        {"between": ["fog", "dc"], "at": 0, "down": True},
+        {"between": ["fog", "dc"], "at": 1, "down": False},
+    ]
+    infra = lab_infra(network=lab()["network"] | {"schedule": cut})
+    lay = layout(infra, ["cloud-1", "fog-1"], "cloud-1", subnet=_free_subnet())
+    em = compose_project(
+        lay,
+        project=f"onionfl-cut-{uuid.uuid4().hex[:8]}",
+        image=EMULATED["image"],
+        setup=tmp_path.as_posix(),
+    )
+    (tmp_path / "compose.yaml").write_text(yaml.safe_dump(em.compose), "utf-8")
+    for service, script in em.scripts.items():
+        (tmp_path / f"{service}.sh").write_bytes(script.encode())
+    compose = ["compose", "-p", em.project, "-f", str(tmp_path / "compose.yaml")]
+    probe = (
+        "import socket; "
+        f"socket.create_connection(('{lay.addresses['cloud-1']}', {MQTT_PORT}), 2)"
+    )
+
+    def reaches() -> bool:
+        command = ["docker", "exec", em.container("fog-1"), "python", "-c", probe]
+        return subprocess.run(command, capture_output=True, timeout=30).returncode == 0
+
+    try:
+        _docker(*compose, "up", "--detach", "--quiet-pull")
+        for container in em.containers:
+            if container.endswith("-broker"):
+                continue
+            deadline = time.monotonic() + 120
+            while subprocess.run(
+                ["docker", "exec", container, "test", "-f", READY], capture_output=True
+            ).returncode:
+                assert time.monotonic() < deadline, f"{container} not ready"
+                time.sleep(0.5)
+        deadline = time.monotonic() + 60  # the broker starts after its host
+        while not reaches():
+            assert time.monotonic() < deadline, "the broker never answered"
+        for (_, name, _, commands), reachable in zip(
+            outages(lay), (False, True), strict=True
+        ):
+            for service, command in commands.items():
+                _docker("exec", f"{em.project}-{service}", "sh", "-c", command)
+            assert reaches() is reachable, name
+    finally:
+        _docker(*compose, "down", "--volumes", "--timeout", "1", check=False)
+
+
+def test_the_backend_applies_each_outage_on_time_and_records_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cut = [
+        {"between": ["fog", "dc"], "at": 0, "down": True},
+        {"between": ["fog", "dc"], "at": 0.05, "down": False},
+    ]
+    infra = lab_infra(network=lab()["network"] | {"schedule": cut})
+    em = compose_project(layout(infra, HOSTS, "cloud-1"), project="p", image="img")
+    calls = []
+
+    def docker(*args: str, **kw: Any) -> subprocess.CompletedProcess:
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 1 if "p-router-dc" in args else 0)
+
+    monkeypatch.setattr(emulated, "_docker", docker)
+    run = SimpleNamespace(
+        path=tmp_path,
+        run_id="r",
+        topology=SimpleNamespace(topology_id="t"),
+        scenario="s",
+        seed=0,
+    )
+    halt = emulated.partition(SimpleNamespace(run=run, emulation=em), time.time())
+    deadline = time.monotonic() + 10
+    while len(calls) < 4 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    halt()
+
+    assert [c[:2] for c in calls] == [
+        ("exec", "p-router-fog"),  # both ends of the link, as it is declared
+        ("exec", "p-router-dc"),
+    ] * 2
+    recorded = read_events(tmp_path / "events.network.jsonl")
+    assert [(e["node"], e["name"]) for e in recorded] == [
+        ("network", "link.down"),
+        ("network", "link.up"),
+    ]
+    assert recorded[0]["tags"] == {"link": "link:fog|dc", "failed": ["router-dc"]}
+    assert recorded[1]["t_virtual"] >= 0.05
+    assert (
+        emulated.partition(SimpleNamespace(run=run, emulation=project(lab_infra())), 0)
+        is None
+    )

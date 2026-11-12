@@ -326,3 +326,19 @@ def test_a_drift_is_counted_per_node_and_kind() -> None:
 
     labels_ = where | {"dataset": "a", "kind": "prior"}
     assert sink.registry.get_sample_value("onionfl_drift_detected_total", labels_) == 2
+
+
+def test_a_fogs_autonomy_is_exported() -> None:
+    """``fog.autonomous.*`` (#289): whether a fog runs alone, and its rounds."""
+    sink = PrometheusSink(registry=CollectorRegistry())
+    node = {"run_id": "r", "topology_id": "t", "level": "fog", "node": "fog_0"}
+    labels = node | {"dataset": ""}
+    for name in ("started", "round", "round"):
+        sink.write(node | {"kind": "lifecycle", "name": f"fog.autonomous.{name}"})
+        if name == "started":
+            assert sink.registry.get_sample_value("onionfl_autonomous", labels) == 1
+    sink.write(node | {"kind": "lifecycle", "name": "fog.autonomous.ended"})
+
+    assert sink.registry.get_sample_value("onionfl_autonomous", labels) == 0
+    rounds = sink.registry.get_sample_value("onionfl_autonomous_rounds_total", labels)
+    assert rounds == 2
