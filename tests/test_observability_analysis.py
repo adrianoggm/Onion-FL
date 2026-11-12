@@ -1,4 +1,4 @@
-"""Tests for load_runs, metrics, compare and the HTML report (issue #95).
+"""Tests for load_runs, metrics, compare and the HTML report (issues #95, #288).
 
 The run folders are hand-written fixtures with known values, to check the
 arithmetic of the comparisons; they are not experiment results.
@@ -8,9 +8,13 @@ from __future__ import annotations
 
 import json
 import math
+import shutil
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import pytest
+from scipy import stats
 
 from onion_fl.observability.analysis import load_runs
 
@@ -279,3 +283,158 @@ def test_compare_keeps_models_and_datasets_apart(tmp_path: Path) -> None:
     assert sorted(out["mean"]) == [0.5, 0.7, 0.9]  # three series, none averaged
     assert {"model", "dataset", "source"} <= set(out.columns)
     assert out.attrs["by"][0] == "topology_id"
+
+
+# --- paired comparisons by seed (#288) ---------------------------------------------
+
+# The per-seed accuracy of three arms; B - A and C - A are the differences
+# the paired statistics are checked on.
+ARMS = {
+    "A": [0.70, 0.72, 0.68, 0.75, 0.71, 0.69, 0.74, 0.70],
+    "B": [0.73, 0.74, 0.69, 0.79, 0.73, 0.72, 0.76, 0.74],
+    "C": [0.701, 0.719, 0.682, 0.749, 0.711, 0.691, 0.741, 0.699],
+}
+
+
+@pytest.fixture
+def paired_dir(tmp_path: Path) -> Path:
+    for arm, values in ARMS.items():
+        for seed, value in enumerate(values):
+            # two nodes whose mean is the arm's value, so node averaging comes first
+            events = [
+                ("fog_0", "fog", 1, value - 0.01, {}),
+                ("fog_1", "fog", 1, value + 0.01, {}),
+            ]
+            write_run(tmp_path, f"{arm}{seed}", arm, seed, events)
+    return tmp_path
+
+
+def _differences(arm: str) -> np.ndarray:
+    return np.array(ARMS[arm]) - np.array(ARMS["A"])
+
+
+def test_paired_compare_checks_each_arm_against_the_reference_with_scipy(
+    paired_dir: Path,
+) -> None:
+    out = load_runs(paired_dir).compare(
+        level="fog",
+        metric="accuracy",
+        paired=True,
+        reference="A",
+        margin=0.005,
+    )
+    rows = out.set_index("topology_id")
+    b, c = _differences("B"), _differences("C")
+
+    assert rows.loc["A", "verdict"] == "reference" and rows.loc["A", "n_pairs"] == 0
+    assert rows.loc["B", "n_pairs"] == 8
+    assert rows.loc["B", "delta"] == pytest.approx(b.mean())
+    assert rows.loc["B", "delta_low"] < b.mean() < rows.loc["B", "delta_high"]
+    assert rows.loc["B", "d_z"] == pytest.approx(b.mean() / b.std(ddof=1))
+    assert rows.loc["B", "p_wilcoxon"] == pytest.approx(stats.wilcoxon(b).pvalue)
+    exact = stats.permutation_test(
+        (b,), np.mean, permutation_type="samples", n_resamples=np.inf
+    )
+    assert rows.loc["B", "p_perm"] == pytest.approx(
+        exact.pvalue
+    )  # 2 / 256: every difference is positive
+    tost = max(
+        stats.ttest_1samp(c, -0.005, alternative="greater").pvalue,
+        stats.ttest_1samp(c, 0.005, alternative="less").pvalue,
+    )
+    assert rows.loc["C", "p_tost"] == pytest.approx(tost)
+    # Holm over the two arms of the family
+    p = [rows.loc["B", "p_perm"], rows.loc["C", "p_perm"]]
+    lo, hi = sorted(p)
+    assert sorted([rows.loc["B", "p_adj"], rows.loc["C", "p_adj"]]) == pytest.approx(
+        [2 * lo, max(2 * lo, hi)]
+    )
+    assert rows.loc["B", "verdict"] == "different"
+    assert rows.loc["C", "verdict"] == "equivalent"
+
+
+def test_paired_off_leaves_compare_as_it_was(paired_dir: Path) -> None:
+    runs = load_runs(paired_dir)
+    plain = runs.compare(level="fog", metric="accuracy")
+    paired = runs.compare(level="fog", metric="accuracy", paired=True, reference="A")
+
+    assert "delta" not in plain.columns
+    pd.testing.assert_frame_equal(paired[plain.columns], plain)
+    assert paired["p_tost"].isna().all()  # no margin, no equivalence test
+
+
+def test_paired_compare_pairs_only_the_shared_seeds(paired_dir: Path) -> None:
+    for seed in range(3, 8):
+        shutil.rmtree(paired_dir / f"B{seed}")
+
+    out = load_runs(paired_dir).compare(
+        level="fog", metric="accuracy", paired=True, reference="A"
+    )
+
+    b = out.set_index("topology_id").loc["B"]
+    assert b["n_pairs"] == 3
+    assert b["delta"] == pytest.approx(_differences("B")[:3].mean())
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"reference": "Z"}, "no runs of the reference"),
+        ({"reference": None}, "needs a reference"),
+        ({"reference": "A", "target": 0.5}, "per round"),
+        ({"reference": {"scenario": "x"}}, "needs a value for each"),
+    ],
+)
+def test_paired_compare_refuses_what_it_cannot_pair(
+    paired_dir: Path, kwargs: dict, match: str
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        load_runs(paired_dir).compare(
+            level="fog", metric="accuracy", paired=True, **kwargs
+        )
+
+
+def test_paired_compare_refuses_two_runs_of_a_group_on_one_seed(
+    paired_dir: Path,
+) -> None:
+    write_run(paired_dir, "A0bis", "A", 0, [("fog_0", "fog", 1, 0.5, {})])
+
+    with pytest.raises(ValueError, match="several runs share"):
+        load_runs(paired_dir).compare(
+            level="fog", metric="accuracy", paired=True, reference="A"
+        )
+
+
+def test_the_report_adds_the_paired_columns(paired_dir: Path, tmp_path: Path) -> None:
+    path = load_runs(paired_dir).report(
+        tmp_path / "report.html", metrics=["accuracy"], reference="A", margin=0.005
+    )
+
+    html = path.read_text(encoding="utf-8")
+    for text in ("delta", "p_adj", "p_tost", "d_z", "equivalent", "TOST within"):
+        assert text in html
+
+
+def test_a_reference_can_be_a_scenario_name_with_an_equals_sign(
+    tmp_path: Path,
+) -> None:
+    for seed in range(2):
+        for scenario, value in (("alpha=0.0", 0.5), ("alpha=1.0", 0.6 + seed / 10)):
+            run_id = f"{scenario[-3:]}-{seed}"
+            write_run(tmp_path, run_id, "T", seed, [("fog_0", "fog", 1, value, {})])
+            meta = json.loads((tmp_path / run_id / "run.json").read_text("utf-8"))
+            (tmp_path / run_id / "run.json").write_text(
+                json.dumps(meta | {"scenario": scenario}), encoding="utf-8"
+            )
+
+    out = load_runs(tmp_path).compare(
+        level="fog",
+        metric="accuracy",
+        by=["scenario"],
+        paired=True,
+        reference="alpha=0.0",
+    )
+
+    rows = out.set_index("scenario")
+    assert rows.loc["alpha=0.0", "verdict"] == "reference"
+    assert rows.loc["alpha=1.0", "delta"] == pytest.approx(0.15)

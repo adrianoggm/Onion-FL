@@ -16,6 +16,12 @@ With ``target``, ``compare`` summarises the time to target instead (spec N5):
 ``time_to_target`` gives, per run, the first backend-clock instant at which the
 level's metric reaches the threshold, or the run's duration, flagged as
 censored, when it never does.
+
+With ``paired=True`` and a ``reference`` group, ``compare`` also compares every
+other group with the reference seed by seed (``observability.stats``): the mean
+difference with a paired bootstrap interval, Wilcoxon and sign-flip p-values,
+the sign-flip one Holm-adjusted over the groups, the paired Cohen's d and,
+with a ``margin``, the TOST equivalence test.
 """
 
 import html
@@ -29,6 +35,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from onion_fl.observability import stats as paired_stats
 from onion_fl.observability.events import read_events
 
 BASE = ("t_virtual", "round", "level", "node", "role", "kind", "name", "value")
@@ -104,6 +111,10 @@ class Runs:
         over: str = "seed",
         target: float | None = None,
         lower: bool = False,
+        paired: bool = False,
+        reference: Any = None,
+        margin: float | None = None,
+        alpha: float = 0.05,
         **tags: Any,
     ) -> pd.DataFrame:
         """Mean ± 95 % CI over ``over`` per group and round, plus the spread across nodes.
@@ -116,7 +127,25 @@ class Runs:
         how many runs reached it and how many are censored, and the mean time
         with a 95 % bootstrap interval over the runs. Censored runs count at
         their duration, so with any of them the mean is a lower bound.
+
+        With ``paired``, each group is also compared with the ``reference``
+        group (its value of the single ``by`` key, or a ``{key: value}``
+        mapping, or ``"key=value,..."``) on the runs that share ``over``, per
+        round and series: the columns of ``PAIRED_COLUMNS``. ``p_adj`` is the
+        sign-flip p-value Holm-adjusted over the groups compared with the
+        reference in that round and series; ``p_tost`` needs ``margin``, the
+        largest difference that is not relevant, fixed before looking at the
+        runs; ``verdict`` is ``equivalent`` (TOST below ``alpha``),
+        ``different`` (``p_adj`` below ``alpha``), ``inconclusive`` or ``too
+        few pairs`` (under two shared seeds); the reference's own rows have
+        ``reference`` and no statistics.
         """
+        if paired and target is not None:
+            raise ValueError(
+                "compare: paired comparisons are per round, not with target"
+            )
+        if paired and reference is None:
+            raise ValueError("compare: paired needs a reference group")
         if target is not None:
             return self._compare_time_to_target(
                 level, metric, target, by, over, lower, tags
@@ -170,6 +199,9 @@ class Runs:
             )
         out = pd.DataFrame(rows, columns=columns)
         out.attrs["by"] = by  # the keys the series were split by
+        if paired:
+            arms = by[: len(by) - len(extra)]
+            out = _add_paired(out, per_run, arms, extra, over, reference, margin, alpha)
         return out
 
     def time_to_target(
@@ -258,9 +290,16 @@ class Runs:
         path: str | Path,
         metrics: Sequence[str] = ("accuracy", "loss"),
         by: Sequence[str] = ("topology_id",),
+        reference: Any = None,
+        margin: float | None = None,
     ) -> Path:
-        """Static HTML comparing the groups at every level, built on ``compare``."""
-        return write_report(self, Path(path), metrics, by)
+        """Static HTML comparing the groups at every level, built on ``compare``.
+
+        With a ``reference`` group, the last-round tables add the paired
+        comparison of every group with it (``compare(paired=True)``) wherever
+        the reference has runs.
+        """
+        return write_report(self, Path(path), metrics, by, reference, margin)
 
 
 def _split_series(df: pd.DataFrame, by: Sequence[str]) -> tuple[list[str], list[str]]:
@@ -292,6 +331,123 @@ def _bootstrap_ci(values: np.ndarray, seed: int = 0) -> tuple[float, float]:
     samples = rng.choice(values, size=(BOOTSTRAP, len(values)), replace=True)
     low, high = np.percentile(samples.mean(axis=1), [2.5, 97.5])
     return float(low), float(high)
+
+
+class NoReference(ValueError):
+    """The paired comparison's reference group has no runs."""
+
+
+PAIRED_COLUMNS = (
+    "n_pairs",
+    "delta",
+    "delta_low",
+    "delta_high",
+    "sd_diff",
+    "d_z",
+    "p_wilcoxon",
+    "p_perm",
+    "p_adj",
+    "p_tost",
+    "verdict",
+)
+
+
+def _reference_of(reference: Any, arms: Sequence[str]) -> dict[str, str]:
+    """The reference group as ``{key: value}`` over the ``by`` keys, as text."""
+    if isinstance(reference, str) and "=" in reference:
+        pairs = [item.split("=", 1) for item in reference.split(",") if item]
+        parsed = {p[0].strip(): p[1].strip() for p in pairs if len(p) == 2}
+        # a scenario name such as "data.placement.alpha=0.5" is a plain value
+        if len(parsed) == len(pairs) and set(parsed) <= set(arms):
+            reference = parsed
+    if not isinstance(reference, dict):
+        if len(arms) != 1:
+            raise ValueError(
+                f"compare: with by={list(arms)} the reference is key=value,..."
+            )
+        reference = {arms[0]: reference}
+    if set(reference) != set(arms):
+        raise ValueError(f"compare: the reference needs a value for each of {arms}")
+    return {k: str(v) for k, v in reference.items()}
+
+
+def _add_paired(
+    out: pd.DataFrame,
+    per_run: pd.DataFrame,
+    arms: list[str],
+    extra: list[str],
+    over: str,
+    reference: Any,
+    margin: float | None,
+    alpha: float,
+) -> pd.DataFrame:
+    """``out`` with the paired comparison of each group against the reference."""
+    ref = _reference_of(reference, arms)
+
+    def is_ref(frame: pd.DataFrame) -> pd.Series:
+        mask = pd.Series(True, index=frame.index)
+        for key, value in ref.items():
+            mask &= frame[key].astype(str) == value
+        return mask
+
+    if not is_ref(per_run).any():
+        raise NoReference(f"compare: no runs of the reference group {ref}")
+    by = [*arms, *extra]
+    duplicated = per_run.duplicated([*by, over, "round"], keep=False)
+    if duplicated.any():
+        raise ValueError(
+            f"compare: several runs share a group and {over!r}; add the key that "
+            "tells them apart (scenario, config_id) to by to pair them"
+        )
+    results: dict[tuple, dict[str, Any]] = {}
+    reference_rows = per_run[is_ref(per_run)]
+    for stratum, base in reference_rows.groupby([*extra, "round"], dropna=False):
+        base = base.set_index(over)["node_mean"]
+        others = per_run[~is_ref(per_run)]
+        for key, value in zip([*extra, "round"], stratum, strict=True):
+            others = others[_equal(others[key], value)]
+        family = []
+        for group, arm in others.groupby(arms, dropna=False):
+            arm = arm.set_index(over)["node_mean"]
+            common = base.index.intersection(arm.index).sort_values()
+            d = (arm[common] - base[common]).to_numpy(float)
+            row = paired_stats.paired_test(d, margin=margin)
+            key = tuple(group) if isinstance(group, tuple) else (group,)
+            family.append((_key(key + tuple(stratum)), row))
+        adjusted = paired_stats.holm([row["p_perm"] for _, row in family])
+        for (key, row), p_adj in zip(family, adjusted, strict=True):
+            row["p_adj"] = p_adj
+            row["verdict"] = (
+                paired_stats.verdict(p_adj, row["p_tost"], alpha)
+                if row["n_pairs"] > 1
+                else "too few pairs"
+            )
+            results[key] = row
+    keys = [*arms, *extra, "round"]
+    rows = []
+    for record in out.to_dict(orient="records"):
+        found = results.get(_key(record[k] for k in keys))
+        if found is None:  # the reference itself, or a group sharing no seed
+            found = dict.fromkeys(PAIRED_COLUMNS, float("nan"))
+            found["n_pairs"] = 0
+            mine = all(str(record[k]) == v for k, v in ref.items())
+            found["verdict"] = "reference" if mine else "too few pairs"
+        rows.append(record | {c: found[c] for c in PAIRED_COLUMNS})
+    paired = pd.DataFrame(rows, columns=[*out.columns, *PAIRED_COLUMNS])
+    paired.attrs = dict(out.attrs) | {"reference": ref, "margin": margin}
+    return paired
+
+
+def _key(values: Any) -> tuple:
+    """A hashable group key in which every missing value is ``None``."""
+    return tuple(None if pd.isna(v) else v for v in values)
+
+
+def _equal(column: pd.Series, value: Any) -> pd.Series:
+    """Element-wise ``==`` that also matches missing with missing."""
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return column.isna()
+    return column == value
 
 
 def load_runs(path: str | Path, experiment: str | None = None) -> Runs:
@@ -354,8 +510,14 @@ def _cell(value: Any) -> str:
 
 
 def write_report(
-    runs: Runs, path: Path, metrics: Sequence[str], by: Sequence[str]
+    runs: Runs,
+    path: Path,
+    metrics: Sequence[str],
+    by: Sequence[str],
+    reference: Any = None,
+    margin: float | None = None,
 ) -> Path:
+    arms = list(by)
     events = runs.events()
     levels = [] if events.empty else sorted(events["level"].dropna().unique())
     sections = []
@@ -363,6 +525,20 @@ def write_report(
         for metric in metrics:
             table = runs.compare(level=level, metric=metric, by=by)
             by = table.attrs.get("by", list(by))
+            if reference is not None:
+                try:
+                    paired = runs.compare(
+                        level=level,
+                        metric=metric,
+                        by=arms,
+                        paired=True,
+                        reference=reference,
+                        margin=margin,
+                    )
+                except NoReference:
+                    pass
+                else:
+                    table, by = paired, paired.attrs.get("by", arms)
             if table.empty:
                 continue
             last = table.sort_values("round").groupby(list(by), dropna=False).tail(1)
@@ -385,6 +561,14 @@ def write_report(
         + "</tr>"
         for r in runs
     )
+    note = ""
+    if reference is not None:
+        tost = f"TOST within ±{margin:g}" if margin is not None else "no TOST margin"
+        note = (
+            f"<p>Paired by seed against {html.escape(str(reference))}: delta with "
+            "a paired bootstrap 95 % interval, Wilcoxon and sign-flip p-values, "
+            f"p_adj Holm-adjusted over the groups, paired Cohen's d_z, {tost}.</p>"
+        )
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Onion-FL report</title>
 <style>
@@ -395,7 +579,7 @@ section {{ margin-bottom: 2rem; }}
 </style></head><body>
 <h1>Onion-FL report</h1>
 <p>Mean over seeds with a 95 % t interval; node columns combine the nodes of each level inside a run.</p>
-{"".join(sections) or "<p>No metrics to compare.</p>"}
+{note}{"".join(sections) or "<p>No metrics to compare.</p>"}
 <h2>Runs</h2>
 <table><thead><tr><th>run_id</th><th>topology_id</th><th>config_id</th><th>seed</th><th>run_hash</th></tr></thead>
 <tbody>{run_rows}</tbody></table>
