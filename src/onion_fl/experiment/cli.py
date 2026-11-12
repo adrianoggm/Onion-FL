@@ -22,6 +22,7 @@ from __future__ import annotations
     onion_fl calibrate check <session> --infrastructure FILE [--calibrations DIR]
                        [--out FILE]
     onion_fl report <experiment.yaml | runs_dir>... [--out FILE] [--metric NAME]... [--by TAG]...
+                    [--reference GROUP] [--margin M]
     onion_fl baseline <experiment.yaml> [--models lr rf xgboost] [--cv K | --seeds 0 1 2]
                       [--seed S]
     onion_fl schema [--out FILE]
@@ -297,6 +298,8 @@ def cmd_report(args: argparse.Namespace) -> int:
         args.out,
         metrics=args.metric or ["accuracy", "loss"],
         by=args.by or ["topology_id"],
+        reference=args.reference,
+        margin=args.margin,
     )
     print(path)
     return 0
@@ -558,6 +561,16 @@ def parser() -> argparse.ArgumentParser:
     report.add_argument("--out", default="report.html")
     report.add_argument("--metric", action="append")
     report.add_argument("--by", action="append")
+    report.add_argument(
+        "--reference",
+        help="group the others are compared with, paired by seed "
+        "(its --by value, or key=value,...)",
+    )
+    report.add_argument(
+        "--margin",
+        type=float,
+        help="equivalence margin of the paired TOST test, fixed before the runs",
+    )
     report.set_defaults(func=cmd_report)
 
     explain = sub.add_parser(
