@@ -394,6 +394,19 @@ def test_comparing_runs(client: TestClient, recorded: list[str]) -> None:
     assert rows and rows[0]["n"] == 2 and {"mean", "ci_low", "ci_high"} <= set(rows[0])
 
 
+def test_comparing_runs_paired_with_a_reference(
+    client: TestClient, recorded: list[str]
+) -> None:
+    query = "/api/compare?experiment=demo_exp&level=global&metric=accuracy"
+    topology = client.get(query).json()[0]["topology_id"]
+
+    rows = client.get(f"{query}&reference={topology}&margin=0.01").json()
+
+    assert {"delta", "delta_low", "p_adj", "d_z", "p_tost", "verdict"} <= set(rows[0])
+    assert rows[0]["verdict"] == "reference"
+    assert client.get(f"{query}&reference=nope").status_code == 400
+
+
 def test_an_unknown_run_is_404(client: TestClient) -> None:
     assert client.get("/api/runs/20260101T000000Z-000000000000").status_code == 404
 
