@@ -220,7 +220,7 @@ def test_the_stub_shifts_every_weight_deterministically() -> None:
 def test_the_stub_needs_no_data() -> None:
     result = trainers.create("stub").train(build(), None, received=None, ctx=None)
 
-    assert result.examples > 0
+    assert result == TrainResult(loss=0.0, samples=10, examples=10, batches=1)
 
 
 def test_trainers_registry_lists_the_built_ins() -> None:
@@ -339,6 +339,14 @@ def ctx(seed: int = 0) -> SimpleNamespace:
     return SimpleNamespace(rng=np.random.default_rng(seed))
 
 
+def loss_on(model: torch.nn.Module, data: SimpleNamespace) -> float:
+    """The cross-entropy of ``model`` over all of ``data``, in eval mode."""
+    model.eval()
+    with torch.no_grad():
+        logits = model(torch.as_tensor(data.X))
+        return float(torch.nn.functional.cross_entropy(logits, torch.as_tensor(data.y)))
+
+
 @real
 def test_standard_training_lowers_the_training_loss(swell) -> None:
     model = build()
@@ -439,10 +447,18 @@ def test_ditto_trains_when_the_heads_stay_on_the_edge(swell) -> None:
         k: v for k, v in state_arrays(model).items() if not k.startswith("head.")
     }
     trainer = trainers.create("ditto", {"lr": 0.05})
+    start = build()
 
     trainer.train(model, swell, received, ctx())
 
-    assert trainer.personal() is not None
+    personal = trainer.personal()
+    initial = state_arrays(start)
+    assert any(
+        not np.array_equal(v, initial[k])
+        for k, v in state_arrays(personal).items()
+        if k.startswith("head.")
+    )
+    assert loss_on(personal, swell) < loss_on(start, swell)
 
 
 @real
@@ -601,15 +617,16 @@ def test_scaffold_corrects_with_the_received_control_variate(swell) -> None:
         f"scaffold/{k}": np.full_like(v, 0.1) for k, v in received.items()
     }
     plain, corrected = build(), build()
-    params = {"local_epochs": 1, "lr": 0.05}
+    # One full batch: both take the same gradient, so the correction is all
+    # that separates them: one SGD step of lr·(c − c_i) = 0.05·0.1 downhill.
+    params = {"local_epochs": 1, "lr": 0.05, "batch_size": len(swell.y)}
 
     trainers.create("scaffold", params).train(plain, swell, received, ctx())
     trainers.create("scaffold", params).train(corrected, swell, shifted, ctx())
 
-    assert any(
-        not np.array_equal(v, state_arrays(corrected)[k])
-        for k, v in state_arrays(plain).items()
-    )
+    after = state_arrays(corrected)
+    for key, value in state_arrays(plain).items():
+        np.testing.assert_allclose(after[key], value - 0.05 * 0.1, atol=1e-6)
 
 
 @real
@@ -662,20 +679,24 @@ def test_feddyn_without_history_is_proximal(swell) -> None:
 
 @real
 def test_feddyn_remembers_its_gradient_term(swell) -> None:
-    trainer = trainers.create("feddyn", {"lr": 0.05, "alpha": 0.3})
+    # SGD over one full batch, so the second round's only difference is the
+    # remembered term h = −α·(x₁ − x₀): it adds the step −lr·(−h) = −lr·α·(x₁ − x₀).
+    params = {"lr": 0.05, "alpha": 0.3, "optimizer": "sgd", "batch_size": len(swell.y)}
+    trainer = trainers.create("feddyn", params)
     model = build()
-    trainer.train(model, swell, state_arrays(model), ctx())
+    first = state_arrays(model)
+    trainer.train(model, swell, first, ctx())
     second = state_arrays(model)
     trainer.train(model, swell, second, ctx(1))
 
-    fresh, start = trainers.create("feddyn", {"lr": 0.05, "alpha": 0.3}), build()
+    fresh, start = trainers.create("feddyn", params), build()
     load_arrays(start, second)
     fresh.train(start, swell, second, ctx(1))
 
-    assert any(
-        not np.allclose(v, state_arrays(start)[k])
-        for k, v in state_arrays(model).items()
-    )
+    remembered, forgotten = state_arrays(model), state_arrays(start)
+    for key, value in forgotten.items():
+        pull = -0.05 * 0.3 * (second[key] - first[key])
+        np.testing.assert_allclose(remembered[key], value + pull, atol=1e-6)
 
 
 @real
