@@ -19,6 +19,7 @@ from onion_fl.core.node import Node  # noqa: E402
 from onion_fl.runtime.real import RealRuntime  # noqa: E402
 from onion_fl.transports import transports  # noqa: E402
 from onion_fl.transports.grpc import GrpcTransport  # noqa: E402
+from tests.timing import slack  # noqa: E402
 
 
 class Inbox:
@@ -153,7 +154,7 @@ def test_stop_drops_what_cannot_be_delivered_within_the_flush(tmp_path: Path) ->
     a.send("nobody", b"lost")
     started = time.monotonic()
     a.stop()
-    assert time.monotonic() - started < 3
+    assert time.monotonic() - started < slack(3)
 
 
 @pytest.mark.parametrize("params", [{"port": -1}, {"call_timeout": 0}, {"workers": 0}])

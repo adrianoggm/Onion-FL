@@ -134,6 +134,10 @@ filterwarnings = [
 
 [tool.coverage.run]
 source = ["src/onion_fl"]
+# the real launcher runs nodes in child processes; measure them too
+parallel = true
+patch = ["subprocess"]
+concurrency = ["thread", "multiprocessing"]
 
 [tool.coverage.report]
 exclude_lines = [
