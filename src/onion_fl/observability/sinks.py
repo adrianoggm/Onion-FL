@@ -24,6 +24,8 @@ Prometheus series, all labelled ``run_id, topology_id, level, node, dataset``:
                                    name``: recent_challenger, delta, forgetting…)
 ``onionfl_data_arrived_total``     rows arrived at an edge's stream
 ``onionfl_drift_detected_total``   drifts detected at a node (+ ``kind``)
+``onionfl_autonomous``             1 while a fog runs without its parent (#289)
+``onionfl_autonomous_rounds_total``  zone rounds a fog closed on its own
 =================================  ==============================================
 
 OpenTelemetry: one span per send and one per receive. The receive span starts
@@ -54,6 +56,8 @@ METRICS = (
     "onionfl_version_score",
     "onionfl_data_arrived_total",
     "onionfl_drift_detected_total",
+    "onionfl_autonomous",
+    "onionfl_autonomous_rounds_total",
 )
 # What tells apart the series of one diagnostic: its group, the metric
 # (fairness), the dataset pair (dataset_conflict), the link (communication) and
@@ -132,6 +136,12 @@ class PrometheusSink:
         )
         self.arrived = counter("onionfl_data_arrived", "Rows arrived at an edge")
         self.drift = counter("onionfl_drift_detected", "Drifts detected", ("kind",))
+        self.autonomous = gauge(
+            "onionfl_autonomous", "1 while a fog runs without its parent"
+        )
+        self.autonomous_rounds = counter(
+            "onionfl_autonomous_rounds", "Zone rounds a fog closed on its own"
+        )
 
     def _version(self, event: Mapping[str, Any], base: Mapping[str, str]) -> None:
         tags, value = event.get("tags") or {}, event.get("value")
@@ -178,6 +188,10 @@ class PrometheusSink:
             self.arrived.labels(**base).inc(value)
         elif name == "drift.detected":
             self.drift.labels(**base, kind=_text(tags.get("kind"))).inc()
+        elif name in ("fog.autonomous.started", "fog.autonomous.ended"):
+            self.autonomous.labels(**base).set(float(name.endswith("started")))
+        elif name == "fog.autonomous.round":
+            self.autonomous_rounds.labels(**base).inc()
         elif name == "message.sent":
             self.messages.labels(**base, kind=_text(tags.get("kind"))).inc()
             self.bytes.labels(**base, kind=_text(tags.get("kind"))).inc(value or 0)

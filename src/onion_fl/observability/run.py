@@ -117,6 +117,7 @@ class _Summary:
         self.finished = False
         self.sent = self.bytes = self.dropped = self.quorum_failed = 0
         self.final: dict[str, dict[str, Any]] = {}
+        self.autonomous: dict[str, int] = {}  # rounds each fog closed on its own
         self.t_end = 0.0
 
     def add(self, event: Mapping[str, Any]) -> None:
@@ -133,6 +134,9 @@ class _Summary:
             self.dropped += 1
         elif name == "round.quorum_failed" and event["role"] == "coordinator":
             self.quorum_failed += 1
+        elif name == "fog.autonomous.round":
+            node = event["node"]
+            self.autonomous[node] = self.autonomous.get(node, 0) + 1
         elif name.startswith("eval.") and event["role"] == "coordinator":
             key = f"{tags.get('model')}/{tags.get('dataset', '*')}"
             scores = self.final.setdefault(key, {})
@@ -140,6 +144,12 @@ class _Summary:
                 scores |= {"round": tags.get("round"), name[len("eval.") :]: value}
 
     def as_dict(self, wall_seconds: float) -> dict[str, Any]:
+        # Only when a fog went autonomous (#289), so other summaries stay as were.
+        autonomy = (
+            {"autonomous_rounds": dict(sorted(self.autonomous.items()))}
+            if self.autonomous
+            else {}
+        )
         return {
             "rounds": self.rounds,
             "finished": self.finished,
@@ -151,6 +161,7 @@ class _Summary:
                 "dropped": self.dropped,
             },
             "quorum_failed": self.quorum_failed,
+            **autonomy,
             "final": self.final,
         }
 
