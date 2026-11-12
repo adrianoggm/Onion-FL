@@ -35,7 +35,9 @@ from tests.certs import (  # noqa: E402
     wait_for_mosquitto,
 )
 
+# Per process, so xdist workers never remove each other's broker.
 NAME = os.environ.get("ONIONFL_MQTTS_PREFIX", "onionfl-mqtts-test")
+NAME += f"-{uuid.uuid4().hex[:6]}"
 PORT = os.environ.get("ONIONFL_MQTTS_PORT")
 USER, PASSWORD = "onion", f"pw-{uuid.uuid4().hex}"
 
