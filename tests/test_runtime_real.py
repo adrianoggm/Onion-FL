@@ -199,7 +199,8 @@ def test_the_launcher_can_set_nagle_on_every_mqtt_link() -> None:
 
 @pytest.mark.parametrize("params", [{"qos": 3}, {"broker": "no-port:x"}])
 def test_mqtt_params_are_validated(params) -> None:
-    with pytest.raises(ValueError):
+    (field,) = params
+    with pytest.raises(ValueError, match=rf"\n{field}\n"):
         transports.create("mqtt", params)
 
 

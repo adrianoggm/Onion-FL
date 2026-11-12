@@ -1531,7 +1531,7 @@ def test_a_real_run_that_fails_to_launch_is_marked_failed(
     monkeypatch.setattr(real.subprocess, "Popen", broken)
     (scenario,) = scenarios(parse_experiment(experiment(workspace)))
 
-    with pytest.raises(OSError):
+    with pytest.raises(OSError, match="cannot start a process"):
         real.run_real(scenario)
     (run,) = (workspace / "runs").iterdir()
     assert (

@@ -234,7 +234,7 @@ def test_mqtts_checks_the_brokers_name(broker, tmp_path: Path) -> None:
     ],
 )
 def test_mqtt_takes_names_and_paths_never_secrets(params) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"plugin 'mqtt': (invalid|unknown) param"):
         transports.create("mqtt", params)
 
 
