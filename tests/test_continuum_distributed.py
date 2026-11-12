@@ -17,8 +17,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from onion_fl.continuum.bundle import load_node, save_node
-from onion_fl.continuum.memory import memories
+from onion_fl.continual.bundle import load_node, save_node
+from onion_fl.continual.memory import memories
 from onion_fl.experiment.backends import DistributedBackend
 from onion_fl.experiment.config import ConfigError
 from onion_fl.experiment.distributed import launch_with_faults
@@ -311,7 +311,7 @@ def test_real_processes_host_the_validators_of_a_promotion(
 
     raw = experiment(workspace) | {"promotion": "champion_challenger"}
     raw["stream"] = {k: v for k, v in raw["stream"].items() if k != "round_every"}
-    raw["continuum"] = {
+    raw["continual"] = {
         "trigger": {"name": "schedule", "every": 300},
         "status_every": 300,
     }

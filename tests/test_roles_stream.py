@@ -633,7 +633,8 @@ class Unlabelled(Recording):
             import torch
 
             X = unlabelled.X.numpy().copy()
-            with torch.random.fork_rng(devices=[]):  # as the real trainers seed it
+            # seeded as the real trainers seed it; only the value is reported
+            with torch.random.fork_rng(devices=[]), torch.no_grad():
                 torch.manual_seed(0)
                 term = float(unlabelled.term(model, np.arange(unlabelled.size)))
             self.pools.append((ctx.now() * SPEED, X, term))

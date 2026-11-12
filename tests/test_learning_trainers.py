@@ -93,7 +93,8 @@ def test_freezing_a_group_the_model_lacks_is_harmless() -> None:
 def test_the_proximal_term_is_zero_at_the_received_state() -> None:
     model = build()
 
-    assert float(proximal_term(model, state_arrays(model), mu=0.5)) == 0.0
+    with torch.no_grad():
+        assert float(proximal_term(model, state_arrays(model), mu=0.5)) == 0.0
 
 
 def test_the_proximal_term_is_half_mu_times_the_squared_distance() -> None:
@@ -101,7 +102,8 @@ def test_the_proximal_term_is_half_mu_times_the_squared_distance() -> None:
     received = {k: v + 1.0 for k, v in state_arrays(model).items()}
     n_params = sum(p.numel() for p in model.parameters())
 
-    value = float(proximal_term(model, received, mu=0.5))
+    with torch.no_grad():
+        value = float(proximal_term(model, received, mu=0.5))
 
     assert value == pytest.approx(0.25 * n_params)
 
@@ -115,8 +117,9 @@ def test_the_proximal_term_only_uses_received_trainable_keys() -> None:
         p.numel() for n, p in model.named_parameters() if n.startswith("head.")
     )
 
-    assert float(proximal_term(model, received, mu=2.0)) == pytest.approx(n_head)
-    assert float(proximal_term(model, received, mu=2.0, names=[])) == 0.0
+    with torch.no_grad():
+        assert float(proximal_term(model, received, mu=2.0)) == pytest.approx(n_head)
+        assert float(proximal_term(model, received, mu=2.0, names=[])) == 0.0
 
 
 def test_the_proximal_term_has_a_gradient() -> None:
@@ -791,10 +794,11 @@ def test_moon_contrast_is_lower_near_the_global_than_near_the_previous() -> None
     local, other = build(seed=0).eval(), build(seed=1).eval()
     x = torch.linspace(-1.0, 1.0, 4 * 16).reshape(4, 16)  # a shape fixture
 
-    trainer._global, trainer._previous = copy.deepcopy(local), other
-    near_global = float(trainer._batch_term(local, x))
-    trainer._global, trainer._previous = other, copy.deepcopy(local)
-    near_previous = float(trainer._batch_term(local, x))
+    with torch.no_grad():
+        trainer._global, trainer._previous = copy.deepcopy(local), other
+        near_global = float(trainer._batch_term(local, x))
+        trainer._global, trainer._previous = other, copy.deepcopy(local)
+        near_previous = float(trainer._batch_term(local, x))
 
     assert near_global < near_previous
 

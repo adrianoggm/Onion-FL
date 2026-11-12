@@ -129,8 +129,10 @@ markers = [
 ]
 filterwarnings = [
     "error",
-    "ignore::UserWarning",
-    "ignore::DeprecationWarning",
+    # Third-party only; onion_fl's own warnings stay errors.
+    "ignore::UserWarning:fastapi.testclient",  # starlette: install httpx2
+    "ignore::DeprecationWarning:starlette.testclient",  # anyio's BlockingPortal
+    "ignore:A single label was found:UserWarning:sklearn.metrics.*",
 ]
 
 [tool.coverage.run]

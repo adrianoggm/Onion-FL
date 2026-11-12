@@ -1603,6 +1603,7 @@ def test_a_token_dataset_without_scaling_runs(workspace: Path) -> None:
     assert verify_run(path)
 
 
+@pytest.mark.filterwarnings("ignore:continuum:DeprecationWarning")  # older runs
 def test_the_committed_runs_keep_their_config_ids() -> None:
     from onion_fl.core.ids import config_id
     from onion_fl.experiment.sweep import identity
