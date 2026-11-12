@@ -626,11 +626,21 @@ def create_app(root: str | Path = ".", operators: str | Path | None = None) -> F
         level: str = "global",
         metric: str = "accuracy",
         by: str = "topology_id",
+        reference: str | None = None,
+        margin: float | None = None,
     ) -> JSONResponse:
         keys = [k for k in by.split(",") if k]
-        table = load_runs(folders["runs"], experiment=experiment).compare(
-            level=level, metric=metric, by=keys
-        )
+        try:
+            table = load_runs(folders["runs"], experiment=experiment).compare(
+                level=level,
+                metric=metric,
+                by=keys,
+                paired=bool(reference),
+                reference=reference or None,
+                margin=margin,
+            )
+        except ValueError as error:  # a reference it cannot pair with
+            raise HTTPException(400, str(error)) from error
         split = table.attrs.get("by", keys)  # what the series were split by
         return _json([row | {"_by": split} for row in table.to_dict(orient="records")])
 

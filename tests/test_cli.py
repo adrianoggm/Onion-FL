@@ -195,6 +195,28 @@ def test_report_reads_run_folders_too(capsys, workspace: Path) -> None:
     assert code == 0 and report.exists()
 
 
+def test_report_compares_paired_with_a_reference(capsys, workspace: Path) -> None:
+    _, out, _ = run(capsys, "run", str(workspace / "exp.yaml"))
+    (path,) = [Path(line) for line in out.split()]
+    topology = json.loads((path / "run.json").read_text(encoding="utf-8"))
+    report = workspace / "r.html"
+
+    code, _, _ = run(
+        capsys,
+        "report",
+        str(workspace / "runs"),
+        "--out",
+        str(report),
+        "--reference",
+        f"topology_id={topology['topology_id']}",
+        "--margin",
+        "0.01",
+    )
+
+    html = report.read_text(encoding="utf-8")
+    assert code == 0 and "Paired by seed" in html and "p_adj" in html
+
+
 def test_run_refuses_a_scenario_that_does_not_exist(capsys, workspace: Path) -> None:
     code, out, err = run(
         capsys, "run", str(workspace / "exp.yaml"), "--scenario", "nope"
