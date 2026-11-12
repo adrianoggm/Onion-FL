@@ -441,10 +441,13 @@ class _Collector(Node):
         contribution = Contribution(
             msg.src, dict(msg.payload.state), dict(msg.payload.weights)
         )
+        metrics = dict(msg.payload.metrics)
+        if "autonomous" in msg.meta:  # a fog back from autonomy (#289)
+            contribution = self._reconciled(msg, contribution, metrics, ctx)
         current = self.open and r == self.round
         if current and msg.src in self.participants and msg.src not in self.responses:
-            self.responses[msg.src] = (contribution, dict(msg.payload.metrics))
-            self._observe(msg.src, True, dict(msg.payload.metrics), ctx)
+            self.responses[msg.src] = (contribution, metrics)
+            self._observe(msg.src, True, dict(metrics), ctx)
             answered = sum(1 for c, _ in self.responses.values() if c.state)
             needed = quorum_needed(self.quorum, len(self.participants))
             if self.quorum_at is None and answered >= max(needed, 1):
@@ -454,9 +457,7 @@ class _Collector(Node):
             return
         if r is not None and (r < self.round or (r == self.round and not self.open)):
             target = self.round if self.open else self.round + 1
-            buffered = self._buffer(
-                msg.src, contribution, r, target, msg.payload.metrics
-            )
+            buffered = self._buffer(msg.src, contribution, r, target, metrics)
             self.late += 1
             ctx.emit(
                 "update.late",
@@ -469,6 +470,42 @@ class _Collector(Node):
                 self._close(ctx)
             return
         _reject(ctx, msg, "update for a round that is not open")
+
+    def _reconciled(
+        self,
+        msg: Message,
+        contribution: Contribution,
+        metrics: dict[str, float],
+        ctx: Context,
+    ) -> Contribution:
+        """What a fog learnt while autonomous (#289): its zone's change since the
+        last model it got from this node (round ``since``), applied by the fog
+        to the model of the round it answers, weighted by the samples of its
+        autonomous rounds. With ``reconcile: staleness`` the weights also take
+        this node's staleness factor for the rounds since ``since``; a policy
+        that drops them leaves the fog without an update this round."""
+        rounds, since = int(msg.meta["autonomous"]), int(msg.meta["since"])
+        age = max(int(msg.round or self.round) - since, 0)
+        factor: float | None = 1.0
+        if msg.meta.get("reconcile") == "staleness":
+            factor = self.staleness.weight(age)
+            if factor is not None:
+                metrics["staleness"] = float(metrics.get("staleness", 0.0)) + age
+        ctx.emit(
+            "fog.reconciled",
+            0.0 if factor is None else float(factor),
+            src=msg.src,
+            round=msg.round,
+            rounds=rounds,
+            since=since,
+            age=age,
+            samples=_mass(contribution),
+            action="drop" if factor is None else "combined",
+        )
+        if factor is None:
+            return Contribution(contribution.source, {}, {})
+        weights = {k: w * factor for k, w in contribution.weights.items()}
+        return Contribution(contribution.source, contribution.state, weights)
 
     def on_timer(self, name: str, ctx: Context) -> None:
         if name == "register" and not self.ready:
@@ -1243,6 +1280,7 @@ class Aggregator(_Greeter, _Collector):
         *,
         parent: str,
         hello_retry: float | None = 5.0,
+        autonomy: Any = None,
         **kw: Any,
     ) -> None:
         super().__init__(node_id, children, **kw)
@@ -1251,6 +1289,13 @@ class Aggregator(_Greeter, _Collector):
         self.received: State = {}
         self.whole: State = {}  # every key received so far, for a child's first model
         self.parent_level = self.levels[self.levels.index(self.level) - 1]
+        # Autonomy when the parent stops answering (#289; ``policies.Autonomy``).
+        self.autonomy = autonomy
+        self.autonomous: dict[str, Any] | None = None  # the spell under way
+        self.latest: State = {}  # the zone's model after its last round
+        self.parent_round = 0  # the last round the parent sent
+        self._ahead = 0  # the last round number an autonomous round took
+        self._returned: Message | None = None  # the parent's model, back
 
     def _registered(self, ctx: Context) -> None:
         self._say_hello(self._meta(), ctx)
@@ -1274,6 +1319,9 @@ class Aggregator(_Greeter, _Collector):
         if name == "hello":
             if not self.acknowledged:
                 self._send_hello(ctx)
+        elif name == "autonomy":
+            if not (self.stopped or self.open or self.autonomous is not None):
+                self._start_autonomy(ctx)
         else:
             super().on_timer(name, ctx)
 
@@ -1284,6 +1332,8 @@ class Aggregator(_Greeter, _Collector):
             _stop_children(self, ctx)
             self.stopped = True
             ctx.cancel_timer("hello")
+            if self.autonomy is not None:
+                self._stop_autonomy(ctx)
             return
         if msg.src != self.parent or msg.kind != "global_model" or msg.round is None:
             _reject(ctx, msg, "unexpected sender or kind")
@@ -1291,14 +1341,24 @@ class Aggregator(_Greeter, _Collector):
         if getattr(self, "_hello_meta", None) not in (None, self._meta()):
             # it lost children (failover): the parent counts what is below now
             self._say_hello(self._meta(), ctx)
+        if self.autonomy is not None and self._parent_back(msg, ctx):
+            return
+        bootstrap = self._receive(msg)
+        state = {**self.received, **self.zone}
+        self._open(msg.round, state, ctx, bootstrap, {**self.whole, **self.zone})
+
+    def _receive(self, msg: Message) -> bool:
+        """Take the parent's model of a round; True when it is a bootstrap."""
         self.received = dict(msg.payload.state)
         self.whole.update(self.received)
         bootstrap = bool(msg.meta.get("bootstrap"))
         if bootstrap:
             held = keys_held_at(self.received, self.sharing, self.levels, self.level)
             self.zone = _subset(self.received, held)
-        state = {**self.received, **self.zone}
-        self._open(msg.round, state, ctx, bootstrap, {**self.whole, **self.zone})
+        if self.autonomy is not None:
+            self.parent_round = msg.round
+            self.latest = {**self.received, **self.zone}
+        return bootstrap
 
     def _closed(self, aggregated: Contribution, metrics: dict, ctx: Context) -> None:
         held = keys_held_at(aggregated.state, self.sharing, self.levels, self.level)
@@ -1306,29 +1366,176 @@ class Aggregator(_Greeter, _Collector):
         up = keys_crossing(
             aggregated.state, self.sharing, self.levels, self.parent_level
         )
-        payload = Payload(
-            state=_subset(aggregated.state, up),
-            weights={k: aggregated.weights[k] for k in up},
-            metrics=metrics,
-        )
-        ctx.send(
-            Message(
-                kind="update",
-                src=self.id,
-                dst=self.parent,
-                round=self.round,
-                payload=payload,
+        if self.autonomous is not None:  # nobody to send it to: it adds up
+            spell = self.autonomous
+            for key in up:
+                spell["weights"][key] = (
+                    spell["weights"].get(key, 0.0) + aggregated.weights[key]
+                )
+            spell["examples"] += float(metrics.get("train_examples", 0.0))
+        else:
+            payload = Payload(
+                state=_subset(aggregated.state, up),
+                weights={k: aggregated.weights[k] for k in up},
+                metrics=metrics,
             )
-        )
+            ctx.send(
+                Message(
+                    kind="update",
+                    src=self.id,
+                    dst=self.parent,
+                    round=self.round,
+                    payload=payload,
+                )
+            )
         if self.holdout and _due(self.eval_every, self.round):
             zone_model = {**self.received, **self.zone, **aggregated.state}
             self._request_eval(self.round, zone_model, "zone", ctx)
+        if self.autonomy is not None:
+            self.latest = {**self.received, **self.zone, **aggregated.state}
+            self._round_over(ctx)
 
     def _failed(self, ctx: Context) -> None:
-        ctx.send(Message(kind="update", src=self.id, dst=self.parent, round=self.round))
+        if self.autonomous is None:
+            ctx.send(
+                Message(kind="update", src=self.id, dst=self.parent, round=self.round)
+            )
+        if self.autonomy is not None:
+            self._round_over(ctx)
 
     def _idle(self, scores: dict[str, float], ctx: Context) -> None:
-        _send_idle(self, self.round, scores, ctx)
+        if self.autonomous is None:
+            _send_idle(self, self.round, scores, ctx)
+        if self.autonomy is not None:
+            self._round_over(ctx)
+
+    # --- autonomy (#289) ------------------------------------------------------------
+
+    def _round_over(self, ctx: Context) -> None:
+        """A round closed: wait for the parent, or go on without it."""
+        if self.autonomous is not None:
+            self._autonomous_round(ctx)
+        elif not self.stopped:
+            ctx.set_timer(self.autonomy.after, "autonomy")
+
+    def _start_autonomy(self, ctx: Context) -> None:
+        """The parent sent nothing for ``after`` seconds since the last round."""
+        self.autonomous = {
+            "since": self.parent_round,
+            "rounds": 0,
+            "weights": {},
+            "examples": 0.0,
+            "base": dict(self.latest),  # what the zone's change is measured from
+        }
+        ctx.emit(
+            "fog.autonomous.started",
+            float(self.parent_round),
+            round=self.parent_round,
+            after=self.autonomy.after,
+        )
+        self._autonomous_round(ctx)
+
+    def _autonomous_round(self, ctx: Context) -> None:
+        """Open the next zone round on the zone's latest model, numbered on from
+        the last one so the children take it, unless the parent is back."""
+        if self._returned is not None:
+            self._reconcile(ctx)
+            return
+        spell = self.autonomous
+        if self.stopped or spell["rounds"] >= self.autonomy.max_rounds:
+            return  # wait for the parent
+        spell["rounds"] += 1
+        # After the parent's rounds too: a spell may follow a reconciliation.
+        self._ahead = round = max(self.round, self.parent_round) + 1
+        ctx.emit(
+            "fog.autonomous.round",
+            float(spell["rounds"]),
+            round=round,
+            since=spell["since"],
+        )
+        model = dict(self.latest)
+        self._open(round, model, ctx, False, {**self.whole, **model})
+
+    def _parent_back(self, msg: Message, ctx: Context) -> bool:
+        """A model from the parent, with autonomy on. It ends a spell (once the
+        zone's open round closes); a round the zone already numbered while
+        autonomous gets an idle answer, since its children would refuse it.
+        True when handled here."""
+        ctx.cancel_timer("autonomy")
+        if self.autonomous is not None:
+            self._returned = msg  # the latest, if several arrive meanwhile
+            if not self.open:
+                self._reconcile(ctx)
+            return True
+        if msg.round <= self._ahead:
+            self._receive(msg)
+            ctx.emit("fog.autonomous.ahead", float(self._ahead), round=msg.round)
+            _send_idle(self, msg.round, {}, ctx)
+            self._round_over(ctx)
+            return True
+        return False
+
+    def _reconcile(self, ctx: Context) -> None:
+        """Answer the parent's round with the zone's change during the spell,
+        applied to the model the parent just sent (as a late update is rebased),
+        with the samples of the autonomous rounds as its weights."""
+        msg, self._returned = self._returned, None
+        spell, self.autonomous = self.autonomous, None
+        final, base = self.latest, spell["base"]
+        self._receive(msg)
+        state = {}
+        for key in sorted(spell["weights"]):
+            value = final[key]
+            if not is_aux(key) and key in self.received and key in base:
+                delta = np.asarray(value, np.float64) - np.asarray(
+                    base[key], np.float64
+                )
+                moved = np.asarray(self.received[key], np.float64) + delta
+                value = moved.astype(np.asarray(final[key]).dtype)
+            state[key] = value
+        ctx.emit(
+            "fog.autonomous.ended",
+            float(spell["rounds"]),
+            round=msg.round,
+            since=spell["since"],
+            examples=spell["examples"],
+            reason="parent",
+        )
+        if state:
+            payload = Payload(state=state, weights=dict(spell["weights"]))
+            meta = {
+                "autonomous": spell["rounds"],
+                "since": spell["since"],
+                "reconcile": self.autonomy.reconcile,
+            }
+            ctx.send(
+                Message(
+                    kind="update",
+                    src=self.id,
+                    dst=self.parent,
+                    round=msg.round,
+                    payload=payload,
+                    meta=meta,
+                )
+            )
+        else:  # nothing learnt meanwhile
+            _send_idle(self, msg.round, {}, ctx)
+        self._round_over(ctx)
+
+    def _stop_autonomy(self, ctx: Context) -> None:
+        """The run is over. A spell under way ends here; it stays set, so a zone
+        round still open sends nothing up when it closes."""
+        ctx.cancel_timer("autonomy")
+        if self.autonomous is not None:
+            spell = self.autonomous
+            ctx.emit(
+                "fog.autonomous.ended",
+                float(spell["rounds"]),
+                round=self.round,
+                since=spell["since"],
+                examples=spell["examples"],
+                reason="stopped",
+            )
 
 
 class Edge(_Greeter, Node):
