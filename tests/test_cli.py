@@ -283,7 +283,6 @@ def test_the_example_topology_and_experiment_are_valid() -> None:
 
 
 @pytest.mark.parametrize("path", sorted(Path("experiments").glob("*.yaml")), ids=str)
-@pytest.mark.filterwarnings("ignore:continuum:DeprecationWarning")  # not migrated yet
 def test_every_shipped_experiment_and_its_topology_are_valid(path: Path) -> None:
     from onion_fl.experiment.config import load_experiment
     from onion_fl.experiment.runner import resolve_topology
