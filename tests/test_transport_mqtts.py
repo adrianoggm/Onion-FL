@@ -23,6 +23,11 @@ from pathlib import Path
 import pytest
 
 pytest.importorskip("cryptography")
+# paho leaks the SSLSocket of a handshake that fails (Client._ssl_wrap_socket does
+# not close it when do_handshake raises), and the refusal tests make it retry.
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:unclosed <ssl.SSLSocket:ResourceWarning"
+)
 
 from onion_fl.transports import transports  # noqa: E402
 from onion_fl.transports.mqtt import MqttTransport  # noqa: E402
