@@ -21,10 +21,13 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import secrets
 import socket
 import subprocess
 import textwrap
 import time
+import uuid
+from ipaddress import IPv4Network
 from pathlib import Path
 
 import numpy as np
@@ -450,8 +453,27 @@ EMULATED = {
     "name": "emulated",
     "image": os.environ.get("ONIONFL_EMULATED_IMAGE", "onionfl-emulated:latest"),
     "project": os.environ.get("ONIONFL_EMULATED_PROJECT", "onionfl-test"),
-    "subnet": os.environ.get("ONIONFL_EMULATED_SUBNET", "10.195.0.0/16"),
+    "subnet": os.environ.get("ONIONFL_EMULATED_SUBNET"),  # else a free one
 }
+
+
+def _free_subnet() -> str:
+    """A /16 of 10.192.0.0/10 that no Docker network overlaps.
+
+    The project's name already differs per run; its addresses must too, or a
+    concurrent run (another xdist worker or checkout) fails to create them.
+    """
+    names = _docker("network", "ls", "-q").split()
+    configs = _docker(
+        "network", "inspect", "-f", "{{range .IPAM.Config}}{{.Subnet}} {{end}}", *names
+    )
+    used = [IPv4Network(s, strict=False) for s in configs.split() if ":" not in s]
+    free = [
+        net
+        for net in IPv4Network("10.192.0.0/10").subnets(new_prefix=16)
+        if not any(net.overlaps(u) for u in used)
+    ]
+    return str(secrets.choice(free))
 
 
 def _emulator_up() -> bool:
@@ -517,7 +539,8 @@ def test_the_emulated_backend_matches_the_simulation(tmp_path: Path) -> None:
     mqtt = {"name": "mqtt", "broker": BROKER}  # the emulation brings its own broker
     base = experiment(tmp_path, mqtt)
     sim = on_the_lab(base, "sim", tmp_path / "runs_sim")
-    emulated = on_the_lab(base, EMULATED, tmp_path / "runs_emulated")
+    backend = EMULATED | {"subnet": EMULATED["subnet"] or _free_subnet()}
+    emulated = on_the_lab(base, backend, tmp_path / "runs_emulated")
 
     (sim_path,) = run_experiment(sim)
     (path,) = run_experiment(emulated)
@@ -553,7 +576,9 @@ def test_the_emulated_backend_matches_the_simulation(tmp_path: Path) -> None:
 DISTRIBUTED = {
     "base": EMULATED["image"],
     "image": os.environ.get("ONIONFL_DISTRIBUTED_IMAGE", "onionfl-distributed:latest"),
-    "prefix": os.environ.get("ONIONFL_DISTRIBUTED_PREFIX", "onionfl-dist-test"),
+    # One set of machines per xdist worker, so the names differ per process.
+    "prefix": os.environ.get("ONIONFL_DISTRIBUTED_PREFIX", "onionfl-dist-test")
+    + f"-{uuid.uuid4().hex[:6]}",
     "mqtt_port": os.environ.get("ONIONFL_DISTRIBUTED_MQTT_PORT"),  # published if set
     "ssh": os.environ.get("ONIONFL_SSH", "ssh"),
 }
