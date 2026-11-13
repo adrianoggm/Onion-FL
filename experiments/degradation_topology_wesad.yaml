@@ -1,0 +1,131 @@
+# Pre-registered study, degradation x topology (issue #290), on WESAD. The
+# pre-registration is docs/preregistration/degradation_topology.md: the
+# hypotheses, the arms, the metrics and the analysis are there, and this file
+# implements them.
+#
+# Topology factor (3 levels): the same 10 training subjects in the same two
+# zones (A: S2 S3 S5 S8 S9; B: S13-S17), on the same devices, under
+#   flat    one aggregator, hub, on the cloud's own host: every edge talks
+#           to the cloud across its zone's WAN link (as pilot_deadline_coupling)
+#   two     one fog per zone, on fog-a1 and fog-b1
+#   three   a region per zone (gw-a, gw-b), each with two leaf fogs
+#           (fog-a1/a2, fog-b1/b2)
+# The leaf level is always `fog`, so one path reaches the leaves of every
+# topology. The val subjects (S4, S11) are the zone evaluators of zone A and B.
+#
+# Degradation factor (9 levels), each a value of the second sweep key:
+#   nominal, loss5, loss20, 4g, dropout (bernoulli 0.2), dropout_k1 (dropout
+#   with leaf quorum 1.0), crash (fog-a1 down at 10 s, nearest_alive after 5 s),
+#   partition (zone A's WAN down 10-60 s), partition_autonomy (the same, with
+#   autonomy on the leaf fogs).
+#
+# Protocol constants, the same in every arm: FedAvg; quorum 0.5 at every level
+# (leaf quorum 1.0 only in dropout_k1); deadlines 5 s at the leaves, 8 s at the
+# regions and 12 s at the root (about 4x the slowest nominal round, 4g in flat).
+#
+#   onion_fl plan experiments/degradation_topology_wesad.yaml
+#   onion_fl run experiments/degradation_topology_wesad.yaml --workers 6
+name: degradation_topology_wesad
+description: Estudio prerregistrado degradación × topología (plana, dos y tres niveles) en WESAD.
+topology:  # two levels; every value of the first sweep key replaces it
+  name: dt_two_levels
+  levels: [global, fog, edge]
+  root: {id: cloud, aggregator: fedavg, server_optimizer: replace, quorum: 0.5, deadline: 12s}
+  fog:
+    defaults: {aggregator: fedavg, quorum: 0.5, deadline: 5s, link_up: {transport: mqtt, codec: npz}}
+    nodes: [{id: fog_a}, {id: fog_b}]
+  edge: {link_up: {transport: mqtt, codec: npz}}
+data:
+  datasets:
+    wesad: {}
+  roles: {test: 0.2, val: 0.1, local_val: 0.2, local_val_split: class_tail, scaler: global, seed: 0}
+  placement:
+    name: explicit
+    assignment:
+      fog_a: [wesad-S2, wesad-S3, wesad-S5, wesad-S8, wesad-S9, wesad-S4]
+      fog_b: [wesad-S13, wesad-S14, wesad-S15, wesad-S16, wesad-S17, wesad-S11]
+learning:
+  # infrastructure_architectures' model and trainer (lr 0.1 chosen there on
+  # validation subjects only), not tuned again
+  model: {name: modular_mlp, adapter_width: 64, trunk_hidden: [64, 32], dropout: 0.2}
+  sharing: fedavg
+  trainer: {name: standard, optimizer: sgd, local_epochs: 10, batch_size: 32, lr: 0.1}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge: {every: 5, models: [received]}
+  aggregators: {every: 5}
+  global: {every: 1}
+infrastructure:
+  name: degradation_lab
+  assignment:
+    root: cloud-1
+    aggregators: {fog_a: fog-a1, fog_b: fog-b1}
+    edges:
+      name: explicit
+      hosts:
+        wesad-S2: field_a-raspberry_pi-1
+        wesad-S3: field_a-raspberry_pi-2
+        wesad-S5: field_a-raspberry_pi-3
+        wesad-S8: field_a-raspberry_pi-4
+        wesad-S9: field_a-raspberry_pi-5
+        wesad-S13: field_b-raspberry_pi-1
+        wesad-S14: field_b-raspberry_pi-2
+        wesad-S15: field_b-raspberry_pi-3
+        wesad-S16: field_b-raspberry_pi-4
+        wesad-S17: field_b-raspberry_pi-5
+seeds: [0, 1, 2]  # the pilot's; the main run's seeds are fixed in the pre-registration
+sweep:
+  # topology (applied first: the key sorts before the degradation key)
+  data.placement.assignment,infrastructure.assignment.aggregators,topology:
+    - - hub: [wesad-S2, wesad-S3, wesad-S5, wesad-S8, wesad-S9, wesad-S13, wesad-S14,
+              wesad-S15, wesad-S16, wesad-S17, wesad-S4, wesad-S11]
+      - {hub: cloud-1}
+      - name: dt_flat
+        levels: [global, fog, edge]
+        root: {id: cloud, aggregator: fedavg, server_optimizer: replace, quorum: 0.5, deadline: 12s}
+        fog:
+          defaults: {aggregator: fedavg, quorum: 0.5, deadline: 5s, link_up: {transport: mqtt, codec: npz}}
+          nodes: [{id: hub}]
+        edge: {link_up: {transport: mqtt, codec: npz}}
+    - - fog_a: [wesad-S2, wesad-S3, wesad-S5, wesad-S8, wesad-S9, wesad-S4]
+        fog_b: [wesad-S13, wesad-S14, wesad-S15, wesad-S16, wesad-S17, wesad-S11]
+      - {fog_a: fog-a1, fog_b: fog-b1}
+      - name: dt_two_levels
+        levels: [global, fog, edge]
+        root: {id: cloud, aggregator: fedavg, server_optimizer: replace, quorum: 0.5, deadline: 12s}
+        fog:
+          defaults: {aggregator: fedavg, quorum: 0.5, deadline: 5s, link_up: {transport: mqtt, codec: npz}}
+          nodes: [{id: fog_a}, {id: fog_b}]
+        edge: {link_up: {transport: mqtt, codec: npz}}
+    - - fog_a1: [wesad-S2, wesad-S3, wesad-S5, wesad-S4]
+        fog_a2: [wesad-S8, wesad-S9]
+        fog_b1: [wesad-S13, wesad-S14, wesad-S15, wesad-S11]
+        fog_b2: [wesad-S16, wesad-S17]
+      - {region_a: gw-a, region_b: gw-b, fog_a1: fog-a1, fog_a2: fog-a2, fog_b1: fog-b1, fog_b2: fog-b2}
+      - name: dt_three_levels
+        levels: [global, region, fog, edge]
+        root: {id: cloud, aggregator: fedavg, server_optimizer: replace, quorum: 0.5, deadline: 12s}
+        region:
+          defaults: {aggregator: fedavg, quorum: 0.5, deadline: 8s, link_up: {transport: mqtt, codec: npz}}
+          nodes: [{id: region_a}, {id: region_b}]
+        fog:
+          defaults: {aggregator: fedavg, quorum: 0.5, deadline: 5s, link_up: {transport: mqtt, codec: npz}}
+          nodes:
+            - {id: fog_a1, parent: region_a}
+            - {id: fog_a2, parent: region_a}
+            - {id: fog_b1, parent: region_b}
+            - {id: fog_b2, parent: region_b}
+        edge: {link_up: {transport: mqtt, codec: npz}}
+  # degradation; null leaves a setting out (no availability model, no autonomy)
+  infrastructure.failover,infrastructure.name,topology.edge.availability,topology.fog.defaults.autonomy,topology.fog.defaults.quorum:
+    - [none, degradation_lab,           null, null, 0.5]                          # nominal
+    - [none, degradation_lab_loss5,     null, null, 0.5]                          # loss5
+    - [none, degradation_lab_loss20,    null, null, 0.5]                          # loss20
+    - [none, degradation_lab_4g,        null, null, 0.5]                          # 4g
+    - [none, degradation_lab,           {name: bernoulli, p: 0.2}, null, 0.5]     # dropout
+    - [none, degradation_lab,           {name: bernoulli, p: 0.2}, null, 1.0]     # dropout_k1
+    - [{name: nearest_alive, after: 5s}, degradation_lab_crash, null, null, 0.5]  # crash
+    - [none, degradation_lab_partition, null, null, 0.5]                          # partition
+    - [none, degradation_lab_partition, null, {after: 15s}, 0.5]                  # partition_autonomy
