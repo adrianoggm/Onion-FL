@@ -28,12 +28,12 @@ stream:
   batch_size: 1
   speed: 60
 labels: {fraction: 0.1, delay: 10m}
-continual: {memory: none}
-unlabelled: none
-promotion: {name: champion_challenger, metric: macro_f1, min_samples: 20}
-continuum:
+continual:
+  memory: none
   trigger: {name: schedule, every: 10m}
   status_every: 10m
+unlabelled: none
+promotion: {name: champion_challenger, metric: macro_f1, min_samples: 20}
 evaluation:
   metrics: [loss, accuracy, macro_f1, confusion_matrix]
   aggregators: {every: 1}

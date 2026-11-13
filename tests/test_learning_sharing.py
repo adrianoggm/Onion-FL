@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from onion_fl.core.registry import PluginError
@@ -68,9 +70,9 @@ def test_exact_rules_beat_patterns_and_longer_patterns_beat_shorter_ones() -> No
 
 @pytest.mark.parametrize("scope", ["regional", "level:", "level:fog:x", "LOCAL"])
 def test_invalid_scopes_are_rejected(scope: str) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=re.escape(f"scope '{scope}' must be")):
         SharingPolicy(rules={"head.*": scope})
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"\ndefault\n"):
         SharingPolicy(default=scope)
 
 

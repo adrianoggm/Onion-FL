@@ -23,6 +23,7 @@ import onion_fl
 from onion_fl.infrastructure import probe
 from onion_fl.infrastructure.inventory import load_inventory, parse_inventory
 from onion_fl.infrastructure.model import InfrastructureError
+from tests.timing import slack
 
 SRC = Path(onion_fl.__file__).resolve().parents[1]
 
@@ -197,13 +198,14 @@ def test_the_probe_answers_facts_time_and_reach_over_its_pipes(tmp_path: Path) -
     finally:
         process.stdin.close()
         process.wait(timeout=10)
+        process.stdout.close()
         listening.close()
 
     assert said["source"] == probe.source_digest(SRC / "onion_fl")
     assert said["pins"]["numpy"] and said["pins"]["no-such-lib"] is None
     assert said["files"][str(data)] and said["files"][str(tmp_path / "absent")] is None
     assert said["bind"] is True
-    assert abs(remote - time.time()) < 5
+    assert abs(remote - time.time()) < slack(5)
     assert reach == {targets[0]: True, targets[1]: False, targets[2]: True}
 
 

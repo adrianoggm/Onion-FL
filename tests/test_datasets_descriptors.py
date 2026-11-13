@@ -69,9 +69,11 @@ def test_descriptor_options_are_valid(name: str, options: dict) -> None:
 
 
 def _same_where_present(new, old_X: np.ndarray, old_names: list[str]) -> None:
+    # A feature the old loader lacks (a meta column the descriptor stopped
+    # excluding) fails, rather than going unseen.
+    extra = sorted(set(new.feature_names) - set(old_names))
+    assert not extra, f"features the previous loader does not have: {extra}"
     for j, name in enumerate(new.feature_names):
-        if name not in old_names:
-            continue
         values, legacy = new.X[:, j], old_X[:, old_names.index(name)]
         present = ~np.isnan(values)  # the old loaders imputed over the whole dataset
         np.testing.assert_allclose(
@@ -79,7 +81,61 @@ def _same_where_present(new, old_X: np.ndarray, old_names: list[str]) -> None:
         )
 
 
+# Meta columns any descriptor may carry: SWELL's block (`blok`, `c` in its
+# physiology file), times, and the ids of subjects, sessions, files and centers.
+META = {"blok", "block", "c", "trial", "timestamp", "time", "subject", "pp"}
+META |= {"participant", "user", "writer", "session", "segment", "batch", "center"}
+META_KEYS = {"column", "by", "left", "right", "label_rows"}  # what a step reads
+FAST_ROOTS = {  # the real extracts, where the whole dataset is slow to read
+    "nurse_stress": Path("data/samples/NurseStress"),
+    "physionet_e4": Path("data/samples/physionet_e4"),
+    "stress_predict": Path("data/samples/stress_predict"),
+}
+ONE_FILE = {"wesad": "{subject}/S2.pkl", "wesad_e4": "{subject}/S2.pkl"}
+ALL_JOINS = {"swell": {"facial": True, "physiology": True}}
+
+
+def _columns_read(value, key: str | None = None) -> set[str]:
+    """The column names a descriptor's steps refer to (join keys, label sources...)."""
+    if isinstance(value, dict):
+        names = set()
+        for k, v in value.items():
+            if key == "by":  # {subject: ID}: both sides are columns
+                names.add(str(k))
+            names |= _columns_read(v, k)
+        return names
+    if isinstance(value, list):
+        return set().union(*(_columns_read(v, key) for v in value))
+    return {value} if key in META_KEYS and isinstance(value, str) else set()
+
+
+@pytest.mark.parametrize("name", sorted(p.stem for p in DESCRIPTORS.glob("*.yaml")))
+def test_descriptor_features_are_never_meta_columns(name: str) -> None:
+    """RULES.md: meta columns never become features, in any shipped descriptor."""
+    spec = descriptor(name)
+    root = FAST_ROOTS.get(name)
+    if root is None or not root.exists():
+        root = Path(spec.root.format(**spec.options))
+    if not root.exists():
+        pytest.skip(f"{root} not available")
+    if name in ONE_FILE:  # the names do not depend on the subject
+        spec.source = spec.source.model_copy(update={"path": ONE_FILE[name]})
+    steps = [s for s in spec.steps if "features" not in s]
+    meta = {m.lower() for m in META | _columns_read(steps)}
+
+    subjects = ingest(spec, ALL_JOINS.get(name), root=root)
+
+    names = subjects[0].feature_names
+    # Equal, or a windowed statistic of it (time_mean).
+    leaked = [f for f in names if f.lower() in meta or f.lower().split("_")[0] in meta]
+    assert not leaked, f"meta columns as features: {leaked}"
+    for data in subjects:
+        assert data.feature_names == names, data.subject
+
+
 @pytest.mark.skipif(not Path("data/SWELL").exists(), reason="data/SWELL not available")
+@pytest.mark.filterwarnings("ignore:Found .* missing values:UserWarning")
+@pytest.mark.filterwarnings("ignore:Removed .* features with zero variance:UserWarning")
 def test_swell_reads_like_the_previous_loader() -> None:
     from onion_fl.datasets.swell import load_swell_all_samples
 

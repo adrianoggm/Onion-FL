@@ -19,6 +19,7 @@ from onion_fl.core.node import Node  # noqa: E402
 from onion_fl.runtime.real import RealRuntime  # noqa: E402
 from onion_fl.transports import transports  # noqa: E402
 from onion_fl.transports.grpc import GrpcTransport  # noqa: E402
+from tests.timing import slack  # noqa: E402
 
 
 class Inbox:
@@ -153,12 +154,13 @@ def test_stop_drops_what_cannot_be_delivered_within_the_flush(tmp_path: Path) ->
     a.send("nobody", b"lost")
     started = time.monotonic()
     a.stop()
-    assert time.monotonic() - started < 3
+    assert time.monotonic() - started < slack(3)
 
 
 @pytest.mark.parametrize("params", [{"port": -1}, {"call_timeout": 0}, {"workers": 0}])
 def test_grpc_params_are_validated(params) -> None:
-    with pytest.raises(ValueError):
+    (field,) = params
+    with pytest.raises(ValueError, match=rf"\n{field}\n"):
         transports.create("grpc", params)
 
 
@@ -305,16 +307,20 @@ def test_a_plain_grpc_transport_cannot_talk_to_a_tls_one(tmp_path: Path, pki) ->
 
 
 @pytest.mark.parametrize(
-    "tls",
+    ("tls", "error"),
     [
-        {"ca": "ca.pem"},  # mutual: the certificate is required
-        {"ca": "ca.pem", "cert": "c.pem"},  # cert without key
-        {"ca": "-----BEGIN CERTIFICATE-----\nMIIB...", "cert": "c", "key": "k"},
-        {"ca": "ca.pem", "cert": "c", "key": "k", "password": "x"},
+        # mutual: the certificate is required
+        ({"ca": "ca.pem"}, "give tls.cert and tls.key"),
+        ({"ca": "ca.pem", "cert": "c.pem"}, "give cert and key together"),
+        (
+            {"ca": "-----BEGIN CERTIFICATE-----\nMIIB...", "cert": "c", "key": "k"},
+            "not its contents",
+        ),
+        ({"ca": "ca.pem", "cert": "c", "key": "k", "password": "x"}, "tls.password"),
     ],
 )
-def test_grpc_tls_takes_paths_only(tls) -> None:
-    with pytest.raises(ValueError):
+def test_grpc_tls_takes_paths_only(tls, error) -> None:
+    with pytest.raises(ValueError, match=error):
         transports.create("grpc", {"tls": tls})
 
 

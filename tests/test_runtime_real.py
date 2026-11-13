@@ -199,7 +199,8 @@ def test_the_launcher_can_set_nagle_on_every_mqtt_link() -> None:
 
 @pytest.mark.parametrize("params", [{"qos": 3}, {"broker": "no-port:x"}])
 def test_mqtt_params_are_validated(params) -> None:
-    with pytest.raises(ValueError):
+    (field,) = params
+    with pytest.raises(ValueError, match=rf"\n{field}\n"):
         transports.create("mqtt", params)
 
 
@@ -637,3 +638,85 @@ def test_a_received_message_is_decoded_only_by_a_codec_of_the_links(
 
     (rejected,) = [e for e in rt.events if e["name"] == "message.rejected"]
     assert "undecodable" in rejected["tags"]["reason"]
+
+
+# --- error isolation (#300) ----------------------------------------------------------
+
+
+class Faulty(Echo):
+    """Raises on every message it receives."""
+
+    def on_message(self, msg, ctx):
+        ctx.send(Message(kind="control", src=self.id, dst=msg.src))  # never leaves
+        raise RuntimeError("boom")
+
+
+class Unencodable(Ping):
+    """Sends a message no codec can encode, then a good one."""
+
+    def on_start(self, ctx):
+        ctx.send(Message(kind="control", src=self.id, dst="echo", meta={"x": {1, 2}}))
+        super().on_start(ctx)
+
+
+def _errors(rt: RealRuntime) -> list[dict]:
+    return [e for e in rt.events if e["name"] == "node.error"]
+
+
+def test_a_node_that_raises_is_recorded_and_the_run_goes_on() -> None:
+    rt = RealRuntime("run-raise", heartbeat_s=None)
+    rt.add_node(Ping("ping"))
+    rt.add_node(Faulty("echo"))
+    rt.add_link("ping", "echo", transport={"name": "memory", "bus": "raise"})
+
+    rt.run(timeout=5)
+
+    (error,) = _errors(rt)
+    assert error["node"] == "echo"
+    assert error["tags"] == {"handler": "on_message", "error": "RuntimeError: boom"}
+    # What the failed handler sent is dropped; the other node runs to its end.
+    assert [e["node"] for e in rt.events if e["name"] == "message.sent"] == ["ping"]
+    assert any(e["name"] == "tick.fired" for e in rt.events)
+    assert not any(e["name"] == "runtime.timeout" for e in rt.events)
+
+
+def test_a_failing_after_handle_hook_keeps_the_run_going() -> None:
+    rt = RealRuntime("run-hook", heartbeat_s=None)
+    rt.add_node(Ping("ping"))
+    rt.add_node(Echo("echo"))
+    rt.add_link("ping", "echo", transport={"name": "memory", "bus": "hook"})
+
+    def full_disk(node_id: str) -> None:
+        raise OSError("no space left on device")
+
+    rt.after_handle.append(full_disk)
+
+    rt.run(timeout=5)
+
+    errors = _errors(rt)
+    assert errors and all(
+        e["tags"] == {"handler": "after", "error": "OSError: no space left on device"}
+        for e in errors
+    )
+    # Every handler still ran and what it sent still left: ping, then the echo.
+    sent = [e["node"] for e in rt.events if e["name"] == "message.sent"]
+    assert sent == ["ping", "echo"]
+    assert len([e for e in rt.events if e["name"] == "message.delivered"]) == 2
+    assert any(e["name"] == "tick.fired" for e in rt.events)
+
+
+def test_a_message_that_cannot_be_encoded_is_recorded_and_not_sent() -> None:
+    rt = RealRuntime("run-encode", heartbeat_s=None)
+    rt.add_node(Unencodable("ping"))
+    rt.add_node(Echo("echo"))
+    rt.add_link("ping", "echo", transport={"name": "memory", "bus": "encode"})
+
+    rt.run(timeout=5)
+
+    (error,) = _errors(rt)
+    assert error["node"] == "ping" and error["tags"]["handler"] == "send"
+    assert error["tags"]["error"].startswith("MessageError: ")
+    # The good message after it still leaves and is answered.
+    sent = [e["node"] for e in rt.events if e["name"] == "message.sent"]
+    assert sent == ["ping", "echo"]
+    assert any(e["name"] == "tick.fired" for e in rt.events)

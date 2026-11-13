@@ -26,6 +26,7 @@ from typing import Any
 import numpy as np
 
 from onion_fl.continual.control import load_operators
+from onion_fl.core.ids import config_id, data_id
 from onion_fl.core.topology import Topology
 from onion_fl.experiment.config import ConfigError, parse_experiment
 from onion_fl.experiment.sweep import Scenario, identity
@@ -317,7 +318,7 @@ def run_node(
 
     chosen, epoch = load_scenario(config, scenario, seed)
     launcher = _launcher(config)
-    topology, split, placement, _ = _scenario_data(chosen)
+    topology, split, placement, digests = _scenario_data(chosen)
     if "groups" in launcher:  # the launcher chose them (one per emulated host)
         if group not in launcher["groups"]:
             raise ValueError(
@@ -369,6 +370,9 @@ def run_node(
             )
         )
 
+    # What this process ingested and fitted, so a run shows every process
+    # rebuilt the launcher's data (issue #298).
+    write(data_event(group, digests, split.preprocessing))
     runtime.listeners.append(write)
     if launcher.get("checkpoints") or resume:
         keep_edges(federation, runtime, run_path / "bundle", resume)
@@ -381,6 +385,24 @@ def run_node(
             Path(chosen.config.paths.runs) / run_id, federation.coordinator.state
         )
     return 0 if runtime._all_stopped() else 3
+
+
+def data_event(
+    group: str, digests: Mapping[str, str], preprocessing: Mapping[str, Any]
+) -> dict[str, Any]:
+    """``data.process``: the ``data_id`` a node process loaded and the digest of
+    the preprocessing it fitted (features, fill, mean and std per dataset)."""
+    return {
+        "t": 0.0,
+        "node": "experiment",
+        "name": "data.process",
+        "value": None,
+        "tags": {
+            "group": group,
+            "data_id": data_id(digests),
+            "preprocessing": config_id(preprocessing),
+        },
+    }
 
 
 def _launcher(config: str | Path) -> dict[str, Any]:

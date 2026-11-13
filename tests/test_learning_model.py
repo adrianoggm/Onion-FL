@@ -122,7 +122,8 @@ def test_invalid_data_shapes_are_rejected(fields: dict) -> None:
         "n_classes": 2,
     }
 
-    with pytest.raises(ValueError):
+    (field,) = fields
+    with pytest.raises(ValueError, match=rf"\n{field}\n"):
         DataShape(**(base | fields))
 
 
@@ -140,7 +141,8 @@ def test_datasets_must_be_unique() -> None:
     "fields", [{"dropout": 1.0}, {"adapter_width": 0}, {"trunk_hidden": [0]}]
 )
 def test_invalid_configs_are_rejected(fields: dict) -> None:
-    with pytest.raises(ValueError):
+    (field,) = fields
+    with pytest.raises(ValueError, match=rf"\n{field}\b"):
         ModularMLPConfig(**fields)
 
 

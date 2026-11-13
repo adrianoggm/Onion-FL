@@ -1,0 +1,26 @@
+# LEAF's CNN on FEMNIST (issue #245): experiments/femnist_reference.yaml with
+# only the model changed, from modular_mlp to the torch_module preset
+# leaf_femnist_cnn. Same 200 writers, test writers (role seed 0), four fogs,
+# preprocessing, trainer, rounds and seeds. The preprocessing still drops the
+# constant pixels; torch_module puts the kept x_<i> columns back in the 28x28
+# image and leaves the dropped ones at 0.
+#
+#   onion_fl run experiments/femnist_cnn.yaml --workers 1
+name: femnist_cnn
+description: La CNN de LEAF en FEMNIST, 200 escritores en cuatro fogs; la referencia FedAvg cambiando solo el modelo.
+topology: femnist_four_fogs
+data:
+  datasets:
+    femnist: {}
+  roles: {test: 0.2, scaler: global, seed: 0}
+  placement: {name: mixing, alpha: 1.0}
+learning:
+  model: {name: torch_module, module: leaf_femnist_cnn}
+  sharing: fedavg
+  trainer: {name: standard, local_epochs: 1, batch_size: 32, lr: 0.001}
+  init: random
+rounds: 30
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  global: {every: 1}
+seeds: [0, 1, 2]

@@ -139,19 +139,22 @@ def federation_on_hosts(
     failover: Any = None,
     caps: dict[str, int] | None = None,
     rounds: int = 4,
+    fog: dict | None = None,
+    root: dict | None = None,
 ) -> Any:
     """Fogs on their own sites, edges on the ``field``, 10 s of training a round.
 
-    The field is closer to ``fog_1`` than to ``fog_2``.
+    The field is closer to ``fog_1`` than to ``fog_2``. ``fog`` adds settings
+    to every fog, and ``root`` to the cloud.
     """
     caps = caps or {}
     fogs = sorted(leaves)
     topology = parse_topology(
         {
             "levels": ["global", "fog", "edge"],
-            "root": {"id": "cloud", "deadline": "15s", "quorum": 0.5},
+            "root": {"id": "cloud", "deadline": "15s", "quorum": 0.5} | (root or {}),
             "fog": {
-                "defaults": {"deadline": "15s"},
+                "defaults": {"deadline": "15s"} | (fog or {}),
                 "nodes": [
                     {"id": f} | ({"max_children": caps[f]} if f in caps else {})
                     for f in fogs

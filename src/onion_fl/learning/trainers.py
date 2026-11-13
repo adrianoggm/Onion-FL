@@ -19,7 +19,7 @@ from typing import Annotated, Any, Literal, Protocol
 import numpy as np
 import torch
 import torch.nn.functional as F
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt, model_validator
 from torch import nn
 from torch.func import functional_call
 
@@ -134,6 +134,9 @@ class StandardParams(BaseModel):
     lr: float = Field(1e-3, gt=0)
     optimizer: Literal["adam", "sgd"] = "adam"
     weight_decay: float = Field(0.0, ge=0)
+    momentum: float = Field(
+        0.0, ge=0, lt=1, description="Momento de SGD; solo con optimizer sgd"
+    )
     frozen: list[str] = Field(
         default_factory=list,
         description="Grupos que no se entrenan, por nombre o patrón (trunk, adapter.*)",
@@ -142,6 +145,22 @@ class StandardParams(BaseModel):
         default_factory=dict,
         description="Factor del lr por grupo, por nombre o patrón (trunk*: 0.1); "
         "para no entrenar un grupo, frozen",
+    )
+
+    @model_validator(mode="after")
+    def _momentum_is_for_sgd(self) -> StandardParams:
+        if self.momentum and self.optimizer != "sgd":
+            raise ValueError(f"momentum is an SGD option, not {self.optimizer!r}'s")
+        return self
+
+
+def make_optimizer(
+    params: Mapping[str, Any], names: Sequence[str], p: StandardParams
+) -> torch.optim.Optimizer:
+    """The configured optimizer over ``names``, one group per lr factor."""
+    extra = {"momentum": p.momentum} if p.optimizer == "sgd" else {}
+    return OPTIMIZERS[p.optimizer](
+        _param_groups(params, names, p), lr=p.lr, weight_decay=p.weight_decay, **extra
     )
 
 
@@ -277,9 +296,7 @@ class Standard:
         if not names:
             raise TrainError(f"every parameter is frozen by {p.frozen}")
         params = dict(model.named_parameters())
-        optimizer = OPTIMIZERS[p.optimizer](
-            _param_groups(params, names, p), lr=p.lr, weight_decay=p.weight_decay
-        )
+        optimizer = make_optimizer(params, names, p)
         rng = ctx.rng if ctx is not None else np.random.default_rng(0)
         total, batches = 0.0, 0
         pool = 0 if unlabelled is None else unlabelled.size
@@ -440,9 +457,7 @@ class APFL(Standard):
         if self._v is None:
             self._v = copy.deepcopy(model)
         w, v = dict(model.named_parameters()), dict(self._v.named_parameters())
-        make = OPTIMIZERS[p.optimizer]
-        opt_w = make(_param_groups(w, names, p), lr=p.lr, weight_decay=p.weight_decay)
-        opt_v = make(_param_groups(v, names, p), lr=p.lr, weight_decay=p.weight_decay)
+        opt_w, opt_v = make_optimizer(w, names, p), make_optimizer(v, names, p)
         alpha = torch.tensor(self.alpha, requires_grad=p.adapt_alpha)
         rng = ctx.rng if ctx is not None else np.random.default_rng(0)
         side = child_rng(rng)  # dropout of the personal pass, apart from w's
@@ -470,7 +485,7 @@ class APFL(Standard):
                             alpha.clamp_(0.0, 1.0)
                     total += float(loss.item()) * len(idx)
                     batches += 1
-        self.alpha = float(alpha)
+        self.alpha = float(alpha.detach())
         self._w = {n: t.detach().clone() for n, t in w.items()}
         seen = p.local_epochs * len(xs)
         return TrainResult(

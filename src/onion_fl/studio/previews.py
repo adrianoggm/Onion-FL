@@ -48,7 +48,14 @@ def sharing_preview(
         name, params | policy.model_requirements
     )  # what the policy needs
     shapes = [
-        DataShape(dataset=d, task=task, n_features=1, n_classes=2) for d in datasets
+        # torch_module needs a whole example; the other families take any width
+        DataShape(
+            dataset=d,
+            task=task,
+            n_features=getattr(family, "n_inputs", 1),
+            n_classes=2,
+        )
+        for d in datasets
     ]
     groups = list(param_groups(family.build(shapes).state_dict()))
     return {

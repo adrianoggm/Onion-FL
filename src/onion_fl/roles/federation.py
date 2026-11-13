@@ -13,6 +13,7 @@ Each aggregation node reads its round settings from the topology::
     staleness: drop | {name: next_round, weighting: {name: polynomial, a: 0.5}}
     register_timeout: 10s
     hello_retry: 5s                  # repeat the hello until acknowledged (null: never)
+    autonomy: {after: 30s, max_rounds: 10, reconcile: samples}   # below the root only
     eval: {every: 1, aggregate_children: true, holdout: true}
 
 The edge template takes ``eval: {every: 1, models: [received, local]}``.
@@ -39,6 +40,7 @@ from onion_fl.learning.trainers import trainers as trainer_plugins
 from onion_fl.observability.diagnostics import diagnostics as diagnostic_plugins
 from onion_fl.roles.nodes import Aggregator, Coordinator, Edge, Evaluate
 from onion_fl.roles.policies import (
+    Autonomy,
     create,
     parse_duration,
     participations,
@@ -187,6 +189,10 @@ def build_federation(
         )
     if promotion is not None:
         _check_versioned(initial_state, policy, topology)
+    if "autonomy" in root.settings:
+        raise ValueError(
+            f"autonomy: the root {root.id!r} has no parent to stop waiting for"
+        )
     if evaluate is None:
         names = list(metrics)
 
@@ -229,6 +235,7 @@ def build_federation(
             children[node.id],
             parent=node.parent,
             hello_retry=parse_duration(node.settings.get("hello_retry", 5.0)),
+            autonomy=Autonomy.parse(node.settings.get("autonomy")),
             continuum=continuum,
             level=node.level,
             **common,

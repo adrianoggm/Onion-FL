@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import pytest
 from pydantic import BaseModel, Field
 
 from onion_fl.core.codec import JsonCodec, codecs, get_codec
-from onion_fl.core.registry import PluginError, PluginSpec, Registry
+from onion_fl.core.registry import TRUSTED_ENV, PluginError, PluginSpec, Registry
 
 
 class FedProxParams(BaseModel):
@@ -81,6 +84,54 @@ def test_unknown_name_lists_the_available_plugins(trainers: Registry) -> None:
 def test_duplicate_names_are_rejected(trainers: Registry) -> None:
     with pytest.raises(PluginError, match="already registered"):
         trainers.register("fedprox", title="Otro", description="Duplicado")(FedProx)
+
+
+@pytest.fixture(autouse=True)
+def trust_this_package(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The operator trusts the tests' package, as ONIONFL_TRUSTED_MODULES=tests."""
+    monkeypatch.setenv(TRUSTED_ENV, __name__.split(".")[0])
+
+
+BOOM = "onionfl_untrusted_plugin"
+
+
+@pytest.fixture
+def boom(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    (tmp_path / f"{BOOM}.py").write_text(
+        "raise RuntimeError('boom: imported')", encoding="utf-8"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    yield f"{BOOM}:Plugin"
+    sys.modules.pop(BOOM, None)
+
+
+@pytest.mark.parametrize("trusted", ["", "mylab", "onionfl_untrusted"])
+def test_an_untrusted_path_is_rejected_without_importing_it(
+    trainers: Registry, boom: str, monkeypatch: pytest.MonkeyPatch, trusted: str
+) -> None:
+    monkeypatch.setenv(TRUSTED_ENV, trusted)
+    with pytest.raises(PluginError, match=f"not trusted.*{TRUSTED_ENV}"):
+        trainers.get(boom)
+
+    assert BOOM not in sys.modules
+
+
+def test_a_trusted_path_is_imported(
+    trainers: Registry, boom: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(TRUSTED_ENV, f"mylab, {BOOM}")
+    with pytest.raises(RuntimeError, match="boom: imported"):
+        trainers.get(boom)
+
+
+def test_a_framework_path_resolves_only_a_registered_plugin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(TRUSTED_ENV, raising=False)
+    assert codecs.get("onion_fl.core.codec:JsonCodec") is codecs.get("json")
+    for other in ["onion_fl.core.codec:get_codec", "onion_fl.core.registry:Registry"]:
+        with pytest.raises(PluginError, match="not a registered codec"):
+            codecs.get(other)
 
 
 def test_dotted_path_resolves_an_external_plugin_spec(trainers: Registry) -> None:

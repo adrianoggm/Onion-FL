@@ -38,6 +38,17 @@ class DataShape(BaseModel):
     task: str = Field(pattern=NAME)
     n_features: PositiveInt
     n_classes: int = Field(ge=2)
+    # The column names, when known: torch_module rebuilds (C, H, W) or a
+    # sequence from the x_<i> columns that preprocessing kept.
+    features: tuple[str, ...] | None = None
+
+    @model_validator(mode="after")
+    def _one_name_per_feature(self) -> DataShape:
+        if self.features is not None and len(self.features) != self.n_features:
+            raise ValueError(
+                f"{len(self.features)} feature names for n_features={self.n_features}"
+            )
+        return self
 
 
 class ModularMLPConfig(BaseModel):
@@ -464,3 +475,7 @@ class FeatureTransformerFamily:
 
     def build(self, shapes: Sequence[DataShape], seed: int = 0) -> FeatureTransformer:
         return FeatureTransformer(self.config, shapes, seed=seed)
+
+
+# Registers torch_module, which builds on the names above.
+from onion_fl.learning import torch_module as _torch_module  # noqa: E402, F401

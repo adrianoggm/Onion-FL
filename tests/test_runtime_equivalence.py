@@ -7,7 +7,13 @@ extra, and its tests skip without it. The edges use the stub trainer with
 per-node noise: it
 learns nothing, but every edge sends a different, seeded update, so any
 difference in participants, rng streams or aggregation order would show.
-The dataset is a CSV format fixture (docs/RULES.md).
+The dataset is a CSV format fixture (docs/RULES.md). One MQTT test trains with
+the standard trainer on real SWELL rows, so each process's own ingest, roles,
+placement and preprocessing are compared too (issue #298).
+
+Scope: every run here has full quorum, no deadlines and no failures. Partial
+quorum, deadlines, staleness and dropouts depend on the wall clock in a real
+run by design, so they are not compared across runtimes.
 """
 
 from __future__ import annotations
@@ -15,10 +21,13 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import secrets
 import socket
 import subprocess
 import textwrap
 import time
+import uuid
+from ipaddress import IPv4Network
 from pathlib import Path
 
 import numpy as np
@@ -120,6 +129,23 @@ def test_the_noise_makes_the_check_meaningful(tmp_path: Path) -> None:
     final = simulated(config)
 
     assert any(not np.allclose(final[k], initial[k]) for k in final)
+    # The check tells runs apart: another seed, or one edge fewer, moves the model.
+    raw = config.dump()
+    assert differs(final, simulated(parse_experiment(raw | {"seeds": [1]})))
+    trained = split.roles["demo"]["train"][0]  # its client is one edge
+    data = raw["data"] | {
+        "roles": raw["data"]["roles"] | {"overrides": {"demo": {"exclude": [trained]}}}
+    }
+    assert differs(final, simulated(parse_experiment(raw | {"data": data})))
+
+
+def differs(a: dict[str, np.ndarray], b: dict[str, np.ndarray]) -> bool:
+    """``assert_same_model`` would fail on ``a`` and ``b``."""
+    try:
+        assert_same_model(a, b)
+    except AssertionError:
+        return True
+    return False
 
 
 def test_the_real_runtime_in_one_process_matches_the_simulation(tmp_path: Path) -> None:
@@ -266,6 +292,64 @@ def test_mqtt_with_one_process_per_group_matches_the_simulation(tmp_path: Path) 
         assert_same_model(expected, {k: saved[k] for k in saved.files})
 
 
+SWELL = Path("data/SWELL")
+
+
+def on_swell(config, mode: str):
+    """``config`` training the standard trainer on ten real SWELL subjects."""
+    raw = config.dump()
+    raw["data"] = raw["data"] | {
+        "datasets": {"swell": {"descriptor": "datasets/swell.yaml"}},
+        "roles": {
+            "test": 0.2,
+            "overrides": {"swell": {"exclude": [str(s) for s in range(11, 26)]}},
+        },
+    }
+    raw["learning"] = raw["learning"] | {
+        "trainer": {"name": "standard", "local_epochs": 1, "batch_size": 32}
+    }
+    raw["rounds"] = 2
+    raw["runtime"] = raw["runtime"] | {"mode": mode, "timeout": 120}
+    return parse_experiment(raw)
+
+
+@pytest.mark.skipif(not _broker_up(), reason=f"no MQTT broker at {BROKER}")
+@pytest.mark.skipif(not SWELL.exists(), reason="data/SWELL not available")
+def test_mqtt_trains_real_data_in_every_process_as_the_simulation(
+    tmp_path: Path,
+) -> None:
+    """Each node process ingests, splits, places and preprocesses on its own:
+    all of them must rebuild what the simulation builds (issue #298)."""
+    from onion_fl.core.ids import config_id, data_id
+    from onion_fl.observability.events import read_events
+
+    mqtt = {"name": "mqtt", "broker": BROKER}
+    sim = on_swell(experiment(tmp_path, mqtt), "sim")
+    (scenario,) = scenarios(sim)
+    _, split, _, digests = _scenario_data(scenario)
+    expected = simulated(sim)
+
+    (path,) = run_experiment(on_swell(experiment(tmp_path, mqtt), "real"))
+
+    meta = json.loads((path / "run.json").read_text(encoding="utf-8"))
+    assert meta["status"] == "finished", meta.get("processes")
+    assert meta["data_id"] == data_id(digests)
+    seen = {
+        e["tags"]["group"]: e["tags"]
+        for e in read_events(path / "events.jsonl")
+        if e["name"] == "data.process"
+    }
+    assert len(seen) == 3  # the root's process and one per fog
+    for tags in seen.values():
+        assert tags["data_id"] == data_id(digests)
+        assert tags["preprocessing"] == config_id(split.preprocessing)
+    # Bit for bit: same CPU torch, same seeds and the same batches in every process.
+    with np.load(path / "model.npz", allow_pickle=False) as saved:
+        assert saved.files and sorted(saved.files) == sorted(expected)
+        for key in saved.files:
+            np.testing.assert_array_equal(saved[key], expected[key], err_msg=key)
+
+
 @pytest.mark.skipif(not _broker_up(), reason=f"no MQTT broker at {BROKER}")
 def test_a_two_level_federation_trains_its_edges_in_the_root_process(
     tmp_path: Path,
@@ -369,8 +453,27 @@ EMULATED = {
     "name": "emulated",
     "image": os.environ.get("ONIONFL_EMULATED_IMAGE", "onionfl-emulated:latest"),
     "project": os.environ.get("ONIONFL_EMULATED_PROJECT", "onionfl-test"),
-    "subnet": os.environ.get("ONIONFL_EMULATED_SUBNET", "10.195.0.0/16"),
+    "subnet": os.environ.get("ONIONFL_EMULATED_SUBNET"),  # else a free one
 }
+
+
+def _free_subnet() -> str:
+    """A /16 of 10.192.0.0/10 that no Docker network overlaps.
+
+    The project's name already differs per run; its addresses must too, or a
+    concurrent run (another xdist worker or checkout) fails to create them.
+    """
+    names = _docker("network", "ls", "-q").split()
+    configs = _docker(
+        "network", "inspect", "-f", "{{range .IPAM.Config}}{{.Subnet}} {{end}}", *names
+    )
+    used = [IPv4Network(s, strict=False) for s in configs.split() if ":" not in s]
+    free = [
+        net
+        for net in IPv4Network("10.192.0.0/10").subnets(new_prefix=16)
+        if not any(net.overlaps(u) for u in used)
+    ]
+    return str(secrets.choice(free))
 
 
 def _emulator_up() -> bool:
@@ -436,7 +539,8 @@ def test_the_emulated_backend_matches_the_simulation(tmp_path: Path) -> None:
     mqtt = {"name": "mqtt", "broker": BROKER}  # the emulation brings its own broker
     base = experiment(tmp_path, mqtt)
     sim = on_the_lab(base, "sim", tmp_path / "runs_sim")
-    emulated = on_the_lab(base, EMULATED, tmp_path / "runs_emulated")
+    backend = EMULATED | {"subnet": EMULATED["subnet"] or _free_subnet()}
+    emulated = on_the_lab(base, backend, tmp_path / "runs_emulated")
 
     (sim_path,) = run_experiment(sim)
     (path,) = run_experiment(emulated)
@@ -472,7 +576,9 @@ def test_the_emulated_backend_matches_the_simulation(tmp_path: Path) -> None:
 DISTRIBUTED = {
     "base": EMULATED["image"],
     "image": os.environ.get("ONIONFL_DISTRIBUTED_IMAGE", "onionfl-distributed:latest"),
-    "prefix": os.environ.get("ONIONFL_DISTRIBUTED_PREFIX", "onionfl-dist-test"),
+    # One set of machines per xdist worker, so the names differ per process.
+    "prefix": os.environ.get("ONIONFL_DISTRIBUTED_PREFIX", "onionfl-dist-test")
+    + f"-{uuid.uuid4().hex[:6]}",
     "mqtt_port": os.environ.get("ONIONFL_DISTRIBUTED_MQTT_PORT"),  # published if set
     "ssh": os.environ.get("ONIONFL_SSH", "ssh"),
 }

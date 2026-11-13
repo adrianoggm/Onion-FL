@@ -3,12 +3,17 @@ from __future__ import annotations
 """Named plugins with metadata, one registry per experimental axis (spec §4, §11).
 
 A config picks a plugin by name, or by a ``package.module:Name`` path for
-plugins that live outside the framework. The metadata (title, description,
+plugins that live outside the framework. Importing a module runs its code, and
+the Studio validates configs that arrive over HTTP, so a path is imported only
+when its module lies under a prefix the operator lists in
+``ONIONFL_TRUSTED_MODULES`` (comma separated, empty by default), or is the
+framework's own and names a plugin already registered. The metadata (title, description,
 explanation and the pydantic model of the parameters) is what the front uses
 to build forms and the tutorial without plugin-specific UI code.
 """
 
 import importlib
+import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, TypeVar
@@ -16,6 +21,10 @@ from typing import Any, TypeVar
 from pydantic import BaseModel, ValidationError
 
 F = TypeVar("F", bound=Callable[..., Any])
+
+TRUSTED_ENV = "ONIONFL_TRUSTED_MODULES"
+# The framework's own modules are already installed and loaded: always trusted.
+BUILTIN = "onion_fl"
 
 
 class PluginError(ValueError):
@@ -110,7 +119,18 @@ class Registry:
     def get(self, name: str) -> PluginSpec:
         """Find a plugin by registered name or by ``package.module:Name``."""
         if ":" in name:
-            return _import_spec(name)
+            spec = _import_spec(name)
+            if is_trusted(name.partition(":")[0], builtin=False):
+                return spec
+            # A framework path names a plugin this registry already holds (an old
+            # module name, say), never any other callable of the package.
+            for known in self._specs.values():
+                if spec is known or spec.factory is known.factory:
+                    return known
+            raise PluginError(
+                f"{name!r} is not a registered {self.kind} plugin; framework "
+                f"plugins are chosen by name ({self.names()})"
+            )
         try:
             return self._specs[name]
         except KeyError:
@@ -126,11 +146,28 @@ class Registry:
         return [self._specs[name].describe(self.kind) for name in self.names()]
 
 
+def trusted_prefixes() -> list[str]:
+    """The module prefixes the operator trusts, from ``ONIONFL_TRUSTED_MODULES``."""
+    return [p.strip() for p in os.environ.get(TRUSTED_ENV, "").split(",") if p.strip()]
+
+
+def is_trusted(module_name: str, *, builtin: bool = True) -> bool:
+    """Whether a module may be imported: under a trusted prefix, or the framework's
+    own when ``builtin`` (its paths must then name a registered plugin)."""
+    prefixes = [*trusted_prefixes(), *([BUILTIN] if builtin else [])]
+    return any(module_name == p or module_name.startswith(p + ".") for p in prefixes)
+
+
 def _import_spec(path: str) -> PluginSpec:
     module_name, _, attr = path.partition(":")
     if not module_name or not attr:
         raise PluginError(
             f"plugin path must look like 'package.module:Name', got {path!r}"
+        )
+    if not is_trusted(module_name):
+        raise PluginError(
+            f"external plugin {path!r} is not trusted: the operator must list its "
+            f"package in {TRUSTED_ENV} (comma separated) before it can be imported"
         )
     try:
         obj = getattr(importlib.import_module(module_name), attr)

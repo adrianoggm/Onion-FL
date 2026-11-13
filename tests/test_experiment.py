@@ -728,14 +728,27 @@ def _mark(item: tuple[Path, int]) -> int:
     folder, i = item
     if i == 1:
         raise RuntimeError("scenario 1 broke")
-    time.sleep(3.0 if i == 0 else 0.2)
+    deadline = time.monotonic() + 60  # never hang the suite
+    while not (folder / "released").exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
     (folder / f"{i}.done").touch()
     return i
 
 
-def test_a_parallel_sweep_stops_at_its_first_failure(tmp_path: Path) -> None:
+def test_a_parallel_sweep_stops_at_its_first_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from onion_fl.experiment import runner
     from onion_fl.experiment.runner import _in_parallel
 
+    class Pool(runner.ProcessPoolExecutor):
+        def shutdown(self, *args, **kwargs):  # after the cancel, before the wait
+            (tmp_path / "released").touch()
+            super().shutdown(*args, **kwargs)
+
+    # Every other scenario waits until the sweep has given up, so whatever runs
+    # was handed to a worker before the failure, however slow the machine is.
+    monkeypatch.setattr(runner, "ProcessPoolExecutor", Pool)
     with pytest.raises(RuntimeError, match="scenario 1"):  # while scenario 0 runs
         _in_parallel(_mark, [(tmp_path, i) for i in range(20)], workers=2)
 
@@ -893,7 +906,11 @@ def test_the_second_model_family_runs_end_to_end(workspace: Path) -> None:
     assert final["adapter.demo.0.weight"].shape == (2, 4)  # one token per feature
     assert verify_run(path)
     catalogue = experiment_schema()["plugins"]["model"]
-    assert {p["name"] for p in catalogue} == {"feature_transformer", "modular_mlp"}
+    assert {p["name"] for p in catalogue} == {
+        "feature_transformer",
+        "modular_mlp",
+        "torch_module",
+    }
 
 
 def _noisy(workspace: Path, **learning) -> dict:
@@ -1527,7 +1544,7 @@ def test_a_real_run_that_fails_to_launch_is_marked_failed(
     monkeypatch.setattr(real.subprocess, "Popen", broken)
     (scenario,) = scenarios(parse_experiment(experiment(workspace)))
 
-    with pytest.raises(OSError):
+    with pytest.raises(OSError, match="cannot start a process"):
         real.run_real(scenario)
     (run,) = (workspace / "runs").iterdir()
     assert (
@@ -1599,6 +1616,7 @@ def test_a_token_dataset_without_scaling_runs(workspace: Path) -> None:
     assert verify_run(path)
 
 
+@pytest.mark.filterwarnings("ignore:continuum:DeprecationWarning")  # older runs
 def test_the_committed_runs_keep_their_config_ids() -> None:
     from onion_fl.core.ids import config_id
     from onion_fl.experiment.sweep import identity

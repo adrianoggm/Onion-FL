@@ -145,9 +145,9 @@ def test_overrides_must_name_a_known_dataset() -> None:
 
 
 def test_proportions_are_validated() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"\ntest\n"):
         RolesConfig(test=1.0)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"\nlocal_val\n"):
         RolesConfig(local_val=1.0)
 
 

@@ -191,6 +191,7 @@ def test_drops_and_failed_quorums_are_counted(tmp_path: Path) -> None:
         == 2
     )
     assert value("onionfl_quorum_failed_total", labels(run, "fog", "fog_0")) == 1
+    run.finish()
 
 
 def test_the_metrics_endpoint_can_be_served() -> None:
@@ -200,11 +201,11 @@ def test_the_metrics_endpoint_can_be_served() -> None:
     server, thread = sink.serve(port=0, addr="127.0.0.1")
     try:
         port = server.server_address[1]
-        body = (
-            urllib.request.urlopen(f"http://127.0.0.1:{port}/metrics").read().decode()
-        )
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/metrics") as response:
+            body = response.read().decode()
     finally:
         server.shutdown()
+        server.server_close()
 
     assert "onionfl_round" in body
 
@@ -325,3 +326,19 @@ def test_a_drift_is_counted_per_node_and_kind() -> None:
 
     labels_ = where | {"dataset": "a", "kind": "prior"}
     assert sink.registry.get_sample_value("onionfl_drift_detected_total", labels_) == 2
+
+
+def test_a_fogs_autonomy_is_exported() -> None:
+    """``fog.autonomous.*`` (#289): whether a fog runs alone, and its rounds."""
+    sink = PrometheusSink(registry=CollectorRegistry())
+    node = {"run_id": "r", "topology_id": "t", "level": "fog", "node": "fog_0"}
+    labels = node | {"dataset": ""}
+    for name in ("started", "round", "round"):
+        sink.write(node | {"kind": "lifecycle", "name": f"fog.autonomous.{name}"})
+        if name == "started":
+            assert sink.registry.get_sample_value("onionfl_autonomous", labels) == 1
+    sink.write(node | {"kind": "lifecycle", "name": "fog.autonomous.ended"})
+
+    assert sink.registry.get_sample_value("onionfl_autonomous", labels) == 0
+    rounds = sink.registry.get_sample_value("onionfl_autonomous_rounds_total", labels)
+    assert rounds == 2

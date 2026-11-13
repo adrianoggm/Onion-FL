@@ -217,6 +217,29 @@ def test_validating_an_experiment_names_the_error_path(
     assert bad.status_code == 422 and any("rounds" in e for e in bad.json()["errors"])
 
 
+def test_validating_an_experiment_imports_no_untrusted_plugin(
+    client: TestClient, root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    from onion_fl.core.registry import TRUSTED_ENV
+
+    boom = "onionfl_untrusted_studio_plugin"
+    (root / f"{boom}.py").write_text("raise RuntimeError('boom')", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(root))
+    monkeypatch.delenv(TRUSTED_ENV, raising=False)
+    raw = yaml.safe_load(
+        (root / "experiments" / "demo_exp.yaml").read_text(encoding="utf-8")
+    )
+    raw["learning"]["trainer"] = f"{boom}:Trainer"
+
+    bad = client.post("/api/experiments/validate", json=raw)
+
+    assert bad.status_code == 422
+    assert any("not trusted" in e for e in bad.json()["errors"])
+    assert boom not in sys.modules
+
+
 def test_the_plan_of_an_experiment(client: TestClient) -> None:
     previews = client.post("/api/experiments/demo_exp/plan").json()
 
@@ -369,6 +392,19 @@ def test_comparing_runs(client: TestClient, recorded: list[str]) -> None:
     ).json()
 
     assert rows and rows[0]["n"] == 2 and {"mean", "ci_low", "ci_high"} <= set(rows[0])
+
+
+def test_comparing_runs_paired_with_a_reference(
+    client: TestClient, recorded: list[str]
+) -> None:
+    query = "/api/compare?experiment=demo_exp&level=global&metric=accuracy"
+    topology = client.get(query).json()[0]["topology_id"]
+
+    rows = client.get(f"{query}&reference={topology}&margin=0.01").json()
+
+    assert {"delta", "delta_low", "p_adj", "d_z", "p_tost", "verdict"} <= set(rows[0])
+    assert rows[0]["verdict"] == "reference"
+    assert client.get(f"{query}&reference=nope").status_code == 400
 
 
 def test_an_unknown_run_is_404(client: TestClient) -> None:

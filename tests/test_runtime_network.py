@@ -59,7 +59,8 @@ def test_unknown_preset_is_rejected() -> None:
     ],
 )
 def test_invalid_profile_values_are_rejected(fields: dict) -> None:
-    with pytest.raises(ValueError):
+    (field,) = fields
+    with pytest.raises(ValueError, match=rf"\n{field}\n"):
         LinkProfile(**fields)
 
 

@@ -95,7 +95,7 @@ from onion_fl.roles import (
     restore_federation,
     snapshot_federation,
 )
-from onion_fl.roles.policies import create, stalenesses
+from onion_fl.roles.policies import Autonomy, create, stalenesses
 from onion_fl.runtime.devices import availability_models, compute_models
 from onion_fl.runtime.network import PathChannel, resolve_profile
 
@@ -734,6 +734,13 @@ def _check_learning(config: ExperimentConfig, state: Mapping[str, Any]) -> None:
             f"statistics count only fresh updates, but {late} also aggregate late "
             "ones; use staleness drop"
         )
+    autonomous = _check_autonomy(topology)
+    if needed is not None and autonomous:
+        raise ConfigError(
+            f"learning.trainer: {name} pairs with a server optimizer whose round "
+            f"statistics count only the round's own updates, but {autonomous} "
+            "may answer with several rounds' work (autonomy); leave it out"
+        )
     buffering = sorted(
         n.id for n in topology.nodes if n.settings.get("close_at_quorum")
     )
@@ -763,6 +770,24 @@ def _check_learning(config: ExperimentConfig, state: Mapping[str, Any]) -> None:
             check(name, trainer)
         except ValueError as exc:
             raise ConfigError(f"learning.server_optimizer: {exc}") from None
+
+
+def _check_autonomy(topology: Topology) -> list[str]:
+    """The nodes with ``autonomy`` (#289), refused at the root or when malformed."""
+    found = []
+    for node in topology.nodes:
+        if "autonomy" not in node.settings:
+            continue
+        if node.parent is None:
+            raise ConfigError(
+                f"topology: autonomy at the root {node.id!r}, which has no parent"
+            )
+        try:
+            Autonomy.parse(node.settings["autonomy"])
+        except ValueError as exc:
+            raise ConfigError(f"topology: {node.id}: {exc}") from None
+        found.append(node.id)
+    return sorted(found)
 
 
 def link_warnings(topology: Topology, resolved: Resolved | None = None) -> list[str]:
