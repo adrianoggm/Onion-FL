@@ -1,0 +1,22 @@
+# degradation_lab (issue #290) with 4G access links: the latency, jitter and
+# bandwidths of the runtime's `4g` preset (50 ms with a lognormal 15 ms, 5 Mbps
+# up and 20 Mbps down) between each field and its zone's servers, but without
+# the preset's 1 % loss, so that this level degrades latency and bandwidth only
+# (loss has its own levels). The rest, as in degradation_lab.yaml.
+name: degradation_lab_4g
+profiles:
+  cloud_vm:     {cpus: 8, memory: 16GB, train_rate: 20000, aggregate_rate: 5.0e8}
+  fog_small:    {cpus: 4, memory: 4GB,  train_rate: 4000,  aggregate_rate: 1.0e8}
+  raspberry_pi: {cpus: 4, memory: 4GB,  train_rate: 900}
+sites:
+  dc:      {hosts: {cloud-1: cloud_vm}}
+  zone_a:  {hosts: {gw-a: fog_small, fog-a1: fog_small, fog-a2: fog_small}}
+  zone_b:  {hosts: {gw-b: fog_small, fog-b1: fog_small, fog-b2: fog_small}}
+  field_a: {pool: {raspberry_pi: 8}}
+  field_b: {pool: {raspberry_pi: 8}}
+network:
+  links:
+    - {between: [field_a, zone_a], latency: 50ms, jitter: 15ms, distribution: lognormal, bandwidth_up: 5Mbps, bandwidth_down: 20Mbps}
+    - {between: [field_b, zone_b], latency: 50ms, jitter: 15ms, distribution: lognormal, bandwidth_up: 5Mbps, bandwidth_down: 20Mbps}
+    - {between: [zone_a, dc], latency: 70ms, bandwidth: 10Mbps}
+    - {between: [zone_b, dc], latency: 70ms, bandwidth: 10Mbps}

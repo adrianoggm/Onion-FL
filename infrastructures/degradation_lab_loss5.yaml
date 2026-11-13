@@ -1,0 +1,20 @@
+# degradation_lab (issue #290) with 5 % loss on every physical link, the access
+# links and the WAN links alike, in both directions. A message that crosses
+# several links is lost with 1 - 0.95^n. The rest, as in degradation_lab.yaml.
+name: degradation_lab_loss5
+profiles:
+  cloud_vm:     {cpus: 8, memory: 16GB, train_rate: 20000, aggregate_rate: 5.0e8}
+  fog_small:    {cpus: 4, memory: 4GB,  train_rate: 4000,  aggregate_rate: 1.0e8}
+  raspberry_pi: {cpus: 4, memory: 4GB,  train_rate: 900}
+sites:
+  dc:      {hosts: {cloud-1: cloud_vm}}
+  zone_a:  {hosts: {gw-a: fog_small, fog-a1: fog_small, fog-a2: fog_small}}
+  zone_b:  {hosts: {gw-b: fog_small, fog-b1: fog_small, fog-b2: fog_small}}
+  field_a: {pool: {raspberry_pi: 8}}
+  field_b: {pool: {raspberry_pi: 8}}
+network:
+  links:
+    - {between: [field_a, zone_a], latency: 1ms, jitter: 0.2ms, distribution: normal, bandwidth: 1Gbps, loss: 0.05}
+    - {between: [field_b, zone_b], latency: 1ms, jitter: 0.2ms, distribution: normal, bandwidth: 1Gbps, loss: 0.05}
+    - {between: [zone_a, dc], latency: 70ms, bandwidth: 10Mbps, loss: 0.05}
+    - {between: [zone_b, dc], latency: 70ms, bandwidth: 10Mbps, loss: 0.05}
