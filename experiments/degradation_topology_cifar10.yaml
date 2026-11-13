@@ -1,0 +1,120 @@
+# Pre-registered study, degradation x topology (issue #290), on CIFAR-10 with
+# NIID-Bench's CNN (#247). The pre-registration is
+# docs/preregistration/degradation_topology.md. This is the WESAD design
+# (experiments/degradation_topology_wesad.yaml) with:
+#   - data and learning of experiments/cifar10_cnn.yaml (10 synthetic clients,
+#     Dir(0.5) with partition_seed 0, the official test batch; the CNN with SGD
+#     at lr 0.01 and momentum 0.9, 10 local epochs of batch 64), 20 rounds
+#     instead of 50 (cifar10_cnn peaks by round 14);
+#   - zones A (clients 0-4) and B (5-9); in three levels fog_a1 has 0-2, fog_a2
+#     3-4, fog_b1 5-7 and fog_b2 8-9. There are no val subjects;
+#   - every time x 100, the ratio of the nominal round times in two levels
+#     (73 s against 0.74 s): deadlines 500, 800 and 1200 s, failover after
+#     500 s, autonomy after 1500 s, and the *_cifar10 crash and partition
+#     infrastructures (1000 s; 1000-6000 s).
+# Each run takes about 14 min of wall time alone on the development PC, so the
+# pre-registration says which degradation levels run here (a reduced set).
+#
+#   onion_fl plan experiments/degradation_topology_cifar10.yaml
+name: degradation_topology_cifar10
+description: Estudio prerregistrado degradación × topología (plana, dos y tres niveles) en CIFAR-10 Dir(0,5) con la CNN de NIID-Bench.
+topology:  # two levels; every value of the first sweep key replaces it
+  name: dt_two_levels
+  levels: [global, fog, edge]
+  root: {id: cloud, aggregator: fedavg, server_optimizer: replace, quorum: 0.5, deadline: 1200s}
+  fog:
+    defaults: {aggregator: fedavg, quorum: 0.5, deadline: 500s, link_up: {transport: mqtt, codec: npz}}
+    nodes: [{id: fog_a}, {id: fog_b}]
+  edge: {link_up: {transport: mqtt, codec: npz}}
+data:
+  datasets:
+    cifar10: {options: {partition: dirichlet_label, alpha: 0.5, clients: 10}}
+  roles: {seed: 0, scaler: global, overrides: {cifar10: {test: [test], val: []}}}
+  placement:
+    name: explicit
+    assignment:
+      fog_a: [cifar10-client_0, cifar10-client_1, cifar10-client_2, cifar10-client_3, cifar10-client_4]
+      fog_b: [cifar10-client_5, cifar10-client_6, cifar10-client_7, cifar10-client_8, cifar10-client_9]
+learning:
+  # cifar10_cnn's model and trainer, set there before its runs, not tuned
+  model: {name: torch_module, module: niid_bench_cnn}
+  sharing: fedavg
+  trainer: {name: standard, local_epochs: 10, batch_size: 64, lr: 0.01, optimizer: sgd, momentum: 0.9}
+  init: random
+rounds: 20
+evaluation:
+  metrics: [loss, accuracy, macro_f1]
+  edge: {every: 5, models: [received]}
+  global: {every: 1}
+infrastructure:
+  name: degradation_lab
+  assignment:
+    root: cloud-1
+    aggregators: {fog_a: fog-a1, fog_b: fog-b1}
+    edges:
+      name: explicit
+      hosts:
+        cifar10-client_0: field_a-raspberry_pi-1
+        cifar10-client_1: field_a-raspberry_pi-2
+        cifar10-client_2: field_a-raspberry_pi-3
+        cifar10-client_3: field_a-raspberry_pi-4
+        cifar10-client_4: field_a-raspberry_pi-5
+        cifar10-client_5: field_b-raspberry_pi-1
+        cifar10-client_6: field_b-raspberry_pi-2
+        cifar10-client_7: field_b-raspberry_pi-3
+        cifar10-client_8: field_b-raspberry_pi-4
+        cifar10-client_9: field_b-raspberry_pi-5
+seeds: [0, 1, 2]  # the pilot's; the main run's seeds are fixed in the pre-registration
+sweep:
+  # topology (applied first: the key sorts before the degradation key)
+  data.placement.assignment,infrastructure.assignment.aggregators,topology:
+    - - hub: [cifar10-client_0, cifar10-client_1, cifar10-client_2, cifar10-client_3, cifar10-client_4,
+              cifar10-client_5, cifar10-client_6, cifar10-client_7, cifar10-client_8, cifar10-client_9]
+      - {hub: cloud-1}
+      - name: dt_flat
+        levels: [global, fog, edge]
+        root: {id: cloud, aggregator: fedavg, server_optimizer: replace, quorum: 0.5, deadline: 1200s}
+        fog:
+          defaults: {aggregator: fedavg, quorum: 0.5, deadline: 500s, link_up: {transport: mqtt, codec: npz}}
+          nodes: [{id: hub}]
+        edge: {link_up: {transport: mqtt, codec: npz}}
+    - - fog_a: [cifar10-client_0, cifar10-client_1, cifar10-client_2, cifar10-client_3, cifar10-client_4]
+        fog_b: [cifar10-client_5, cifar10-client_6, cifar10-client_7, cifar10-client_8, cifar10-client_9]
+      - {fog_a: fog-a1, fog_b: fog-b1}
+      - name: dt_two_levels
+        levels: [global, fog, edge]
+        root: {id: cloud, aggregator: fedavg, server_optimizer: replace, quorum: 0.5, deadline: 1200s}
+        fog:
+          defaults: {aggregator: fedavg, quorum: 0.5, deadline: 500s, link_up: {transport: mqtt, codec: npz}}
+          nodes: [{id: fog_a}, {id: fog_b}]
+        edge: {link_up: {transport: mqtt, codec: npz}}
+    - - fog_a1: [cifar10-client_0, cifar10-client_1, cifar10-client_2]
+        fog_a2: [cifar10-client_3, cifar10-client_4]
+        fog_b1: [cifar10-client_5, cifar10-client_6, cifar10-client_7]
+        fog_b2: [cifar10-client_8, cifar10-client_9]
+      - {region_a: gw-a, region_b: gw-b, fog_a1: fog-a1, fog_a2: fog-a2, fog_b1: fog-b1, fog_b2: fog-b2}
+      - name: dt_three_levels
+        levels: [global, region, fog, edge]
+        root: {id: cloud, aggregator: fedavg, server_optimizer: replace, quorum: 0.5, deadline: 1200s}
+        region:
+          defaults: {aggregator: fedavg, quorum: 0.5, deadline: 800s, link_up: {transport: mqtt, codec: npz}}
+          nodes: [{id: region_a}, {id: region_b}]
+        fog:
+          defaults: {aggregator: fedavg, quorum: 0.5, deadline: 500s, link_up: {transport: mqtt, codec: npz}}
+          nodes:
+            - {id: fog_a1, parent: region_a}
+            - {id: fog_a2, parent: region_a}
+            - {id: fog_b1, parent: region_b}
+            - {id: fog_b2, parent: region_b}
+        edge: {link_up: {transport: mqtt, codec: npz}}
+  # degradation; null leaves a setting out (no availability model, no autonomy)
+  infrastructure.failover,infrastructure.name,topology.edge.availability,topology.fog.defaults.autonomy,topology.fog.defaults.quorum:
+    - [none, degradation_lab,           null, null, 0.5]                          # nominal
+    - [none, degradation_lab_loss5,     null, null, 0.5]                          # loss5
+    - [none, degradation_lab_loss20,    null, null, 0.5]                          # loss20
+    - [none, degradation_lab_4g,        null, null, 0.5]                          # 4g
+    - [none, degradation_lab,           {name: bernoulli, p: 0.2}, null, 0.5]     # dropout
+    - [none, degradation_lab,           {name: bernoulli, p: 0.2}, null, 1.0]     # dropout_k1
+    - [{name: nearest_alive, after: 500s}, degradation_lab_crash_cifar10, null, null, 0.5]  # crash
+    - [none, degradation_lab_partition_cifar10, null, null, 0.5]                          # partition
+    - [none, degradation_lab_partition_cifar10, null, {after: 1500s}, 0.5]                  # partition_autonomy
