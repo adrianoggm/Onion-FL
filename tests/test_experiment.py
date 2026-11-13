@@ -534,6 +534,30 @@ def test_a_plugin_given_whole_is_labelled_compactly(workspace: Path) -> None:
     ]
 
 
+def test_a_path_swept_into_a_swept_value_does_not_leak_between_scenarios(
+    workspace: Path,
+) -> None:
+    flat = TOPOLOGY | {
+        "name": "flat",
+        "fog": {"defaults": {}, "nodes": [{"id": "hub"}]},
+    }
+    two = TOPOLOGY | {"fog": {"defaults": {}, "nodes": TOPOLOGY["fog"]["nodes"]}}
+    config = parse_experiment(
+        experiment(
+            workspace,
+            sweep={"topology": [flat, two], "topology.fog.defaults.quorum": [1, 2]},
+        )
+    )
+
+    out = scenarios(config)
+
+    assert [
+        (s.config.topology["name"], s.config.topology["fog"]["defaults"]["quorum"])
+        for s in out
+    ] == [("flat", 1), ("flat", 2), ("two_fogs", 1), ("two_fogs", 2)]
+    assert flat["fog"]["defaults"] == {}  # the sweep's own values stay as written
+
+
 def test_a_joint_sweep_key_may_have_spaces_after_its_commas(workspace: Path) -> None:
     config = parse_experiment(
         experiment(workspace, sweep={"learning.trainer.shift, rounds": [[2.0, 3]]})
