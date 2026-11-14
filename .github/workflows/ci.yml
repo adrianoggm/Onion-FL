@@ -13,7 +13,7 @@ jobs:
     # A hung test must not hold the runner for hours.
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v5
