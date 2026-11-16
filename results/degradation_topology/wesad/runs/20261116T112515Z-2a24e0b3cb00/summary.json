@@ -1,0 +1,13 @@
+{
+  "rounds": 20,
+  "finished": true,
+  "t_virtual_end": 100.14557688005071,
+  "wall_seconds": 22.714784700016025,
+  "messages": {
+    "sent": 446,
+    "bytes": 13550751,
+    "dropped": 42
+  },
+  "quorum_failed": 20,
+  "final": {}
+}

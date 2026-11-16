@@ -1,0 +1,36 @@
+{
+  "rounds": 20,
+  "finished": true,
+  "t_virtual_end": 71.21869298103809,
+  "wall_seconds": 29.693987599981483,
+  "messages": {
+    "sent": 859,
+    "bytes": 26009023,
+    "dropped": 5
+  },
+  "quorum_failed": 0,
+  "autonomous_rounds": {
+    "fog_a1": 10,
+    "fog_a2": 10
+  },
+  "final": {
+    "global/*": {
+      "round": 20,
+      "accuracy": 0.813953488372093,
+      "loss": 0.6465729480798817,
+      "macro_f1": 0.8063041495087351
+    },
+    "global/wesad": {
+      "round": 20,
+      "accuracy": 0.813953488372093,
+      "loss": 0.6465729480798817,
+      "macro_f1": 0.8063041495087351
+    },
+    "received/*": {
+      "round": 20,
+      "accuracy": 0.8421052631578947,
+      "loss": 0.87064815279172,
+      "macro_f1": 0.7797260244628665
+    }
+  }
+}

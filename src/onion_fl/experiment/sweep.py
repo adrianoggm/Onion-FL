@@ -153,7 +153,13 @@ def _label(value: Any) -> str:
 
 
 def _apply(resolved: dict[str, Any], key: str, value: Any) -> str:
-    """Set one sweep entry and return its label; ``a,b`` sets several paths at once."""
+    """Set one sweep entry and return its label; ``a,b`` sets several paths at once.
+
+    The value is copied: a later key may sweep a path inside it
+    (``topology``, then ``topology.fog.defaults.quorum``), and the parsed
+    configs keep nested mappings by reference.
+    """
+    value = copy.deepcopy(value)
     paths = [path.strip() for path in key.split(",")]
     key = ",".join(paths)
     if len(paths) == 1:

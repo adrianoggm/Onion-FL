@@ -1,0 +1,283 @@
+{
+  "run_id": "20261113T093538Z-906928e631fe",
+  "topology_id": "2af190ee5e35bd43947a267e128a94122495feb512c0f95c8f3dc302ca063051",
+  "config_id": "793b7b3ae7bac8ec32d8d957a30625c7b9b641cd8e21db70b49a63ccc8bec255",
+  "backend": "sim",
+  "infrastructure_id": "e98f721ac6b6b702380b9e0fd60b6ea16f49b57aa9091e5a97c38f5884c4a724",
+  "data_id": "9b532eefac6c222371863d1f210b9b855917f293b53f92f10f21a1c926f5a23f",
+  "code_version": {
+    "commit": "ee75386fbe00452a5c16913d58ae870fa4c417ab",
+    "dirty": false
+  },
+  "seed": 1,
+  "scenario": "data.placement.assignment,infrastructure.assignment.aggregators,topology={'fog_a': ['cifar10-client_0', 'cifar10-client_1', 'cifar10-client_2', 'cifar10-client_3', 'cifar10-client_4'], 'fog_b': ['cifar10-client_5', 'cifar10-client_6', 'cifar10-client_7', 'cifar10-client_8', 'cifar10-client_9']},{'fog_a': 'fog-a1', 'fog_b': 'fog-b1'},dt_two_levels(edge={'link_up': {'transport': 'mqtt', 'codec': 'npz'}},fog={'defaults': {'aggregator': 'fedavg', 'quorum': 0.5, 'deadline': '500s', 'link_up': {'transport': 'mqtt', 'codec': 'npz'}}, 'nodes': [{'id': 'fog_a'}, {'id': 'fog_b'}]},levels=['global', 'fog', 'edge'],root={'id': 'cloud', 'aggregator': 'fedavg', 'server_optimizer': 'replace', 'quorum': 0.5, 'deadline': '1200s'}),infrastructure.failover,infrastructure.name,topology.edge.availability,topology.fog.defaults.autonomy,topology.fog.defaults.quorum=none,degradation_lab_loss20,None,None,0.5",
+  "host": "2INNDESLP100930",
+  "pid": 101032,
+  "started_at": "2026-11-13T09:35:38.703596+00:00",
+  "status": "finished",
+  "config": {
+    "name": "degradation_topology_cifar10",
+    "description": "Estudio prerregistrado degradaci\u00f3n \u00d7 topolog\u00eda (plana, dos y tres niveles) en CIFAR-10 Dir(0,5) con la CNN de NIID-Bench.",
+    "topology": {
+      "name": "dt_two_levels",
+      "levels": [
+        "global",
+        "fog",
+        "edge"
+      ],
+      "root": {
+        "id": "cloud",
+        "aggregator": "fedavg",
+        "server_optimizer": "replace",
+        "quorum": 0.5,
+        "deadline": "1200s"
+      },
+      "fog": {
+        "defaults": {
+          "aggregator": "fedavg",
+          "quorum": 0.5,
+          "deadline": "500s",
+          "link_up": {
+            "transport": "mqtt",
+            "codec": "npz"
+          },
+          "autonomy": null
+        },
+        "nodes": [
+          {
+            "id": "fog_a"
+          },
+          {
+            "id": "fog_b"
+          }
+        ]
+      },
+      "edge": {
+        "link_up": {
+          "transport": "mqtt",
+          "codec": "npz"
+        },
+        "availability": null
+      }
+    },
+    "data": {
+      "datasets": {
+        "cifar10": {
+          "descriptor": null,
+          "options": {
+            "partition": "dirichlet_label",
+            "alpha": 0.5,
+            "clients": 10
+          }
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.0,
+        "overrides": {
+          "cifar10": {
+            "test": [
+              "test"
+            ],
+            "val": [],
+            "exclude": []
+          }
+        },
+        "seed": 0,
+        "local_val": 0.0,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "explicit",
+        "assignment": {
+          "fog_a": [
+            "cifar10-client_0",
+            "cifar10-client_1",
+            "cifar10-client_2",
+            "cifar10-client_3",
+            "cifar10-client_4"
+          ],
+          "fog_b": [
+            "cifar10-client_5",
+            "cifar10-client_6",
+            "cifar10-client_7",
+            "cifar10-client_8",
+            "cifar10-client_9"
+          ]
+        }
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "torch_module",
+        "module": "niid_bench_cnn"
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "local_epochs": 10,
+        "batch_size": 64,
+        "lr": 0.01,
+        "optimizer": "sgd",
+        "momentum": 0.9
+      },
+      "init": "random"
+    },
+    "rounds": 20,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": 5,
+        "models": [
+          "received"
+        ]
+      },
+      "aggregators": {
+        "every": null,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    },
+    "infrastructure": {
+      "name": "degradation_lab_loss20",
+      "assignment": {
+        "root": "cloud-1",
+        "aggregators": {
+          "fog_a": "fog-a1",
+          "fog_b": "fog-b1"
+        },
+        "edges": {
+          "name": "explicit",
+          "hosts": {
+            "cifar10-client_0": "field_a-raspberry_pi-1",
+            "cifar10-client_1": "field_a-raspberry_pi-2",
+            "cifar10-client_2": "field_a-raspberry_pi-3",
+            "cifar10-client_3": "field_a-raspberry_pi-4",
+            "cifar10-client_4": "field_a-raspberry_pi-5",
+            "cifar10-client_5": "field_b-raspberry_pi-1",
+            "cifar10-client_6": "field_b-raspberry_pi-2",
+            "cifar10-client_7": "field_b-raspberry_pi-3",
+            "cifar10-client_8": "field_b-raspberry_pi-4",
+            "cifar10-client_9": "field_b-raspberry_pi-5"
+          }
+        },
+        "services": {}
+      },
+      "failover": "none"
+    }
+  },
+  "diagnostic": {
+    "statistic": "label_divergence",
+    "covariance": 0.0,
+    "D": 0.0,
+    "statistics": {
+      "label_divergence": {
+        "covariance": 0.0,
+        "D": 0.0
+      },
+      "gradient_norm": {
+        "covariance": 0.0,
+        "D": 0.0
+      }
+    },
+    "participation": 1.0,
+    "floss": {
+      "participation": 1.0,
+      "rounds_factor": 1.0
+    },
+    "deadlines": [
+      "cloud",
+      "fog_a",
+      "fog_b"
+    ],
+    "unknown": [],
+    "edges": {
+      "cifar10-client_0": {
+        "p": 1.0,
+        "w": 0.10618,
+        "label_divergence": 1.022762596634729,
+        "gradient_norm": 0.7907296419143677
+      },
+      "cifar10-client_1": {
+        "p": 1.0,
+        "w": 0.10218,
+        "label_divergence": 1.177758203655898,
+        "gradient_norm": 0.8307269811630249
+      },
+      "cifar10-client_2": {
+        "p": 1.0,
+        "w": 0.13088,
+        "label_divergence": 1.2510957334985877,
+        "gradient_norm": 0.7635247111320496
+      },
+      "cifar10-client_3": {
+        "p": 1.0,
+        "w": 0.10582,
+        "label_divergence": 0.8240284248057126,
+        "gradient_norm": 0.5805836319923401
+      },
+      "cifar10-client_4": {
+        "p": 1.0,
+        "w": 0.0935,
+        "label_divergence": 0.7604074360831584,
+        "gradient_norm": 0.6464390158653259
+      },
+      "cifar10-client_5": {
+        "p": 1.0,
+        "w": 0.1072,
+        "label_divergence": 0.5600146971230529,
+        "gradient_norm": 0.4856327176094055
+      },
+      "cifar10-client_6": {
+        "p": 1.0,
+        "w": 0.08646,
+        "label_divergence": 0.765295777220415,
+        "gradient_norm": 0.6180339455604553
+      },
+      "cifar10-client_7": {
+        "p": 1.0,
+        "w": 0.10434,
+        "label_divergence": 0.8654747772739011,
+        "gradient_norm": 0.7084918022155762
+      },
+      "cifar10-client_8": {
+        "p": 1.0,
+        "w": 0.04738,
+        "label_divergence": 0.565117394205271,
+        "gradient_norm": 0.534411609172821
+      },
+      "cifar10-client_9": {
+        "p": 1.0,
+        "w": 0.11606,
+        "label_divergence": 1.0700259626702664,
+        "gradient_norm": 0.6066316962242126
+      }
+    },
+    "seconds": 6.359591299988097
+  },
+  "finished_at": "2026-11-13T09:59:14.188766+00:00",
+  "run_hash": "2ebe582e7f79fe930531023171be384ccd8b39eb35e7331c43a1daf2dd333bea"
+}

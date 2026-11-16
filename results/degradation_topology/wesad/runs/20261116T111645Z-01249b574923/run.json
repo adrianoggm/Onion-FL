@@ -1,0 +1,271 @@
+{
+  "run_id": "20261116T111645Z-01249b574923",
+  "topology_id": "4aeae8368838f01c971588156d47235c0ed25e42ec2321df3a3c8a4abe3c6e78",
+  "config_id": "131f0940f9ac2da06c242a504598ed08f91a2a80a02b8a46c3510d32ca72c149",
+  "backend": "sim",
+  "infrastructure_id": "c399d01a74361e7e3973b4323e3fef57ff84b71ab751fa7e129d10b0f0087cbb",
+  "data_id": "f43084b48e54099479f91bc818a0609ef15de465a10a03bbdeee92665b61b3c6",
+  "code_version": {
+    "commit": "b277ac78a4c6af00623283b126470353d7e0c96d",
+    "dirty": false
+  },
+  "seed": 109,
+  "scenario": "data.placement.assignment,infrastructure.assignment.aggregators,topology={'hub': ['wesad-S2', 'wesad-S3', 'wesad-S5', 'wesad-S8', 'wesad-S9', 'wesad-S13', 'wesad-S14', 'wesad-S15', 'wesad-S16', 'wesad-S17', 'wesad-S4', 'wesad-S11']},{'hub': 'cloud-1'},dt_flat(edge={'link_up': {'transport': 'mqtt', 'codec': 'npz'}},fog={'defaults': {'aggregator': 'fedavg', 'quorum': 0.5, 'deadline': '5s', 'link_up': {'transport': 'mqtt', 'codec': 'npz'}}, 'nodes': [{'id': 'hub'}]},levels=['global', 'fog', 'edge'],root={'id': 'cloud', 'aggregator': 'fedavg', 'server_optimizer': 'replace', 'quorum': 0.5, 'deadline': '12s'}),infrastructure.failover,infrastructure.name,topology.edge.availability,topology.fog.defaults.autonomy,topology.fog.defaults.quorum=none,degradation_lab_loss5,None,None,0.5",
+  "host": "2INNDESLP100930",
+  "pid": 142368,
+  "started_at": "2026-11-16T11:16:45.933202+00:00",
+  "status": "finished",
+  "config": {
+    "name": "degradation_topology_wesad",
+    "description": "Estudio prerregistrado degradaci\u00f3n \u00d7 topolog\u00eda (plana, dos y tres niveles) en WESAD.",
+    "topology": {
+      "name": "dt_flat",
+      "levels": [
+        "global",
+        "fog",
+        "edge"
+      ],
+      "root": {
+        "id": "cloud",
+        "aggregator": "fedavg",
+        "server_optimizer": "replace",
+        "quorum": 0.5,
+        "deadline": "12s"
+      },
+      "fog": {
+        "defaults": {
+          "aggregator": "fedavg",
+          "quorum": 0.5,
+          "deadline": "5s",
+          "link_up": {
+            "transport": "mqtt",
+            "codec": "npz"
+          },
+          "autonomy": null
+        },
+        "nodes": [
+          {
+            "id": "hub"
+          }
+        ]
+      },
+      "edge": {
+        "link_up": {
+          "transport": "mqtt",
+          "codec": "npz"
+        },
+        "availability": null
+      }
+    },
+    "data": {
+      "datasets": {
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.2,
+        "local_val_split": "class_tail",
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "explicit",
+        "assignment": {
+          "hub": [
+            "wesad-S2",
+            "wesad-S3",
+            "wesad-S5",
+            "wesad-S8",
+            "wesad-S9",
+            "wesad-S13",
+            "wesad-S14",
+            "wesad-S15",
+            "wesad-S16",
+            "wesad-S17",
+            "wesad-S4",
+            "wesad-S11"
+          ]
+        }
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "optimizer": "sgd",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.1
+      },
+      "init": "random"
+    },
+    "rounds": 20,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": 5,
+        "models": [
+          "received"
+        ]
+      },
+      "aggregators": {
+        "every": 5,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    },
+    "infrastructure": {
+      "name": "degradation_lab_loss5",
+      "assignment": {
+        "root": "cloud-1",
+        "aggregators": {
+          "hub": "cloud-1"
+        },
+        "edges": {
+          "name": "explicit",
+          "hosts": {
+            "wesad-S2": "field_a-raspberry_pi-1",
+            "wesad-S3": "field_a-raspberry_pi-2",
+            "wesad-S5": "field_a-raspberry_pi-3",
+            "wesad-S8": "field_a-raspberry_pi-4",
+            "wesad-S9": "field_a-raspberry_pi-5",
+            "wesad-S13": "field_b-raspberry_pi-1",
+            "wesad-S14": "field_b-raspberry_pi-2",
+            "wesad-S15": "field_b-raspberry_pi-3",
+            "wesad-S16": "field_b-raspberry_pi-4",
+            "wesad-S17": "field_b-raspberry_pi-5"
+          }
+        },
+        "services": {}
+      },
+      "failover": "none"
+    }
+  },
+  "diagnostic": {
+    "statistic": "label_divergence",
+    "covariance": 0.0,
+    "D": 0.0,
+    "statistics": {
+      "label_divergence": {
+        "covariance": 0.0,
+        "D": 0.0
+      },
+      "gradient_norm": {
+        "covariance": 0.0,
+        "D": 0.0
+      }
+    },
+    "participation": 1.0,
+    "floss": {
+      "participation": 1.0,
+      "rounds_factor": 1.0
+    },
+    "deadlines": [
+      "cloud",
+      "hub"
+    ],
+    "unknown": [],
+    "edges": {
+      "wesad-S13": {
+        "p": 1.0,
+        "w": 0.10021786492374728,
+        "label_divergence": 1.8956414659254944e-05,
+        "gradient_norm": 0.29862040281295776
+      },
+      "wesad-S14": {
+        "p": 1.0,
+        "w": 0.10021786492374728,
+        "label_divergence": 1.8956414659254944e-05,
+        "gradient_norm": 0.19935382902622223
+      },
+      "wesad-S15": {
+        "p": 1.0,
+        "w": 0.10239651416122005,
+        "label_divergence": 0.00026153385947247365,
+        "gradient_norm": 0.2581939995288849
+      },
+      "wesad-S16": {
+        "p": 1.0,
+        "w": 0.10021786492374728,
+        "label_divergence": 1.8956414659254944e-05,
+        "gradient_norm": 0.35844579339027405
+      },
+      "wesad-S17": {
+        "p": 1.0,
+        "w": 0.10457516339869281,
+        "label_divergence": 0.0012769059675117253,
+        "gradient_norm": 0.22490103542804718
+      },
+      "wesad-S2": {
+        "p": 1.0,
+        "w": 0.09586056644880174,
+        "label_divergence": 0.00021411029494812495,
+        "gradient_norm": 0.4019581377506256
+      },
+      "wesad-S3": {
+        "p": 1.0,
+        "w": 0.09803921568627451,
+        "label_divergence": 5.033533547238022e-05,
+        "gradient_norm": 0.2512868642807007
+      },
+      "wesad-S5": {
+        "p": 1.0,
+        "w": 0.09803921568627451,
+        "label_divergence": 0.000672262433975019,
+        "gradient_norm": 0.3147825300693512
+      },
+      "wesad-S8": {
+        "p": 1.0,
+        "w": 0.10239651416122005,
+        "label_divergence": 0.00026153385947247365,
+        "gradient_norm": 0.27567175030708313
+      },
+      "wesad-S9": {
+        "p": 1.0,
+        "w": 0.09803921568627451,
+        "label_divergence": 0.000672262433975019,
+        "gradient_norm": 0.2665674388408661
+      }
+    },
+    "seconds": 0.11550409998744726
+  },
+  "finished_at": "2026-11-16T11:17:08.424662+00:00",
+  "run_hash": "0ea06f55430854fbb517eaea6b978c6fccdff5751ef4d933de0adcd0e35261dc"
+}
