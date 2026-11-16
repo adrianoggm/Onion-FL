@@ -26,6 +26,6 @@ evaluation:
   edge: {every: 5}
   aggregators: {every: 5}
   global: {every: 1}
-seeds: [0, 1, 2]
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 sweep:
   data.placement.alpha: [0.0, 0.5, 1.0]
