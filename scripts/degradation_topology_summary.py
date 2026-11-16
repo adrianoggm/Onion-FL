@@ -147,7 +147,10 @@ def metrics(path: Path, target: float) -> dict:
         z: [v for node, v in edges.items() if zone.get(node) == z] for z in ("a", "b")
     }
     zone_f1 = {z: float(np.mean(v)) if v else None for z, v in per_zone.items()}
-    final = summary["final"]["global/*"]
+    final = summary["final"].get("global/*")
+    rescored = final is None
+    if rescored:  # no root round ever closed: the coordinator holds the init
+        final = rescore(path, meta)
     gap = (
         abs(zone_f1["a"] - zone_f1["b"])
         if None not in (zone_f1["a"], zone_f1["b"])
@@ -161,6 +164,7 @@ def metrics(path: Path, target: float) -> dict:
         "seed": meta["seed"],
         "macro_f1": final["macro_f1"],
         "accuracy": final["accuracy"],
+        "rescored": rescored,
         "time_to_target_s": reached,
         "target_reached": hit,
         "duration_s": end,
@@ -181,6 +185,41 @@ def metrics(path: Path, target: float) -> dict:
         "commit": code.get("commit"),
         "dirty": code.get("dirty"),
     }
+
+
+def rescore(path: Path, meta: dict) -> dict[str, float]:
+    """The final global metrics of a run in which no root round closed (flat
+    under ``dropout_k1``), so no global evaluation was ever emitted: the run's
+    ``model.npz`` (the initial model, never replaced) scored on the test
+    subjects the coordinator's evaluators hold, per subject and then weighted
+    by rows, as ``global/*`` is. On runs that have ``global/*`` this gives the
+    same values exactly."""
+    from onion_fl.experiment.config import parse_experiment
+    from onion_fl.experiment.runner import _scenario_data
+    from onion_fl.experiment.sweep import Scenario
+    from onion_fl.learning.metrics import compute, predict
+    from onion_fl.learning.model import load_arrays, models
+    from onion_fl.roles.policies import create
+
+    config = parse_experiment(meta["config"])
+    scenario = Scenario(meta["scenario"], meta["seed"], config, meta["config_id"])
+    _, split, _, _ = _scenario_data(scenario, parent=None)
+    with np.load(path / "model.npz") as npz:
+        state = {k: npz[k] for k in npz.files}
+    model = create(models, config.learning.model).build(
+        [split.test[0].shape], seed=meta["seed"]
+    )
+    load_arrays(model, state)
+    totals, rows = defaultdict(float), 0
+    for subject in split.test:
+        y = np.asarray(subject.y, np.int64)
+        scores = compute(
+            predict(model, subject.X), y, subject.n_classes, ["macro_f1", "accuracy"]
+        )
+        for name, value in scores.items():
+            totals[name] += value * len(y)
+        rows += len(y)
+    return {name: value / rows for name, value in totals.items()}
 
 
 def _value(row: dict, metric: str) -> float | None:
