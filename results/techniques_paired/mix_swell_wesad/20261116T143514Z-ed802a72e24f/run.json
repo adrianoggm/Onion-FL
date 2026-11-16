@@ -1,0 +1,306 @@
+{
+  "run_id": "20261116T143514Z-ed802a72e24f",
+  "topology_id": "9033d1cf2c9e348b4067c92173a36fd151b3077cf0c93b5a592d8d188df05f32",
+  "config_id": "48deeaaa456ce6e29a30b39fbc27ee9d5d2ce4c438426d06f76502930eedd946",
+  "backend": "sim",
+  "infrastructure_id": null,
+  "data_id": "9fd573754157d68b111f037ecd891bdb62abcbff1d5e5e818da789dde470257c",
+  "code_version": {
+    "commit": "049242f47e8f528b7f21213928ff7044965c1eb1",
+    "dirty": false
+  },
+  "seed": 2,
+  "scenario": "data.placement.alpha=0.0",
+  "host": "2INNDESLP100930",
+  "pid": 218924,
+  "started_at": "2026-11-16T14:35:15.168145+00:00",
+  "status": "finished",
+  "config": {
+    "name": "mix_swell_wesad",
+    "description": "SWELL and WESAD over four fogs, from segregated to fully mixed placement.",
+    "topology": "four_fogs_swell_wesad",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        },
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.2,
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.0
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.003
+      },
+      "init": "random"
+    },
+    "rounds": 20,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": 5,
+        "models": [
+          "received",
+          "local"
+        ]
+      },
+      "aggregators": {
+        "every": 5,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    }
+  },
+  "diagnostic": {
+    "statistic": "label_divergence",
+    "covariance": 0.0,
+    "D": 0.0,
+    "statistics": {
+      "label_divergence": {
+        "covariance": 0.0,
+        "D": 0.0
+      },
+      "gradient_norm": {
+        "covariance": 0.0,
+        "D": 0.0
+      }
+    },
+    "participation": 1.0,
+    "floss": {
+      "participation": 1.0000000000000002,
+      "rounds_factor": 0.9999999999999998
+    },
+    "deadlines": [
+      "cloud",
+      "fog_a1",
+      "fog_a2",
+      "fog_b1",
+      "fog_b2"
+    ],
+    "unknown": [],
+    "edges": {
+      "swell-11": {
+        "p": 1.0,
+        "w": 0.04509283819628647,
+        "label_divergence": 0.00013294031179566894,
+        "gradient_norm": 0.1963290125131607
+      },
+      "swell-13": {
+        "p": 1.0,
+        "w": 0.044650751547303275,
+        "label_divergence": 7.110370340361518e-05,
+        "gradient_norm": 0.17650166153907776
+      },
+      "swell-14": {
+        "p": 1.0,
+        "w": 0.04553492484526967,
+        "label_divergence": 1.0058220775993262e-05,
+        "gradient_norm": 0.18224917352199554
+      },
+      "swell-15": {
+        "p": 1.0,
+        "w": 0.04288240495137047,
+        "label_divergence": 0.00033280366443056743,
+        "gradient_norm": 0.16273166239261627
+      },
+      "swell-16": {
+        "p": 1.0,
+        "w": 0.04553492484526967,
+        "label_divergence": 1.0058220775993262e-05,
+        "gradient_norm": 0.5988242030143738
+      },
+      "swell-17": {
+        "p": 1.0,
+        "w": 0.04553492484526967,
+        "label_divergence": 1.0058220775993262e-05,
+        "gradient_norm": 0.18769173324108124
+      },
+      "swell-20": {
+        "p": 1.0,
+        "w": 0.04553492484526967,
+        "label_divergence": 1.0058220775993262e-05,
+        "gradient_norm": 0.1838957518339157
+      },
+      "swell-21": {
+        "p": 1.0,
+        "w": 0.03757736516357206,
+        "label_divergence": 0.014406117361700166,
+        "gradient_norm": 0.06014781445264816
+      },
+      "swell-22": {
+        "p": 1.0,
+        "w": 0.044650751547303275,
+        "label_divergence": 3.363259368515097e-05,
+        "gradient_norm": 0.18877841532230377
+      },
+      "swell-23": {
+        "p": 1.0,
+        "w": 0.04553492484526967,
+        "label_divergence": 1.0058220775993262e-05,
+        "gradient_norm": 0.18759796023368835
+      },
+      "swell-24": {
+        "p": 1.0,
+        "w": 0.04597701149425287,
+        "label_divergence": 7.769446670009665e-05,
+        "gradient_norm": 0.19213686883449554
+      },
+      "swell-3": {
+        "p": 1.0,
+        "w": 0.04509283819628647,
+        "label_divergence": 0.001588545492026524,
+        "gradient_norm": 0.2291829138994217
+      },
+      "swell-4": {
+        "p": 1.0,
+        "w": 0.04509283819628647,
+        "label_divergence": 0.00013294031179566894,
+        "gradient_norm": 0.19748041033744812
+      },
+      "swell-5": {
+        "p": 1.0,
+        "w": 0.04420866489832007,
+        "label_divergence": 0.0002060823923233871,
+        "gradient_norm": 0.20061731338500977
+      },
+      "swell-6": {
+        "p": 1.0,
+        "w": 0.044650751547303275,
+        "label_divergence": 7.110370340361518e-05,
+        "gradient_norm": 0.1762128472328186
+      },
+      "swell-7": {
+        "p": 1.0,
+        "w": 0.04597701149425287,
+        "label_divergence": 7.769446670009665e-05,
+        "gradient_norm": 0.19008368253707886
+      },
+      "swell-8": {
+        "p": 1.0,
+        "w": 0.04111405835543767,
+        "label_divergence": 0.00018155215185711518,
+        "gradient_norm": 0.16931797564029694
+      },
+      "swell-9": {
+        "p": 1.0,
+        "w": 0.04332449160035367,
+        "label_divergence": 0.0010263108595213594,
+        "gradient_norm": 0.21904222667217255
+      },
+      "wesad-S13": {
+        "p": 1.0,
+        "w": 0.020335985853227233,
+        "label_divergence": 0.0006800303601260244,
+        "gradient_norm": 0.5283327102661133
+      },
+      "wesad-S14": {
+        "p": 1.0,
+        "w": 0.020335985853227233,
+        "label_divergence": 0.0006800303601260244,
+        "gradient_norm": 0.5482354760169983
+      },
+      "wesad-S15": {
+        "p": 1.0,
+        "w": 0.020335985853227233,
+        "label_divergence": 0.0001807331247969347,
+        "gradient_norm": 0.5595017075538635
+      },
+      "wesad-S16": {
+        "p": 1.0,
+        "w": 0.020335985853227233,
+        "label_divergence": 0.0001807331247969347,
+        "gradient_norm": 0.5521842241287231
+      },
+      "wesad-S17": {
+        "p": 1.0,
+        "w": 0.020778072502210435,
+        "label_divergence": 0.0019158832004564953,
+        "gradient_norm": 0.4866766631603241
+      },
+      "wesad-S2": {
+        "p": 1.0,
+        "w": 0.019451812555260833,
+        "label_divergence": 0.0001337909296464006,
+        "gradient_norm": 0.57512366771698
+      },
+      "wesad-S3": {
+        "p": 1.0,
+        "w": 0.01989389920424403,
+        "label_divergence": 0.0004498580193673177,
+        "gradient_norm": 0.4919968545436859
+      },
+      "wesad-S5": {
+        "p": 1.0,
+        "w": 0.020335985853227233,
+        "label_divergence": 0.0006800303601260244,
+        "gradient_norm": 0.6269575953483582
+      },
+      "wesad-S8": {
+        "p": 1.0,
+        "w": 0.020335985853227233,
+        "label_divergence": 0.0001807331247969347,
+        "gradient_norm": 0.5089513063430786
+      },
+      "wesad-S9": {
+        "p": 1.0,
+        "w": 0.01989389920424403,
+        "label_divergence": 0.0003595770077033326,
+        "gradient_norm": 0.540761411190033
+      }
+    },
+    "seconds": 0.17254960001446307
+  },
+  "finished_at": "2026-11-16T14:36:40.558373+00:00",
+  "run_hash": "9eb5dee05da19904c308860244d63b2924b8a5d51265a6eb96f747c89660b0e9"
+}

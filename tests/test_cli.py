@@ -350,7 +350,7 @@ def test_the_example_experiment_plans_on_real_data(capsys) -> None:
 def test_the_swell_wesad_experiment_plans_on_real_data(capsys) -> None:
     code, out, _ = run(capsys, "plan", "experiments/mix_swell_wesad.yaml")
 
-    assert code == 0 and len(json.loads(out)) == 9
+    assert code == 0 and len(json.loads(out)) == 30  # 3 placements x 10 seeds
 
 
 def test_topology_show_draws_mermaid(capsys, workspace: Path) -> None:
