@@ -128,8 +128,10 @@ Each dataset is analysed separately. α = 0.05. The pairing unit is the seed: al
   - If the largest exceeds 30, the cells whose power at n = 30 (`paired_power`) is under 0.8 are listed in the INDEX as underpowered. Their `inconclusive` verdicts are no evidence of anything.
   - H2 is not powered by this rule. Its power at n is reported.
 - **Main-run seeds:** 100 … 100 + n − 1. They are disjoint from the pilot and the design check, whose runs never enter the confirmatory analysis.
-- **n (WESAD) = _to be filled from the pilot before the main run_.**
-- **n (CIFAR-10) = _to be filled from the pilot before the main run_.**
+- **n (WESAD) = 30**, seeds 100–129. The pilot (`results/degradation_topology/pilot/wesad/`, 81 runs at `ee75386`, clean tree) gave a largest `seeds_needed` of 1205 (time to target, `loss5`, *flat − two*), so n is clamped to 30. The contrasts underpowered at n = 30 (power under 0.8 from the pilot's `sd_diff`), whose `inconclusive` verdicts are no evidence of anything:
+  - macro-F1: `dropout_k1` *flat − two* (0.08), `partition` *flat − two* (0.63);
+  - time to target: `loss5` *flat − two* (0.07) and *three − two* (0.17), `loss20` *three − two* (0.27), `dropout` *flat − two* (0.24) and *three − two* (0.22), `dropout_k1` *three − two* (0.51).
+- **n (CIFAR-10) = 0: no main run** (§8).
 
 ## 7. Exclusions
 
@@ -150,6 +152,7 @@ A CIFAR-10 run takes about 14 min of wall time on this machine (§9), against ab
   - the autonomy effect cannot be separated from the partition's.
 - WESAD keeps all 27 cells and answers those parts alone.
 - The user confirms the CIFAR-10 cells and n before the main run, and §6 records them.
+- **Decision (2026-11-16, before the main run):** CIFAR-10 has no main run. The pilot's CIFAR-10 runs took about 23 min each with six in parallel. The seed rule gives n = 30, so the reduced design would be 450 runs, about 29 h on this machine. The study's confirmatory answer is WESAD only. The 6 CIFAR-10 pilot runs (`loss20`, *flat* and *two*, seeds 0–2) are committed in `results/degradation_topology/pilot/cifar10/` and are exploratory: the INDEX may describe them, never as a test.
 
 ## 9. Before this file: the design check and the pilot
 

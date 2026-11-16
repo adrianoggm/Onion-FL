@@ -75,7 +75,7 @@ infrastructure:
         wesad-S15: field_b-raspberry_pi-3
         wesad-S16: field_b-raspberry_pi-4
         wesad-S17: field_b-raspberry_pi-5
-seeds: [0, 1, 2]  # the pilot's; the main run's seeds are fixed in the pre-registration
+seeds: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129]  # the main run (pre-registration §6); the pilot used 0-2
 sweep:
   # topology (applied first: the key sorts before the degradation key)
   data.placement.assignment,infrastructure.assignment.aggregators,topology:
