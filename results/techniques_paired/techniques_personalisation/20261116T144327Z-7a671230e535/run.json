@@ -1,0 +1,315 @@
+{
+  "run_id": "20261116T144327Z-7a671230e535",
+  "topology_id": "9033d1cf2c9e348b4067c92173a36fd151b3077cf0c93b5a592d8d188df05f32",
+  "config_id": "8868d837be8dff1e9583ff8dc746ef57ff4b642be470e75bb7843e08d2ad0818",
+  "backend": "sim",
+  "infrastructure_id": null,
+  "data_id": "9fd573754157d68b111f037ecd891bdb62abcbff1d5e5e818da789dde470257c",
+  "code_version": {
+    "commit": "049242f47e8f528b7f21213928ff7044965c1eb1",
+    "dirty": false
+  },
+  "seed": 4,
+  "scenario": "learning.sharing,learning.trainer.name=fedavg,standard",
+  "host": "2INNDESLP100930",
+  "pid": 282684,
+  "started_at": "2026-11-16T14:43:28.214660+00:00",
+  "status": "finished",
+  "config": {
+    "name": "techniques_personalisation",
+    "description": "Personalizaci\u00f3n (FedAvg, FedPer, LG-FedAvg, Ditto, APFL, FedRep, FedBABU) sobre SWELL y WESAD.",
+    "topology": "four_fogs_swell_wesad",
+    "data": {
+      "datasets": {
+        "swell": {
+          "descriptor": null,
+          "options": {}
+        },
+        "wesad": {
+          "descriptor": null,
+          "options": {}
+        }
+      },
+      "roles": {
+        "test": 0.2,
+        "val": 0.1,
+        "overrides": {},
+        "seed": 0,
+        "local_val": 0.2,
+        "local_val_split": "class_tail",
+        "subjects_per_client": 1,
+        "scaler": "global",
+        "impute": "mean",
+        "drop_constant": true
+      },
+      "placement": {
+        "name": "mixing",
+        "alpha": 0.5
+      }
+    },
+    "learning": {
+      "model": {
+        "name": "modular_mlp",
+        "adapter_width": 64,
+        "trunk_hidden": [
+          64,
+          32
+        ],
+        "dropout": 0.2
+      },
+      "sharing": "fedavg",
+      "trainer": {
+        "name": "standard",
+        "local_epochs": 10,
+        "batch_size": 32,
+        "lr": 0.003
+      },
+      "init": "random"
+    },
+    "rounds": 20,
+    "evaluation": {
+      "metrics": [
+        "loss",
+        "accuracy",
+        "macro_f1"
+      ],
+      "edge": {
+        "every": 5,
+        "models": [
+          "received",
+          "local",
+          "personal",
+          "finetuned"
+        ],
+        "finetune": {
+          "name": "standard",
+          "local_epochs": 2,
+          "batch_size": 32,
+          "lr": 0.003
+        }
+      },
+      "aggregators": {
+        "every": 5,
+        "aggregate_children": true,
+        "holdout": true
+      },
+      "global": {
+        "every": 1
+      }
+    },
+    "runtime": {
+      "mode": "sim",
+      "timeout": 3600.0,
+      "heartbeat": 10.0,
+      "codec": null
+    },
+    "sinks": [],
+    "paths": {
+      "topologies": "topologies",
+      "datasets": "datasets",
+      "runs": "runs",
+      "cache": "data/cache"
+    }
+  },
+  "diagnostic": {
+    "statistic": "label_divergence",
+    "covariance": 0.0,
+    "D": 0.0,
+    "statistics": {
+      "label_divergence": {
+        "covariance": 0.0,
+        "D": 0.0
+      },
+      "gradient_norm": {
+        "covariance": 0.0,
+        "D": 0.0
+      }
+    },
+    "participation": 1.0,
+    "floss": {
+      "participation": 1.0000000000000002,
+      "rounds_factor": 0.9999999999999998
+    },
+    "deadlines": [
+      "cloud",
+      "fog_a1",
+      "fog_a2",
+      "fog_b1",
+      "fog_b2"
+    ],
+    "unknown": [],
+    "edges": {
+      "swell-11": {
+        "p": 1.0,
+        "w": 0.04497354497354497,
+        "label_divergence": 7.99526532668125e-05,
+        "gradient_norm": 0.6239638328552246
+      },
+      "swell-13": {
+        "p": 1.0,
+        "w": 0.0445326278659612,
+        "label_divergence": 0.00011592654087701215,
+        "gradient_norm": 0.4031664729118347
+      },
+      "swell-14": {
+        "p": 1.0,
+        "w": 0.04585537918871252,
+        "label_divergence": 1.4629274107355681e-05,
+        "gradient_norm": 0.4199017286300659
+      },
+      "swell-15": {
+        "p": 1.0,
+        "w": 0.0427689594356261,
+        "label_divergence": 0.00025977161188247937,
+        "gradient_norm": 0.4023062586784363
+      },
+      "swell-16": {
+        "p": 1.0,
+        "w": 0.04585537918871252,
+        "label_divergence": 1.4629274107355681e-05,
+        "gradient_norm": 1.1423314809799194
+      },
+      "swell-17": {
+        "p": 1.0,
+        "w": 0.04585537918871252,
+        "label_divergence": 1.4629274107355681e-05,
+        "gradient_norm": 0.42476385831832886
+      },
+      "swell-20": {
+        "p": 1.0,
+        "w": 0.04585537918871252,
+        "label_divergence": 1.4629274107355681e-05,
+        "gradient_norm": 0.4244658648967743
+      },
+      "swell-21": {
+        "p": 1.0,
+        "w": 0.03747795414462081,
+        "label_divergence": 0.010910406193468739,
+        "gradient_norm": 0.296722412109375
+      },
+      "swell-22": {
+        "p": 1.0,
+        "w": 0.0445326278659612,
+        "label_divergence": 1.6905772027487297e-05,
+        "gradient_norm": 0.42070627212524414
+      },
+      "swell-23": {
+        "p": 1.0,
+        "w": 0.04585537918871252,
+        "label_divergence": 1.4629274107355681e-05,
+        "gradient_norm": 0.42772382497787476
+      },
+      "swell-24": {
+        "p": 1.0,
+        "w": 0.04585537918871252,
+        "label_divergence": 1.4629274107355681e-05,
+        "gradient_norm": 0.4169437885284424
+      },
+      "swell-3": {
+        "p": 1.0,
+        "w": 0.0445326278659612,
+        "label_divergence": 0.0011631861519100783,
+        "gradient_norm": 0.45411473512649536
+      },
+      "swell-4": {
+        "p": 1.0,
+        "w": 0.045414462081128745,
+        "label_divergence": 0.0001873013657461859,
+        "gradient_norm": 0.4298997223377228
+      },
+      "swell-5": {
+        "p": 1.0,
+        "w": 0.04409171075837742,
+        "label_divergence": 0.00020371628000291457,
+        "gradient_norm": 0.429530531167984
+      },
+      "swell-6": {
+        "p": 1.0,
+        "w": 0.0445326278659612,
+        "label_divergence": 0.00011592654087701215,
+        "gradient_norm": 0.4092811346054077
+      },
+      "swell-7": {
+        "p": 1.0,
+        "w": 0.04585537918871252,
+        "label_divergence": 1.4629274107355681e-05,
+        "gradient_norm": 0.4248686730861664
+      },
+      "swell-8": {
+        "p": 1.0,
+        "w": 0.041005291005291,
+        "label_divergence": 3.382211599896887e-05,
+        "gradient_norm": 0.4075467586517334
+      },
+      "swell-9": {
+        "p": 1.0,
+        "w": 0.0427689594356261,
+        "label_divergence": 0.0009322083130209116,
+        "gradient_norm": 0.4552209675312042
+      },
+      "wesad-S13": {
+        "p": 1.0,
+        "w": 0.020282186948853614,
+        "label_divergence": 1.8956414659254944e-05,
+        "gradient_norm": 0.3410099744796753
+      },
+      "wesad-S14": {
+        "p": 1.0,
+        "w": 0.020282186948853614,
+        "label_divergence": 1.8956414659254944e-05,
+        "gradient_norm": 0.20780782401561737
+      },
+      "wesad-S15": {
+        "p": 1.0,
+        "w": 0.02072310405643739,
+        "label_divergence": 0.00026153385947247365,
+        "gradient_norm": 0.26585090160369873
+      },
+      "wesad-S16": {
+        "p": 1.0,
+        "w": 0.020282186948853614,
+        "label_divergence": 1.8956414659254944e-05,
+        "gradient_norm": 0.28742995858192444
+      },
+      "wesad-S17": {
+        "p": 1.0,
+        "w": 0.021164021164021163,
+        "label_divergence": 0.0012769059675117253,
+        "gradient_norm": 0.21920278668403625
+      },
+      "wesad-S2": {
+        "p": 1.0,
+        "w": 0.019400352733686066,
+        "label_divergence": 0.00021411029494812495,
+        "gradient_norm": 0.3339498043060303
+      },
+      "wesad-S3": {
+        "p": 1.0,
+        "w": 0.01984126984126984,
+        "label_divergence": 5.033533547238022e-05,
+        "gradient_norm": 0.3081561326980591
+      },
+      "wesad-S5": {
+        "p": 1.0,
+        "w": 0.01984126984126984,
+        "label_divergence": 0.000672262433975019,
+        "gradient_norm": 0.3062211275100708
+      },
+      "wesad-S8": {
+        "p": 1.0,
+        "w": 0.02072310405643739,
+        "label_divergence": 0.00026153385947247365,
+        "gradient_norm": 0.28091418743133545
+      },
+      "wesad-S9": {
+        "p": 1.0,
+        "w": 0.01984126984126984,
+        "label_divergence": 0.000672262433975019,
+        "gradient_norm": 0.2439962774515152
+      }
+    },
+    "seconds": 0.21739380003418773
+  },
+  "finished_at": "2026-11-16T14:44:51.353371+00:00",
+  "run_hash": "db55fd619dfebb64020cd84ee8855b74591b8642d2da06f678fd966868f56018"
+}
